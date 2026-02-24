@@ -27,8 +27,8 @@ $$ LANGUAGE plpgsql;
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS schema_migrations (
-    version VARCHAR(50) PRIMARY KEY,
-    applied_at TIMESTAMP DEFAULT NOW()
+    filename TEXT PRIMARY KEY,
+    applied_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ============================================================
@@ -72,7 +72,7 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at_admin_erp();
 
 CREATE TABLE IF NOT EXISTS master_cards (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    sku VARCHAR(100) UNIQUE,
+    sku VARCHAR(100),
     title TEXT NOT NULL,
     description TEXT,
     brand VARCHAR(200),
@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS master_cards (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_master_cards_user_sku ON master_cards(user_id, sku);
 CREATE INDEX IF NOT EXISTS idx_master_cards_title ON master_cards(title);
 CREATE INDEX IF NOT EXISTS idx_master_cards_offer ON master_cards(ozon_offer_id);
 CREATE INDEX IF NOT EXISTS idx_master_cards_user ON master_cards(user_id);
@@ -107,7 +108,7 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at_admin_erp();
 
 CREATE TABLE IF NOT EXISTS supplier_orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    order_number VARCHAR(60) NOT NULL UNIQUE,
+    order_number VARCHAR(60) NOT NULL,
     supplier_name TEXT NOT NULL,
     status VARCHAR(30) NOT NULL DEFAULT 'draft',
     currency VARCHAR(10) NOT NULL DEFAULT 'RUB',
@@ -124,6 +125,7 @@ CREATE TABLE IF NOT EXISTS supplier_orders (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_supplier_orders_user_number ON supplier_orders(user_id, order_number);
 CREATE INDEX IF NOT EXISTS idx_supplier_orders_status ON supplier_orders(status);
 CREATE INDEX IF NOT EXISTS idx_supplier_orders_date ON supplier_orders(order_date DESC);
 CREATE INDEX IF NOT EXISTS idx_supplier_orders_user ON supplier_orders(user_id);
@@ -204,7 +206,7 @@ CREATE TABLE IF NOT EXISTS sales_orders (
     -- 015: renamed from created_by
     user_id UUID REFERENCES admin_users(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (marketplace, external_order_id)
+    UNIQUE (user_id, marketplace, external_order_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_sales_orders_sold_at ON sales_orders(sold_at DESC);
@@ -280,7 +282,7 @@ CREATE TABLE IF NOT EXISTS finance_transactions (
     -- 015: renamed from created_by
     user_id UUID REFERENCES admin_users(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (source, external_id)
+    UNIQUE (user_id, source, external_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_finance_transactions_date ON finance_transactions(happened_at DESC);
@@ -727,5 +729,5 @@ CREATE INDEX IF NOT EXISTS idx_comm_scheme ON ozon_commission_rates(scheme);
 -- Mark migration as applied
 -- ============================================================
 
-INSERT INTO schema_migrations (version) VALUES ('001_init')
-ON CONFLICT (version) DO NOTHING;
+INSERT INTO schema_migrations (filename) VALUES ('init.sql')
+ON CONFLICT (filename) DO NOTHING;

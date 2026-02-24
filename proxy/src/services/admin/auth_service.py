@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import asyncpg
@@ -13,12 +14,25 @@ from proxy.src.services.admin_security import (
     verify_password,
 )
 
+logger = logging.getLogger(__name__)
+_default_creds_warned = False
+
 
 def token_ttl_seconds() -> int:
     return max(1, int(settings.admin_token_ttl_hours)) * 3600
 
 
 async def authenticate(conn: asyncpg.Connection, *, username: str, password: str) -> dict[str, Any]:
+    global _default_creds_warned
+    if settings.admin_bootstrap_password and not _default_creds_warned:
+        if settings.admin_bootstrap_password in ("admin", "password", "123456"):
+            logger.warning(
+                "⚠️  ADMIN_BOOTSTRAP_PASSWORD is set to a well-known default ('%s'). "
+                "Change it in .env before exposing this instance to the internet.",
+                settings.admin_bootstrap_password,
+            )
+        _default_creds_warned = True
+
     await user_repo.ensure_bootstrap(
         conn,
         username=settings.admin_bootstrap_username,

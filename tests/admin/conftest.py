@@ -99,7 +99,6 @@ def admin_client(
     old_hmac_secret = settings.hmac_secret
     old_bootstrap_username = settings.admin_bootstrap_username
     old_bootstrap_password = settings.admin_bootstrap_password
-    old_bot_token = settings.bot_token
     old_ozon_client = settings.ozon_client_id
     old_ozon_key = settings.ozon_api_key
 
@@ -107,7 +106,6 @@ def admin_client(
     settings.hmac_secret = "test-hmac-secret"
     settings.admin_bootstrap_username = "admin"
     settings.admin_bootstrap_password = "admin-strong-pass"
-    settings.bot_token = None
     settings.ozon_client_id = None
     settings.ozon_api_key = None
 
@@ -125,6 +123,5 @@ def admin_client(
         settings.hmac_secret = old_hmac_secret
         settings.admin_bootstrap_username = old_bootstrap_username
         settings.admin_bootstrap_password = old_bootstrap_password
-        settings.bot_token = old_bot_token
         settings.ozon_client_id = old_ozon_client
         settings.ozon_api_key = old_ozon_key

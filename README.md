@@ -15,6 +15,8 @@ Open **http://localhost:3000** and log in with:
 - Username: `admin`
 - Password: `admin`
 
+> **Warning:** Change the default credentials in `.env` before exposing the instance to the internet. Set `ADMIN_BOOTSTRAP_PASSWORD` and `HMAC_SECRET` to strong random values.
+
 That's it. You have a fully working ERP with PostgreSQL, API server, and admin UI.
 
 ## What You Get
@@ -89,6 +91,10 @@ docker compose up --build -d
 ```
 
 Migrations are applied automatically on container start.
+
+## Security
+
+Found a vulnerability? Please read [SECURITY.md](SECURITY.md) for our disclosure policy.
 
 ## License
 

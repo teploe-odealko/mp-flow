@@ -54,6 +54,6 @@ def require_premium(feature: str) -> None:
                 "error": "premium_required",
                 "feature": feature,
                 "message": f"Feature '{feature}' requires a premium license. "
-                "See https://mp-flow.ru/pricing",
+                "See https://github.com/teploe-odealko/mp-flow for licensing details.",
             },
         )

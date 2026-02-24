@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import sys
 import time
@@ -46,9 +45,14 @@ def create_app() -> FastAPI:
         redoc_url=None,
     )
 
+    origins = settings.admin_cors_origins_list or [
+        "https://admin.mp-flow.ru",
+        "http://localhost:5173",
+        "http://localhost:3000",
+    ]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=origins,
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -132,15 +136,17 @@ def create_app() -> FastAPI:
         async def list_plugins():
             plugins_list = []
             for name, m in _plugins.items():
-                plugins_list.append({
-                    "name": name,
-                    "version": m.get("version"),
-                    "title": m.get("title"),
-                    "description": m.get("description"),
-                    "contributes": m.get("contributes", {}),
-                    "provides_kinds": m.get("provides_kinds", []),
-                    "frontend": m.get("frontend"),
-                })
+                plugins_list.append(
+                    {
+                        "name": name,
+                        "version": m.get("version"),
+                        "title": m.get("title"),
+                        "description": m.get("description"),
+                        "contributes": m.get("contributes", {}),
+                        "provides_kinds": m.get("provides_kinds", []),
+                        "frontend": m.get("frontend"),
+                    }
+                )
             return {"plugins": plugins_list}
 
     except Exception as e:

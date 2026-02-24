@@ -47,7 +47,7 @@ async def fetch_1688_item(
 
     async with httpx.AsyncClient(timeout=45.0) as client:
         response = await client.post(
-            "http://api.tmapi.top/1688/item_detail_by_url",
+            "https://api.tmapi.top/1688/item_detail_by_url",
             params=query_params,
             json=body,
         )

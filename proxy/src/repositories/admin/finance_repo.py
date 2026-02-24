@@ -37,7 +37,7 @@ async def insert_purchase_transaction(
             $1, 'expense', 'purchase', $2, 'supplier_order',
             $3, 'supplier_order', $4, $5, $6, $7
         )
-        ON CONFLICT (source, external_id) DO NOTHING
+        ON CONFLICT (user_id, source, external_id) DO NOTHING
         """,
         happened_at,
         amount_rub,

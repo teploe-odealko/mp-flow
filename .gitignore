@@ -36,3 +36,5 @@ postgres-data/
 # Sessions
 *.session
 session
+
+.CLAUDE.md

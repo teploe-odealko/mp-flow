@@ -278,7 +278,9 @@ def calculate_breakeven(
         # Start with mid-range tier
         comm = _resolve_commission(1000, commission_tiers) * 100  # as pct
         for _ in range(5):
-            result = _calc_breakeven_single(commission_pct=comm, target_margin_pct=target_margin, **common)
+            result = _calc_breakeven_single(
+                commission_pct=comm, target_margin_pct=target_margin, **common
+            )
             if "error" in result:
                 return comm
             price = result["sale_price_rub"]
@@ -290,8 +292,14 @@ def calculate_breakeven(
 
     # Forward mode: given sale_price_rub
     if sale_price_rub is not None:
-        comm = commission_pct if commission_pct is not None else (
-            _resolve_commission(sale_price_rub, commission_tiers) * 100 if commission_tiers else 0
+        comm = (
+            commission_pct
+            if commission_pct is not None
+            else (
+                _resolve_commission(sale_price_rub, commission_tiers) * 100
+                if commission_tiers
+                else 0
+            )
         )
         result = _calc_breakeven_single(commission_pct=comm, target_margin_pct=0, **common)
         # Recalc as forward: compute actual margin at given sale price
@@ -300,7 +308,15 @@ def calculate_breakeven(
         comm_rub = _r2(sp * _d(comm) / 100)
         acq_rub = _r2(sp * _d(acquiring_pct) / 100)
         tax_rub = _r2(sp * _d(usn_rate_pct) / 100)
-        total = _d(cogs_rub) + comm_rub + acq_rub + _d(b["last_mile_rub"]) + _d(b["storage_rub"]) + _d(b["return_cost_rub"]) + tax_rub
+        total = (
+            _d(cogs_rub)
+            + comm_rub
+            + acq_rub
+            + _d(b["last_mile_rub"])
+            + _d(b["storage_rub"])
+            + _d(b["return_cost_rub"])
+            + tax_rub
+        )
         profit = _r2(sp - total)
         margin = _r2(profit / sp * 100) if sp > 0 else Decimal(0)
         return {

@@ -261,7 +261,7 @@ async def insert_finance_transaction(
             notes, payload, user_id
         )
         VALUES ($1, $2, $3, $4, $5, $6, 'sales_order', $7, $8, $9, $10)
-        ON CONFLICT (source, external_id) DO NOTHING
+        ON CONFLICT (user_id, source, external_id) DO NOTHING
         """,
         happened_at,
         kind,

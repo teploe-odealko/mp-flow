@@ -274,7 +274,7 @@ async def ozon_sync_finance(date_from: str = "", date_to: str = "") -> str:
                 """INSERT INTO finance_transactions
                    (happened_at, kind, category, amount_rub, source, external_id, notes, payload, user_id)
                    VALUES ($1, $2, $3, $4, 'ozon', $5, $6, $7, $8)
-                   ON CONFLICT (user_id, external_id) WHERE external_id IS NOT NULL
+                   ON CONFLICT (user_id, source, external_id)
                    DO UPDATE SET amount_rub = EXCLUDED.amount_rub, notes = EXCLUDED.notes""",
                 txn["happened_at"],
                 txn["kind"],

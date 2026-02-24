@@ -106,7 +106,8 @@ async def token_proxy(request: Request) -> JSONResponse:
         and content_type.startswith("application/x-www-form-urlencoded")
         and settings.logto_api_resource
     ):
-        from urllib.parse import parse_qs, urlencode as ue
+        from urllib.parse import parse_qs
+        from urllib.parse import urlencode as ue
 
         parsed = parse_qs(body_bytes.decode("utf-8"), keep_blank_values=True)
         if "resource" in parsed:

@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from proxy.src.config import settings
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 
@@ -50,7 +51,7 @@ def _problem_payload(
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "type": f"https://docs.mp-flow.ru/problems/{error_code}",
+        "type": f"{settings.base_url}/docs/problems/{error_code}",
         "title": title,
         "status": status_code,
         "detail": detail or title,

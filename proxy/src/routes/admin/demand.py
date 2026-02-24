@@ -263,7 +263,10 @@ async def api_get_cluster_targets(
 # ---------------------------------------------------------------------------
 
 
-@router.put("/demand/cluster-targets/{master_card_id}/{cluster_id}", response_model=ClusterTargetItemResponse)
+@router.put(
+    "/demand/cluster-targets/{master_card_id}/{cluster_id}",
+    response_model=ClusterTargetItemResponse,
+)
 async def api_upsert_cluster_target(
     master_card_id: str,
     cluster_id: int,

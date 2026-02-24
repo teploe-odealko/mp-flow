@@ -11,6 +11,11 @@ from proxy.src.routes.admin.pagination import (
     parse_datetime_cursor,
     parse_sort,
 )
+from proxy.src.routes.admin.response_models import (
+    OkResponse,
+    OzonAccountItemResponse,
+    OzonIntegrationResponse,
+)
 from proxy.src.routes.admin.serialization import serialize_value
 from proxy.src.routes.admin_helpers import (
     _get_admin_ozon_creds,
@@ -20,11 +25,6 @@ from proxy.src.routes.admin_helpers import (
     _safe_fetchone,
 )
 from proxy.src.routes.admin_models import OzonCredentialsUpsertRequest
-from proxy.src.routes.admin.response_models import (
-    OkResponse,
-    OzonAccountItemResponse,
-    OzonIntegrationResponse,
-)
 from pydantic import BaseModel, Field
 
 router = APIRouter(tags=["Integrations"])

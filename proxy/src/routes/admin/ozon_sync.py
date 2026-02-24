@@ -623,7 +623,7 @@ async def sync_ozon_finance(
                             amount_rub, source, external_id, notes, payload, user_id
                         )
                         VALUES ($1, $2, $3, $4, $5, 'ozon_finance', $6, $7, $8, $9)
-                        ON CONFLICT (source, external_id) DO NOTHING
+                        ON CONFLICT (user_id, source, external_id) DO NOTHING
                         """,
                         safe_parse_datetime(str(item.get("happened_at") or "")),
                         item["kind"],

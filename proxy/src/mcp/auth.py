@@ -27,6 +27,14 @@ def _resource_metadata_url() -> str:
     return f"{settings.base_url}/.well-known/oauth-protected-resource"
 
 
+def _has_scope(scopes: list[str], required: str) -> bool:
+    """Check if scopes list grants access. Empty scopes = unrestricted."""
+    for s in scopes:
+        if s == "*" or s == required or s.startswith(f"{required}:"):
+            return True
+    return False
+
+
 class McpAuthMiddleware:
     """ASGI middleware: mpk_ keys validated directly, JWT via mcpauth verify."""
 
@@ -66,6 +74,11 @@ class McpAuthMiddleware:
             key_info = await api_key_service.validate_key(pool, raw_key=token)
             if not key_info:
                 await _send_401(send, "Invalid or expired API key")
+                return
+            # Enforce scopes: if scopes are defined, require "mcp" or "mcp:*"
+            scopes = key_info.get("scopes") or []
+            if scopes and not _has_scope(scopes, "mcp"):
+                await _send_error(send, 403, "API key does not have 'mcp' scope")
                 return
             set_deps(McpDeps(pool=pool, user_id=key_info["user_id"]))
             await self.app(scope, receive, send)
@@ -130,9 +143,14 @@ async def _resolve_user(pool: asyncpg.Pool, sub: str, claims: dict) -> str | Non
 async def _send_401(send: Any, detail: str) -> None:
     url = _resource_metadata_url()
     www_auth = f'Bearer resource_metadata="{url}"'
-    await _send_error(send, 401, detail, extra_headers=[
-        [b"www-authenticate", www_auth.encode()],
-    ])
+    await _send_error(
+        send,
+        401,
+        detail,
+        extra_headers=[
+            [b"www-authenticate", www_auth.encode()],
+        ],
+    )
 
 
 async def _send_503(send: Any, detail: str) -> None:

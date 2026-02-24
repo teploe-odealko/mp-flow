@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, Request
 from proxy.src.routes.admin.deps import get_current_user, get_db_pool
 from proxy.src.routes.admin.response_models import (
     ApiKeyCreateResponse,
-    ApiKeyView,
     ApiKeysListResponse,
+    ApiKeyView,
 )
 from proxy.src.services.admin import api_key_service
 

@@ -26,10 +26,10 @@ def get_mcp():
 
         transport_security = None
         try:
-            from mcp.server.transport_security import TransportSecuritySettings
-
             # Parse hostname from BASE_URL for DNS rebinding protection
             from urllib.parse import urlparse
+
+            from mcp.server.transport_security import TransportSecuritySettings
 
             host = urlparse(settings.base_url).hostname or "localhost"
             transport_security = TransportSecuritySettings(
