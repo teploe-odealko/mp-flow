@@ -57,6 +57,39 @@ services:
     networks:
       - dokploy-network
 
+  logto-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: logto
+      POSTGRES_PASSWORD: ${LOGTO_DB_PASSWORD}
+      POSTGRES_DB: logto
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U logto']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - logto-db-data:/var/lib/postgresql/data
+    networks:
+      - dokploy-network
+
+  logto:
+    image: ghcr.io/logto-io/logto:1.36.0
+    depends_on:
+      logto-db:
+        condition: service_healthy
+    environment:
+      DB_URL: postgresql://logto:${LOGTO_DB_PASSWORD}@logto-db:5432/logto
+      ENDPOINT: https://auth.mp-flow.ru
+      ADMIN_ENDPOINT: https://auth-admin.mp-flow.ru
+      TRUST_PROXY_HEADER: 1
+    entrypoint: ['sh', '-c', 'npm run cli db seed -- --swe && npm start']
+    networks:
+      - dokploy-network
+
 networks:
   dokploy-network:
     external: true
+
+volumes:
+  logto-db-data:
