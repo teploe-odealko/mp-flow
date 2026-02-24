@@ -148,7 +148,7 @@ def test_import_1688(admin_client: TestClient) -> None:
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["item"]["id"] == card_id
-    assert "source" in data
+    assert "sources" in data["item"]["attributes"]
 
 
 def test_requires_auth(admin_client: TestClient) -> None:

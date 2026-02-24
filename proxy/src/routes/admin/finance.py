@@ -8,8 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from proxy.src.routes.admin.deps import get_current_user, get_db_pool
 from proxy.src.routes.admin.list_query import ListQuery, list_query_dep
 from proxy.src.routes.admin.response_models import (
+    FinanceItemResponse,
     FinanceListResponse,
-    FinanceTransactionView,
     OkResponse,
 )
 from proxy.src.services.admin import finance_service
@@ -76,7 +76,7 @@ async def list_finance_transactions(
         )
 
 
-@router.post("/finance/transactions", response_model=FinanceTransactionView)
+@router.post("/finance/transactions", response_model=FinanceItemResponse)
 async def create_finance_transaction(
     payload: FinanceTransactionCreateRequest,
     request: Request,
@@ -102,7 +102,7 @@ async def create_finance_transaction(
         )
 
 
-@router.put("/finance/transactions/{txn_id}", response_model=FinanceTransactionView)
+@router.put("/finance/transactions/{txn_id}", response_model=FinanceItemResponse)
 async def update_finance_transaction(
     txn_id: str,
     body: FinanceTransactionUpdateRequest,

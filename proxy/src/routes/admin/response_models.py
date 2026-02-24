@@ -248,7 +248,11 @@ class FinanceTransactionView(BaseModel):
     source: str
     external_id: str | None = None
     created_at: str
-    updated_at: str
+    updated_at: str | None = None
+
+
+class FinanceItemResponse(BaseModel):
+    item: FinanceTransactionView
 
 
 class FinanceListResponse(BaseModel):

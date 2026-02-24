@@ -270,7 +270,7 @@ async def create_ozon_account(
     payload: OzonAccountCreateRequest,
     request: Request,
     user: dict[str, Any] = Depends(get_current_user),
-) -> dict[str, OzonAccountView]:
+) -> dict[str, Any]:
     """Создание нового Ozon-аккаунта с зашифрованными credentials."""
     pool = get_db_pool(request)
     async with pool.acquire() as conn:
@@ -314,7 +314,7 @@ async def create_ozon_account(
                 settings.hmac_secret,
             )
 
-    return {"item": OzonAccountView(**_ozon_account_view(dict(row)))}
+    return {"item": _ozon_account_view(dict(row))}
 
 
 @router.patch("/integrations/ozon/accounts/{account_id}", response_model=OzonAccountItemResponse)
@@ -323,7 +323,7 @@ async def update_ozon_account(
     payload: OzonAccountUpdateRequest,
     request: Request,
     user: dict[str, Any] = Depends(get_current_user),
-) -> dict[str, OzonAccountView]:
+) -> dict[str, Any]:
     """Частичное обновление Ozon-аккаунта (имя, credentials, статус)."""
     pool = get_db_pool(request)
 
@@ -381,7 +381,7 @@ async def update_ozon_account(
 
     if not row:
         raise HTTPException(status_code=404, detail="Ozon account not found")
-    return {"item": OzonAccountView(**_ozon_account_view(dict(row)))}
+    return {"item": _ozon_account_view(dict(row))}
 
 
 @router.delete("/integrations/ozon/accounts/{account_id}", response_model=OkResponse)
