@@ -1,9 +1,12 @@
 const API_BASE = window.__ADMIN_API_BASE__ || "/v1/admin";
 
 /* ============================================================ */
-/* Auth                                                         */
+/* Auth (Logto SSO + HMAC fallback)                             */
 /* ============================================================ */
 let _hmacToken = localStorage.getItem("_mpflow_token") || null;
+let _logtoClient = null;
+let _authMode = "password"; // "logto" or "password"
+let _logtoConfig = null; // { endpoint, appId, resource }
 
 const state = {
   user: null,
@@ -533,8 +536,19 @@ function switchAnalyticsTab(tab) {
 /* ============================================================ */
 async function apiRequest(path, options = {}) {
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
-  if (!options.skipAuth && _hmacToken) {
-    headers["Authorization"] = `Bearer ${_hmacToken}`;
+  if (!options.skipAuth) {
+    if (_authMode === "logto" && _logtoClient) {
+      try {
+        const token = await _logtoClient.getAccessToken(_logtoConfig.resource);
+        headers["Authorization"] = `Bearer ${token}`;
+      } catch (e) {
+        console.warn("[auth] Failed to get Logto access token:", e);
+        await logout();
+        throw new Error("Session expired");
+      }
+    } else if (_hmacToken) {
+      headers["Authorization"] = `Bearer ${_hmacToken}`;
+    }
   }
   const response = await fetch(`${API_BASE}${path}`, {
     method: options.method || "GET",
@@ -2299,6 +2313,14 @@ async function logout() {
   state.user = null;
   state.selectedCard = null;
   state.selectedCardDetail = null;
+  if (_authMode === "logto" && _logtoClient) {
+    try {
+      await _logtoClient.signOut(window.location.origin);
+    } catch (e) {
+      console.warn("[auth] Logto sign-out error:", e);
+    }
+    return; // signOut redirects the page
+  }
   _hmacToken = null;
   localStorage.removeItem("_mpflow_token");
   setLoginMode(true);
@@ -2311,6 +2333,17 @@ async function refreshAfterMutations({ reloadCards = false } = {}) {
 /* ============================================================ */
 /* Event listeners                                              */
 /* ============================================================ */
+
+// Auth — SSO login (Logto)
+$("ssoLoginBtn").addEventListener("click", async () => {
+  if (!_logtoClient) return;
+  try {
+    await _logtoClient.signIn(window.location.origin + "/callback");
+  } catch (e) {
+    console.error("[auth] Logto signIn error:", e);
+    loginError.textContent = "Ошибка SSO авторизации";
+  }
+});
 
 // Auth — password login
 $("passwordLoginForm").addEventListener("submit", async (e) => {
@@ -5141,13 +5174,75 @@ window.addEventListener("hashchange", () => {
 });
 
 function showLoginUI() {
-  $("passwordLoginForm").classList.remove("hidden");
+  if (_authMode === "logto") {
+    $("ssoLoginBlock").classList.remove("hidden");
+    $("passwordLoginForm").classList.add("hidden");
+  } else {
+    $("ssoLoginBlock").classList.add("hidden");
+    $("passwordLoginForm").classList.remove("hidden");
+  }
+}
+
+async function initLogto(config) {
+  // Dynamically load @logto/browser SDK
+  const mod = await import("https://cdn.jsdelivr.net/npm/@logto/browser@3.0.11/+esm");
+  const LogtoClient = mod.default || mod.LogtoClient;
+  _logtoClient = new LogtoClient({
+    endpoint: config.logto_endpoint,
+    appId: config.logto_app_id,
+    resources: [config.logto_api_resource],
+  });
+  return _logtoClient;
 }
 
 async function bootApp() {
-  console.log("[auth] bootApp at:", window.location.pathname);
+  console.log("[auth] bootApp at:", window.location.pathname + window.location.search);
 
-  // Check stored token
+  // 1. Fetch auth config from backend
+  try {
+    const cfg = await fetch(`${API_BASE}/auth/config`).then(r => r.json());
+    _authMode = cfg.mode || "password";
+    if (_authMode === "logto") {
+      _logtoConfig = {
+        endpoint: cfg.logto_endpoint,
+        appId: cfg.logto_app_id,
+        resource: cfg.logto_api_resource,
+      };
+    }
+  } catch (e) {
+    console.warn("[auth] Failed to fetch auth config, falling back to password:", e);
+    _authMode = "password";
+  }
+
+  // 2. Logto SSO mode
+  if (_authMode === "logto") {
+    await initLogto(_logtoConfig);
+
+    // Handle callback after Logto redirect
+    if (window.location.pathname === "/callback") {
+      try {
+        await _logtoClient.handleSignInCallback(window.location.href);
+        window.history.replaceState({}, "", "/");
+      } catch (e) {
+        console.error("[auth] Callback error:", e);
+        window.history.replaceState({}, "", "/");
+      }
+    }
+
+    const isAuth = await _logtoClient.isAuthenticated();
+    if (isAuth) {
+      setLoginMode(false);
+      setActiveSection(sectionFromHash());
+      await bootstrapApp();
+      return;
+    }
+
+    setLoginMode(true);
+    showLoginUI();
+    return;
+  }
+
+  // 3. Password (HMAC) mode
   if (_hmacToken) {
     try {
       const resp = await fetch(`${API_BASE}/auth/me`, {

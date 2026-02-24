@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 48" fill="none">
+  <defs>
+    <linearGradient id="mark-grad-d" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#8B7CF6"/>
+      <stop offset="100%" stop-color="#6366F1"/>
+    </linearGradient>
+    <linearGradient id="flow-grad-d" x1="20" y1="10" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#C4B5FD"/>
+      <stop offset="100%" stop-color="#A78BFA"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Mark: rounded square with flow symbol -->
+  <rect x="0" y="4" width="40" height="40" rx="10" fill="url(#mark-grad-d)"/>
+
+  <!-- Flow icon: three curved lines suggesting data movement -->
+  <path d="M11 16 C16 16, 18 24, 24 24 C30 24, 32 16, 37 16" stroke="white" stroke-width="2.4" stroke-linecap="round" fill="none" opacity="0.5"/>
+  <path d="M11 24 C16 24, 18 32, 24 32 C30 32, 32 24, 37 24" stroke="white" stroke-width="2.4" stroke-linecap="round" fill="none" opacity="0.5"/>
+  <path d="M8 20 C14 20, 17 28, 24 28 C31 28, 34 20, 40 20" stroke="white" stroke-width="2.8" stroke-linecap="round" fill="none"/>
+
+  <!-- Wordmark -->
+  <text x="52" y="22" font-family="Inter, system-ui, -apple-system, sans-serif" font-size="13" font-weight="800" letter-spacing="0.12em" fill="#E0E7FF">OPEN</text>
+  <text x="96" y="22" font-family="Inter, system-ui, -apple-system, sans-serif" font-size="13" font-weight="800" letter-spacing="0.12em" fill="url(#mark-grad-d)">MPFLOW</text>
+
+  <!-- Tagline -->
+  <text x="52" y="37" font-family="Inter, system-ui, -apple-system, sans-serif" font-size="10" font-weight="500" letter-spacing="0.06em" fill="#9CA3AF">Marketplace ERP</text>
+</svg>

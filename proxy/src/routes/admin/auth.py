@@ -48,12 +48,12 @@ async def logout(response: Response) -> dict[str, bool]:
 @router.get("/config")
 async def auth_config() -> dict[str, Any]:
     """Returns auth configuration for the frontend (no auth required)."""
-    if settings.logto_endpoint:
+    if settings.logto_endpoint and settings.logto_spa_app_id:
         return {
             "mode": "logto",
             "logto_endpoint": settings.logto_endpoint,
-            "logto_app_id": settings.logto_mcp_client_id or "",
-            "logto_api_resource": settings.logto_api_resource,
+            "logto_app_id": settings.logto_spa_app_id,
+            "logto_api_resource": settings.logto_api_resource or "",
         }
     return {"mode": "password"}
 

@@ -22,7 +22,8 @@ class Settings(BaseSettings):
     # === Logto (OIDC/OAuth2) — optional ===
     logto_endpoint: str | None = None
     logto_api_resource: str | None = None
-    logto_mcp_client_id: str | None = None
+    logto_spa_app_id: str | None = None  # SPA app for admin-ui login
+    logto_mcp_client_id: str | None = None  # SPA app for MCP OAuth DCR
 
     @property
     def admin_cors_origins_list(self) -> list[str]:

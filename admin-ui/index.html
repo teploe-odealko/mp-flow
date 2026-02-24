@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OpenMPFlow Admin</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -19,10 +20,6 @@
     };
   </script>
   <link rel="stylesheet" href="./styles.css" />
-  <script type="module">
-    // Logto SDK loaded dynamically only when OIDC auth mode is active
-    window.__LogtoClient = null;
-  </script>
 </head>
 <body class="bg-slate-50 font-sans text-slate-800 dark:bg-slate-950 dark:text-slate-200 antialiased">
 
@@ -51,6 +48,14 @@
       <h1 class="text-2xl font-bold text-slate-900 dark:text-white mb-2">Добро пожаловать</h1>
       <p class="text-sm text-slate-500 mb-6">Войдите для доступа к системе</p>
 
+      <!-- SSO login (shown when Logto is configured) -->
+      <div id="ssoLoginBlock" class="hidden">
+        <button id="ssoLoginBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-4 rounded-lg transition-colors text-sm">
+          Войти
+        </button>
+      </div>
+
+      <!-- Password login (shown when Logto is NOT configured) -->
       <form id="passwordLoginForm" class="hidden space-y-3">
         <input id="loginUsername" type="text" placeholder="Логин" autocomplete="username"
           class="w-full px-3 py-2.5 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
