@@ -85,6 +85,21 @@ services:
       - "traefik.http.middlewares.mpflow-admin-redirect.redirectscheme.scheme=https"
       - "traefik.http.routers.mpflow-admin-http.middlewares=mpflow-admin-redirect"
 
+  landing:
+    build: ./landing
+    networks:
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mpflow-landing.rule=Host(`${LANDING_DOMAIN:-mp-flow.ru}`) || Host(`www.${LANDING_DOMAIN:-mp-flow.ru}`)"
+      - "traefik.http.routers.mpflow-landing.entrypoints=websecure"
+      - "traefik.http.routers.mpflow-landing.tls.certresolver=letsencrypt"
+      - "traefik.http.services.mpflow-landing.loadbalancer.server.port=80"
+      - "traefik.http.routers.mpflow-landing-http.rule=Host(`${LANDING_DOMAIN:-mp-flow.ru}`) || Host(`www.${LANDING_DOMAIN:-mp-flow.ru}`)"
+      - "traefik.http.routers.mpflow-landing-http.entrypoints=web"
+      - "traefik.http.middlewares.mpflow-landing-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.mpflow-landing-http.middlewares=mpflow-landing-redirect"
+
 networks:
   internal:
   dokploy-network:
