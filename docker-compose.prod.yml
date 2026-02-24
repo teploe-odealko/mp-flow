@@ -43,16 +43,6 @@ services:
       start_period: 15s
     networks:
       - dokploy-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.mpflow-proxy.rule=Host(`${PROXY_DOMAIN:-proxy.mp-flow.ru}`)"
-      - "traefik.http.routers.mpflow-proxy.entrypoints=websecure"
-      - "traefik.http.routers.mpflow-proxy.tls.certresolver=letsencrypt"
-      - "traefik.http.services.mpflow-proxy.loadbalancer.server.port=8000"
-      - "traefik.http.routers.mpflow-proxy-http.rule=Host(`${PROXY_DOMAIN:-proxy.mp-flow.ru}`)"
-      - "traefik.http.routers.mpflow-proxy-http.entrypoints=web"
-      - "traefik.http.middlewares.mpflow-proxy-redirect.redirectscheme.scheme=https"
-      - "traefik.http.routers.mpflow-proxy-http.middlewares=mpflow-proxy-redirect"
 
   admin-ui:
     build: ./admin-ui
@@ -61,31 +51,11 @@ services:
         condition: service_healthy
     networks:
       - dokploy-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.mpflow-admin.rule=Host(`${ADMIN_DOMAIN:-admin.mp-flow.ru}`)"
-      - "traefik.http.routers.mpflow-admin.entrypoints=websecure"
-      - "traefik.http.routers.mpflow-admin.tls.certresolver=letsencrypt"
-      - "traefik.http.services.mpflow-admin.loadbalancer.server.port=80"
-      - "traefik.http.routers.mpflow-admin-http.rule=Host(`${ADMIN_DOMAIN:-admin.mp-flow.ru}`)"
-      - "traefik.http.routers.mpflow-admin-http.entrypoints=web"
-      - "traefik.http.middlewares.mpflow-admin-redirect.redirectscheme.scheme=https"
-      - "traefik.http.routers.mpflow-admin-http.middlewares=mpflow-admin-redirect"
 
   landing:
     build: ./landing
     networks:
       - dokploy-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.mpflow-landing.rule=Host(`${LANDING_DOMAIN:-mp-flow.ru}`) || Host(`www.${LANDING_DOMAIN:-mp-flow.ru}`)"
-      - "traefik.http.routers.mpflow-landing.entrypoints=websecure"
-      - "traefik.http.routers.mpflow-landing.tls.certresolver=letsencrypt"
-      - "traefik.http.services.mpflow-landing.loadbalancer.server.port=80"
-      - "traefik.http.routers.mpflow-landing-http.rule=Host(`${LANDING_DOMAIN:-mp-flow.ru}`) || Host(`www.${LANDING_DOMAIN:-mp-flow.ru}`)"
-      - "traefik.http.routers.mpflow-landing-http.entrypoints=web"
-      - "traefik.http.middlewares.mpflow-landing-redirect.redirectscheme.scheme=https"
-      - "traefik.http.routers.mpflow-landing-http.middlewares=mpflow-landing-redirect"
 
 networks:
   dokploy-network:
