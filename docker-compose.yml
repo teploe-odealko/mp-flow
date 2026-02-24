@@ -16,6 +16,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    networks:
+      - internal
 
   proxy:
     build: ./proxy
@@ -48,6 +50,19 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+    networks:
+      - internal
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mpflow-proxy.rule=Host(`${PROXY_DOMAIN:-proxy.mp-flow.ru}`)"
+      - "traefik.http.routers.mpflow-proxy.entrypoints=websecure"
+      - "traefik.http.routers.mpflow-proxy.tls.certresolver=letsencrypt"
+      - "traefik.http.services.mpflow-proxy.loadbalancer.server.port=8000"
+      - "traefik.http.routers.mpflow-proxy-http.rule=Host(`${PROXY_DOMAIN:-proxy.mp-flow.ru}`)"
+      - "traefik.http.routers.mpflow-proxy-http.entrypoints=web"
+      - "traefik.http.middlewares.mpflow-proxy-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.mpflow-proxy-http.middlewares=mpflow-proxy-redirect"
 
   admin-ui:
     build: ./admin-ui
@@ -56,6 +71,24 @@ services:
     depends_on:
       proxy:
         condition: service_healthy
+    networks:
+      - internal
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mpflow-admin.rule=Host(`${ADMIN_DOMAIN:-admin.mp-flow.ru}`)"
+      - "traefik.http.routers.mpflow-admin.entrypoints=websecure"
+      - "traefik.http.routers.mpflow-admin.tls.certresolver=letsencrypt"
+      - "traefik.http.services.mpflow-admin.loadbalancer.server.port=80"
+      - "traefik.http.routers.mpflow-admin-http.rule=Host(`${ADMIN_DOMAIN:-admin.mp-flow.ru}`)"
+      - "traefik.http.routers.mpflow-admin-http.entrypoints=web"
+      - "traefik.http.middlewares.mpflow-admin-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.mpflow-admin-http.middlewares=mpflow-admin-redirect"
+
+networks:
+  internal:
+  dokploy-network:
+    external: true
 
 volumes:
   postgres-data:
