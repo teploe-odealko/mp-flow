@@ -1,0 +1,55 @@
+[project]
+name = "openmpflow"
+version = "1.0.0"
+description = "OpenMPFlow - Unified monorepo for OpenClaw, MPFlow and Proxy"
+requires-python = ">=3.11"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "responses>=0.24.0",
+    "httpx>=0.26.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "proxy/tests"]
+asyncio_mode = "auto"
+markers = [
+    "live: marks tests as requiring real API keys (deselect with '-m \"not live\"')",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # do not perform function calls in argument defaults
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["bot", "proxy"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+include = ["bot/src", "proxy/src"]
+exclude = ["**/__pycache__", "**/node_modules", ".git"]
+reportMissingImports = false
+reportMissingTypeStubs = false

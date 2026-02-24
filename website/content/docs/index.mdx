@@ -1,0 +1,57 @@
+---
+title: Introduction
+description: OpenMPFlow — open-source ERP for Ozon FBO sellers
+---
+
+OpenMPFlow — ERP-система для продавцов на маркетплейсе Ozon (модель FBO).
+
+## What is OpenMPFlow?
+
+OpenMPFlow manages the full seller lifecycle:
+
+- **Catalog** — product cards with supplier data enrichment
+- **Purchasing** — supplier orders, shared cost allocation, receiving
+- **Inventory** — FIFO lot tracking, warehouse stock, Ozon sync
+- **Analytics** — unit economics, P&L, DDS reports
+- **Pricing** — breakeven calculator, commission rates
+- **Logistics** — SKU movement matrix, Ozon supply orders
+- **MCP** — 54 AI tools for Claude, ChatGPT, and other AI clients
+
+## Quick Start
+
+```bash
+git clone https://github.com/teploe-odealko/openmpflow
+cd openmpflow
+cp .env.example .env
+docker compose up
+```
+
+Open [http://localhost:3000](http://localhost:3000) and log in with `admin` / `admin`.
+
+## Architecture
+
+```
+┌─────────────┐     ┌─────────────┐     ┌──────────────┐
+│  Admin UI   │────▶│   Proxy     │────▶│  PostgreSQL   │
+│  (nginx)    │     │  (FastAPI)  │     │              │
+│  :3000      │     │  :8000      │     │  :5432       │
+└─────────────┘     └─────────────┘     └──────────────┘
+                          │
+                    ┌─────┴─────┐
+                    │  MCP /mcp │
+                    │  54 tools │
+                    └───────────┘
+```
+
+- **Admin UI** — vanilla JS SPA served by nginx, proxies API requests to backend
+- **Proxy** — FastAPI with 4 API surfaces: Admin API, Tool API, MCP Server, OAuth
+- **PostgreSQL** — all data, migrations tracked via `schema_migrations` table
+
+## Next Steps
+
+<Cards>
+  <Card title="Getting Started" href="/docs/guides/getting-started" description="Install and configure OpenMPFlow" />
+  <Card title="Plugin Development" href="/docs/guides/plugin-development" description="Build your first plugin" />
+  <Card title="MCP Integration" href="/docs/guides/mcp" description="Connect AI clients" />
+  <Card title="Architecture" href="/docs/concepts/architecture" description="How it all works" />
+</Cards>

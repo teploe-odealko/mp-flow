@@ -1,0 +1,40 @@
+{
+  "name": "ali1688",
+  "version": "0.1.0",
+  "title": "1688.com Suppliers",
+  "description": "Enrich product cards with supplier data from 1688.com — photos, prices, SKU variants",
+  "author": "openmpflow",
+
+  "engine": {
+    "core_version": ">=1.0.0",
+    "plugin_api_version": "1"
+  },
+
+  "contributes": {
+    "cardTabs": [
+      { "id": "cardTabSupplier", "label": "1688 Supplier" }
+    ]
+  },
+
+  "provides_kinds": ["supplier"],
+  "reads_kinds": [],
+
+  "mcp": {
+    "tools": [
+      {
+        "name": "plugin_ali1688_preview",
+        "description": "Preview a 1688.com product by URL — returns title, images, prices, SKU variants",
+        "handler": "preview"
+      },
+      {
+        "name": "plugin_ali1688_enrich_card",
+        "description": "Enrich a master card with supplier data from a 1688.com URL",
+        "handler": "enrich_card",
+        "requires_confirmation": true
+      }
+    ]
+  },
+
+  "frontend": { "main": "plugin.js" },
+  "backend": { "apiPrefix": "ali1688" }
+}

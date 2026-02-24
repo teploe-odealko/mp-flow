@@ -1,0 +1,60 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mpflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mpflow_dev_2026}
+      POSTGRES_DB: mpflow
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+      - ./migrations:/migrations:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mpflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  proxy:
+    build: ./proxy
+    environment:
+      DATABASE_URL: postgresql://mpflow:${POSTGRES_PASSWORD:-mpflow_dev_2026}@postgres:5432/mpflow
+      HMAC_SECRET: ${HMAC_SECRET:-dev-hmac-secret-change-in-production}
+      BASE_URL: ${BASE_URL:-http://localhost:8000}
+      ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-admin}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-admin}
+      ADMIN_CORS_ORIGINS: ${ADMIN_CORS_ORIGINS:-http://localhost:3000}
+      HOST: 0.0.0.0
+      PORT: 8000
+      # Optional integrations
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      TMAPI_API_TOKEN: ${TMAPI_API_TOKEN:-}
+      OZON_CLIENT_ID: ${OZON_CLIENT_ID:-}
+      OZON_API_KEY: ${OZON_API_KEY:-}
+      LOGTO_ENDPOINT: ${LOGTO_ENDPOINT:-}
+      LOGTO_API_RESOURCE: ${LOGTO_API_RESOURCE:-}
+      LOGTO_MCP_CLIENT_ID: ${LOGTO_MCP_CLIENT_ID:-}
+    ports:
+      - "${PROXY_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  admin-ui:
+    build: ./admin-ui
+    ports:
+      - "${ADMIN_UI_PORT:-3000}:80"
+    depends_on:
+      proxy:
+        condition: service_healthy
+
+volumes:
+  postgres-data:

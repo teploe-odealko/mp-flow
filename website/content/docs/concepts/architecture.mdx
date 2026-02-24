@@ -1,0 +1,107 @@
+---
+title: Architecture
+description: How OpenMPFlow is built — services, API surfaces, data flow
+---
+
+## Services
+
+OpenMPFlow runs as three Docker containers:
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌──────────────────┐
+│    Admin UI     │────▶│     Proxy       │────▶│   PostgreSQL     │
+│    (nginx)      │     │   (FastAPI)     │     │                  │
+│    port 3000    │     │   port 8000     │     │   port 5432      │
+└─────────────────┘     └─────────────────┘     └──────────────────┘
+```
+
+- **Admin UI** — vanilla JS SPA with Tailwind CSS, served by nginx
+- **Proxy** — FastAPI backend with 4 API surfaces
+- **PostgreSQL** — all data, 24+ migration files
+
+## Four API Surfaces
+
+The Proxy serves four distinct APIs from one FastAPI app:
+
+### 1. Admin ERP API (`/v1/admin/*`)
+
+The main API used by the Admin UI. 15 domain routers:
+cards, orders, sales, finance, reports, inventory, logistics, demand, pricing,
+ozon sync, integrations, promo, settings, users, API keys.
+
+**Auth:** API keys (`mpk_`), legacy HMAC tokens.
+
+### 2. MCP Server (`/mcp`)
+
+54 tools via Streamable HTTP transport. Used by AI clients (Claude, ChatGPT).
+
+**Auth:** API keys or OAuth (Logto JWT).
+
+### 3. Tool API (`/v1/tools/invoke`)
+
+Called by OpenClaw agents in E2B sandboxes. Routes through `TOOL_HANDLERS` dict.
+
+### 4. OAuth Endpoints (root-level)
+
+RFC-compliant OAuth proxy to Logto for MCP client authorization:
+- `/.well-known/oauth-protected-resource`
+- `/.well-known/oauth-authorization-server`
+- `/oauth/authorize`, `/oauth/token`, `/oauth/register`
+
+## Data Model
+
+Core entities follow the seller lifecycle:
+
+```
+Card (SKU) → Supplier Order → FIFO Lot → Sale → Profit
+```
+
+### Key Tables
+
+| Table | Purpose |
+|-------|---------|
+| `master_cards` | Product catalog (SKU, title, attributes, sources) |
+| `supplier_orders` | Purchase orders with shared cost allocation |
+| `supplier_order_items` | Line items with CNY prices |
+| `fifo_lots` | Inventory lots for FIFO cost tracking |
+| `card_sales` | Sales with COGS from FIFO allocation |
+| `finance_transactions` | Manual income/expense records |
+| `stock_movements` | Inventory movement audit trail |
+| `admin_users` | User accounts with tenant isolation |
+| `admin_api_keys` | API keys (SHA256 hashed, scoped) |
+
+### Tenant Isolation
+
+All queries are scoped by `user_id`. Every table has a `user_id` column
+and queries always include `WHERE user_id = $1`.
+
+## Plugin Architecture
+
+Plugins extend both frontend and backend:
+
+```
+proxy/src/plugins/{name}/      # Backend
+  manifest.json                # Declares contributions
+  routes.py                    # HTTP endpoints
+  schema.sql                   # Private DB schema
+
+admin-ui/plugins/{name}/       # Frontend
+  plugin.js                    # ESM module
+```
+
+- **Discovery** at startup: scan `plugins/*/manifest.json`
+- **Schema isolation**: each plugin gets `CREATE SCHEMA plugin_{name}`
+- **Route mounting**: `POST /v1/admin/plugins/{prefix}/...`
+- **Frontend loading**: lazy `import()` when user navigates to plugin tab
+
+See [Plugin Development](/docs/guides/plugin-development) for the full guide.
+
+## Migrations
+
+SQL migrations in `/migrations/` are tracked by `schema_migrations` table.
+The `scripts/init-db.sh` runner:
+
+1. Creates `schema_migrations` table if not exists
+2. Scans `init.sql` + `0*.sql` files in order
+3. Skips already-applied migrations (idempotent)
+4. Records each applied migration with timestamp

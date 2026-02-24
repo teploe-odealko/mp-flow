@@ -1,0 +1,339 @@
+---
+title: Plugin Development
+description: Build custom plugins for OpenMPFlow — frontend card tabs, backend API, schema isolation
+---
+
+OpenMPFlow uses a VS Code-style plugin system. A plugin can add **card tabs** to the admin UI,
+**backend API endpoints**, and **MCP tools** for AI agents — all from a single manifest.
+
+## Plugin Structure
+
+A plugin lives in two directories:
+
+```
+proxy/src/plugins/my-plugin/     # Backend (Python)
+  manifest.json                  # Plugin manifest — declares everything
+  __init__.py                    # Empty init file
+  schema.sql                     # Private tables (optional)
+  routes.py                      # HTTP endpoints (optional)
+  service.py                     # Business logic (optional)
+
+admin-ui/plugins/my-plugin/      # Frontend (JavaScript ESM)
+  plugin.js                      # UI components
+```
+
+## Step 1: Create the Manifest
+
+The manifest declares what your plugin provides and contributes. This is read at startup
+before any code runs.
+
+```json title="proxy/src/plugins/my-plugin/manifest.json"
+{
+  "name": "my-plugin",
+  "version": "0.1.0",
+  "title": "My Plugin",
+  "description": "What this plugin does",
+  "author": "your-name",
+
+  "engine": {
+    "core_version": ">=1.0.0",
+    "plugin_api_version": "1"
+  },
+
+  "contributes": {
+    "cardTabs": [
+      { "id": "cardTabMyPlugin", "label": "My Tab" }
+    ]
+  },
+
+  "provides_kinds": ["my-data-kind"],
+  "reads_kinds": [],
+
+  "frontend": { "main": "plugin.js" },
+  "backend": { "apiPrefix": "my-plugin" }
+}
+```
+
+### Manifest Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Unique identifier (kebab-case) |
+| `version` | Yes | Semver version string |
+| `title` | No | Human-readable display name |
+| `description` | No | Short description |
+| `engine.core_version` | No | Minimum core version (future use) |
+| `engine.plugin_api_version` | No | Plugin API compatibility |
+| `contributes.cardTabs` | No | Card tabs this plugin adds to the card detail page |
+| `provides_kinds` | No | Data kinds this plugin writes (e.g., `"supplier"`) |
+| `reads_kinds` | No | Data kinds this plugin reads from other plugins |
+| `frontend.main` | No | Entry point JS file (ESM module) |
+| `backend.apiPrefix` | No | URL prefix for backend routes |
+| `mcp.tools` | No | MCP tools this plugin exposes |
+
+## Step 2: Frontend — Card Tab
+
+Create the frontend module. It receives a `PluginHost` API and registers renderers for
+the tabs declared in the manifest.
+
+```js title="admin-ui/plugins/my-plugin/plugin.js"
+export function activate(host) {
+  host.registerCardTabRenderer("cardTabMyPlugin", async (container, cardDetail) => {
+    const item = cardDetail?.item;
+    if (!item) {
+      container.innerHTML = '<p class="text-sm text-slate-400">No card data</p>';
+      return;
+    }
+
+    // Render your UI
+    container.innerHTML = `
+      <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200
+                  dark:border-slate-800 p-5">
+        <h3 class="text-base font-semibold text-slate-900 dark:text-white mb-3">
+          My Plugin
+        </h3>
+        <p class="text-sm text-slate-500">
+          Card: ${host.esc(item.title)} (${host.esc(item.sku)})
+        </p>
+      </div>
+    `;
+  });
+}
+```
+
+### PluginHost API
+
+The `host` object provides these utilities:
+
+| Method | Description |
+|--------|-------------|
+| `host.apiRequest(path, opts)` | Make authenticated API call (returns JSON) |
+| `host.esc(str)` | HTML-escape a string |
+| `host.formatMoney(value, currency)` | Format currency value |
+| `host.formatDate(isoString)` | Format ISO date for display |
+| `host.showToast(message)` | Show a toast notification |
+| `host.getState()` | Get current app state (read-only copy) |
+| `host.getCardDetail()` | Get the currently open card detail |
+| `host.registerCardTabRenderer(tabId, fn)` | Register a tab renderer |
+| `host.registerSectionRenderer(sectionId, fn)` | Register a section renderer |
+
+### Calling Your Backend
+
+Use `host.apiRequest` to call your plugin's backend endpoints:
+
+```js
+// GET request
+const data = await host.apiRequest("/plugins/my-plugin/items");
+
+// POST request
+await host.apiRequest("/plugins/my-plugin/process", {
+  method: "POST",
+  body: { card_id: item.id, url: "https://..." },
+});
+```
+
+The path is relative to `/v1/admin`. Auth headers are added automatically.
+
+## Step 3: Backend — Routes & Service
+
+### Routes
+
+Create `routes.py` with a `create_router` function that receives a `PluginContext`:
+
+```python title="proxy/src/plugins/my-plugin/routes.py"
+from fastapi import APIRouter, Depends, HTTPException
+from proxy.src.plugins.context import PluginContext
+from proxy.src.routes.admin.deps import get_current_user
+from pydantic import BaseModel
+
+
+class ProcessRequest(BaseModel):
+    url: str
+
+
+def create_router(ctx: PluginContext) -> APIRouter:
+    router = APIRouter(tags=["Plugin: my-plugin"])
+
+    @router.get("/items")
+    async def list_items(user: dict = Depends(get_current_user)):
+        """List items from plugin's private schema."""
+        conn = await ctx.get_plugin_conn()
+        try:
+            rows = await conn.fetch("SELECT * FROM my_items WHERE user_id = $1", user["id"])
+            return {"items": [dict(r) for r in rows]}
+        finally:
+            await ctx.pool.release(conn)
+
+    @router.post("/process/{card_id}")
+    async def process_card(
+        card_id: str,
+        payload: ProcessRequest,
+        user: dict = Depends(get_current_user),
+    ):
+        """Process and enrich a card with external data."""
+        # Your business logic here
+        data = {"title": "Example", "price": 10.5}
+
+        # Write enrichment to the card
+        source_key = f"my-plugin:{card_id[:8]}"
+        await ctx.enrich_card(
+            card_id=card_id,
+            user_id=user["id"],
+            source_key=source_key,
+            kind="my-data-kind",
+            data=data,
+        )
+        return {"ok": True}
+
+    return router
+```
+
+Routes are mounted at `/v1/admin/plugins/{apiPrefix}/`.
+
+### PluginContext API
+
+| Method | Description |
+|--------|-------------|
+| `ctx.enrich_card(card_id, user_id, source_key, kind, data)` | Write data to card's `attributes.sources` |
+| `ctx.read_card(card_id, user_id)` | Read a card (scoped by user) |
+| `ctx.get_plugin_conn()` | Get a DB connection with `search_path = plugin_{name}` |
+| `ctx.pool` | Direct access to the asyncpg pool |
+
+<Callout type="warn">
+**Source key namespacing**: `source_key` must start with your plugin name followed by a colon (e.g., `"my-plugin:abc123"`). This is enforced — an error is raised otherwise.
+</Callout>
+
+## Step 4: Private Database Schema (Optional)
+
+Plugins get an isolated PostgreSQL schema (`plugin_{name}`). Define your tables
+in `schema.sql`:
+
+```sql title="proxy/src/plugins/my-plugin/schema.sql"
+CREATE TABLE IF NOT EXISTS my_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    card_id UUID REFERENCES public.master_cards(id),
+    data JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_my_items_user ON my_items (user_id);
+```
+
+This runs automatically at startup with `search_path = plugin_{name}, public`:
+- Your tables are created in the `plugin_{name}` schema
+- You can reference `public.master_cards` and other core tables (read-only)
+- Core code cannot accidentally access your private tables
+
+## Step 5: MCP Tools (Optional)
+
+Declare MCP tools in the manifest to make your plugin accessible to AI agents:
+
+```json title="manifest.json (excerpt)"
+{
+  "mcp": {
+    "tools": [
+      {
+        "name": "plugin_my_plugin_preview",
+        "description": "Preview external data for a product",
+        "handler": "preview"
+      },
+      {
+        "name": "plugin_my_plugin_enrich",
+        "description": "Enrich a card with external data",
+        "handler": "enrich_card",
+        "requires_confirmation": true
+      }
+    ]
+  }
+}
+```
+
+Tool names must follow the pattern `plugin_{name}_{action}` to prevent collisions.
+
+Handlers reference functions in `service.py` that are called by both HTTP routes and MCP.
+
+## Cross-Plugin Data: Enrichment Mediator
+
+Plugins don't depend on each other directly. They communicate through the
+`attributes.sources` JSONB field on master cards:
+
+```json
+{
+  "sources": {
+    "ali1688:abc123": {
+      "kind": "supplier",
+      "provider": "ali1688",
+      "data": { "images": [...], "price_min": 2.32 },
+      "updated_at": "2026-02-10T23:15:02Z"
+    },
+    "my-plugin:def456": {
+      "kind": "my-data-kind",
+      "provider": "my-plugin",
+      "data": { ... },
+      "updated_at": "2026-02-24T12:00:00Z"
+    }
+  }
+}
+```
+
+- Each entry is keyed by `{plugin_name}:{unique_id}`
+- The `kind` field enables cross-plugin reading without direct dependencies
+- Plugin A writes `kind: "supplier"`, Plugin B reads all entries with `kind: "supplier"`
+
+### Reading Other Plugin Data
+
+```python
+# In your service.py
+def get_supplier_photos(attributes: dict) -> list[str]:
+    """Collect images from all sources with kind='supplier'."""
+    sources = attributes.get("sources", {})
+    images = []
+    for entry in sources.values():
+        if entry.get("kind") == "supplier":
+            images.extend(entry.get("data", {}).get("images", []))
+    return images
+```
+
+## Example: ali1688 Plugin
+
+The built-in `ali1688` plugin is a complete reference implementation:
+
+```
+proxy/src/plugins/ali1688/
+  manifest.json       # Contributes cardTab "1688 Supplier"
+  __init__.py
+  schema.sql          # Cache tables
+  routes.py           # GET /preview, POST /enrich/{card_id}
+  service.py          # Business logic
+
+admin-ui/plugins/ali1688/
+  plugin.js           # Card tab UI — shows supplier data or enrich form
+```
+
+Key patterns used:
+- `create_router(ctx)` receives `PluginContext` for DB and enrichment access
+- `service.py` functions shared between HTTP routes and MCP handlers
+- Frontend uses `host.apiRequest()` to call backend
+- Enrichment stored as `kind: "supplier"` in card attributes
+
+## Enabling/Disabling Plugins
+
+Users can toggle plugins in the **Плагины** section of the admin sidebar.
+Disabled plugins don't contribute card tabs. The state is stored in `localStorage`.
+
+## Lifecycle Summary
+
+```
+Startup:
+1. discover_plugins() — scans proxy/src/plugins/*/manifest.json
+2. ensure_plugin_schemas() — CREATE SCHEMA IF NOT EXISTS for each plugin
+3. mount_plugin_routes() — mounts backend routes at /v1/admin/plugins/{prefix}
+4. GET /v1/admin/plugins — returns manifests to frontend
+
+Frontend:
+5. loadPlugins() — fetches manifests, registers contributions
+6. injectPluginCardTabs() — adds tab buttons to card detail page
+7. activatePlugin() — lazy-loads plugin.js via dynamic import()
+8. module.activate(PluginHost) — plugin registers its renderers
+```

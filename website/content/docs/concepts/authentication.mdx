@@ -1,0 +1,67 @@
+---
+title: Authentication
+description: How authentication works in OpenMPFlow — API keys, passwords, OAuth
+---
+
+## Authentication Methods
+
+OpenMPFlow supports three authentication methods, checked in order:
+
+### 1. API Keys (`mpk_` prefix)
+
+Recommended for programmatic access and MCP clients.
+
+```bash
+curl -H "Authorization: Bearer mpk_your_key_here" \
+  https://proxy.mp-flow.ru/v1/admin/master-cards
+```
+
+- Generated in Admin UI → **MCP** section
+- Stored as SHA256 hash in `admin_api_keys` table
+- Support scopes, rate limits, and expiry
+- Prefix `mpk_` for easy identification
+
+### 2. Password Login (HMAC Tokens)
+
+Used by the Admin UI web interface.
+
+```bash
+# Login
+curl -X POST https://proxy.mp-flow.ru/v1/admin/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "admin"}'
+
+# Response:
+# {"access_token": "eyJ...", "token_type": "bearer", "expires_in": 86400}
+
+# Use the token
+curl -H "Authorization: Bearer eyJ..." \
+  https://proxy.mp-flow.ru/v1/admin/master-cards
+```
+
+- Bootstrap credentials set via `ADMIN_BOOTSTRAP_USERNAME` / `ADMIN_BOOTSTRAP_PASSWORD`
+- Token TTL: 24 hours (configurable via `ADMIN_TOKEN_TTL_HOURS`)
+- HMAC-signed, not JWT
+
+### 3. Logto JWT (OAuth/OIDC)
+
+Used by MCP OAuth flow (ChatGPT, external clients).
+
+- Self-hosted Logto at `auth.mp-flow.ru`
+- ES384 JWT tokens validated via JWKS
+- Audience: `https://proxy.mp-flow.ru/api`
+
+## Token Detection Logic
+
+The proxy automatically detects which method is being used:
+
+```python
+if token.startswith("mpk_"):     # → API key path
+elif len(token.split(".")) == 3: # → JWT path (Logto)
+else:                            # → Legacy HMAC path
+```
+
+## CORS
+
+- Root app: `*` (required for MCP Streamable HTTP — browser clients make preflight requests)
+- Admin API: additional origins via `ADMIN_CORS_ORIGINS` environment variable

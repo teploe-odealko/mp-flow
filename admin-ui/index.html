@@ -1,0 +1,1458 @@
+<!doctype html>
+<html lang="ru" class="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenMPFlow Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'] },
+        },
+      },
+    };
+  </script>
+  <link rel="stylesheet" href="./styles.css" />
+  <script type="module">
+    // Logto SDK loaded dynamically only when OIDC auth mode is active
+    window.__LogtoClient = null;
+  </script>
+</head>
+<body class="bg-slate-50 font-sans text-slate-800 dark:bg-slate-950 dark:text-slate-200 antialiased">
+
+  <!-- ============================================================ -->
+  <!-- LOADING (shown while Logto SDK initializes)                  -->
+  <!-- ============================================================ -->
+  <div id="loadingView" class="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900">
+    <div class="text-center">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm mx-auto mb-4">OM</div>
+      <div class="text-sm text-slate-400">Загрузка...</div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- LOGIN                                                        -->
+  <!-- ============================================================ -->
+  <main id="loginView" class="hidden min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 px-4">
+    <section class="w-full max-w-md bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-8 text-center">
+      <div class="flex items-center gap-3 mb-6 justify-center">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm">OM</div>
+        <div class="text-left">
+          <div class="text-xs font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">OpenMPFlow</div>
+          <div class="text-xs text-slate-500">ERP Console</div>
+        </div>
+      </div>
+      <h1 class="text-2xl font-bold text-slate-900 dark:text-white mb-2">Добро пожаловать</h1>
+      <p class="text-sm text-slate-500 mb-6">Войдите для доступа к системе</p>
+
+      <form id="passwordLoginForm" class="hidden space-y-3">
+        <input id="loginUsername" type="text" placeholder="Логин" autocomplete="username"
+          class="w-full px-3 py-2.5 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        <input id="loginPassword" type="password" placeholder="Пароль" autocomplete="current-password"
+          class="w-full px-3 py-2.5 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-4 rounded-lg transition-colors text-sm">
+          Войти
+        </button>
+      </form>
+
+      <p id="loginError" class="mt-3 text-sm text-red-500 min-h-[20px]"></p>
+    </section>
+  </main>
+
+  <!-- ============================================================ -->
+  <!-- APP SHELL                                                    -->
+  <!-- ============================================================ -->
+  <div id="appView" class="hidden">
+    <div class="flex min-h-screen">
+
+      <!-- SIDEBAR -->
+      <aside id="sidebarEl" class="w-60 bg-slate-900 text-slate-400 flex flex-col flex-shrink-0 fixed inset-y-0 left-0 z-40 transition-transform lg:translate-x-0">
+        <!-- Logo -->
+        <div class="flex items-center gap-3 px-5 py-5 border-b border-slate-800">
+          <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">OM</div>
+          <div class="min-w-0">
+            <div class="text-xs font-bold uppercase tracking-widest text-white">OpenMPFlow</div>
+            <div class="text-[11px] text-slate-500">ERP Console</div>
+          </div>
+        </div>
+
+        <!-- Nav -->
+        <nav class="flex-1 px-3 py-4 space-y-1">
+          <button class="menu-item active" data-section="cardsSection">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg>
+            <span>Каталог</span>
+          </button>
+          <button class="menu-item" data-section="ordersSection">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007zM8.625 10.5a.375.375 0 11-.75 0 .375.375 0 01.75 0zm7.5 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"/></svg>
+            <span>Закупки</span>
+          </button>
+          <button class="menu-item" data-section="analyticsSection">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
+            <span>Аналитика</span>
+          </button>
+          <button class="menu-item" data-section="demandSection">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z"/></svg>
+            <span>Планирование</span>
+          </button>
+          <button class="menu-item" data-section="logisticsSection">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12"/></svg>
+            <span>Логистика</span>
+          </button>
+          <button class="menu-item" data-section="financeSection">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z"/></svg>
+            <span>Финансы</span>
+          </button>
+          <button class="menu-item" data-section="pricesSection">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span>Цены</span>
+          </button>
+          <button class="menu-item" data-section="promoSection">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 110-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 01-1.44-4.282m3.102.069a18.03 18.03 0 01-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 018.835 2.535M10.34 6.66a23.847 23.847 0 008.835-2.535m0 0A23.74 23.74 0 0018.795 3m.38 1.125a23.91 23.91 0 011.014 5.395m-1.014 8.855c-.118.38-.245.754-.38 1.125m.38-1.125a23.91 23.91 0 001.014-5.395m0-3.46c.495.413.811 1.035.811 1.73 0 .695-.316 1.317-.811 1.73m0-3.46a24.347 24.347 0 010 3.46"/></svg>
+            <span>Продвижение</span>
+          </button>
+          <button class="menu-item" data-section="syncSection">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"/></svg>
+            <span>Синхронизация</span>
+          </button>
+          <button class="menu-item" data-section="mcpSection">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"/></svg>
+            <span>MCP</span>
+          </button>
+          <button class="menu-item" data-section="pluginsSection">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M14.25 6.087c0-.355.186-.676.401-.959.221-.29.349-.634.349-1.003 0-1.036-1.007-1.875-2.25-1.875s-2.25.84-2.25 1.875c0 .369.128.713.349 1.003.215.283.401.604.401.959v0a.64.64 0 01-.657.643 48.39 48.39 0 01-4.163-.3c.186 1.613.293 3.25.315 4.907a.656.656 0 01-.658.663v0c-.355 0-.676-.186-.959-.401a1.647 1.647 0 00-1.003-.349c-1.036 0-1.875 1.007-1.875 2.25s.84 2.25 1.875 2.25c.369 0 .713-.128 1.003-.349.283-.215.604-.401.959-.401v0c.31 0 .555.26.532.57a48.039 48.039 0 01-.642 5.056c1.518.19 3.058.309 4.616.354a.64.64 0 00.657-.643v0c0-.355-.186-.676-.401-.959a1.647 1.647 0 01-.349-1.003c0-1.035 1.008-1.875 2.25-1.875 1.243 0 2.25.84 2.25 1.875 0 .369-.128.713-.349 1.003-.215.283-.401.604-.401.959v0c0 .333.277.599.61.58a48.1 48.1 0 005.427-.63 48.05 48.05 0 00.582-4.717.532.532 0 00-.533-.57v0c-.355 0-.676.186-.959.401-.29.221-.634.349-1.003.349-1.035 0-1.875-1.007-1.875-2.25s.84-2.25 1.875-2.25c.37 0 .713.128 1.003.349.283.215.604.401.959.401v0a.656.656 0 00.658-.663 48.422 48.422 0 00-.37-5.36c-1.886.342-3.81.574-5.766.689a.578.578 0 01-.61-.58v0z"/></svg>
+            <span>Плагины</span>
+          </button>
+          <button class="menu-item" data-section="settingsSection">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            <span>Настройки</span>
+          </button>
+        </nav>
+
+        <!-- Footer -->
+        <div class="px-4 py-4 border-t border-slate-800 space-y-3">
+          <div id="currentUser" class="text-xs text-slate-500 truncate"></div>
+          <a href="/docs" target="_blank" rel="noopener" class="flex items-center gap-2 text-xs text-slate-500 hover:text-indigo-400 transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+            API-документация
+          </a>
+          <div class="flex items-center gap-2">
+            <button id="themeToggleBtn" class="p-2 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors" title="Toggle theme">
+              <svg id="themeIconLight" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z"/></svg>
+              <svg id="themeIconDark" class="w-4 h-4 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"/></svg>
+            </button>
+            <button id="logoutBtn" class="flex-1 text-xs text-slate-500 hover:text-white py-2 px-3 rounded-lg hover:bg-slate-800 transition-colors text-left">
+              Выйти
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Mobile sidebar overlay -->
+      <div id="sidebarOverlay" class="hidden fixed inset-0 bg-black/50 z-30 lg:hidden"></div>
+
+      <!-- MAIN CONTENT -->
+      <section class="flex-1 lg:ml-60 min-h-screen flex flex-col">
+        <!-- Mobile topbar -->
+        <div class="lg:hidden flex items-center gap-3 px-4 py-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+          <button id="mobileMenuBtn" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/></svg>
+          </button>
+          <span class="text-sm font-semibold">OpenMPFlow</span>
+        </div>
+
+        <!-- Hidden elements for JS compatibility -->
+        <h1 id="sectionTitle" class="hidden">Каталог</h1>
+        <p id="sectionSubtitle" class="hidden">Карточки и интеграции</p>
+
+        <!-- ============================================================ -->
+        <!-- CATALOG SECTION                                              -->
+        <!-- ============================================================ -->
+        <section id="cardsSection" class="section-panel flex-1 p-6 space-y-5">
+          <!-- Section header -->
+          <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div class="flex-1 min-w-0">
+              <h1 class="text-xl font-bold text-slate-900 dark:text-white">Каталог</h1>
+              <p class="text-sm text-slate-500 mt-0.5">Карточки товаров, остатки и интеграции</p>
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0">
+              <span id="cardsFreshness" class="text-xs text-slate-400"></span>
+              <button id="openOzonModalBtn" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors" title="Ozon Integration">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                <span>Ozon</span>
+                <span id="ozonBadge" class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-100 dark:bg-slate-700 text-slate-500"></span>
+              </button>
+              <button id="openCreateCardDrawerBtn" class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                Новая карточка
+              </button>
+            </div>
+          </div>
+
+          <!-- Filters bar -->
+          <div class="flex items-center gap-3 flex-wrap">
+            <div class="relative flex-1 min-w-[200px] max-w-md">
+              <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
+              <input id="cardsSearchInput" type="search" placeholder="Поиск по SKU, названию, Offer ID..."
+                class="w-full pl-10 pr-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition placeholder-slate-400" />
+            </div>
+            <label class="inline-flex items-center gap-2 text-xs text-slate-500 cursor-pointer select-none">
+              <input id="showArchivedToggle" type="checkbox" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+              Архивные
+            </label>
+            <button id="reloadCardsBtn" class="p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-500 transition-colors" title="Refresh">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"/></svg>
+            </button>
+          </div>
+
+          <!-- Cards table -->
+          <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+            <div class="overflow-x-auto">
+              <table class="w-full min-w-[600px]">
+                <thead id="cardsTableHead">
+                  <tr class="bg-slate-50 dark:bg-slate-800/50">
+                    <th data-sort="sku" class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-pointer select-none hover:text-slate-700 dark:hover:text-slate-300">SKU <span class="sort-arrow"></span></th>
+                    <th data-sort="title" class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-pointer select-none hover:text-slate-700 dark:hover:text-slate-300">Товар <span class="sort-arrow"></span></th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Закупка</th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Offer ID</th>
+                  </tr>
+                </thead>
+                <tbody id="cardsTableBody" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================ -->
+        <!-- ORDERS SECTION                                               -->
+        <!-- ============================================================ -->
+        <section id="ordersSection" class="section-panel hidden flex-1 p-6 space-y-5">
+          <!-- Section header -->
+          <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div class="flex-1 min-w-0">
+              <h1 class="text-xl font-bold text-slate-900 dark:text-white">Закупки</h1>
+              <p class="text-sm text-slate-500 mt-0.5">Заказы поставщикам, приёмка и расходы</p>
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0">
+              <button id="openInitialBalanceBtn" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                Остатки
+              </button>
+              <button id="openOrderDrawerBtn" class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                Новый заказ
+              </button>
+            </div>
+          </div>
+
+          <!-- Orders toolbar -->
+          <div class="flex items-center gap-3 flex-wrap">
+            <div class="relative flex-1 min-w-[200px] max-w-md">
+              <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
+              <input id="ordersSearchInput" type="search" placeholder="Поиск по номеру, поставщику..."
+                class="w-full pl-10 pr-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition placeholder-slate-400" />
+            </div>
+            <button id="reloadOrdersBtn" class="p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-500 transition-colors" title="Refresh">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"/></svg>
+            </button>
+          </div>
+
+          <!-- Orders table -->
+          <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+            <div class="overflow-x-auto">
+              <table class="w-full min-w-[700px]">
+                <thead id="ordersTableHead">
+                  <tr class="bg-slate-50 dark:bg-slate-800/50">
+                    <th class="px-3 py-3 w-10"></th>
+                    <th data-sort="created_at" class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-pointer select-none hover:text-slate-700 dark:hover:text-slate-300">Номер <span class="sort-arrow"></span></th>
+                    <th data-sort="supplier_name" class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-pointer select-none hover:text-slate-700 dark:hover:text-slate-300">Поставщик <span class="sort-arrow"></span></th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Статус</th>
+                    <th class="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Сумма</th>
+                    <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 text-right">Действия</th>
+                  </tr>
+                </thead>
+                <tbody id="ordersTableBody" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================ -->
+        <!-- ANALYTICS SECTION                                            -->
+        <!-- ============================================================ -->
+        <section id="analyticsSection" class="section-panel hidden flex-1 p-6 space-y-5">
+          <!-- Section header + tabs -->
+          <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div class="flex-1">
+              <h1 class="text-xl font-bold text-slate-900 dark:text-white">Аналитика</h1>
+              <p class="text-sm text-slate-500 mt-0.5">Юнит-экономика, P&L, склад</p>
+            </div>
+            <span id="analyticsFreshness" class="text-xs text-slate-400"></span>
+          </div>
+
+          <!-- Tab switcher -->
+          <div class="flex gap-1 bg-slate-100 dark:bg-slate-800/70 rounded-lg p-1 w-fit">
+            <button id="tabBtnEconomy" onclick="switchAnalyticsTab('economy')" class="analytics-tab-btn px-4 py-1.5 text-sm font-medium rounded-md transition-colors">Экономика</button>
+            <button id="tabBtnStock" onclick="switchAnalyticsTab('stock')" class="analytics-tab-btn px-4 py-1.5 text-sm font-medium rounded-md transition-colors">Склад</button>
+          </div>
+
+          <!-- TAB: Economy (UE + P&L) -->
+          <div id="analyticsTabEconomy" class="space-y-5">
+            <!-- Unit Economics -->
+            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+              <div class="flex flex-col sm:flex-row sm:items-center gap-3 p-4 border-b border-slate-200 dark:border-slate-800">
+                <h2 class="text-base font-semibold text-slate-900 dark:text-white flex-1">Юнит-экономика по SKU</h2>
+                <div class="flex items-center gap-2">
+                  <div class="flex items-center gap-2 bg-slate-100 dark:bg-slate-800/70 rounded-lg px-3 py-2">
+                    <span class="text-xs font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap">с</span>
+                    <input type="date" id="ueDateFrom" class="bg-transparent text-sm font-medium text-slate-800 dark:text-slate-200 outline-none cursor-pointer" />
+                    <span class="text-xs font-medium text-slate-400 dark:text-slate-500 mx-1">—</span>
+                    <input type="date" id="ueDateTo" class="bg-transparent text-sm font-medium text-slate-800 dark:text-slate-200 outline-none cursor-pointer" />
+                  </div>
+                </div>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full" id="ueTable">
+                  <thead id="ueTableHead">
+                  </thead>
+                  <tbody id="ueTableBody" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+                  <tfoot id="ueTableFoot" class="border-t-2 border-slate-300 dark:border-slate-600"></tfoot>
+                </table>
+              </div>
+            </div>
+
+            <!-- P&L Report -->
+            <div id="pnlCard" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+              <div class="flex items-center gap-3 p-4 border-b border-slate-200 dark:border-slate-800">
+                <h2 class="text-base font-semibold text-slate-900 dark:text-white flex-1">P&L за период</h2>
+                <div class="flex items-center gap-2">
+                  <label class="text-xs text-slate-500">УСН</label>
+                  <input type="number" id="usnRateInput" step="0.1" min="0" max="100" value="7.0" class="w-14 px-1.5 py-1 text-xs text-right border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                  <span class="text-xs text-slate-500">%</span>
+                  <button id="saveUsnBtn" class="px-2 py-1 text-[10px] font-medium border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-500 transition-colors hidden">Сохр.</button>
+                </div>
+              </div>
+              <div id="pnlBody" class="p-4">
+                <p class="text-sm text-slate-400">Загрузка P&L...</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB: Stock Valuation -->
+          <div id="analyticsTabStock" class="space-y-5 hidden">
+            <div id="stockValCard" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+              <div class="flex items-center gap-3 p-4 border-b border-slate-200 dark:border-slate-800">
+                <h2 class="text-base font-semibold text-slate-900 dark:text-white flex-1">Оценка склада</h2>
+              </div>
+              <div id="stockValSummary" class="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 border-b border-slate-100 dark:border-slate-800"></div>
+              <div class="overflow-x-auto">
+                <table class="w-full" id="stockValTable">
+                  <thead id="stockValHead"></thead>
+                  <tbody id="stockValBody" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+                  <tfoot id="stockValFoot" class="border-t-2 border-slate-300 dark:border-slate-600"></tfoot>
+                </table>
+              </div>
+            </div>
+          </div>
+
+        </section>
+
+        <!-- ============================================================ -->
+        <!-- DEMAND PLANNING SECTION                                      -->
+        <!-- ============================================================ -->
+        <section id="demandSection" class="section-panel hidden flex-1 p-6 space-y-5">
+          <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div class="flex-1 min-w-0">
+              <h1 class="text-xl font-bold text-slate-900 dark:text-white">Планирование закупок</h1>
+              <p class="text-sm text-slate-500 mt-0.5">Что и сколько заказать у поставщика</p>
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0">
+              <span id="demandFreshness" class="text-xs text-slate-400"></span>
+              <button id="generatePlanBtn" class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                Сгенерировать план
+              </button>
+            </div>
+          </div>
+
+          <!-- Planning params: lead_time + buffer -->
+          <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-4">
+            <div class="flex flex-col sm:flex-row sm:items-end gap-4">
+              <div class="flex items-end gap-3 flex-1 min-w-0">
+                <label class="block">
+                  <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Срок поставки</span>
+                  <div class="flex items-center gap-1.5 mt-1">
+                    <input id="demandLeadTime" type="number" min="1" max="180" value="45" class="w-16 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-center text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none tabular-nums" />
+                    <span class="text-xs text-slate-400">дн.</span>
+                  </div>
+                </label>
+                <label class="block">
+                  <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Запас после прихода</span>
+                  <div class="flex items-center gap-1.5 mt-1">
+                    <input id="demandBufferDays" type="number" min="1" max="365" value="60" class="w-16 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-center text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none tabular-nums" />
+                    <span class="text-xs text-slate-400">дн.</span>
+                  </div>
+                </label>
+                <div class="text-xs text-slate-400 dark:text-slate-500 pb-1.5">=&nbsp;горизонт <span id="demandHorizonLabel" class="font-bold text-slate-600 dark:text-slate-300">105</span> дн.</div>
+              </div>
+            </div>
+            <!-- Timeline visualization -->
+            <div id="demandTimeline" class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <div class="relative h-8">
+                <div class="absolute inset-x-0 top-3 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                  <div id="tlLeadBar" class="absolute left-0 top-0 h-full bg-amber-400 dark:bg-amber-500 rounded-l-full" style="width:42.8%"></div>
+                  <div id="tlBufferBar" class="absolute top-0 h-full bg-green-400 dark:bg-green-500 rounded-r-full" style="left:42.8%;width:57.2%"></div>
+                </div>
+                <div class="absolute left-0 -top-0.5 text-[10px] text-slate-500">Сегодня</div>
+                <div id="tlArrivalLabel" class="absolute -top-0.5 text-[10px] text-amber-600 dark:text-amber-400 -translate-x-1/2" style="left:42.8%">Приход (д.45)</div>
+                <div class="absolute right-0 -top-0.5 text-[10px] text-green-600 dark:text-green-400">Конец запаса</div>
+              </div>
+              <div class="flex justify-between mt-1 text-[10px] text-slate-400">
+                <span>&#9668; Срок поставки: товар в пути</span>
+                <span>Запас на складе Ozon &#9658;</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Data freshness banner -->
+          <div id="demandFreshnessBanner" class="hidden p-3 rounded-lg text-sm flex items-center gap-2"></div>
+
+          <!-- Summary cards -->
+          <div id="demandSummaryCards" class="hidden grid grid-cols-1 sm:grid-cols-3 gap-4"></div>
+
+          <!-- Demand table -->
+          <div id="demandTableContainer" class="hidden bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+            <div class="overflow-x-auto">
+              <table class="w-full min-w-[900px]">
+                <thead>
+                  <tr class="bg-slate-50 dark:bg-slate-800/50">
+                    <th class="px-3 py-3 w-8"></th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Товар</th>
+                    <th class="text-right px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Прод/д</th>
+                    <th class="text-center px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">IDC</th>
+                    <th class="text-right px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">На Ozon</th>
+                    <th class="text-right px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Дома</th>
+                    <th class="text-right px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Gap</th>
+                    <th class="text-right px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Заказать</th>
+                  </tr>
+                </thead>
+                <tbody id="demandTableBody" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+                <tfoot id="demandTableFoot" class="border-t-2 border-slate-300 dark:border-slate-600"></tfoot>
+              </table>
+            </div>
+          </div>
+
+          <!-- Plan footer -->
+          <div id="demandPlanFooter" class="hidden flex items-center justify-between p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div id="demandPlanSummary" class="text-sm text-slate-600 dark:text-slate-400"></div>
+            <div class="flex items-center gap-2">
+              <button id="confirmPlanBtn" class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors">Подтвердить план</button>
+            </div>
+          </div>
+
+          <!-- Empty state -->
+          <div id="demandEmpty" class="p-8 text-center text-sm text-slate-400">
+            Нажмите «Обновить данные Ozon» для синхронизации остатков по кластерам, затем «Сгенерировать план».
+          </div>
+        </section>
+
+        <!-- ============================================================ -->
+        <!-- LOGISTICS SECTION                                            -->
+        <!-- ============================================================ -->
+        <section id="logisticsSection" class="section-panel hidden flex-1 p-6 space-y-5">
+          <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div class="flex-1 min-w-0">
+              <h1 class="text-xl font-bold text-slate-900 dark:text-white">Логистика</h1>
+              <p class="text-sm text-slate-500 mt-0.5">Матрица движения товаров: закупки, склад, Ozon</p>
+            </div>
+            <div class="flex items-center gap-3 flex-shrink-0">
+              <span id="logisticsFreshnessLabel" class="text-xs text-slate-400 dark:text-slate-500"></span>
+            </div>
+          </div>
+          <div id="logisticsNeedBalance" class="hidden p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-800 dark:text-amber-300">
+            Оприходуйте начальные остатки в разделе «Каталог», чтобы матрица заполнилась данными о себестоимости.
+          </div>
+          <!-- Tabs -->
+          <div class="flex gap-1 border-b border-slate-200 dark:border-slate-700">
+            <button id="logTabMatrix" class="logistic-tab px-4 py-2 text-sm font-medium border-b-2 border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400" data-tab="matrixView">Где сейчас товар</button>
+            <button id="logTabSupplies" class="logistic-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300" data-tab="suppliesView">Поставки на Ozon</button>
+          </div>
+          <!-- TAB: Matrix -->
+          <div id="matrixView">
+            <!-- Summary stats bar -->
+            <div id="matrixSummaryBar" class="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-600 dark:text-slate-400 mb-3"></div>
+            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+              <div class="overflow-x-auto">
+                <table class="w-full min-w-[1000px]">
+                  <thead id="matrixTableHead"></thead>
+                  <tbody id="matrixTableBody" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+                  <tfoot id="matrixTableFoot" class="border-t-2 border-slate-300 dark:border-slate-600"></tfoot>
+                </table>
+              </div>
+            </div>
+          </div>
+          <!-- TAB: Supplies -->
+          <div id="suppliesView" class="hidden">
+            <div id="suppliesEmpty" class="hidden p-6 text-center text-sm text-slate-400">
+              Нет данных о поставках. Нажмите «Синхронизировать» для загрузки из Ozon.
+            </div>
+            <div id="suppliesListContainer" class="space-y-3"></div>
+          </div>
+        </section>
+
+        <!-- ============================================================ -->
+        <!-- FINANCE SECTION                                              -->
+        <!-- ============================================================ -->
+        <section id="financeSection" class="section-panel hidden flex-1 p-6 space-y-5">
+          <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div class="flex-1 min-w-0">
+              <h1 class="text-xl font-bold text-slate-900 dark:text-white">Финансы</h1>
+              <p class="text-sm text-slate-500 mt-0.5">Ручные доходы и расходы</p>
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0">
+              <span id="financeFreshness" class="text-xs text-slate-400"></span>
+              <button id="openFinanceModalBtn" class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                Добавить запись
+              </button>
+            </div>
+          </div>
+
+          <!-- Filters -->
+          <div class="flex items-center gap-3 flex-wrap">
+            <div class="relative flex-1 min-w-[200px] max-w-sm">
+              <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
+              <input id="finSearchInput" type="search" placeholder="Поиск по категории, заметке..."
+                class="w-full pl-10 pr-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition placeholder-slate-400" />
+            </div>
+            <div class="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2">
+              <span class="text-xs font-medium text-slate-500">с</span>
+              <input type="date" id="finFilterFrom" class="bg-transparent text-sm font-medium text-slate-800 dark:text-slate-200 outline-none cursor-pointer" />
+              <span class="text-xs text-slate-400 mx-1">—</span>
+              <input type="date" id="finFilterTo" class="bg-transparent text-sm font-medium text-slate-800 dark:text-slate-200 outline-none cursor-pointer" />
+            </div>
+            <select id="finFilterKind" class="text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 px-3 py-2 outline-none">
+              <option value="">Все типы</option>
+              <option value="expense">Расходы</option>
+              <option value="income">Доходы</option>
+            </select>
+            <select id="finFilterCategory" class="text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 px-3 py-2 outline-none">
+              <option value="">Все категории</option>
+            </select>
+            <button id="reloadFinanceBtn" class="p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-500 transition-colors" title="Обновить">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"/></svg>
+            </button>
+          </div>
+
+          <!-- Table -->
+          <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+            <div class="overflow-x-auto">
+              <table class="w-full min-w-[600px]">
+                <thead id="financeTableHead">
+                  <tr class="bg-slate-50 dark:bg-slate-800/50">
+                    <th data-sort="happened_at" class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-pointer select-none hover:text-slate-700 dark:hover:text-slate-300">Дата <span class="sort-arrow"></span></th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Тип</th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Категория</th>
+                    <th data-sort="amount_rub" class="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-pointer select-none hover:text-slate-700 dark:hover:text-slate-300">Сумма <span class="sort-arrow"></span></th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Заметки</th>
+                    <th class="px-4 py-3 w-24"></th>
+                  </tr>
+                </thead>
+                <tbody id="financeTableBody" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+              </table>
+            </div>
+          </div>
+          <div id="financePagination" class="flex items-center justify-between text-sm text-slate-500"></div>
+        </section>
+
+        <!-- ============================================================ -->
+        <!-- PRICES SECTION                                              -->
+        <!-- ============================================================ -->
+        <section id="pricesSection" class="section-panel hidden flex-1 p-6 space-y-5 overflow-y-auto">
+          <!-- Tabs -->
+          <div class="flex gap-1 border-b border-slate-200 dark:border-slate-700">
+            <button class="price-tab px-4 py-2 text-sm font-medium border-b-2 border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400" data-tab="priceProductsView">Мои товары</button>
+            <button class="price-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300" data-tab="priceCalcView">Калькулятор</button>
+          </div>
+
+          <!-- TAB: My Products -->
+          <div id="priceProductsView" class="space-y-4">
+            <!-- Header: Sync + ROI controls -->
+            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm space-y-3">
+              <!-- Row 1: Freshness label -->
+              <div class="flex items-center justify-end">
+                <span id="pricesFreshness" class="text-xs text-slate-400"></span>
+              </div>
+              <!-- Row 2: Global ROI slider + bulk apply -->
+              <div class="flex items-center gap-4 flex-wrap">
+                <label class="text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">Целевой ROI:</label>
+                <input id="priceRoiSlider" type="range" min="0" max="200" step="5" value="20" class="roi-slider flex-1 min-w-[120px] max-w-[240px]" />
+                <div class="flex items-center gap-1">
+                  <input id="priceRoiInput" type="number" min="0" max="500" step="5" value="20" class="w-16 text-sm text-center font-semibold border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 py-1" />
+                  <span class="text-sm text-slate-500">%</span>
+                </div>
+                <div class="flex gap-2 ml-auto">
+                  <button id="priceApplyAllMin" class="px-3 py-1.5 text-xs font-medium text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors whitespace-nowrap">Уст. мин. цену</button>
+                  <button id="priceApplyAllSale" class="px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors whitespace-nowrap">Уст. цену продажи</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="priceProductsLoading" class="hidden text-sm text-slate-500 py-4">Загрузка...</div>
+
+            <!-- Search bar -->
+            <div id="priceSearchBar" class="relative" style="max-width:360px">
+              <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+              <input id="priceSearchInput" type="text" placeholder="Поиск по названию, SKU..." class="list-search-input" />
+            </div>
+
+            <!-- Products table -->
+            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+              <div class="overflow-x-auto">
+                <table class="w-full min-w-[1000px]">
+                  <thead id="priceProductsHead">
+                    <tr class="bg-slate-50 dark:bg-slate-800/50">
+                      <th data-sort="title" class="text-left px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Товар <span class="sort-arrow"></span></th>
+                      <th data-sort="cogs" class="text-right px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-20">С/с <span class="sort-arrow"></span></th>
+                      <th class="text-right px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-20">Комис.</th>
+                      <th class="text-center px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-24">ROI %</th>
+                      <th class="text-right px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-28">Расч. цена</th>
+                      <th data-sort="ozon_min_price" class="text-right px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-32">Мин. цена <span class="sort-arrow"></span></th>
+                      <th data-sort="ozon_price" class="text-right px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-32">Цена продажи <span class="sort-arrow"></span></th>
+                    </tr>
+                  </thead>
+                  <tbody id="priceProductsBody" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+                </table>
+              </div>
+            </div>
+            <div id="priceProductsEmpty" class="hidden p-6 text-center text-sm text-slate-400"></div>
+          </div>
+
+          <!-- TAB: Calculator -->
+          <div id="priceCalcView" class="hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <!-- Left: Inputs -->
+              <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4">
+                <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Параметры товара</h2>
+
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Категория Ozon</label>
+                  <div class="relative">
+                    <input id="calcCategoryInput" type="text" placeholder="Начните вводить категорию..." class="form-input text-sm" autocomplete="off" />
+                    <div id="calcCategoryDropdown" class="hidden absolute z-20 w-full mt-1 max-h-48 overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg"></div>
+                  </div>
+                </div>
+
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Тип товара</label>
+                  <select id="calcTypeSelect" class="form-input text-sm" disabled>
+                    <option value="">Сначала выберите категорию</option>
+                  </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Себестоимость, &#8381;</label>
+                    <input id="calcCogsInput" type="number" step="0.01" min="0" placeholder="0.00" class="form-input text-sm" />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Последняя миля, &#8381;</label>
+                    <input id="calcLastMile" type="number" step="0.01" min="0" value="63" class="form-input text-sm" />
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Желаемая маржа, %</label>
+                    <input id="calcTargetMargin" type="number" step="1" value="20" class="form-input text-sm" />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">или Цена продажи, &#8381;</label>
+                    <input id="calcSalePrice" type="number" step="0.01" placeholder="—" class="form-input text-sm" />
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-3">
+                  <div>
+                    <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Налог (УСН), %</label>
+                    <input id="calcUsnRate" type="number" step="0.1" value="7" class="form-input text-sm" />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">% возвратов</label>
+                    <input id="calcReturnRate" type="number" step="0.1" value="5" class="form-input text-sm" />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Возврат логист., &#8381;</label>
+                    <input id="calcReturnLogistics" type="number" step="0.01" value="50" class="form-input text-sm" />
+                  </div>
+                </div>
+
+                <button id="calcRunBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-4 rounded-lg transition-colors text-sm">
+                  Рассчитать
+                </button>
+              </div>
+
+              <!-- Right: Results -->
+              <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
+                <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4">Результат</h2>
+                <div id="calcResultContent" class="text-sm text-slate-400 dark:text-slate-500">
+                  Заполните параметры и нажмите &laquo;Рассчитать&raquo;
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================ -->
+        <!-- PROMOTIONS SECTION                                          -->
+        <!-- ============================================================ -->
+        <section id="promoSection" class="section-panel hidden flex-1 p-6 space-y-5 overflow-y-auto">
+          <!-- Header -->
+          <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm">
+            <div class="flex items-center justify-between flex-wrap gap-3">
+              <button id="promoLoadBtn" class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-950 transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                Загрузить из Ozon
+              </button>
+              <div class="flex items-center gap-2 flex-wrap">
+                <button onclick="bulkTogglePromo('auto_action_enabled','ENABLED')" class="px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950 transition-colors">Автодоб. всем ON</button>
+                <button onclick="bulkTogglePromo('auto_action_enabled','DISABLED')" class="px-2.5 py-1 text-xs font-medium text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">OFF</button>
+                <span class="text-slate-300 dark:text-slate-600">|</span>
+                <button onclick="bulkTogglePromo('auto_add_to_ozon_actions_list_enabled','ENABLED')" class="px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950 transition-colors">Подх. акции всем ON</button>
+                <button onclick="bulkTogglePromo('auto_add_to_ozon_actions_list_enabled','DISABLED')" class="px-2.5 py-1 text-xs font-medium text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">OFF</button>
+                <span class="text-slate-300 dark:text-slate-600">|</span>
+                <button onclick="bulkRefreshTimers()" class="px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-950 transition-colors">Обновить таймеры</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="promoLoading" class="hidden text-sm text-slate-500 py-4">Загрузка данных из Ozon...</div>
+
+          <!-- Table -->
+          <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+            <div class="overflow-x-auto">
+              <table class="w-full min-w-[1100px]">
+                <thead id="promoTableHead">
+                  <tr class="bg-slate-50 dark:bg-slate-800/50">
+                    <th data-sort="title" class="text-left px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-pointer hover:text-slate-700 dark:hover:text-slate-300">Товар <span class="sort-arrow"></span></th>
+                    <th class="text-right px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-20">Цена</th>
+                    <th class="text-right px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-28">Мин. цена</th>
+                    <th class="text-center px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-24">Таймер</th>
+                    <th class="text-center px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-24">Индекс</th>
+                    <th class="text-center px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-28">Автодоб.</th>
+                    <th class="text-center px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-28">Подх. акции</th>
+                    <th class="text-center px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-16">Акции</th>
+                  </tr>
+                </thead>
+                <tbody id="promoTableBody" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+              </table>
+            </div>
+          </div>
+          <div id="promoEmpty" class="hidden p-6 text-center text-sm text-slate-400">Нет товаров. Нажмите «Загрузить из Ozon».</div>
+        </section>
+
+        <!-- ============================================================ -->
+        <!-- SYNC SECTION                                                -->
+        <!-- ============================================================ -->
+        <section id="syncSection" class="section-panel hidden flex-1 p-6 space-y-5 overflow-y-auto">
+          <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div class="flex-1 min-w-0">
+              <h1 class="text-xl font-bold text-slate-900 dark:text-white">Синхронизация</h1>
+              <p class="text-sm text-slate-500 mt-0.5">Обновление данных из Ozon</p>
+            </div>
+            <div class="flex items-center gap-3 flex-shrink-0">
+              <span id="syncAllStatus" class="text-xs text-slate-400"></span>
+              <button id="syncAllBtn" class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"/></svg>
+                Синхронизировать все
+              </button>
+            </div>
+          </div>
+          <p id="syncGlobalProgress" class="text-xs text-slate-500 min-h-[16px]"></p>
+          <div id="syncDashboardRows" class="space-y-4"></div>
+        </section>
+
+        <!-- ============================================================ -->
+        <!-- MCP SECTION                                                 -->
+        <!-- ============================================================ -->
+        <section id="mcpSection" class="section-panel hidden flex-1 p-6 space-y-5 overflow-y-auto">
+          <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div class="flex-1 min-w-0">
+              <h1 class="text-xl font-bold text-slate-900 dark:text-white">MCP</h1>
+              <p class="text-sm text-slate-500 mt-0.5">Подключение AI-клиентов через Model Context Protocol</p>
+            </div>
+          </div>
+
+          <!-- Server URL -->
+          <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
+            <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">MCP Server</h2>
+            <div class="flex items-center gap-3">
+              <code class="flex-1 text-sm bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded-lg font-mono text-slate-800 dark:text-slate-200 select-all">YOUR_SERVER_URL/mcp/</code>
+              <button id="copyMcpUrlBtn" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 transition-colors flex-shrink-0" title="Копировать URL">
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"/></svg>
+              </button>
+            </div>
+            <div class="mt-3 flex items-center gap-2">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+                <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span> Streamable HTTP
+              </span>
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400">Bearer API Key</span>
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400">OAuth 2.0</span>
+            </div>
+          </div>
+
+          <!-- API Keys -->
+          <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div class="flex items-center justify-between p-5 border-b border-slate-200 dark:border-slate-800">
+              <div>
+                <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-300">API-ключи</h2>
+                <p class="text-xs text-slate-500 mt-0.5">Используйте API-ключи для подключения MCP-клиентов</p>
+              </div>
+              <button id="createApiKeyBtn" class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                Создать ключ
+              </button>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full min-w-[500px]">
+                <thead>
+                  <tr class="bg-slate-50 dark:bg-slate-800/50">
+                    <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Название</th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Префикс</th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Создан</th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Последнее использование</th>
+                    <th class="px-4 py-3 w-24"></th>
+                  </tr>
+                </thead>
+                <tbody id="apiKeysTableBody" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+              </table>
+            </div>
+            <div id="apiKeysEmpty" class="hidden p-8 text-center text-sm text-slate-500">
+              Нет API-ключей. Создайте ключ для подключения.
+            </div>
+          </div>
+
+          <!-- Connection Snippets -->
+          <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div class="p-5 border-b border-slate-200 dark:border-slate-800">
+              <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-300">Подключение</h2>
+              <p class="text-xs text-slate-500 mt-0.5">Инструкции для AI-клиентов</p>
+            </div>
+            <!-- Tabs -->
+            <div class="flex border-b border-slate-200 dark:border-slate-800 px-5">
+              <button class="mcp-tab active" data-mcp-tab="claude">Claude Code</button>
+              <button class="mcp-tab" data-mcp-tab="cursor">Cursor</button>
+              <button class="mcp-tab" data-mcp-tab="chatgpt">ChatGPT</button>
+              <button class="mcp-tab" data-mcp-tab="curl">cURL</button>
+            </div>
+            <!-- Tab content -->
+            <div class="p-5 space-y-3">
+              <div id="mcpTabClaude" class="mcp-tab-content">
+                <p class="text-sm text-slate-600 dark:text-slate-400 mb-3">Выполните в терминале:</p>
+                <div class="relative">
+                  <pre id="mcpSnippetClaude" class="text-xs bg-slate-100 dark:bg-slate-800 px-4 py-3 rounded-lg font-mono text-slate-800 dark:text-slate-200 overflow-x-auto whitespace-pre"></pre>
+                  <button class="mcp-copy-btn absolute top-2 right-2 p-1.5 rounded-md bg-white/80 dark:bg-slate-700/80 hover:bg-white dark:hover:bg-slate-700 text-slate-500 transition-colors" data-snippet="mcpSnippetClaude" title="Копировать">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div id="mcpTabCursor" class="mcp-tab-content hidden">
+                <p class="text-sm text-slate-600 dark:text-slate-400 mb-3">Добавьте в <code class="text-xs bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">.cursor/mcp.json</code>:</p>
+                <div class="relative">
+                  <pre id="mcpSnippetCursor" class="text-xs bg-slate-100 dark:bg-slate-800 px-4 py-3 rounded-lg font-mono text-slate-800 dark:text-slate-200 overflow-x-auto whitespace-pre"></pre>
+                  <button class="mcp-copy-btn absolute top-2 right-2 p-1.5 rounded-md bg-white/80 dark:bg-slate-700/80 hover:bg-white dark:hover:bg-slate-700 text-slate-500 transition-colors" data-snippet="mcpSnippetCursor" title="Копировать">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div id="mcpTabChatgpt" class="mcp-tab-content hidden">
+                <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">ChatGPT поддерживает MCP через OAuth. API-ключ не нужен.</p>
+                <ol class="text-sm text-slate-600 dark:text-slate-400 space-y-1.5 list-decimal list-inside">
+                  <li>Откройте ChatGPT Settings &rarr; Connected Apps &rarr; Add</li>
+                  <li>Вставьте URL сервера: <code class="text-xs bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded font-mono">YOUR_SERVER_URL/mcp/</code></li>
+                  <li>Выберите авторизацию: <strong>OAuth</strong></li>
+                  <li>Войдите через OpenMPFlow (Logto) и разрешите доступ</li>
+                </ol>
+              </div>
+              <div id="mcpTabCurl" class="mcp-tab-content hidden">
+                <p class="text-sm text-slate-600 dark:text-slate-400 mb-3">Проверка подключения:</p>
+                <div class="relative">
+                  <pre id="mcpSnippetCurl" class="text-xs bg-slate-100 dark:bg-slate-800 px-4 py-3 rounded-lg font-mono text-slate-800 dark:text-slate-200 overflow-x-auto whitespace-pre"></pre>
+                  <button class="mcp-copy-btn absolute top-2 right-2 p-1.5 rounded-md bg-white/80 dark:bg-slate-700/80 hover:bg-white dark:hover:bg-slate-700 text-slate-500 transition-colors" data-snippet="mcpSnippetCurl" title="Копировать">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================ -->
+        <!-- PLUGINS SECTION                                             -->
+        <!-- ============================================================ -->
+        <section id="pluginsSection" class="section-panel hidden flex-1 p-6 space-y-5 overflow-y-auto">
+          <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div class="flex-1 min-w-0">
+              <h1 class="text-xl font-bold text-slate-900 dark:text-white">Плагины</h1>
+              <p class="text-sm text-slate-500 mt-0.5">Установленные расширения</p>
+            </div>
+          </div>
+          <div id="pluginsList" class="grid gap-4"></div>
+        </section>
+
+        <!-- ============================================================ -->
+        <!-- SETTINGS SECTION                                            -->
+        <!-- ============================================================ -->
+        <section id="settingsSection" class="section-panel hidden flex-1 p-6 space-y-5">
+          <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div class="flex-1 min-w-0">
+              <h1 class="text-xl font-bold text-slate-900 dark:text-white">Настройки</h1>
+              <p class="text-sm text-slate-500 mt-0.5">Параметры аккаунта</p>
+            </div>
+          </div>
+
+          <!-- USN Rate -->
+          <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
+            <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Налоговая ставка (УСН)</h2>
+            <div class="flex items-center gap-3">
+              <input type="number" id="settingsUsnRate" step="0.1" min="0" max="100" class="form-input w-32" placeholder="7.0" />
+              <span class="text-sm text-slate-500">%</span>
+              <button id="saveUsnRateBtn" class="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors">Сохранить</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================ -->
+        <!-- CARD PAGE: Full-page card detail with tabs                   -->
+        <!-- ============================================================ -->
+        <section id="cardPageSection" class="section-panel hidden flex-1 p-6 space-y-5 overflow-y-auto">
+          <!-- Back button + title bar -->
+          <div class="flex items-center gap-3">
+            <button id="cardPageBackBtn" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition-colors" title="Назад">
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"/></svg>
+            </button>
+            <div class="flex-1 min-w-0">
+              <h1 id="cardDetailTitle" class="text-xl font-bold text-slate-900 dark:text-white truncate"></h1>
+              <p id="cardPageSubtitle" class="text-sm text-slate-500 mt-0.5"></p>
+            </div>
+            <button id="archiveCardBtn" class="text-xs px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"></button>
+          </div>
+
+          <!-- Tab bar -->
+          <div id="cardPageTabBar" class="flex gap-1 border-b border-slate-200 dark:border-slate-700">
+            <button class="card-page-tab active" data-tab="cardTabInfo">Карточка</button>
+            <button class="card-page-tab" data-tab="cardTabFifo">Партии FIFO</button>
+          </div>
+
+          <!-- TAB 1: Card Info (form + sources) -->
+          <div id="cardTabInfo" class="card-tab-pane space-y-5">
+            <!-- Card form -->
+            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+              <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+                <h2 class="text-base font-semibold text-slate-900 dark:text-white">Основные данные</h2>
+              </div>
+              <div class="p-5 space-y-4">
+                <form id="cardDetailForm" class="space-y-4">
+                  <div class="grid grid-cols-2 gap-3">
+                    <label class="block"><span class="text-xs font-semibold uppercase tracking-wide text-slate-500">SKU</span><input id="cardSkuInput" class="form-input" /></label>
+                    <label class="block"><span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Название *</span><input id="cardTitleInput" required class="form-input" /></label>
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <label class="block"><span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Бренд</span><input id="cardBrandInput" class="form-input" /></label>
+                    <label class="block"><span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Статус</span>
+                      <select id="cardStatusInput" class="form-input">
+                        <option value="draft">draft</option>
+                        <option value="active">active</option>
+                        <option value="archived">archived</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <label class="block"><span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Ozon Product ID</span><input id="cardOzonProductInput" class="form-input" /></label>
+                    <label class="block"><span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Ozon Offer ID</span><input id="cardOzonOfferInput" class="form-input" /></label>
+                  </div>
+                  <label class="block"><span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Описание</span><textarea id="cardDescriptionInput" rows="2" class="form-input"></textarea></label>
+                  <div class="grid grid-cols-6 gap-2">
+                    <label class="block"><span class="text-[10px] font-semibold uppercase text-slate-500">Д, см</span><input id="dimPackageLength" type="number" step="0.001" min="0.001" class="form-input" /></label>
+                    <label class="block"><span class="text-[10px] font-semibold uppercase text-slate-500">Ш, см</span><input id="dimPackageWidth" type="number" step="0.001" min="0.001" class="form-input" /></label>
+                    <label class="block"><span class="text-[10px] font-semibold uppercase text-slate-500">В, см</span><input id="dimPackageHeight" type="number" step="0.001" min="0.001" class="form-input" /></label>
+                    <label class="block"><span class="text-[10px] font-semibold uppercase text-slate-500">Вес, кг</span><input id="dimPackageWeight" type="number" step="0.001" min="0.001" class="form-input" /></label>
+                    <label class="block"><span class="text-[10px] font-semibold uppercase text-slate-500">Закупка</span><input id="fieldPurchasePrice" type="number" step="0.01" min="0" class="form-input" /></label>
+                    <label class="block"><span class="text-[10px] font-semibold uppercase text-slate-500">Валюта</span>
+                      <select id="fieldPurchaseCurrency" class="form-input"><option value="CNY">CNY</option><option value="RUB">RUB</option></select>
+                    </label>
+                  </div>
+                  <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm">Сохранить</button>
+                </form>
+                <p id="cardDetailStatus" class="text-xs text-slate-500 min-h-[16px]"></p>
+              </div>
+            </div>
+
+            <!-- Sources -->
+            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+              <div class="flex items-center gap-2 px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+                <h2 class="text-base font-semibold text-slate-900 dark:text-white flex-1">Источники</h2>
+                <span id="sourcesCountBadge" class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400">0</span>
+              </div>
+              <div class="p-5 space-y-3">
+                <div id="cardSourcesList" class="space-y-3">
+                  <div class="text-sm text-slate-400">Нет источников</div>
+                </div>
+                <details id="addSourceAccordion" class="border border-dashed border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+                  <summary class="px-4 py-2.5 text-sm font-semibold text-indigo-600 dark:text-indigo-400 cursor-pointer select-none list-none">+ Добавить источник</summary>
+                  <div class="px-4 pb-4 space-y-3">
+                    <div class="flex gap-1 border-b border-slate-200 dark:border-slate-700 pb-2">
+                      <button type="button" class="source-tab active text-xs font-semibold px-3 py-1.5 rounded-t-lg" data-pane="pane1688">1688 (TMAPI)</button>
+                      <button type="button" class="source-tab text-xs font-semibold px-3 py-1.5 rounded-t-lg" data-pane="paneManual">Ручной</button>
+                    </div>
+                    <div id="pane1688" class="source-pane space-y-2">
+                      <input id="source1688Url" placeholder="https://detail.1688.com/offer/..." class="form-input text-sm" />
+                      <button type="button" id="source1688PreviewBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors">Превью</button>
+                      <div id="source1688SkuPicker" class="hidden space-y-2">
+                        <div id="source1688SkuGrid" class="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto"></div>
+                        <label class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                          <input id="source1688OverwriteTitle" type="checkbox" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                          Обновить название карточки
+                        </label>
+                        <button type="button" id="source1688AttachBtn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors">Прикрепить выбранный SKU</button>
+                      </div>
+                      <p id="source1688Status" class="text-xs text-slate-500 min-h-[16px]"></p>
+                    </div>
+                    <div id="paneManual" class="source-pane hidden space-y-2">
+                      <form id="manualSourceForm" class="space-y-2">
+                        <div class="grid grid-cols-2 gap-2">
+                          <input id="manualSourceProvider" placeholder="Поставщик (supplier / wb)" required class="form-input text-sm" />
+                          <select id="manualSourceKind" class="form-input text-sm">
+                            <option value="supplier">supplier</option>
+                            <option value="marketplace">marketplace</option>
+                            <option value="manual">manual</option>
+                          </select>
+                        </div>
+                        <input id="manualSourceRef" placeholder="Ссылка или внешний ID" required class="form-input text-sm" />
+                        <input id="manualSourceNote" placeholder="Комментарий" class="form-input text-sm" />
+                        <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors">Добавить</button>
+                      </form>
+                    </div>
+                  </div>
+                </details>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 2: FIFO Lots -->
+          <div id="cardTabFifo" class="card-tab-pane hidden space-y-5">
+            <!-- Logistics summary metric cards -->
+            <div id="cpLogisticsSummary" class="grid grid-cols-2 sm:grid-cols-5 gap-3"></div>
+
+            <!-- FIFO lots table -->
+            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+              <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+                <h2 class="text-base font-semibold text-slate-900 dark:text-white">Партии FIFO</h2>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full">
+                  <thead>
+                    <tr class="bg-slate-50 dark:bg-slate-800/50">
+                      <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Дата приёмки</th>
+                      <th class="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Начальное</th>
+                      <th class="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Продано</th>
+                      <th class="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Остаток</th>
+                      <th class="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Себест. / ед.</th>
+                      <th class="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Стоимость остатка</th>
+                    </tr>
+                  </thead>
+                  <tbody id="cardLotsBody" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+                  <tfoot id="cpLotsFoot" class="border-t-2 border-slate-300 dark:border-slate-600"></tfoot>
+                </table>
+              </div>
+            </div>
+
+            <!-- Recent sales table -->
+            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+              <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+                <h2 class="text-base font-semibold text-slate-900 dark:text-white">Последние продажи</h2>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full">
+                  <thead>
+                    <tr class="bg-slate-50 dark:bg-slate-800/50">
+                      <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Дата</th>
+                      <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Заказ</th>
+                      <th class="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Кол-во</th>
+                      <th class="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Себест./ед.</th>
+                      <th class="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Цена Ozon</th>
+                      <th class="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Прибыль/ед.</th>
+                    </tr>
+                  </thead>
+                  <tbody id="cardSalesBody" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Plugin card tab panes (injected dynamically) -->
+          <div id="pluginCardTabPanes"></div>
+
+        </section>
+
+      </section><!-- /MAIN CONTENT -->
+    </div><!-- /flex -->
+  </div><!-- /appView -->
+
+  <!-- ============================================================ -->
+  <!-- SLIDE-OVER: Create Card                                      -->
+  <!-- ============================================================ -->
+  <div id="createCardDrawerBackdrop" class="drawer-backdrop hidden"></div>
+  <aside id="createCardDrawerPanel" class="drawer-panel hidden" style="max-width:550px;width:45vw;">
+    <div class="flex items-center gap-3 px-6 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 flex-shrink-0">
+      <h2 class="flex-1 text-lg font-bold text-slate-900 dark:text-white">Новая карточка</h2>
+      <button id="closeCreateCardDrawerBtn" class="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 transition-colors">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="flex-1 overflow-y-auto p-6">
+      <form id="createCardForm" class="space-y-4">
+        <label class="block">
+          <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Название товара *</span>
+          <input id="createCardTitle" placeholder="напр. Фильтр для кофе V60" required class="form-input" />
+        </label>
+        <label class="block">
+          <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">SKU / Артикул</span>
+          <input id="createCardSku" placeholder="COFFEE-FILTER-V60-001" class="form-input" />
+        </label>
+        <label class="block">
+          <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Ozon Offer ID</span>
+          <input id="createCardOffer" placeholder="Идентификатор Ozon" class="form-input" />
+        </label>
+        <label class="block">
+          <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Бренд</span>
+          <input id="createCardBrand" placeholder="Название бренда" class="form-input" />
+        </label>
+        <label class="block">
+          <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Описание</span>
+          <textarea id="createCardDescription" rows="3" placeholder="Описание товара" class="form-input"></textarea>
+        </label>
+        <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-4 rounded-lg transition-colors text-sm">Создать карточку</button>
+      </form>
+    </div>
+  </aside>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE-OVER: Order Form                                       -->
+  <!-- ============================================================ -->
+  <div id="orderDrawerBackdrop" class="drawer-backdrop hidden"></div>
+  <aside id="orderDrawerPanel" class="drawer-panel hidden" style="max-width:950px;width:70vw;">
+    <div class="flex items-center gap-3 px-6 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 flex-shrink-0">
+      <h2 id="orderDrawerTitle" class="flex-1 text-lg font-bold text-slate-900 dark:text-white">Новый заказ</h2>
+      <button id="closeOrderDrawerBtn" class="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 transition-colors">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="flex-1 overflow-y-auto p-6">
+      <form id="orderForm" class="space-y-5">
+        <div class="grid grid-cols-2 gap-3">
+          <label class="block"><span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Поставщик *</span><input id="orderSupplier" placeholder="Название поставщика" required class="form-input" /></label>
+          <label class="block"><span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Дата заказа</span><input id="orderDate" type="date" class="form-input" /></label>
+        </div>
+        <label class="block"><span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Заметки</span><textarea id="orderNotes" rows="2" placeholder="Заметки к заказу" class="form-input"></textarea></label>
+
+        <div>
+          <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Позиции</h3>
+          <div id="orderItemsContainer" class="space-y-2"></div>
+          <button type="button" id="addOrderItemBtn" class="mt-2 w-full py-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400 border border-dashed border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">+ Добавить позицию</button>
+        </div>
+
+        <div>
+          <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Общие расходы</h3>
+          <div id="sharedCostsContainer" class="space-y-2"></div>
+          <button type="button" id="addSharedCostBtn" class="mt-2 w-full py-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400 border border-dashed border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">+ Добавить расход</button>
+        </div>
+
+        <details id="allocationPreviewDetails" class="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+          <summary class="px-3 py-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400 cursor-pointer bg-slate-50 dark:bg-slate-800/50">Предварительный расчёт</summary>
+          <div class="overflow-x-auto p-3">
+            <table class="w-full text-xs">
+              <thead id="allocationPreviewHead"></thead>
+              <tbody id="allocationPreviewBody"></tbody>
+            </table>
+          </div>
+        </details>
+
+        <div class="flex items-center gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+          <span id="orderTotalDisplay" class="flex-1 text-lg font-bold text-slate-900 dark:text-white">Итого: 0,00 ₽</span>
+          <button type="button" id="cancelEditBtn" class="hidden px-4 py-2 text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">Отмена</button>
+          <button type="submit" id="orderSubmitBtn" class="px-6 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors">Создать заказ</button>
+        </div>
+      </form>
+    </div>
+  </aside>
+
+  <!-- ============================================================ -->
+  <!-- DRAWER: SKU Logistics Detail                                  -->
+  <!-- ============================================================ -->
+  <div id="skuLogisticsBackdrop" class="drawer-backdrop hidden"></div>
+  <aside id="skuLogisticsPanel" class="drawer-panel hidden" style="max-width:900px;width:65vw;">
+    <div class="flex items-center gap-3 px-6 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 flex-shrink-0">
+      <h2 id="skuLogisticsTitle" class="flex-1 text-lg font-bold text-slate-900 dark:text-white truncate"></h2>
+      <button id="closeSkuLogisticsBtn" class="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 transition-colors">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="flex-1 overflow-y-auto p-6 space-y-5">
+
+      <div>
+        <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Закупки у поставщиков</h3>
+        <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+          <table class="w-full text-sm"><thead><tr class="bg-slate-50 dark:bg-slate-800/50">
+            <th class="text-left px-3 py-2 text-xs font-semibold uppercase text-slate-500">Заказ</th>
+            <th class="text-left px-3 py-2 text-xs font-semibold uppercase text-slate-500">Дата</th>
+            <th class="text-right px-3 py-2 text-xs font-semibold uppercase text-slate-500">Заказано</th>
+            <th class="text-right px-3 py-2 text-xs font-semibold uppercase text-slate-500">Получено</th>
+            <th class="text-right px-3 py-2 text-xs font-semibold uppercase text-slate-500">Себест.</th>
+            <th class="text-left px-3 py-2 text-xs font-semibold uppercase text-slate-500">Статус</th>
+          </tr></thead><tbody id="skuSupplierOrdersBody" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody></table>
+        </div>
+      </div>
+
+      <div>
+        <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Поставки на Ozon</h3>
+        <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+          <table class="w-full text-sm"><thead><tr class="bg-slate-50 dark:bg-slate-800/50">
+            <th class="text-left px-3 py-2 text-xs font-semibold uppercase text-slate-500">Номер</th>
+            <th class="text-left px-3 py-2 text-xs font-semibold uppercase text-slate-500">Склад</th>
+            <th class="text-right px-3 py-2 text-xs font-semibold uppercase text-slate-500">Отправлено</th>
+            <th class="text-right px-3 py-2 text-xs font-semibold uppercase text-slate-500">Принято</th>
+            <th class="text-right px-3 py-2 text-xs font-semibold uppercase text-slate-500">Отклонено</th>
+            <th class="text-left px-3 py-2 text-xs font-semibold uppercase text-slate-500">Статус</th>
+          </tr></thead><tbody id="skuOzonSuppliesBody" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody></table>
+        </div>
+      </div>
+
+      <div>
+        <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Остатки на Ozon</h3>
+        <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+          <table class="w-full text-sm"><thead><tr class="bg-slate-50 dark:bg-slate-800/50">
+            <th class="text-left px-3 py-2 text-xs font-semibold uppercase text-slate-500">Склад</th>
+            <th class="text-left px-3 py-2 text-xs font-semibold uppercase text-slate-500">Тип</th>
+            <th class="text-right px-3 py-2 text-xs font-semibold uppercase text-slate-500">Наличие</th>
+            <th class="text-right px-3 py-2 text-xs font-semibold uppercase text-slate-500">Резерв</th>
+            <th class="text-right px-3 py-2 text-xs font-semibold uppercase text-slate-500">К продаже</th>
+          </tr></thead><tbody id="skuStockBody" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody></table>
+        </div>
+      </div>
+
+      <div>
+        <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Складские лоты (FIFO)</h3>
+        <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+          <table class="w-full text-sm"><thead><tr class="bg-slate-50 dark:bg-slate-800/50">
+            <th class="text-left px-3 py-2 text-xs font-semibold uppercase text-slate-500">Дата</th>
+            <th class="text-right px-3 py-2 text-xs font-semibold uppercase text-slate-500">Начальное</th>
+            <th class="text-right px-3 py-2 text-xs font-semibold uppercase text-slate-500">Остаток</th>
+            <th class="text-right px-3 py-2 text-xs font-semibold uppercase text-slate-500">Себест.</th>
+          </tr></thead><tbody id="skuLotsBody" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody></table>
+        </div>
+      </div>
+
+      <div id="skuLossesSection" class="hidden">
+        <h3 class="text-sm font-semibold text-red-600 dark:text-red-400 mb-2">Потери</h3>
+        <div id="skuLossesContent" class="text-sm text-slate-600 dark:text-slate-400 space-y-1"></div>
+      </div>
+
+    </div>
+  </aside>
+
+  <!-- ============================================================ -->
+  <!-- MODAL: Ozon Integration                                      -->
+  <!-- ============================================================ -->
+  <div id="ozonModal" class="modal-overlay hidden">
+    <div class="modal-content max-w-lg">
+      <div class="flex items-center gap-3 mb-5">
+        <h2 class="text-lg font-bold text-slate-900 dark:text-white flex-1">Интеграция Ozon</h2>
+        <button id="closeOzonModalBtn" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 transition-colors">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <!-- Hidden wrapper for JS compat -->
+      <div id="ozonIntegrationDetails">
+        <form id="ozonCredsForm" class="space-y-3 mb-4">
+          <label class="block"><span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Client-Id</span><input id="ozonClientIdInput" placeholder="Ozon Client-Id" class="form-input" /></label>
+          <label class="block"><span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Api-Key</span><input id="ozonApiKeyInput" placeholder="Ozon Api-Key" class="form-input" /></label>
+          <div class="flex gap-2">
+            <button type="submit" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors">Сохранить креды</button>
+            <button type="button" id="clearOzonCredsBtn" class="px-3 py-2 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">Очистить</button>
+          </div>
+        </form>
+        <p id="ozonCredsStatus" class="text-xs text-slate-500 mb-4 min-h-[16px]"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- MODAL: Finance Entry                                         -->
+  <!-- ============================================================ -->
+  <div id="financeModal" class="modal-overlay hidden">
+    <div class="modal-content max-w-md">
+      <div class="flex items-center gap-3 mb-5">
+        <h2 id="financeModalTitle" class="text-lg font-bold text-slate-900 dark:text-white flex-1">Финансовая запись</h2>
+        <button id="closeFinanceModalBtn" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 transition-colors">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <form id="financeForm" class="space-y-4">
+        <input type="hidden" id="financeEditId" value="" />
+        <div class="grid grid-cols-2 gap-3">
+          <label class="block"><span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Тип</span>
+            <select id="financeKind" class="form-input"><option value="expense">Расход</option><option value="income">Доход</option></select>
+          </label>
+          <label class="block"><span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Категория *</span>
+            <select id="financeCategory" required class="form-input"></select>
+          </label>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="block"><span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Сумма, ₽ *</span><input id="financeAmount" type="number" step="0.01" min="0.01" required class="form-input" /></label>
+          <label class="block"><span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Заметки</span><input id="financeNotes" placeholder="Описание" class="form-input" /></label>
+        </div>
+        <label class="block"><span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Дата</span><input id="financeDate" type="date" class="form-input" /></label>
+        <button type="submit" id="financeSubmitBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-4 rounded-lg transition-colors text-sm">Сохранить</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- MODAL: Discrepancy Write-off                                 -->
+  <!-- ============================================================ -->
+  <div id="discrepancyModal" class="modal-overlay hidden">
+    <div class="modal-content max-w-sm">
+      <div class="flex items-center gap-3 mb-5">
+        <h2 class="text-lg font-bold text-slate-900 dark:text-white flex-1">Списание расхождений</h2>
+        <button id="closeDiscrepancyModalBtn" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 transition-colors">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <p id="discrepancyProductName" class="text-sm text-slate-500 mb-4"></p>
+      <form id="discrepancyForm" class="space-y-4">
+        <input type="hidden" id="discrepancyCardId" value="" />
+        <label class="block"><span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Количество, шт *</span>
+          <input id="discrepancyQty" type="number" min="1" step="1" required class="form-input" />
+        </label>
+        <label class="block"><span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Примечание</span>
+          <textarea id="discrepancyNotes" rows="2" class="form-input" placeholder="Причина списания"></textarea>
+        </label>
+        <button type="submit" id="discrepancySubmitBtn" class="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2.5 px-4 rounded-lg transition-colors text-sm">Списать</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- MODAL: Receive Order                                         -->
+  <!-- ============================================================ -->
+  <div id="receiveModal" class="modal-overlay hidden">
+    <div class="modal-content max-w-2xl">
+      <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-1">Приёмка заказа</h2>
+      <p id="receiveModalSubtitle" class="text-sm text-slate-500 mb-4"></p>
+      <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+        <table class="w-full">
+          <thead><tr class="bg-slate-50 dark:bg-slate-800/50"><th class="text-left px-4 py-2.5 text-xs font-semibold uppercase text-slate-500">Товар</th><th class="text-right px-4 py-2.5 text-xs font-semibold uppercase text-slate-500">Заказано</th><th class="text-right px-4 py-2.5 text-xs font-semibold uppercase text-slate-500">Принято</th><th class="text-right px-4 py-2.5 text-xs font-semibold uppercase text-slate-500">Себест.</th><th class="text-right px-4 py-2.5 text-xs font-semibold uppercase text-slate-500">Итого</th></tr></thead>
+          <tbody id="receiveItemsBody" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+        </table>
+      </div>
+      <div id="receiveTotalDisplay" class="mt-3 text-base font-bold text-slate-900 dark:text-white"></div>
+      <div class="flex gap-3 justify-end mt-5">
+        <button id="receiveCancelBtn" class="px-4 py-2 text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">Отмена</button>
+        <button id="receiveConfirmBtn" class="px-6 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors">Принять на склад</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- MODAL: Initial Balance                                       -->
+  <!-- ============================================================ -->
+  <div id="initialBalanceModal" class="modal-overlay hidden">
+    <div class="modal-content max-w-3xl">
+      <div class="flex items-center gap-3 mb-4">
+        <h2 class="text-lg font-bold text-slate-900 dark:text-white flex-1">Оприходование остатков</h2>
+        <button id="closeInitialBalanceBtn" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 transition-colors">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <p id="ibSubtitle" class="text-sm text-slate-500 mb-4">Загрузка остатков с Ozon...</p>
+      <div id="ibContent" class="hidden">
+        <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700 max-h-96 overflow-y-auto">
+          <table class="w-full">
+            <thead class="sticky top-0 z-10"><tr class="bg-slate-50 dark:bg-slate-800/50">
+              <th class="text-left px-4 py-2.5 text-xs font-semibold uppercase text-slate-500 w-8"><input type="checkbox" id="ibSelectAll" checked /></th>
+              <th class="text-left px-4 py-2.5 text-xs font-semibold uppercase text-slate-500">Товар</th>
+              <th class="text-right px-4 py-2.5 text-xs font-semibold uppercase text-slate-500">Остаток</th>
+              <th class="text-right px-4 py-2.5 text-xs font-semibold uppercase text-slate-500 w-32">Себест., &#8381;</th>
+              <th class="text-right px-4 py-2.5 text-xs font-semibold uppercase text-slate-500">Итого</th>
+            </tr></thead>
+            <tbody id="ibBody" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+          </table>
+        </div>
+        <div id="ibTotal" class="mt-3 text-base font-bold text-slate-900 dark:text-white"></div>
+        <div class="flex gap-3 justify-end mt-5">
+          <button id="ibCancelBtn" class="px-4 py-2 text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">Отмена</button>
+          <button id="ibConfirmBtn" class="px-6 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors">Оприходовать</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- MODAL: Create API Key                                        -->
+  <!-- ============================================================ -->
+  <div id="createApiKeyModal" class="modal-overlay hidden">
+    <div class="modal-content max-w-sm">
+      <div class="flex items-center gap-3 mb-5">
+        <h2 class="text-lg font-bold text-slate-900 dark:text-white flex-1">Новый API-ключ</h2>
+        <button id="closeCreateApiKeyBtn" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 transition-colors">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <form id="createApiKeyForm" class="space-y-4">
+        <label class="block">
+          <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Название *</span>
+          <input id="apiKeyNameInput" type="text" required maxlength="80" placeholder="MCP Claude Code" class="form-input" />
+        </label>
+        <button type="submit" id="createApiKeySubmitBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-4 rounded-lg transition-colors text-sm">Создать</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- MODAL: Show API Key (one-time display)                       -->
+  <!-- ============================================================ -->
+  <div id="showApiKeyModal" class="modal-overlay hidden">
+    <div class="modal-content max-w-md">
+      <div class="flex items-center gap-3 mb-5">
+        <h2 class="text-lg font-bold text-slate-900 dark:text-white flex-1">API-ключ создан</h2>
+        <button id="closeShowApiKeyBtn" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 transition-colors">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3 mb-4">
+        <p class="text-xs text-amber-800 dark:text-amber-300 font-medium">Скопируйте ключ сейчас. Он показывается только один раз.</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <code id="apiKeyValue" class="flex-1 text-sm bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded-lg font-mono text-slate-800 dark:text-slate-200 break-all select-all"></code>
+        <button id="copyApiKeyBtn" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 transition-colors flex-shrink-0" title="Копировать">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"/></svg>
+        </button>
+      </div>
+      <button id="doneShowApiKeyBtn" class="w-full mt-4 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 font-semibold py-2.5 px-4 rounded-lg transition-colors text-sm">Готово</button>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- TOAST CONTAINER                                              -->
+  <!-- ============================================================ -->
+  <div id="toastContainer" class="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none"></div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

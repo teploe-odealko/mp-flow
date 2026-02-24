@@ -1,0 +1,87 @@
+---
+title: Getting Started
+description: Install and run OpenMPFlow in one command
+---
+
+## Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) with Docker Compose v2
+- Git
+
+## Installation
+
+```bash
+git clone https://github.com/teploe-odealko/openmpflow
+cd openmpflow
+cp .env.example .env
+docker compose up
+```
+
+This starts three services:
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| Admin UI | [localhost:3000](http://localhost:3000) | Web interface |
+| Proxy API | [localhost:8000](http://localhost:8000) | Backend API |
+| PostgreSQL | localhost:5432 | Database |
+
+## First Login
+
+Open [http://localhost:3000](http://localhost:3000). Log in with:
+
+- **Username:** `admin`
+- **Password:** `admin`
+
+<Callout type="warn">
+Change the default password in production! Set `ADMIN_BOOTSTRAP_PASSWORD` in `.env`.
+</Callout>
+
+## Connect Ozon
+
+1. Go to **Каталог** section
+2. Click the **Ozon** button (top right)
+3. Enter your Ozon Client-ID and API-Key
+4. Click **Сохранить креды**
+
+Get your API credentials at [seller.ozon.ru/app/settings/api-keys](https://seller.ozon.ru/app/settings/api-keys).
+
+## Environment Variables
+
+Edit `.env` to configure:
+
+```bash title=".env"
+# Required
+POSTGRES_PASSWORD=change_me_in_production
+HMAC_SECRET=generate-with-openssl-rand-base64-32
+
+# Admin Account
+ADMIN_BOOTSTRAP_USERNAME=admin
+ADMIN_BOOTSTRAP_PASSWORD=admin
+
+# Optional: Ozon Integration
+OZON_CLIENT_ID=
+OZON_API_KEY=
+
+# Optional: 1688 Supplier Enrichment (plugin)
+TMAPI_API_TOKEN=
+
+# Optional: AI Features
+ANTHROPIC_API_KEY=
+```
+
+## Database Migrations
+
+Migrations are applied automatically on first startup via `scripts/init-db.sh`.
+The `schema_migrations` table tracks which migrations have been applied.
+
+To apply new migrations after an update:
+
+```bash
+docker compose restart postgres
+```
+
+## Next Steps
+
+- [Plugin Development](/docs/guides/plugin-development) — build custom plugins
+- [MCP Integration](/docs/guides/mcp) — connect AI clients
+- [Architecture](/docs/concepts/architecture) — understand the system

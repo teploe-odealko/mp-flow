@@ -1,0 +1,95 @@
+---
+title: MCP Integration
+description: Connect Claude, ChatGPT, or any AI client to OpenMPFlow via MCP
+---
+
+OpenMPFlow exposes **54 MCP tools** across 14 domains via the
+[Model Context Protocol](https://modelcontextprotocol.io/).
+Any MCP-compatible client (Claude Desktop, ChatGPT, Cursor, etc.) can connect.
+
+## Quick Setup
+
+### 1. Create an API Key
+
+Go to **MCP** section in the admin sidebar and create an API key.
+Keys have the prefix `mpk_`.
+
+### 2. Connect Your Client
+
+**Claude Desktop** — add to `claude_desktop_config.json`:
+
+```json title="claude_desktop_config.json"
+{
+  "mcpServers": {
+    "openmpflow": {
+      "url": "https://proxy.mp-flow.ru/mcp",
+      "headers": {
+        "Authorization": "Bearer mpk_your_api_key_here"
+      }
+    }
+  }
+}
+```
+
+**ChatGPT** — uses OAuth flow automatically when you connect via MCP settings.
+
+**Local development:**
+
+```json title="claude_desktop_config.json"
+{
+  "mcpServers": {
+    "openmpflow-local": {
+      "url": "http://localhost:8000/mcp",
+      "headers": {
+        "Authorization": "Bearer mpk_your_api_key_here"
+      }
+    }
+  }
+}
+```
+
+## Available Tool Domains
+
+| Domain | Tools | Description |
+|--------|-------|-------------|
+| `catalog_*` | 6 | Product cards CRUD, search, import |
+| `orders_*` | 7 | Supplier orders, receiving, items |
+| `sales_*` | 2 | Sales records, write-offs |
+| `finance_*` | 4 | Transactions CRUD |
+| `reports_*` | 3 | DDS, P&L, Unit Economics |
+| `inventory_*` | 3 | Stock overview, adjustments, initial balance |
+| `logistics_*` | 5 | SKU matrix, supplies, loss tracking |
+| `demand_*` | 7 | Demand planning, cluster targets |
+| `pricing_*` | 1 | Price calculator |
+| `ozon_*` | 6 | Ozon API sync, stocks, sales, finance |
+| `integrations_*` | 4 | Ozon account management |
+| `settings_*` | 2 | System settings |
+| `media_*` | 1 | Image generation |
+| `meta_*` | 1 | System state overview |
+
+## Transport
+
+OpenMPFlow uses **Streamable HTTP** transport at the `/mcp` endpoint.
+This is the standard MCP transport for web-based servers.
+
+## Authentication
+
+Two methods are supported:
+
+1. **API Keys** (`mpk_` prefix) — recommended for programmatic access
+2. **OAuth** — used by ChatGPT and other OAuth-capable clients
+
+### OAuth Flow
+
+For clients that support OAuth (like ChatGPT):
+
+- Authorization: `https://proxy.mp-flow.ru/oauth/authorize`
+- Token: `https://proxy.mp-flow.ru/oauth/token`
+- Registration: `https://proxy.mp-flow.ru/oauth/register` (RFC 7591 DCR)
+
+The OAuth endpoints proxy to the Logto identity provider.
+
+## API Reference
+
+For the full API reference with interactive playground:
+[proxy.mp-flow.ru/docs](https://proxy.mp-flow.ru/docs)
