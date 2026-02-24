@@ -114,6 +114,11 @@ def admin_client(
 
     monkeypatch.setattr("proxy.src.main.get_usd_rate", _fake_usd_rate)
 
+    # Reset MCP singleton so each test gets a fresh session manager
+    import proxy.src.mcp as _mcp_mod
+
+    _mcp_mod._mcp_instance = None
+
     try:
         app = create_app()
         with TestClient(app) as client:
