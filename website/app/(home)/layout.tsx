@@ -8,15 +8,15 @@ export default function Layout({ children }: { children: ReactNode }) {
         title: "OpenMPFlow",
       }}
       links={[
-        { text: "Docs", url: "/docs" },
+        { text: "Документация", url: "/docs" },
         {
-          text: "API Playground",
+          text: "API",
           url: "https://proxy.mp-flow.ru/docs",
           external: true,
         },
         {
           text: "GitHub",
-          url: "https://github.com/teploe-odealko/openmpflow",
+          url: "https://github.com/nickthecook/mpflow",
           external: true,
         },
       ]}

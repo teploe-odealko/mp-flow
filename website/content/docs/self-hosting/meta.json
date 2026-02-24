@@ -1,0 +1,8 @@
+{
+  "title": "Self-hosting",
+  "pages": [
+    "docker-compose",
+    "environment",
+    "upgrades"
+  ]
+}

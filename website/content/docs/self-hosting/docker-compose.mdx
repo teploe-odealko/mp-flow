@@ -1,0 +1,92 @@
+---
+title: Установка через Docker Compose
+description: Пошаговая установка OpenMPFlow на своём сервере через Docker Compose — все функции бесплатно
+---
+
+## Требования
+
+- Linux, macOS или Windows с WSL2
+- [Docker](https://docs.docker.com/get-docker/) 20+ с Docker Compose v2
+- Git
+- Минимум 1 GB RAM, 5 GB диска
+
+## Установка
+
+```bash
+git clone https://github.com/nickthecook/mpflow
+cd mpflow
+cp .env.example .env
+```
+
+### Настройте .env
+
+Обязательно измените:
+
+```bash title=".env"
+# Пароль базы данных
+POSTGRES_PASSWORD=ваш_надёжный_пароль
+
+# Секрет для токенов — сгенерируйте:
+# openssl rand -base64 32
+HMAC_SECRET=ваш_секрет
+
+# Пароль администратора
+ADMIN_BOOTSTRAP_PASSWORD=ваш_пароль
+```
+
+### Запуск
+
+```bash
+docker compose up -d
+```
+
+Готово. Откройте [http://localhost:3000](http://localhost:3000).
+
+## Что запускается
+
+| Сервис | Порт | Описание |
+|--------|------|----------|
+| **admin-ui** | 3000 | Веб-интерфейс (nginx + vanilla JS) |
+| **proxy** | 8000 | Backend API (FastAPI) |
+| **postgres** | 5432 | База данных PostgreSQL |
+
+## Доступ извне (HTTPS)
+
+Для продакшен-развёртывания рекомендуем использовать reverse proxy (Traefik, nginx, Caddy) с SSL-сертификатом.
+
+Пример с Traefik (как на mp-flow.ru):
+
+```yaml title="docker-compose.prod.yml"
+services:
+  proxy:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.proxy.rule=Host(`proxy.yourdomain.com`)"
+      - "traefik.http.routers.proxy.tls.certresolver=letsencrypt"
+```
+
+## Проверка работы
+
+```bash
+# Статус сервисов
+docker compose ps
+
+# Логи
+docker compose logs -f proxy
+
+# API health check
+curl http://localhost:8000/health
+```
+
+## Остановка
+
+```bash
+docker compose down
+```
+
+Данные PostgreSQL сохраняются в Docker volume и не удаляются при остановке.
+
+## Далее
+
+- [Переменные окружения](/docs/self-hosting/environment) — полный список настроек
+- [Обновления](/docs/self-hosting/upgrades) — как обновлять систему

@@ -57,6 +57,11 @@ services:
     networks:
       - dokploy-network
 
+  docs:
+    build: ./website
+    networks:
+      - dokploy-network
+
   logto-db:
     image: postgres:17-alpine
     environment:

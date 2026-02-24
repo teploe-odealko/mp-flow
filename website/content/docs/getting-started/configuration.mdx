@@ -1,0 +1,63 @@
+---
+title: Конфигурация
+description: Все переменные окружения OpenMPFlow — база данных, безопасность, интеграции, AI
+---
+
+## Переменные окружения
+
+Конфигурация задаётся через файл `.env` в корне проекта. Скопируйте `.env.example` и настройте:
+
+```bash
+cp .env.example .env
+```
+
+### Обязательные
+
+| Переменная | Описание | Значение по умолчанию |
+|------------|----------|----------------------|
+| `POSTGRES_PASSWORD` | Пароль PostgreSQL | `mpflow_dev_2026` |
+| `HMAC_SECRET` | Секрет для подписи токенов. Сгенерируйте: `openssl rand -base64 32` | — |
+| `ADMIN_BOOTSTRAP_USERNAME` | Логин администратора (создаётся при первом запуске) | `admin` |
+| `ADMIN_BOOTSTRAP_PASSWORD` | Пароль администратора | `change-me` |
+
+### Ozon API
+
+| Переменная | Описание |
+|------------|----------|
+| `OZON_CLIENT_ID` | Client-ID из [кабинета продавца Ozon](https://seller.ozon.ru/app/settings/api-keys) |
+| `OZON_API_KEY` | API-ключ Ozon |
+
+### Плагины
+
+| Переменная | Описание |
+|------------|----------|
+| `TMAPI_API_TOKEN` | Токен [tmapi.top](https://tmapi.top) для плагина ali1688 (обогащение данными поставщиков с 1688.com) |
+
+### AI функции
+
+| Переменная | Описание |
+|------------|----------|
+| `ANTHROPIC_API_KEY` | API-ключ Anthropic для генерации изображений |
+
+### OAuth / Logto (продвинутая настройка)
+
+| Переменная | Описание |
+|------------|----------|
+| `LOGTO_ENDPOINT` | URL инстанса Logto (например, `https://auth.example.com`) |
+| `LOGTO_API_RESOURCE` | API resource для валидации JWT |
+| `LOGTO_MCP_CLIENT_ID` | Client ID для MCP OAuth потока |
+| `BASE_URL` | Публичный URL прокси (для OAuth endpoints) |
+
+<Callout type="info">
+Без настройки Logto система использует простую аутентификацию по логину/паролю. Logto нужен только для OAuth-авторизации MCP клиентов (например, ChatGPT).
+</Callout>
+
+## Миграции базы данных
+
+Миграции применяются автоматически при первом запуске через `scripts/init-db.sh`. Таблица `schema_migrations` отслеживает применённые миграции.
+
+Для применения новых миграций после обновления:
+
+```bash
+docker compose restart postgres
+```

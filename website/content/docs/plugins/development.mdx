@@ -1,0 +1,223 @@
+---
+title: Разработка плагинов
+description: Пошаговое руководство по созданию плагина для OpenMPFlow — манифест, frontend, backend, база данных, MCP
+---
+
+Плагин OpenMPFlow может добавить **вкладки карточки товара**, **backend API**, **MCP инструменты** — всё из одного манифеста.
+
+## Структура плагина
+
+```
+proxy/src/plugins/my-plugin/     # Backend (Python)
+  manifest.json                  # Манифест
+  __init__.py                    # Пустой init
+  schema.sql                     # Приватные таблицы (опционально)
+  routes.py                      # HTTP endpoints (опционально)
+  service.py                     # Бизнес-логика (опционально)
+
+admin-ui/plugins/my-plugin/      # Frontend (JavaScript ESM)
+  plugin.js                      # UI-компоненты
+```
+
+## Шаг 1: Манифест
+
+```json title="proxy/src/plugins/my-plugin/manifest.json"
+{
+  "name": "my-plugin",
+  "version": "0.1.0",
+  "title": "My Plugin",
+  "description": "Описание плагина",
+  "author": "your-name",
+  "engine": {
+    "core_version": ">=1.0.0",
+    "plugin_api_version": "1"
+  },
+  "contributes": {
+    "cardTabs": [
+      { "id": "cardTabMyPlugin", "label": "Моя вкладка" }
+    ]
+  },
+  "provides_kinds": ["my-data-kind"],
+  "reads_kinds": [],
+  "frontend": { "main": "plugin.js" },
+  "backend": { "apiPrefix": "my-plugin" }
+}
+```
+
+### Поля манифеста
+
+| Поле | Обязательное | Описание |
+|------|-------------|----------|
+| `name` | Да | Уникальный ID (kebab-case) |
+| `version` | Да | Версия (semver) |
+| `title` | Нет | Отображаемое название |
+| `contributes.cardTabs` | Нет | Вкладки в карточке товара |
+| `provides_kinds` | Нет | Типы данных, которые плагин записывает |
+| `reads_kinds` | Нет | Типы данных, которые плагин читает |
+| `frontend.main` | Нет | Точка входа JS |
+| `backend.apiPrefix` | Нет | Префикс URL для маршрутов |
+| `mcp.tools` | Нет | MCP инструменты плагина |
+
+## Шаг 2: Frontend — вкладка карточки
+
+```js title="admin-ui/plugins/my-plugin/plugin.js"
+export function activate(host) {
+  host.registerCardTabRenderer("cardTabMyPlugin", async (container, cardDetail) => {
+    const item = cardDetail?.item;
+    if (!item) {
+      container.innerHTML = '<p class="text-sm text-slate-400">Нет данных</p>';
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="bg-white dark:bg-slate-900 rounded-xl border p-5">
+        <h3 class="text-base font-semibold mb-3">My Plugin</h3>
+        <p class="text-sm text-slate-500">
+          Товар: ${host.esc(item.title)} (${host.esc(item.sku)})
+        </p>
+      </div>
+    `;
+  });
+}
+```
+
+### API хоста (PluginHost)
+
+| Метод | Описание |
+|-------|----------|
+| `host.apiRequest(path, opts)` | API-запрос с авторизацией |
+| `host.esc(str)` | HTML-экранирование |
+| `host.formatMoney(value, currency)` | Форматирование валюты |
+| `host.formatDate(isoString)` | Форматирование даты |
+| `host.showToast(message)` | Уведомление |
+| `host.getState()` | Состояние приложения (read-only) |
+| `host.getCardDetail()` | Текущая карточка товара |
+| `host.registerCardTabRenderer(tabId, fn)` | Регистрация рендерера вкладки |
+
+### Вызов backend
+
+```js
+// GET
+const data = await host.apiRequest("/plugins/my-plugin/items");
+
+// POST
+await host.apiRequest("/plugins/my-plugin/process", {
+  method: "POST",
+  body: { card_id: item.id, url: "https://..." },
+});
+```
+
+Путь относительно `/v1/admin`. Заголовки авторизации добавляются автоматически.
+
+## Шаг 3: Backend — маршруты
+
+```python title="proxy/src/plugins/my-plugin/routes.py"
+from fastapi import APIRouter, Depends
+from proxy.src.plugins.context import PluginContext
+from proxy.src.routes.admin.deps import get_current_user
+
+def create_router(ctx: PluginContext) -> APIRouter:
+    router = APIRouter(tags=["Plugin: my-plugin"])
+
+    @router.get("/items")
+    async def list_items(user: dict = Depends(get_current_user)):
+        conn = await ctx.get_plugin_conn()
+        try:
+            rows = await conn.fetch(
+                "SELECT * FROM my_items WHERE user_id = $1", user["id"]
+            )
+            return {"items": [dict(r) for r in rows]}
+        finally:
+            await ctx.pool.release(conn)
+
+    return router
+```
+
+Маршруты монтируются по адресу `/v1/admin/plugins/{apiPrefix}/`.
+
+### API контекста (PluginContext)
+
+| Метод | Описание |
+|-------|----------|
+| `ctx.enrich_card(card_id, user_id, source_key, kind, data)` | Запись данных в `attributes.sources` карточки |
+| `ctx.read_card(card_id, user_id)` | Чтение карточки |
+| `ctx.get_plugin_conn()` | DB-соединение с `search_path = plugin_{name}` |
+| `ctx.pool` | Прямой доступ к asyncpg pool |
+
+<Callout type="warn">
+`source_key` должен начинаться с имени плагина и двоеточия: `"my-plugin:abc123"`.
+</Callout>
+
+## Шаг 4: База данных
+
+Плагины получают изолированную PostgreSQL-схему (`plugin_{name}`):
+
+```sql title="proxy/src/plugins/my-plugin/schema.sql"
+CREATE TABLE IF NOT EXISTS my_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    card_id UUID REFERENCES public.master_cards(id),
+    data JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_my_items_user ON my_items (user_id);
+```
+
+- Таблицы создаются в схеме `plugin_{name}`
+- Можно ссылаться на `public.master_cards` (read-only)
+- Ядро системы не имеет доступа к приватным таблицам плагина
+
+## Шаг 5: MCP инструменты
+
+```json title="manifest.json (фрагмент)"
+{
+  "mcp": {
+    "tools": [
+      {
+        "name": "plugin_my_plugin_preview",
+        "description": "Предпросмотр данных",
+        "handler": "preview"
+      },
+      {
+        "name": "plugin_my_plugin_enrich",
+        "description": "Обогащение карточки данными",
+        "handler": "enrich_card",
+        "requires_confirmation": true
+      }
+    ]
+  }
+}
+```
+
+Имена инструментов: `plugin_{name}_{action}`.
+
+## Обмен данными между плагинами
+
+Плагины не зависят друг от друга напрямую. Обмен через поле `attributes.sources` на карточке:
+
+```python
+# Чтение данных других плагинов
+def get_supplier_photos(attributes: dict) -> list[str]:
+    sources = attributes.get("sources", {})
+    images = []
+    for entry in sources.values():
+        if entry.get("kind") == "supplier":
+            images.extend(entry.get("data", {}).get("images", []))
+    return images
+```
+
+## Пример: плагин ali1688
+
+Встроенный плагин ali1688 — полный референсный пример:
+
+```
+proxy/src/plugins/ali1688/
+  manifest.json       # Вкладка "1688 Supplier"
+  routes.py           # GET /preview, POST /enrich/{card_id}
+  service.py          # Бизнес-логика
+  schema.sql          # Кэш-таблицы
+
+admin-ui/plugins/ali1688/
+  plugin.js           # UI вкладки карточки
+```

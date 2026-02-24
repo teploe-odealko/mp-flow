@@ -1,34 +1,35 @@
 ---
-title: Introduction
-description: OpenMPFlow — open-source ERP for Ozon FBO sellers
+title: OpenMPFlow — Open Source ERP для маркетплейсов
+description: Документация OpenMPFlow — FIFO складской учёт, юнит-экономика, управление ценами и акциями на Ozon, AI-агент с 54+ MCP инструментами.
 ---
 
-OpenMPFlow — ERP-система для продавцов на маркетплейсе Ozon (модель FBO).
+OpenMPFlow — open source ERP-система для продавцов на маркетплейсах (Ozon FBO).
 
-## What is OpenMPFlow?
+## Что такое OpenMPFlow?
 
-OpenMPFlow manages the full seller lifecycle:
+OpenMPFlow управляет полным циклом продаж на маркетплейсе:
 
-- **Catalog** — product cards with supplier data enrichment
-- **Purchasing** — supplier orders, shared cost allocation, receiving
-- **Inventory** — FIFO lot tracking, warehouse stock, Ozon sync
-- **Analytics** — unit economics, P&L, DDS reports
-- **Pricing** — breakeven calculator, commission rates
-- **Logistics** — SKU movement matrix, Ozon supply orders
-- **MCP** — 54 AI tools for Claude, ChatGPT, and other AI clients
+- **Каталог** — карточки товаров, обогащение данными поставщиков
+- **Закупки** — заказы поставщикам, распределение общих затрат, приёмка
+- **Складской учёт** — FIFO по партиям, остатки, синхронизация с Ozon
+- **Аналитика** — юнит-экономика, PnL, ДДС
+- **Ценообразование** — калькулятор прибыли с комиссиями Ozon, массовое обновление цен
+- **Акции** — массовое управление акциями Ozon с защитой маржи
+- **Логистика** — матрица перемещений SKU, поставки на Ozon
+- **AI-агент** — 54 MCP инструмента для Claude, ChatGPT и других AI-клиентов
 
-## Quick Start
+## Быстрый старт
 
 ```bash
-git clone https://github.com/teploe-odealko/openmpflow
-cd openmpflow
+git clone https://github.com/nickthecook/mpflow
+cd mpflow
 cp .env.example .env
 docker compose up
 ```
 
-Open [http://localhost:3000](http://localhost:3000) and log in with `admin` / `admin`.
+Откройте [http://localhost:3000](http://localhost:3000) и войдите с логином `admin` / `admin`.
 
-## Architecture
+## Архитектура
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌──────────────┐
@@ -43,15 +44,13 @@ Open [http://localhost:3000](http://localhost:3000) and log in with `admin` / `a
                     └───────────┘
 ```
 
-- **Admin UI** — vanilla JS SPA served by nginx, proxies API requests to backend
-- **Proxy** — FastAPI with 4 API surfaces: Admin API, Tool API, MCP Server, OAuth
-- **PostgreSQL** — all data, migrations tracked via `schema_migrations` table
-
-## Next Steps
+## Разделы документации
 
 <Cards>
-  <Card title="Getting Started" href="/docs/guides/getting-started" description="Install and configure OpenMPFlow" />
-  <Card title="Plugin Development" href="/docs/guides/plugin-development" description="Build your first plugin" />
-  <Card title="MCP Integration" href="/docs/guides/mcp" description="Connect AI clients" />
-  <Card title="Architecture" href="/docs/concepts/architecture" description="How it all works" />
+  <Card title="Быстрый старт" href="/docs/getting-started/quick-start" description="Установка и первый запуск за 5 минут" />
+  <Card title="FIFO складской учёт" href="/docs/features/fifo-accounting" description="Учёт по партиям и расчёт себестоимости" />
+  <Card title="Управление ценами" href="/docs/features/pricing" description="Калькулятор прибыли с комиссиями Ozon" />
+  <Card title="AI-агент и MCP" href="/docs/ai-agents/overview" description="Подключение AI-клиентов через MCP протокол" />
+  <Card title="Self-hosting" href="/docs/self-hosting/docker-compose" description="Развёртывание на своём сервере" />
+  <Card title="Плагины" href="/docs/plugins/overview" description="Расширение системы плагинами" />
 </Cards>

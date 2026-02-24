@@ -1,0 +1,78 @@
+---
+title: Обновления
+description: Как обновлять self-hosted инстанс OpenMPFlow — pull, rebuild, миграции базы данных
+---
+
+## Обновление
+
+### 1. Получите новую версию
+
+```bash
+cd mpflow
+git pull origin main
+```
+
+### 2. Пересоберите контейнеры
+
+```bash
+docker compose build
+docker compose up -d
+```
+
+### 3. Миграции базы данных
+
+Миграции применяются автоматически при запуске сервиса `postgres`. Скрипт `scripts/init-db.sh`:
+
+1. Проверяет таблицу `schema_migrations`
+2. Находит новые миграции в `/migrations/`
+3. Применяет их по порядку
+4. Записывает результат в `schema_migrations`
+
+Если автоматическая миграция не сработала:
+
+```bash
+docker compose restart postgres
+```
+
+## Откат
+
+Если что-то пошло не так:
+
+```bash
+# Вернитесь к предыдущей версии
+git checkout HEAD~1
+
+# Пересоберите
+docker compose build
+docker compose up -d
+```
+
+<Callout type="warn">
+Миграции базы данных не имеют автоматического отката. Рекомендуем делать бэкап перед обновлением.
+</Callout>
+
+## Бэкап перед обновлением
+
+```bash
+# Бэкап базы данных
+docker compose exec postgres pg_dump -U postgres mpflow > backup_$(date +%Y%m%d).sql
+
+# Обновление
+git pull origin main
+docker compose build
+docker compose up -d
+```
+
+## Восстановление из бэкапа
+
+```bash
+# Остановите сервисы
+docker compose down
+
+# Удалите данные и восстановите
+docker compose up -d postgres
+docker compose exec -T postgres psql -U postgres mpflow < backup_20260225.sql
+
+# Запустите остальные сервисы
+docker compose up -d
+```

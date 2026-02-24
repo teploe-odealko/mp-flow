@@ -1,11 +1,11 @@
 ---
-title: Architecture
-description: How OpenMPFlow is built — services, API surfaces, data flow
+title: Архитектура системы
+description: Архитектура OpenMPFlow — сервисы, API, модель данных, плагины, миграции
 ---
 
-## Services
+## Сервисы
 
-OpenMPFlow runs as three Docker containers:
+OpenMPFlow запускается как три Docker-контейнера:
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌──────────────────┐
@@ -15,93 +15,66 @@ OpenMPFlow runs as three Docker containers:
 └─────────────────┘     └─────────────────┘     └──────────────────┘
 ```
 
-- **Admin UI** — vanilla JS SPA with Tailwind CSS, served by nginx
-- **Proxy** — FastAPI backend with 4 API surfaces
-- **PostgreSQL** — all data, 24+ migration files
+- **Admin UI** — vanilla JS SPA с Tailwind CSS, раздаётся через nginx
+- **Proxy** — FastAPI backend с 4 API поверхностями
+- **PostgreSQL** — все данные, 24+ файлов миграций
 
-## Four API Surfaces
-
-The Proxy serves four distinct APIs from one FastAPI app:
+## Четыре API поверхности
 
 ### 1. Admin ERP API (`/v1/admin/*`)
 
-The main API used by the Admin UI. 15 domain routers:
-cards, orders, sales, finance, reports, inventory, logistics, demand, pricing,
-ozon sync, integrations, promo, settings, users, API keys.
+Основной API для Admin UI. 15 доменных роутеров: каталог, заказы, продажи, финансы, отчёты, инвентарь, логистика, планирование, ценообразование, Ozon, интеграции, акции, настройки, пользователи, API-ключи.
 
-**Auth:** API keys (`mpk_`), legacy HMAC tokens.
+**Авторизация:** API-ключи (`mpk_`), legacy HMAC-токены.
 
-### 2. MCP Server (`/mcp`)
+### 2. MCP сервер (`/mcp`)
 
-54 tools via Streamable HTTP transport. Used by AI clients (Claude, ChatGPT).
+54 инструмента через Streamable HTTP транспорт. Используется AI-клиентами (Claude, ChatGPT).
 
-**Auth:** API keys or OAuth (Logto JWT).
+**Авторизация:** API-ключи или OAuth (Logto JWT).
 
 ### 3. Tool API (`/v1/tools/invoke`)
 
-Called by OpenClaw agents in E2B sandboxes. Routes through `TOOL_HANDLERS` dict.
+Вызывается агентами OpenClaw в E2B-песочницах.
 
-### 4. OAuth Endpoints (root-level)
+### 4. OAuth endpoints (корневой уровень)
 
-RFC-compliant OAuth proxy to Logto for MCP client authorization:
+RFC-совместимый OAuth прокси к Logto:
 - `/.well-known/oauth-protected-resource`
 - `/.well-known/oauth-authorization-server`
 - `/oauth/authorize`, `/oauth/token`, `/oauth/register`
 
-## Data Model
+## Модель данных
 
-Core entities follow the seller lifecycle:
-
-```
-Card (SKU) → Supplier Order → FIFO Lot → Sale → Profit
-```
-
-### Key Tables
-
-| Table | Purpose |
-|-------|---------|
-| `master_cards` | Product catalog (SKU, title, attributes, sources) |
-| `supplier_orders` | Purchase orders with shared cost allocation |
-| `supplier_order_items` | Line items with CNY prices |
-| `fifo_lots` | Inventory lots for FIFO cost tracking |
-| `card_sales` | Sales with COGS from FIFO allocation |
-| `finance_transactions` | Manual income/expense records |
-| `stock_movements` | Inventory movement audit trail |
-| `admin_users` | User accounts with tenant isolation |
-| `admin_api_keys` | API keys (SHA256 hashed, scoped) |
-
-### Tenant Isolation
-
-All queries are scoped by `user_id`. Every table has a `user_id` column
-and queries always include `WHERE user_id = $1`.
-
-## Plugin Architecture
-
-Plugins extend both frontend and backend:
+Основные сущности следуют жизненному циклу продавца:
 
 ```
-proxy/src/plugins/{name}/      # Backend
-  manifest.json                # Declares contributions
-  routes.py                    # HTTP endpoints
-  schema.sql                   # Private DB schema
-
-admin-ui/plugins/{name}/       # Frontend
-  plugin.js                    # ESM module
+Карточка (SKU) → Заказ поставщику → FIFO-партия → Продажа → Прибыль
 ```
 
-- **Discovery** at startup: scan `plugins/*/manifest.json`
-- **Schema isolation**: each plugin gets `CREATE SCHEMA plugin_{name}`
-- **Route mounting**: `POST /v1/admin/plugins/{prefix}/...`
-- **Frontend loading**: lazy `import()` when user navigates to plugin tab
+### Ключевые таблицы
 
-See [Plugin Development](/docs/guides/plugin-development) for the full guide.
+| Таблица | Назначение |
+|---------|-----------|
+| `master_cards` | Каталог товаров (SKU, название, атрибуты, источники) |
+| `supplier_orders` | Заказы поставщикам с распределением общих затрат |
+| `supplier_order_items` | Позиции заказа с ценами в CNY |
+| `fifo_lots` | Партии для FIFO-учёта себестоимости |
+| `card_sales` | Продажи с COGS из FIFO-распределения |
+| `finance_transactions` | Ручные записи доходов/расходов |
+| `stock_movements` | Аудит-трейл перемещений товаров |
+| `admin_users` | Аккаунты пользователей с тенантной изоляцией |
+| `admin_api_keys` | API-ключи (SHA256 хэш, скоупы) |
 
-## Migrations
+### Тенантная изоляция
 
-SQL migrations in `/migrations/` are tracked by `schema_migrations` table.
-The `scripts/init-db.sh` runner:
+Все запросы изолированы по `user_id`. Каждая таблица содержит `user_id` и все запросы включают `WHERE user_id = $1`.
 
-1. Creates `schema_migrations` table if not exists
-2. Scans `init.sql` + `0*.sql` files in order
-3. Skips already-applied migrations (idempotent)
-4. Records each applied migration with timestamp
+## Миграции
+
+SQL-миграции в `/migrations/` отслеживаются таблицей `schema_migrations`. Скрипт `scripts/init-db.sh`:
+
+1. Создаёт `schema_migrations` если не существует
+2. Сканирует `init.sql` + `0*.sql` файлы по порядку
+3. Пропускает уже применённые (идемпотентно)
+4. Записывает каждую применённую миграцию с timestamp

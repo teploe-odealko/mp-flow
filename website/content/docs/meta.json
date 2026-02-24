@@ -2,9 +2,15 @@
   "title": "OpenMPFlow",
   "pages": [
     "index",
-    "---Guides---",
-    "guides",
-    "---Concepts---",
-    "concepts"
+    "---Начало работы---",
+    "getting-started",
+    "---Возможности---",
+    "features",
+    "---AI агенты---",
+    "ai-agents",
+    "---Для разработчиков---",
+    "self-hosting",
+    "concepts",
+    "plugins"
   ]
 }
