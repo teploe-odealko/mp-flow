@@ -3,8 +3,20 @@
 # Set DATABASE_URL in Dokploy environment variables.
 
 services:
+  migrate:
+    build: ./migrations
+    command: sh -c 'psql "$$DATABASE_URL" -f /migrations/init.sql'
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    networks:
+      - dokploy-network
+    restart: "no"
+
   proxy:
     build: ./proxy
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: ${DATABASE_URL}
       HMAC_SECRET: ${HMAC_SECRET}
