@@ -41,12 +41,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.proxy.rule=Host(`proxy.mp-flow.ru`)"
-      - "traefik.http.routers.proxy.entrypoints=websecure"
-      - "traefik.http.routers.proxy.tls.certresolver=letsencrypt"
-      - "traefik.http.services.proxy.loadbalancer.server.port=8000"
     networks:
       - dokploy-network
 
@@ -55,34 +49,16 @@ services:
     depends_on:
       proxy:
         condition: service_healthy
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.admin-ui.rule=Host(`admin.mp-flow.ru`)"
-      - "traefik.http.routers.admin-ui.entrypoints=websecure"
-      - "traefik.http.routers.admin-ui.tls.certresolver=letsencrypt"
-      - "traefik.http.services.admin-ui.loadbalancer.server.port=80"
     networks:
       - dokploy-network
 
   landing:
     build: ./landing
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.landing.rule=Host(`mp-flow.ru`)"
-      - "traefik.http.routers.landing.entrypoints=websecure"
-      - "traefik.http.routers.landing.tls.certresolver=letsencrypt"
-      - "traefik.http.services.landing.loadbalancer.server.port=80"
     networks:
       - dokploy-network
 
   docs:
     build: ./website
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.docs.rule=Host(`docs.mp-flow.ru`)"
-      - "traefik.http.routers.docs.entrypoints=websecure"
-      - "traefik.http.routers.docs.tls.certresolver=letsencrypt"
-      - "traefik.http.services.docs.loadbalancer.server.port=80"
     networks:
       - dokploy-network
 
@@ -113,16 +89,6 @@ services:
       ADMIN_ENDPOINT: https://auth-admin.mp-flow.ru
       TRUST_PROXY_HEADER: 1
     entrypoint: ['sh', '-c', 'npm run cli db seed -- --swe && npm start']
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.logto.rule=Host(`auth.mp-flow.ru`)"
-      - "traefik.http.routers.logto.entrypoints=websecure"
-      - "traefik.http.routers.logto.tls.certresolver=letsencrypt"
-      - "traefik.http.services.logto.loadbalancer.server.port=3001"
-      - "traefik.http.routers.logto-admin.rule=Host(`auth-admin.mp-flow.ru`)"
-      - "traefik.http.routers.logto-admin.entrypoints=websecure"
-      - "traefik.http.routers.logto-admin.tls.certresolver=letsencrypt"
-      - "traefik.http.services.logto-admin.loadbalancer.server.port=3002"
     networks:
       - dokploy-network
 
