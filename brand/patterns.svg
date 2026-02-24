@@ -1,51 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" viewBox="0 0 800 800">
   <defs>
-    <!-- Primary flow pattern: repeating sinusoidal data streams -->
+    <!-- Flow lines pattern: ocean currents -->
     <pattern id="flow-lines" x="0" y="0" width="200" height="200" patternUnits="userSpaceOnUse">
-      <!-- Horizontal flowing curves -->
-      <path d="M0 40 C30 40, 50 60, 80 60 C110 60, 130 40, 160 40 C190 40, 200 50, 200 50"
-            stroke="#6366F1" stroke-width="0.8" fill="none" opacity="0.08"/>
-      <path d="M0 80 C40 80, 60 100, 100 100 C140 100, 160 80, 200 80"
-            stroke="#6366F1" stroke-width="0.6" fill="none" opacity="0.06"/>
-      <path d="M0 120 C25 120, 45 140, 75 140 C105 140, 125 120, 155 120 C185 120, 200 130, 200 130"
-            stroke="#6366F1" stroke-width="0.8" fill="none" opacity="0.08"/>
-      <path d="M0 160 C50 160, 70 180, 110 180 C150 180, 170 160, 200 160"
-            stroke="#6366F1" stroke-width="0.6" fill="none" opacity="0.06"/>
+      <path d="M0 40C30 40 50 60 80 60C110 60 130 40 160 40C190 40 200 50 200 50"
+            stroke="#0EA5E9" stroke-width="0.8" fill="none" opacity="0.07"/>
+      <path d="M0 80C40 80 60 100 100 100C140 100 160 80 200 80"
+            stroke="#0EA5E9" stroke-width="0.6" fill="none" opacity="0.05"/>
+      <path d="M0 120C25 120 45 140 75 140C105 140 125 120 155 120C185 120 200 130 200 130"
+            stroke="#0EA5E9" stroke-width="0.8" fill="none" opacity="0.07"/>
+      <path d="M0 160C50 160 70 180 110 180C150 180 170 160 200 160"
+            stroke="#0EA5E9" stroke-width="0.6" fill="none" opacity="0.05"/>
 
-      <!-- Subtle connection dots at intersections -->
-      <circle cx="80" cy="60" r="1.5" fill="#6366F1" opacity="0.08"/>
-      <circle cx="100" cy="100" r="1.5" fill="#6366F1" opacity="0.06"/>
-      <circle cx="75" cy="140" r="1.5" fill="#6366F1" opacity="0.08"/>
-      <circle cx="110" cy="180" r="1.5" fill="#6366F1" opacity="0.06"/>
+      <!-- Node dots at wave peaks -->
+      <circle cx="80" cy="60" r="1.5" fill="#0EA5E9" opacity="0.06"/>
+      <circle cx="100" cy="100" r="1.5" fill="#0EA5E9" opacity="0.05"/>
+      <circle cx="75" cy="140" r="1.5" fill="#0EA5E9" opacity="0.06"/>
+      <circle cx="110" cy="180" r="1.5" fill="#0EA5E9" opacity="0.05"/>
     </pattern>
 
-    <!-- Grid dot pattern: subtle data grid -->
+    <!-- Grid dot pattern -->
     <pattern id="grid-dots" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
-      <circle cx="20" cy="20" r="0.8" fill="#6366F1" opacity="0.1"/>
-    </pattern>
-
-    <!-- Diagonal connector lines -->
-    <pattern id="connectors" x="0" y="0" width="120" height="120" patternUnits="userSpaceOnUse">
-      <line x1="0" y1="60" x2="60" y2="0" stroke="#6366F1" stroke-width="0.4" opacity="0.04"/>
-      <line x1="60" y1="120" x2="120" y2="60" stroke="#6366F1" stroke-width="0.4" opacity="0.04"/>
-      <line x1="0" y1="120" x2="120" y2="0" stroke="#A78BFA" stroke-width="0.3" opacity="0.03"/>
-    </pattern>
-
-    <!-- Gradient overlay for depth -->
-    <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
-      <stop offset="0%" stop-color="transparent"/>
-      <stop offset="100%" stop-color="#6366F1" stop-opacity="0.02"/>
-    </radialGradient>
-
-    <!-- Combined pattern for backgrounds -->
-    <pattern id="brand-pattern" x="0" y="0" width="800" height="800" patternUnits="userSpaceOnUse">
-      <rect width="800" height="800" fill="url(#grid-dots)"/>
-      <rect width="800" height="800" fill="url(#flow-lines)"/>
-      <rect width="800" height="800" fill="url(#connectors)"/>
+      <circle cx="20" cy="20" r="0.8" fill="#0EA5E9" opacity="0.08"/>
     </pattern>
   </defs>
 
-  <!-- Full pattern composition -->
-  <rect width="800" height="800" fill="url(#brand-pattern)"/>
-  <rect width="800" height="800" fill="url(#vignette)"/>
+  <!-- Composition -->
+  <rect width="800" height="800" fill="url(#grid-dots)"/>
+  <rect width="800" height="800" fill="url(#flow-lines)"/>
 </svg>

@@ -34,7 +34,7 @@ function renderSupplierInfo(entry) {
         <h3 class="text-base font-semibold text-slate-900 dark:text-white mb-3">
           ${esc(data.title || "Supplier Data")}
         </h3>
-        ${data.url ? `<a href="${esc(data.url)}" target="_blank" class="text-xs text-indigo-500 hover:underline">${esc(data.url)}</a>` : ""}
+        ${data.url ? `<a href="${esc(data.url)}" target="_blank" class="text-xs text-sky-500 hover:underline">${esc(data.url)}</a>` : ""}
         ${data.supplier_name ? `<p class="text-sm text-slate-500 mt-1">Supplier: ${esc(data.supplier_name)}</p>` : ""}
         ${data.price_min || data.price_max ? `<p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Price: ${esc(data.price_min || "?")} — ${esc(data.price_max || "?")} CNY</p>` : ""}
         <p class="text-xs text-slate-400 mt-2">Updated: ${esc(entry.updated_at || "")}</p>
@@ -74,8 +74,8 @@ function renderEnrichForm(host, cardId) {
       <p class="text-sm text-slate-500 mb-4">Paste a 1688.com product URL to import supplier data (photos, prices, SKU variants).</p>
       <div class="flex gap-2">
         <input id="ali1688UrlInput" type="url" placeholder="https://detail.1688.com/offer/..."
-          class="flex-1 px-3 py-2 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-        <button id="ali1688EnrichBtn" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors">
+          class="flex-1 px-3 py-2 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500" />
+        <button id="ali1688EnrichBtn" class="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white text-sm font-medium rounded-lg transition-colors">
           Import
         </button>
       </div>

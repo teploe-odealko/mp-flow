@@ -118,6 +118,22 @@ async def scalar_docs() -> HTMLResponse:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OpenMPFlow API</title>
+  <style>
+    :root {
+      --scalar-color-1: #E6EDF3;
+      --scalar-color-2: #8B949E;
+      --scalar-color-3: #5C6670;
+      --scalar-color-accent: #0EA5E9;
+      --scalar-color-green: #22C55E;
+      --scalar-color-red: #EF4444;
+      --scalar-color-yellow: #EAB308;
+      --scalar-color-orange: #F97316;
+      --scalar-background-1: #0C1117;
+      --scalar-background-2: #151B23;
+      --scalar-background-3: #1C2530;
+      --scalar-border-color: #1E2A35;
+    }
+  </style>
 </head>
 <body>
   <script
@@ -125,6 +141,7 @@ async def scalar_docs() -> HTMLResponse:
     data-url="/openapi.json"
     data-configuration='{
       "theme": "deepSpace",
+      "darkMode": true,
       "authentication": {
         "preferredSecurityScheme": "BearerToken"
       }

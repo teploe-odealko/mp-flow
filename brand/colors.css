@@ -1,205 +1,33 @@
-/* ================================================================
-   OpenMPFlow Brand Color System
-   ================================================================
-   Usage: var(--color-name)
-   Modes: :root (light), .dark (dark)
-   ================================================================ */
+/* MPFlow Brand Colors — "Deep Water / Поток" v2.0 */
 
 :root {
-  /* ============================================================
-     PRIMARY — Indigo/Purple (brand core)
-     The primary palette drives interactive elements, CTAs,
-     active states, and brand-identifying surfaces.
-     ============================================================ */
-  --color-primary-50:  #EEF2FF;
-  --color-primary-100: #E0E7FF;
-  --color-primary-200: #C7D2FE;
-  --color-primary-300: #A5B4FC;
-  --color-primary-400: #818CF8;
-  --color-primary-500: #6366F1;  /* Base — interactive elements, links */
-  --color-primary-600: #5046E5;  /* Hover — buttons, pressed states */
-  --color-primary-700: #4338CA;  /* Active — strong emphasis */
-  --color-primary-800: #3730A3;
-  --color-primary-900: #312E81;
-  --color-primary-950: #1E1B4B;
+  /* === Background === */
+  --bg-deep: #0C1117;
+  --bg-surface: #151B23;
+  --bg-elevated: #1C2530;
+  --bg-border: #1E2A35;
 
-  /* ============================================================
-     SECONDARY — Purple (accent, gradients)
-     Used sparingly for gradients, highlights, and visual flair.
-     ============================================================ */
-  --color-secondary-50:  #FAF5FF;
-  --color-secondary-100: #F3E8FF;
-  --color-secondary-200: #E9D5FF;
-  --color-secondary-300: #D8B4FE;
-  --color-secondary-400: #C084FC;
-  --color-secondary-500: #A855F7;
-  --color-secondary-600: #9333EA;
-  --color-secondary-700: #7E22CE;
-  --color-secondary-800: #6B21A8;
-  --color-secondary-900: #581C87;
-  --color-secondary-950: #3B0764;
+  /* === Text === */
+  --text-primary: #E6EDF3;
+  --text-secondary: #8B949E;
+  --text-muted: #5C6670;
 
-  /* ============================================================
-     NEUTRAL — Slate (text, borders, surfaces)
-     Foundation for all UI chrome: backgrounds, text, dividers.
-     ============================================================ */
-  --color-neutral-25:  #FBFCFD;
-  --color-neutral-50:  #F8FAFC;
-  --color-neutral-100: #F1F5F9;
-  --color-neutral-200: #E2E8F0;
-  --color-neutral-300: #CBD5E1;
-  --color-neutral-400: #94A3B8;
-  --color-neutral-500: #64748B;
-  --color-neutral-600: #475569;
-  --color-neutral-700: #334155;
-  --color-neutral-800: #1E293B;
-  --color-neutral-900: #0F172A;
-  --color-neutral-950: #020617;
+  /* === Accent: Ocean Current === */
+  --accent: #0EA5E9;
+  --accent-light: #38BDF8;
+  --accent-dark: #0284C7;
+  --accent-glow: rgba(14, 165, 233, 0.12);
+  --accent-subtle: rgba(14, 165, 233, 0.06);
 
-  /* ============================================================
-     SEMANTIC — Functional colors
-     Status indicators, alerts, form validation.
-     ============================================================ */
-  /* Success (green) */
-  --color-success-50:  #ECFDF5;
-  --color-success-100: #D1FAE5;
-  --color-success-500: #059669;
-  --color-success-600: #047857;
-  --color-success-700: #15803D;
+  /* === Semantic === */
+  --color-inflow: #22C55E;
+  --color-outflow: #F97316;
+  --color-risk: #EAB308;
+  --color-loss: #EF4444;
+  --color-neutral: #6B7280;
 
-  /* Warning (amber) */
-  --color-warning-50:  #FFFBEB;
-  --color-warning-100: #FEF3C7;
-  --color-warning-500: #D97706;
-  --color-warning-600: #B45309;
-  --color-warning-700: #92400E;
-
-  /* Danger (red) */
-  --color-danger-50:  #FEF2F2;
-  --color-danger-100: #FEE2E2;
-  --color-danger-500: #EF4444;
-  --color-danger-600: #DC2626;
-  --color-danger-700: #B91C1C;
-
-  /* Info (blue) */
-  --color-info-50:  #EFF6FF;
-  --color-info-100: #DBEAFE;
-  --color-info-500: #3B82F6;
-  --color-info-600: #2563EB;
-  --color-info-700: #1D4ED8;
-
-  /* ============================================================
-     MARKETPLACE ACCENTS
-     Partner/marketplace badge colors.
-     ============================================================ */
-  --color-ozon-bg:     #EFF6FF;
-  --color-ozon-text:   #2563EB;
-  --color-1688-bg:     #FFF7ED;
-  --color-1688-text:   #EA580C;
-
-  /* ============================================================
-     GRADIENTS
-     Brand gradients for hero sections, marks, backgrounds.
-     ============================================================ */
-  --gradient-brand:     linear-gradient(135deg, #7C6AED 0%, #5046E5 100%);
-  --gradient-brand-lg:  linear-gradient(135deg, #8B7CF6 0%, #6366F1 50%, #4F46E5 100%);
-  --gradient-hero:      linear-gradient(135deg, #0F172A 0%, #1E1B4B 50%, #312E81 100%);
-  --gradient-surface:   linear-gradient(180deg, #F8FAFC 0%, #EEF2FF 100%);
-  --gradient-glow:      radial-gradient(ellipse at 50% 0%, rgba(99, 102, 241, 0.12) 0%, transparent 70%);
-
-  /* ============================================================
-     SHADOWS
-     Elevation system (cards, dropdowns, modals).
-     ============================================================ */
-  --shadow-xs:   0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-sm:   0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md:   0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
-  --shadow-lg:   0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
-  --shadow-xl:   0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
-  --shadow-2xl:  0 25px 50px -12px rgba(0, 0, 0, 0.18);
-  --shadow-ring: 0 0 0 2px var(--color-primary-500);
-
-  /* ============================================================
-     RADII
-     Border radius scale.
-     ============================================================ */
-  --radius-sm:   0.375rem;   /* 6px — inputs, small buttons */
-  --radius-md:   0.5rem;     /* 8px — cards, buttons */
-  --radius-lg:   0.75rem;    /* 12px — modals, toasts */
-  --radius-xl:   1rem;       /* 16px — large cards, drawers */
-  --radius-2xl:  1.25rem;    /* 20px — hero sections */
-  --radius-full: 9999px;     /* pill shapes, avatars, badges */
-
-  /* ============================================================
-     SURFACE TOKENS (Light Mode)
-     Semantic surface and text assignments.
-     ============================================================ */
-  --surface-page:       var(--color-neutral-50);
-  --surface-card:       #FFFFFF;
-  --surface-elevated:   #FFFFFF;
-  --surface-sidebar:    var(--color-neutral-900);
-  --surface-overlay:    rgba(0, 0, 0, 0.4);
-
-  --text-primary:       var(--color-neutral-900);
-  --text-secondary:     var(--color-neutral-500);
-  --text-tertiary:      var(--color-neutral-400);
-  --text-on-primary:    #FFFFFF;
-  --text-on-sidebar:    var(--color-neutral-400);
-  --text-link:          var(--color-primary-500);
-
-  --border-default:     var(--color-neutral-200);
-  --border-subtle:      var(--color-neutral-100);
-  --border-focus:       var(--color-primary-500);
-}
-
-/* ================================================================
-   DARK MODE
-   ================================================================ */
-.dark {
-  --surface-page:       var(--color-neutral-950);
-  --surface-card:       var(--color-neutral-900);
-  --surface-elevated:   var(--color-neutral-800);
-  --surface-sidebar:    var(--color-neutral-900);
-  --surface-overlay:    rgba(0, 0, 0, 0.6);
-
-  --text-primary:       var(--color-neutral-100);
-  --text-secondary:     var(--color-neutral-400);
-  --text-tertiary:      var(--color-neutral-600);
-  --text-on-primary:    #FFFFFF;
-  --text-on-sidebar:    var(--color-neutral-400);
-  --text-link:          var(--color-primary-400);
-
-  --border-default:     var(--color-neutral-700);
-  --border-subtle:      var(--color-neutral-800);
-  --border-focus:       var(--color-primary-500);
-
-  /* Dark mode gradient adjustments */
-  --gradient-brand:     linear-gradient(135deg, #8B7CF6 0%, #6366F1 100%);
-  --gradient-hero:      linear-gradient(135deg, #020617 0%, #0F172A 50%, #1E1B4B 100%);
-  --gradient-surface:   linear-gradient(180deg, #0F172A 0%, #1E1B4B 100%);
-  --gradient-glow:      radial-gradient(ellipse at 50% 0%, rgba(99, 102, 241, 0.08) 0%, transparent 70%);
-
-  /* Dark mode shadows (slightly stronger for contrast) */
-  --shadow-sm:   0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.15);
-  --shadow-md:   0 4px 6px -1px rgba(0, 0, 0, 0.25), 0 2px 4px -2px rgba(0, 0, 0, 0.15);
-  --shadow-lg:   0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.15);
-  --shadow-xl:   0 20px 25px -5px rgba(0, 0, 0, 0.35), 0 8px 10px -6px rgba(0, 0, 0, 0.15);
-
-  /* Dark mode semantic adjustments */
-  --color-success-50:  rgba(5, 150, 105, 0.15);
-  --color-success-500: #34D399;
-
-  --color-warning-50:  rgba(217, 119, 6, 0.15);
-  --color-warning-500: #FBBF24;
-
-  --color-danger-50:   rgba(239, 68, 68, 0.15);
-  --color-danger-500:  #F87171;
-
-  --color-info-50:     rgba(59, 130, 246, 0.15);
-  --color-info-500:    #60A5FA;
-
-  --color-ozon-bg:     rgba(37, 99, 235, 0.15);
-  --color-ozon-text:   #60A5FA;
-  --color-1688-bg:     rgba(234, 88, 12, 0.15);
-  --color-1688-text:   #FB923C;
+  /* === Interaction === */
+  --focus-ring: 0 0 0 2px var(--bg-deep), 0 0 0 4px var(--accent);
+  --card-border: 1px solid var(--bg-border);
+  --active-glow: 0 0 0 1px var(--accent), 0 0 12px var(--accent-glow);
 }

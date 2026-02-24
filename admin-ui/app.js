@@ -1,12 +1,13 @@
-const API_BASE = window.__ADMIN_API_BASE__ || "/v1/admin";
+const API_BASE =
+  window.__ADMIN_API_BASE__ ||
+  (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+    ? "/v1/admin"
+    : "https://proxy.mp-flow.ru/v1/admin");
 
 /* ============================================================ */
-/* Auth (Logto SSO + HMAC fallback)                             */
+/* Auth                                                         */
 /* ============================================================ */
 let _hmacToken = localStorage.getItem("_mpflow_token") || null;
-let _logtoClient = null;
-let _authMode = "password"; // "logto" or "password"
-let _logtoConfig = null; // { endpoint, appId, resource }
 
 const state = {
   user: null,
@@ -366,7 +367,7 @@ function renderSyncDashboard() {
           <div class="text-xs text-slate-400">${esc(sync.desc)}</div>
         </div>
         <span class="text-xs text-slate-400 whitespace-nowrap">${esc(timeLabel)}</span>
-        <button class="sync-row-btn inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-950 transition-colors" data-sync-key="${sync.key}">
+        <button class="sync-row-btn inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-sky-500 dark:text-sky-400 border border-sky-200 dark:border-sky-800 rounded-lg hover:bg-sky-50 dark:hover:bg-sky-950 transition-colors" data-sync-key="${sync.key}">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
           Синк
         </button>
@@ -536,19 +537,8 @@ function switchAnalyticsTab(tab) {
 /* ============================================================ */
 async function apiRequest(path, options = {}) {
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
-  if (!options.skipAuth) {
-    if (_authMode === "logto" && _logtoClient) {
-      try {
-        const token = await _logtoClient.getAccessToken(_logtoConfig.resource);
-        headers["Authorization"] = `Bearer ${token}`;
-      } catch (e) {
-        console.warn("[auth] Failed to get Logto access token:", e);
-        await logout();
-        throw new Error("Session expired");
-      }
-    } else if (_hmacToken) {
-      headers["Authorization"] = `Bearer ${_hmacToken}`;
-    }
+  if (!options.skipAuth && _hmacToken) {
+    headers["Authorization"] = `Bearer ${_hmacToken}`;
   }
   const response = await fetch(`${API_BASE}${path}`, {
     method: options.method || "GET",
@@ -1265,7 +1255,7 @@ function renderUeHead() {
   const opsExpanded = state.ueOpsExpanded;
   const thCls = "text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500";
   const thLeftCls = "text-left px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500";
-  const thToggleCls = `${thCls} cursor-pointer select-none hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors`;
+  const thToggleCls = `${thCls} cursor-pointer select-none hover:text-sky-500 dark:hover:text-sky-400 transition-colors`;
 
   let html = `<tr class="bg-slate-50 dark:bg-slate-800/50">
     <th class="${thLeftCls}">SKU</th>
@@ -1427,7 +1417,7 @@ function showLotPopover(anchor, lots) {
   for (const lot of lots) {
     const date = lot.received_at ? new Date(lot.received_at).toLocaleDateString("ru-RU") : "—";
     const orderLabel = lot.order_number || "—";
-    const clickable = lot.order_id ? ` style="color:#6366f1;cursor:pointer;text-decoration:underline" data-order-id="${lot.order_id}"` : "";
+    const clickable = lot.order_id ? ` style="color:#0EA5E9;cursor:pointer;text-decoration:underline" data-order-id="${lot.order_id}"` : "";
     html += `<div style="padding:4px 12px;display:flex;gap:8px;align-items:center;border-top:1px solid ${document.documentElement.classList.contains("dark") ? "#334155" : "#f1f5f9"}">
       <span style="flex:1"><span${clickable}>${orderLabel}</span> <span style="color:#94a3b8;margin-left:4px">${date}</span></span>
       <span style="font-weight:600;white-space:nowrap">${lot.qty} шт</span>
@@ -1560,7 +1550,7 @@ function renderStockValuation(sv, ueItems) {
     const hasLots = r.lots.length > 0;
 
     let costCellClass = "px-2 py-1.5 text-right";
-    if (hasLots) costCellClass += " cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors";
+    if (hasLots) costCellClass += " cursor-pointer hover:text-sky-500 dark:hover:text-sky-400 transition-colors";
     const costCellAttr = hasLots ? ' style="text-decoration:underline dotted;text-underline-offset:3px"' : "";
 
     tr.innerHTML = `
@@ -2281,7 +2271,7 @@ function renderPluginsSection() {
           </div>
           <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
             <input type="checkbox" class="sr-only peer" data-plugin="${esc(p.name)}" ${isDisabled ? "" : "checked"} onchange="togglePlugin(this)">
-            <div class="w-11 h-6 bg-slate-300 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+            <div class="w-11 h-6 bg-slate-300 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sky-500"></div>
           </label>
         </div>
       </div>`;
@@ -2313,14 +2303,6 @@ async function logout() {
   state.user = null;
   state.selectedCard = null;
   state.selectedCardDetail = null;
-  if (_authMode === "logto" && _logtoClient) {
-    try {
-      await _logtoClient.signOut(window.location.origin);
-    } catch (e) {
-      console.warn("[auth] Logto sign-out error:", e);
-    }
-    return; // signOut redirects the page
-  }
   _hmacToken = null;
   localStorage.removeItem("_mpflow_token");
   setLoginMode(true);
@@ -2333,17 +2315,6 @@ async function refreshAfterMutations({ reloadCards = false } = {}) {
 /* ============================================================ */
 /* Event listeners                                              */
 /* ============================================================ */
-
-// Auth — SSO login (Logto)
-$("ssoLoginBtn").addEventListener("click", async () => {
-  if (!_logtoClient) return;
-  try {
-    await _logtoClient.signIn(window.location.origin + "/callback");
-  } catch (e) {
-    console.error("[auth] Logto signIn error:", e);
-    loginError.textContent = "Ошибка SSO авторизации";
-  }
-});
 
 // Auth — password login
 $("passwordLoginForm").addEventListener("submit", async (e) => {
@@ -2847,7 +2818,7 @@ function renderFinanceTable(data) {
       <td class="px-4 py-2.5 text-sm text-right font-medium tabular-nums ${amtCls}">${formatMoney(t.amount_rub)}</td>
       <td class="px-4 py-2.5 text-sm text-slate-500 truncate max-w-[200px]">${t.notes || ""}</td>
       <td class="px-4 py-2.5 text-right">
-        <button data-action="edit-fin" data-txn='${JSON.stringify(t).replace(/'/g, "&#39;")}' class="text-xs text-indigo-600 hover:text-indigo-800 mr-2">Ред.</button>
+        <button data-action="edit-fin" data-txn='${JSON.stringify(t).replace(/'/g, "&#39;")}' class="text-xs text-sky-500 hover:text-sky-800 mr-2">Ред.</button>
         <button data-action="del-fin" data-id="${t.id}" class="text-xs text-red-500 hover:text-red-700">Удал.</button>
       </td>
     </tr>`;
@@ -3883,7 +3854,7 @@ function renderDemandPlan(plan) {
       <td class="px-3 py-3 text-right text-sm tabular-nums">${item.stock_on_ozon ?? "—"}</td>
       <td class="px-3 py-3 text-right text-sm tabular-nums">${item.stock_at_home ?? 0}</td>
       <td class="px-3 py-3 text-right text-sm tabular-nums font-medium ${gap > 0 ? "text-red-600 dark:text-red-400" : "text-slate-500"}">${gap > 0 ? gap.toLocaleString() : "—"}</td>
-      <td class="px-3 py-3 text-right"><span class="inline-block px-2 py-1 text-sm font-bold rounded ${rec > 0 ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300" : "text-slate-400"}">${rec > 0 ? rec.toLocaleString() : "0"}</span></td>
+      <td class="px-3 py-3 text-right"><span class="inline-block px-2 py-1 text-sm font-bold rounded ${rec > 0 ? "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300" : "text-slate-400"}">${rec > 0 ? rec.toLocaleString() : "0"}</span></td>
     </tr>`;
 
     // Cluster breakdown (expandable) — with "К приходу" column
@@ -3930,7 +3901,7 @@ function renderDemandPlan(plan) {
           <div>Сумма gap по кластерам: <b>${totalClusterGap.toLocaleString()}</b></div>
           <div>&minus; На нашем складе: <b>${item.stock_at_home || 0}</b></div>
           <div>&minus; Заказано поставщику: <b>${item.pipeline_supplier || 0}</b></div>
-          <div class="text-sm font-semibold text-slate-700 dark:text-slate-300">= К заказу: <b class="text-indigo-600 dark:text-indigo-400">${rec.toLocaleString()}</b></div>
+          <div class="text-sm font-semibold text-slate-700 dark:text-slate-300">= К заказу: <b class="text-sky-500 dark:text-sky-400">${rec.toLocaleString()}</b></div>
         </div>
       </div></td></tr>`;
     }
@@ -3942,7 +3913,7 @@ function renderDemandPlan(plan) {
   const totalQty = items.reduce((s, i) => s + (i.recommended_qty || 0), 0);
   tfoot.innerHTML = `<tr class="bg-slate-50 dark:bg-slate-800/50">
     <td colspan="7" class="px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-300">Итого: ${totalItems} товаров к заказу</td>
-    <td class="px-3 py-3 text-right text-sm font-bold text-indigo-600 dark:text-indigo-400">${totalQty.toLocaleString()} шт</td>
+    <td class="px-3 py-3 text-right text-sm font-bold text-sky-500 dark:text-sky-400">${totalQty.toLocaleString()} шт</td>
   </tr>`;
 
   // Plan footer
@@ -4015,10 +3986,10 @@ $("confirmPlanBtn").addEventListener("click", async () => {
 function switchPricesTab(tabName) {
   document.querySelectorAll(".price-tab").forEach((t) => {
     const active = t.dataset.tab === tabName;
-    t.classList.toggle("border-indigo-600", active);
-    t.classList.toggle("text-indigo-600", active);
-    t.classList.toggle("dark:text-indigo-400", active);
-    t.classList.toggle("dark:border-indigo-400", active);
+    t.classList.toggle("border-sky-500", active);
+    t.classList.toggle("text-sky-500", active);
+    t.classList.toggle("dark:text-sky-400", active);
+    t.classList.toggle("dark:border-sky-400", active);
     t.classList.toggle("border-transparent", !active);
     t.classList.toggle("text-slate-500", !active);
   });
@@ -4191,7 +4162,7 @@ function buildPriceTooltipHTML(cogs, roi, price, tiers, product) {
     `<div class="flex justify-between gap-6"><span class="text-slate-400">${label}</span><span class="${cls || ""}">${val}</span></div>`;
   const sep = '<div class="border-t border-slate-600 my-1"></div>';
 
-  let h = `<div class="text-indigo-300 text-[11px] font-semibold mb-1.5">Расчёт цены при ROI ${Math.round(roi)}%</div>`;
+  let h = `<div class="text-sky-300 text-[11px] font-semibold mb-1.5">Расчёт цены при ROI ${Math.round(roi)}%</div>`;
   h += line("Себестоимость", fmtRub(cogs));
   h += line("+ Целевая прибыль (" + Math.round(roi) + "%)", fmtRub(profit));
   h += line("+ Магистраль", fmtRub(pp.pipelineMin));
@@ -4201,7 +4172,7 @@ function buildPriceTooltipHTML(cogs, roi, price, tiers, product) {
   h += line("Комиссия " + fmtPct(commRate), fmtRub(commAmt));
   h += line("Эквайринг", fmtRub(pp.acquiring_rub));
   h += sep;
-  h += line("Расч. цена", fmtRub(price), "font-bold text-indigo-300");
+  h += line("Расч. цена", fmtRub(price), "font-bold text-sky-300");
   h += `<div class="mt-1.5"></div>`;
   h += line("Чист. выручка", fmtRub(netRevenue));
   h += line("Прибыль", fmtRub(actualProfit), actualProfit >= 0 ? "text-emerald-400 font-medium" : "text-red-400 font-medium");
@@ -4225,7 +4196,7 @@ function buildROITooltipHTML(cogs, price, tiers, product) {
     `<div class="flex justify-between gap-6"><span class="text-slate-400">${label}</span><span class="${cls || ""}">${val}</span></div>`;
   const sep = '<div class="border-t border-slate-600 my-1"></div>';
 
-  let h = `<div class="text-indigo-300 text-[11px] font-semibold mb-1.5">ROI = Прибыль / С\u002Fс \u00D7 100</div>`;
+  let h = `<div class="text-sky-300 text-[11px] font-semibold mb-1.5">ROI = Прибыль / С\u002Fс \u00D7 100</div>`;
   h += line("Цена продажи", fmtRub(price));
   h += line("\u2212 Комиссия (" + fmtPct(commRate) + ")", "\u2212" + fmtRub(commAmt));
   h += line("\u2212 Эквайринг", "\u2212" + fmtRub(pp.acquiring_rub));
@@ -4235,7 +4206,7 @@ function buildROITooltipHTML(cogs, price, tiers, product) {
   h += line("\u2212 Магистраль", "\u2212" + fmtRub(pp.pipelineMin));
   h += sep;
   h += line("= Прибыль", fmtRub(profit), profit >= 0 ? "text-emerald-400 font-medium" : "text-red-400 font-medium");
-  h += line("ROI = " + fmtRub(profit) + " / " + fmtRub(cogs), roi.toFixed(1) + "%", "font-bold text-indigo-300");
+  h += line("ROI = " + fmtRub(profit) + " / " + fmtRub(cogs), roi.toFixed(1) + "%", "font-bold text-sky-300");
   return h;
 }
 
@@ -4585,7 +4556,7 @@ function showCategoryDropdown(filter) {
   const matches = state.calcCategories.filter((c) => c.toLowerCase().includes(lower)).slice(0, 50);
   if (!matches.length || !lower) { dd.classList.add("hidden"); return; }
   dd.innerHTML = matches.map((c) =>
-    `<div class="px-3 py-2 cursor-pointer hover:bg-indigo-50 dark:hover:bg-slate-700 text-sm text-slate-700 dark:text-slate-200 calc-cat-option">${esc(c)}</div>`
+    `<div class="px-3 py-2 cursor-pointer hover:bg-sky-50 dark:hover:bg-slate-700 text-sm text-slate-700 dark:text-slate-200 calc-cat-option">${esc(c)}</div>`
   ).join("");
   dd.classList.remove("hidden");
   dd.querySelectorAll(".calc-cat-option").forEach((opt) => {
@@ -4776,7 +4747,7 @@ function promoTimerDisplay(item) {
   if (days <= 7) color = "text-red-600 dark:text-red-400";
   else if (days <= 14) color = "text-amber-600 dark:text-amber-400";
   return `<span class="text-xs font-medium ${color}">${days}д</span>
-    <button onclick="refreshTimer(${item.product_id})" class="ml-1 text-xs text-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300" title="Обновить таймер (сброс на 30 дней)">
+    <button onclick="refreshTimer(${item.product_id})" class="ml-1 text-xs text-sky-500 hover:text-sky-700 dark:hover:text-sky-300" title="Обновить таймер (сброс на 30 дней)">
       <svg class="w-3.5 h-3.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
     </button>`;
 }
@@ -4786,7 +4757,7 @@ function promoToggle(offerId, field, currentValue, price) {
   return `<label class="relative inline-flex items-center cursor-pointer">
     <input type="checkbox" ${checked} class="sr-only peer"
       onchange="togglePromoFlag('${esc(offerId)}','${field}',this.checked,${price})">
-    <div class="w-9 h-5 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+    <div class="w-9 h-5 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500"></div>
   </label>`;
 }
 
@@ -4828,7 +4799,7 @@ function renderPromoTable() {
             class="w-20 text-sm text-right font-mono border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200"
             data-offer="${esc(it.offer_id)}" data-price="${it.price}" data-orig="${it.min_price || 0}"
             onchange="onMinPriceChange(this)">
-          <button class="promo-save-min hidden px-1.5 py-0.5 text-xs font-medium text-white bg-indigo-600 rounded hover:bg-indigo-700 transition-colors"
+          <button class="promo-save-min hidden px-1.5 py-0.5 text-xs font-medium text-white bg-sky-500 rounded hover:bg-sky-600 transition-colors"
             data-offer="${esc(it.offer_id)}" data-price="${it.price}"
             onclick="saveMinPrice(this)">OK</button>
         </div>
@@ -4838,7 +4809,7 @@ function renderPromoTable() {
       <td class="px-3 py-2.5 text-center">${promoToggle(it.offer_id, "auto_action_enabled", it.auto_action_enabled, it.price)}</td>
       <td class="px-3 py-2.5 text-center">${promoToggle(it.offer_id, "auto_add_to_ozon_actions_list_enabled", it.auto_add_to_ozon_actions_list_enabled, it.price)}</td>
       <td class="px-3 py-2.5 text-center">
-        ${it.actions_count > 0 ? `<span class="inline-flex items-center justify-center w-6 h-6 text-xs font-bold rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400" title="${it.actions.map((a) => a.title).join('\n')}">${it.actions_count}</span>` : `<span class="text-xs text-slate-400">—</span>`}
+        ${it.actions_count > 0 ? `<span class="inline-flex items-center justify-center w-6 h-6 text-xs font-bold rounded-full bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400" title="${it.actions.map((a) => a.title).join('\n')}">${it.actions_count}</span>` : `<span class="text-xs text-slate-400">—</span>`}
       </td>
     </tr>`,
     )
@@ -4981,7 +4952,7 @@ document.addEventListener("DOMContentLoaded", () => {
 /* ============================================================ */
 /* MCP Section                                                  */
 /* ============================================================ */
-const MCP_SERVER_URL = window.location.origin + "/mcp/";
+const MCP_SERVER_URL = "https://proxy.mp-flow.ru/mcp/";
 
 async function loadMcpSection() {
   state.mcpLoaded = true;
@@ -5174,75 +5145,13 @@ window.addEventListener("hashchange", () => {
 });
 
 function showLoginUI() {
-  if (_authMode === "logto") {
-    $("ssoLoginBlock").classList.remove("hidden");
-    $("passwordLoginForm").classList.add("hidden");
-  } else {
-    $("ssoLoginBlock").classList.add("hidden");
-    $("passwordLoginForm").classList.remove("hidden");
-  }
-}
-
-async function initLogto(config) {
-  // Dynamically load @logto/browser SDK
-  const mod = await import("https://cdn.jsdelivr.net/npm/@logto/browser@3.0.11/+esm");
-  const LogtoClient = mod.default || mod.LogtoClient;
-  _logtoClient = new LogtoClient({
-    endpoint: config.endpoint,
-    appId: config.appId,
-    resources: [config.resource],
-  });
-  return _logtoClient;
+  $("passwordLoginForm").classList.remove("hidden");
 }
 
 async function bootApp() {
-  console.log("[auth] bootApp at:", window.location.pathname + window.location.search);
+  console.log("[auth] bootApp at:", window.location.pathname);
 
-  // 1. Fetch auth config from backend
-  try {
-    const cfg = await fetch(`${API_BASE}/auth/config`).then(r => r.json());
-    _authMode = cfg.mode || "password";
-    if (_authMode === "logto") {
-      _logtoConfig = {
-        endpoint: cfg.logto_endpoint,
-        appId: cfg.logto_app_id,
-        resource: cfg.logto_api_resource,
-      };
-    }
-  } catch (e) {
-    console.warn("[auth] Failed to fetch auth config, falling back to password:", e);
-    _authMode = "password";
-  }
-
-  // 2. Logto SSO mode
-  if (_authMode === "logto") {
-    await initLogto(_logtoConfig);
-
-    // Handle callback after Logto redirect
-    if (window.location.pathname === "/callback") {
-      try {
-        await _logtoClient.handleSignInCallback(window.location.href);
-        window.history.replaceState({}, "", "/");
-      } catch (e) {
-        console.error("[auth] Callback error:", e);
-        window.history.replaceState({}, "", "/");
-      }
-    }
-
-    const isAuth = await _logtoClient.isAuthenticated();
-    if (isAuth) {
-      setLoginMode(false);
-      setActiveSection(sectionFromHash());
-      await bootstrapApp();
-      return;
-    }
-
-    setLoginMode(true);
-    showLoginUI();
-    return;
-  }
-
-  // 3. Password (HMAC) mode
+  // Check stored token
   if (_hmacToken) {
     try {
       const resp = await fetch(`${API_BASE}/auth/me`, {
