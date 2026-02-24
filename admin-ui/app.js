@@ -5188,9 +5188,9 @@ async function initLogto(config) {
   const mod = await import("https://cdn.jsdelivr.net/npm/@logto/browser@3.0.11/+esm");
   const LogtoClient = mod.default || mod.LogtoClient;
   _logtoClient = new LogtoClient({
-    endpoint: config.logto_endpoint,
-    appId: config.logto_app_id,
-    resources: [config.logto_api_resource],
+    endpoint: config.endpoint,
+    appId: config.appId,
+    resources: [config.resource],
   });
   return _logtoClient;
 }
