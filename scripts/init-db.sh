@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "=== OpenMPFlow Database Initialization ==="
+echo "=== MPFlow Database Initialization ==="
 
 # Create migration tracking table
 psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<'SQL'

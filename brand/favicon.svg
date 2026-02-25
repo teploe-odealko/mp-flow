@@ -1,9 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-  <!-- Rounded square background -->
-  <rect width="32" height="32" rx="7" fill="#0EA5E9"/>
-
-  <!-- Three current lines -->
-  <path d="M6 10C10 10 12 16 17 16C22 16 24 10 28 10" stroke="white" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.4"/>
-  <path d="M5 16C10 16 13 23 17 23C21 23 24 16 29 16" stroke="white" stroke-width="2.5" stroke-linecap="round" fill="none"/>
-  <path d="M6 22C10 22 12 28 17 28C22 28 24 22 28 22" stroke="white" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.4"/>
+  <rect width="32" height="32" rx="7.5" fill="#0EA5E9"/>
+  <!-- Three M-shaped flow lines (goods, money, data) dipping downward -->
+  <path d="M5,9 Q10.5,15.5 16,9 Q21.5,15.5 27,9" stroke="white" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.4"/>
+  <path d="M4.5,16 Q10.5,23.5 16,16 Q21.5,23.5 27.5,16" stroke="white" stroke-width="2.8" stroke-linecap="round" fill="none"/>
+  <path d="M5,23 Q10.5,29.5 16,23 Q21.5,29.5 27,23" stroke="white" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.4"/>
 </svg>

@@ -1,103 +1,108 @@
-# OpenMPFlow
+# MPFlow
 
-Open-source ERP for Ozon FBO sellers. Manage your catalog, procurement, analytics, logistics, and finances in one place.
+Open source ERP для продавцов на маркетплейсах. Управление каталогом, закупками, складом (FIFO), ценами, акциями и финансами в одном месте.
 
-## Quick Start
+**[mp-flow.ru](https://mp-flow.ru)** · **[Документация](https://docs.mp-flow.ru)** · **[API](https://proxy.mp-flow.ru/docs)**
+
+## Быстрый старт
 
 ```bash
 git clone https://github.com/teploe-odealko/mp-flow.git
 cd mp-flow
 cp .env.example .env
-docker compose up --build
+docker compose up -d
 ```
 
-Open **http://localhost:3000** and log in with:
-- Username: `admin`
-- Password: `admin`
+Откройте **http://localhost:3000** и войдите с логином `admin` / паролем из `.env` (`ADMIN_BOOTSTRAP_PASSWORD`).
 
-> **Warning:** Change the default credentials in `.env` before exposing the instance to the internet. Set `ADMIN_BOOTSTRAP_PASSWORD` and `HMAC_SECRET` to strong random values.
+> **Важно:** перед публикацией в интернет измените `ADMIN_BOOTSTRAP_PASSWORD` и `HMAC_SECRET` в `.env` на случайные значения.
 
-That's it. You have a fully working ERP with PostgreSQL, API server, and admin UI.
+## Возможности
 
-## What You Get
+- **Каталог** — карточки товаров с SKU, размерами, ценами, данными поставщиков
+- **Закупки** — заказы поставщикам с распределением общих затрат (логистика, таможня)
+- **FIFO учёт** — партионный складской учёт с точной себестоимостью каждой единицы
+- **Юнит-экономика** — PnL по товару, ДДС, отчёты с реальной себестоимостью FIFO
+- **Ценообразование** — калькулятор прибыли с учётом всех комиссий Ozon, массовое обновление цен
+- **Управление акциями** — массовое включение/выключение с защитой минимальной маржи
+- **Логистика** — SKU-матрица, поставки на Ozon, планирование закупок
+- **AI Agent (MCP)** — 54+ инструментов для Claude, ChatGPT и других MCP-клиентов
+- **Плагины** — расширяемая архитектура (см. ali1688 плагин)
 
-- **Catalog** — master product cards with SKU, dimensions, pricing, supplier data
-- **Procurement** — supplier orders with shared cost allocation (logistics, customs, etc.)
-- **Analytics** — unit economics, P&L by product, FIFO cost tracking
-- **Logistics** — SKU matrix (where stock is now), Ozon supply orders
-- **Finance** — transaction ledger, cash flow (DDS) report
-- **Plugin System** — extensible architecture (see below)
-- **MCP Server** — 54 AI tools for Claude, ChatGPT, and other MCP clients
+## Облако
 
-## Architecture
+Не хотите разворачивать самостоятельно? Используйте облачную версию:
+
+**[admin.mp-flow.ru](https://admin.mp-flow.ru)** — готово к работе, автообновления, бэкапы.
+
+## Архитектура
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌──────────────┐
 │  Admin UI   │────>│   Proxy     │────>│  PostgreSQL   │
 │ (port 3000) │     │ (port 8000) │     │  (port 5432)  │
 └─────────────┘     └─────────────┘     └──────────────┘
-   nginx SPA         FastAPI + MCP        Data storage
+   nginx SPA         FastAPI + MCP        Данные
 ```
 
-- **Admin UI** — vanilla JS SPA served by nginx, proxies API requests to Proxy.
-- **Proxy** — FastAPI server with Admin API, MCP server (54 tools), plugin system.
-- **PostgreSQL** — all data, with automatic migration on first run.
+- **Admin UI** — SPA на vanilla JS + Tailwind CSS, проксирует запросы к Proxy
+- **Proxy** — FastAPI с Admin API, MCP сервер (54+ инструментов), система плагинов
+- **PostgreSQL** — все данные, миграции применяются автоматически при запуске
 
-## Optional Integrations
+## Интеграции
 
-Edit `.env` to enable:
+Настраиваются через `.env`:
 
-| Integration | Env Vars | What It Does |
-|-------------|----------|--------------|
-| **Ozon Seller API** | `OZON_CLIENT_ID`, `OZON_API_KEY` | Sync products, stocks, sales, returns from Ozon |
-| **1688 Suppliers** | `TMAPI_API_TOKEN` | Import supplier data (prices, photos, SKU) via ali1688 plugin |
-| **AI Features** | `ANTHROPIC_API_KEY` | AI-powered tools in MCP server |
-| **SSO (Logto)** | `LOGTO_ENDPOINT`, `LOGTO_API_RESOURCE` | OIDC/OAuth2 authentication |
+| Интеграция | Переменные | Описание |
+|------------|-----------|----------|
+| **Ozon Seller API** | `OZON_CLIENT_ID`, `OZON_API_KEY` | Синхронизация товаров, остатков, продаж, возвратов |
+| **1688 Поставщики** | `TMAPI_API_TOKEN` | Импорт данных поставщиков (цены, фото, SKU) |
+| **AI** | `ANTHROPIC_API_KEY` | AI-функции в MCP сервере |
+| **SSO (Logto)** | `LOGTO_ENDPOINT`, `LOGTO_API_RESOURCE` | OIDC/OAuth2 авторизация |
 
-## Plugin System
+## MCP сервер
 
-Plugins extend the UI and API. They are discovered automatically from `proxy/src/plugins/*/manifest.json`.
+54+ инструментов для AI-агентов через [Model Context Protocol](https://modelcontextprotocol.io/):
 
-**Included plugin: ali1688** — adds a "1688 Supplier" tab to product cards for importing supplier data from 1688.com.
+```json
+{
+  "mcpServers": {
+    "mpflow": {
+      "url": "https://proxy.mp-flow.ru/mcp",
+      "headers": { "Authorization": "Bearer mpk_..." }
+    }
+  }
+}
+```
 
-Each plugin can:
-- Add tabs to product card pages
-- Add new sections to the sidebar
-- Register API endpoints at `/v1/admin/plugins/{name}/`
-- Store data in isolated PostgreSQL schemas (`plugin_{name}`)
-- Expose MCP tools for AI clients
+Поддерживаются: Claude Desktop, Claude Code, ChatGPT, Cursor, Manus, любой MCP-клиент.
 
-## Development
+## Разработка
 
 ```bash
-# Run proxy locally
 cd proxy && pip install -r requirements.txt
 uvicorn proxy.src.main:app --reload --port 8000
 
-# Lint
+# Линтер
 ruff check proxy/ && ruff format proxy/
 
-# Tests
+# Тесты
 PYTHONPATH=. pytest tests/admin/ -v
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidelines.
+Подробнее — [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Updating
+## Обновление
 
 ```bash
 git pull
 docker compose up --build -d
 ```
 
-Migrations are applied automatically on container start.
+Миграции применяются автоматически при старте контейнера.
 
-## Security
+## Лицензия
 
-Found a vulnerability? Please read [SECURITY.md](SECURITY.md) for our disclosure policy.
+Основной код — [AGPL-3.0](LICENSE).
 
-## License
-
-The core project is licensed under [AGPL-3.0](LICENSE).
-
-Enterprise features in `proxy/src/ee/` are under a separate license — see [ee/LICENSE](ee/LICENSE).
+Enterprise-функции в `proxy/src/ee/` — отдельная лицензия, см. [ee/LICENSE](ee/LICENSE).

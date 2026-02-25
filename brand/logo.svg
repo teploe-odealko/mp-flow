@@ -1,11 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 40" fill="none">
-  <!-- Mark: rounded square with flow lines -->
-  <rect x="0" y="0" width="40" height="40" rx="9" fill="#0EA5E9"/>
-
-  <!-- Three current lines — goods, money, data -->
-  <path d="M8 13C14 13 16 20 22 20C28 20 30 13 36 13" stroke="white" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.4"/>
-  <path d="M6 20C12 20 16 28 22 28C28 28 32 20 38 20" stroke="white" stroke-width="2.5" stroke-linecap="round" fill="none"/>
-  <path d="M8 27C14 27 16 34 22 34C28 34 30 27 36 27" stroke="white" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.4"/>
+  <!-- Mark: rounded square with M-shaped flow lines -->
+  <rect width="40" height="40" rx="9.5" fill="#0EA5E9"/>
+  <path d="M6,11 Q13,19.5 20,11 Q27,19.5 34,11" stroke="white" stroke-width="2.2" stroke-linecap="round" fill="none" opacity="0.4"/>
+  <path d="M5.5,20 Q13,29.5 20,20 Q27,29.5 34.5,20" stroke="white" stroke-width="3.2" stroke-linecap="round" fill="none"/>
+  <path d="M6,29 Q13,37.5 20,29 Q27,37.5 34,29" stroke="white" stroke-width="2.2" stroke-linecap="round" fill="none" opacity="0.4"/>
 
   <!-- Wordmark -->
   <text x="50" y="17" font-family="Inter, system-ui, -apple-system, sans-serif" font-size="14" font-weight="600" letter-spacing="-0.02em" fill="#8B949E">mp</text>

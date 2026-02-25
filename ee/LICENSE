@@ -1,9 +1,9 @@
-OpenMPFlow Enterprise Edition (EE) License
+MPFlow Enterprise Edition (EE) License
 
-Copyright (c) 2026 OpenMPFlow Contributors
+Copyright (c) 2026 MPFlow Contributors
 
 The code in this directory and all subdirectories (the "EE Code") is
-licensed separately from the rest of the OpenMPFlow project.
+licensed separately from the rest of the MPFlow project.
 
 TERMS:
 
@@ -12,14 +12,14 @@ TERMS:
 
 2. PRODUCTION USE REQUIRES A LICENSE — Running the EE Code in production
    (serving real users or processing real data) requires an active
-   OpenMPFlow subscription. See https://mp-flow.ru/pricing for plans.
+   MPFlow subscription. See https://mp-flow.ru/pricing for plans.
 
 3. NO REDISTRIBUTION — You may not redistribute the EE Code as part of
    a competing product or service.
 
 4. CONTRIBUTIONS — By submitting a pull request that modifies EE Code,
    you agree to license your contribution under these same terms and
-   grant OpenMPFlow Contributors a perpetual, irrevocable license to
+   grant MPFlow Contributors a perpetual, irrevocable license to
    use your contribution.
 
 The above license applies ONLY to files within directories named "ee/".

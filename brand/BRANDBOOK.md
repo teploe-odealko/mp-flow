@@ -1,105 +1,112 @@
-# MPFlow Brand Book
+# MPFlow — Брендбук
 
-Version 2.0 — February 2026
-
----
-
-## Concept: Поток (The Current)
-
-Goods flow from suppliers through logistics to marketplace. Money flows back. Data flows through the ERP. The supply chain is a current — and MPFlow makes it visible and controllable.
-
-The word "поток" is natural Russian business language: поток товаров, денежный поток, поток данных. The English "flow" in the product name carries the same meaning.
+Версия 3.0 — Февраль 2026
 
 ---
 
-## Name
+## Концепция: Поток
 
-**mpflow** — lowercase in wordmark. In running text: **MPFlow** or **OpenMPFlow** (full OSS name).
+Товары текут от поставщиков через логистику на маркетплейс. Деньги текут обратно. Данные текут через ERP. Цепочка поставок — это поток, и MPFlow делает его видимым и управляемым.
 
-| Context | Format |
-|---------|--------|
-| Wordmark / logo | mpflow |
-| Running text | MPFlow |
-| Full name (OSS) | OpenMPFlow |
-| Code / URLs | mpflow, mp-flow |
+Слово «поток» — естественный русский бизнес-термин: поток товаров, денежный поток, поток данных. Английское «flow» в названии продукта несёт тот же смысл.
 
 ---
 
-## Logo
+## Название
 
-The mark is a stylized current — three flowing lines representing the movement of goods, money, and data. The lines converge to show how the ERP brings these streams together.
+**mpflow** — строчными в wordmark. В тексте: **MPFlow**.
 
-### Mark variants
-
-| Variant | Usage |
-|---------|-------|
-| Cyan mark on dark | Primary. Dark UI, marketing, social. |
-| Dark mark on light | Print, light backgrounds, documents. |
-| Monochrome white | Over photos, busy backgrounds. |
-
-### Clear space
-
-Minimum clear space = mark height × 0.5 on all sides.
-
-### Minimum size
-
-Mark: 24×24px. Wordmark: 80px wide.
+| Контекст | Формат |
+|----------|--------|
+| Wordmark / логотип | mpflow |
+| Текст | MPFlow |
+| Код / URL | mpflow, mp-flow |
 
 ---
 
-## Color Palette
+## Логотип
 
-### Primary
+Логотип — стилизованная буква **M**, образованная двумя текучими линиями (белая основная и полупрозрачная тень). Линии символизируют потоки товаров, денег и данных, сливающиеся в единую букву M — первую букву MPFlow.
 
-| Name | Hex | RGB | Usage |
-|------|-----|-----|-------|
-| **Deep Current** | `#0C1117` | 12, 17, 23 | Page background |
-| **Surface** | `#151B23` | 21, 27, 35 | Cards, sidebar, elevated surfaces |
-| **Border** | `#1E2A35` | 30, 42, 53 | Subtle borders, dividers |
-| **Foam** | `#E6EDF3` | 230, 237, 243 | Primary text |
-| **Muted** | `#8B949E` | 139, 148, 158 | Secondary text, labels |
+### Файлы
 
-### Accent
+| Файл | Размер | Назначение |
+|------|--------|------------|
+| `brand/logo.png` | 1040px | Мастер-файл |
+| `brand/logo-512.png` | 512px | App icon |
+| `brand/favicon-32.png` | 32px | Favicon |
+| `brand/apple-touch-icon.png` | 180px | iOS / Apple Touch |
 
-| Name | Hex | RGB | Usage |
-|------|-----|-----|-------|
-| **Current** | `#0EA5E9` | 14, 165, 233 | Primary accent, links, active states |
-| **Current Light** | `#38BDF8` | 56, 189, 248 | Hover states |
-| **Current Dark** | `#0284C7` | 2, 132, 199 | Pressed states, focus rings |
-| **Current Glow** | `#0EA5E9` at 12% | — | Selection backgrounds, active glow |
+### Фон логотипа
 
-### Semantic
+Cyan `#0EA5E9` с закруглёнными углами (rx ≈ 23% от размера).
 
-| Name | Hex | Usage |
-|------|-----|-------|
-| **Inflow** | `#22C55E` | Income, received, success |
-| **Outflow** | `#F97316` | Expense, shipped, warning |
-| **Risk** | `#EAB308` | Attention needed |
-| **Loss** | `#EF4444` | Error, loss, critical |
-| **Neutral** | `#6B7280` | Archived, disabled |
+### Варианты
 
-### CSS Custom Properties
+| Вариант | Использование |
+|---------|---------------|
+| Логотип на голубом фоне | Основной. UI, маркетинг, соцсети, favicon. |
+| Логотип + «mpflow» текст | Header сайтов, документация. |
+
+### Защитная зона
+
+Минимальная защитная зона = высота марки × 0.5 со всех сторон.
+
+### Минимальный размер
+
+Марка: 24×24px. Wordmark: 80px шириной.
+
+---
+
+## Цветовая палитра
+
+### Основные
+
+| Название | Hex | RGB | Использование |
+|----------|-----|-----|---------------|
+| **Deep Current** | `#0C1117` | 12, 17, 23 | Фон страницы |
+| **Surface** | `#151B23` | 21, 27, 35 | Карточки, сайдбар |
+| **Border** | `#1E2A35` | 30, 42, 53 | Границы, разделители |
+| **Foam** | `#E6EDF3` | 230, 237, 243 | Основной текст |
+| **Muted** | `#8B949E` | 139, 148, 158 | Вторичный текст, лейблы |
+
+### Акцентные
+
+| Название | Hex | RGB | Использование |
+|----------|-----|-----|---------------|
+| **Current** | `#0EA5E9` | 14, 165, 233 | Основной акцент, ссылки |
+| **Current Light** | `#38BDF8` | 56, 189, 248 | Hover-состояния |
+| **Current Dark** | `#0284C7` | 2, 132, 199 | Pressed-состояния, focus |
+| **Current Glow** | `#0EA5E9` at 12% | — | Фон выделения |
+
+### Семантические
+
+| Название | Hex | Использование |
+|----------|-----|---------------|
+| **Inflow** | `#22C55E` | Доход, получено, успех |
+| **Outflow** | `#F97316` | Расход, отгружено, предупреждение |
+| **Risk** | `#EAB308` | Требует внимания |
+| **Loss** | `#EF4444` | Ошибка, убыток, критично |
+| **Neutral** | `#6B7280` | Архив, неактивно |
+
+### CSS переменные
 
 ```css
 :root {
-  /* Background */
   --bg-deep: #0C1117;
   --bg-surface: #151B23;
   --bg-elevated: #1C2530;
   --bg-border: #1E2A35;
 
-  /* Text */
   --text-primary: #E6EDF3;
   --text-secondary: #8B949E;
   --text-muted: #5C6670;
 
-  /* Accent */
   --accent: #0EA5E9;
   --accent-light: #38BDF8;
   --accent-dark: #0284C7;
   --accent-glow: rgba(14, 165, 233, 0.12);
 
-  /* Semantic */
   --color-inflow: #22C55E;
   --color-outflow: #F97316;
   --color-risk: #EAB308;
@@ -110,70 +117,22 @@ Mark: 24×24px. Wordmark: 80px wide.
 
 ---
 
-## Typography
+## Типографика
 
-| Role | Font | Weight | Notes |
-|------|------|--------|-------|
-| Headings | Inter | 600–700 | Tracking: -0.02em |
-| Body | Inter | 400 | Line-height: 1.5 |
-| Data / numbers | JetBrains Mono | 400–500 | Prices, SKUs, quantities |
-| Code | JetBrains Mono | 400 | API docs, code blocks |
+| Роль | Шрифт | Вес | Примечания |
+|------|-------|-----|------------|
+| Заголовки | Inter | 600–700 | Tracking: -0.02em |
+| Текст | Inter | 400 | Line-height: 1.5 |
+| Данные / числа | JetBrains Mono | 400–500 | Цены, SKU, количества |
+| Код | JetBrains Mono | 400 | API документация, code blocks |
 
-**Key rule:** Financial numbers (prices, margins, quantities) always render in monospace. This communicates precision and aligns columns naturally.
-
----
-
-## Iconography
-
-- Style: outlined, 1.5px stroke, rounded caps
-- Size: 20×20px grid, 16/20/24px rendered sizes
-- Color: `--text-secondary` default, `--accent` for active/interactive
-- Source: Lucide icons (consistent with existing admin-ui)
+**Правило:** финансовые числа (цены, маржа, количества) всегда отображаются моноширинным шрифтом.
 
 ---
 
-## UI Guidelines
+## Иконки
 
-### Backgrounds
-Subtle gradient from `#0C1117` (top) to `#0E1319` (bottom) — barely perceptible depth.
-
-### Cards
-Background: `--bg-surface`. Border: 1px `--bg-border`. Border-radius: 8px. No shadows.
-
-### Active states
-Cyan glow: `box-shadow: 0 0 0 1px var(--accent), 0 0 12px var(--accent-glow)`.
-
-### Buttons
-- Primary: `--accent` bg, white text, `--accent-light` on hover
-- Secondary: `--bg-surface` bg, `--text-primary` text, border `--bg-border`
-- Danger: `--color-loss` bg
-
-### Status indicators
-- Green dot = received, complete
-- Cyan dot = in transit, processing
-- Orange dot = pending, needs attention
-- Red dot = error, loss
-
-### Charts
-- Income side: cyan → green spectrum
-- Expense side: orange → red spectrum
-- Creates natural warm/cool temperature split
-
----
-
-## Application
-
-### Login page
-Deep Current background with subtle radial gradient (accent at 6% opacity, centered top). Clean card with logo mark, welcome text, single CTA button in accent color.
-
-### Admin sidebar
-Surface background (`#151B23`). Active section: left 2px border in accent, text in accent. Inactive: muted text.
-
-### Landing page
-Full-bleed Deep Current background. Hero with the flow metaphor — subtle animated lines or a static illustration of converging streams. CTA in accent color.
-
-### API docs (Scalar)
-Dark theme matching the palette. Accent for links and method badges.
-
-### User docs (Fumadocs)
-Dark theme. Sidebar navigation with accent active state. Code blocks in Surface with accent syntax highlighting.
+- Стиль: outlined, 1.5px stroke, rounded caps
+- Размер: сетка 20×20px, рендер 16/20/24px
+- Цвет: `--text-secondary` по умолчанию, `--accent` для активных/интерактивных
+- Источник: Lucide icons

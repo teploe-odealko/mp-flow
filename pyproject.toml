@@ -1,7 +1,7 @@
 [project]
-name = "openmpflow"
+name = "mpflow"
 version = "1.0.0"
-description = "OpenMPFlow - Unified monorepo for OpenClaw, MPFlow and Proxy"
+description = "MPFlow - Unified monorepo for OpenClaw, MPFlow and Proxy"
 requires-python = ">=3.11"
 
 [project.optional-dependencies]

@@ -1,9 +1,9 @@
 ---
 title: Подключение MCP сервера
-description: Настройка MCP подключения к OpenMPFlow для Claude Desktop, ChatGPT, Cursor и других AI-клиентов
+description: Настройка MCP подключения к MPFlow для Claude Desktop, ChatGPT, Cursor и других AI-клиентов
 ---
 
-OpenMPFlow предоставляет **54 MCP инструмента** через [Model Context Protocol](https://modelcontextprotocol.io/). Любой MCP-совместимый клиент может подключиться.
+MPFlow предоставляет **54 MCP инструмента** через [Model Context Protocol](https://modelcontextprotocol.io/). Любой MCP-совместимый клиент может подключиться.
 
 ## 1. Создайте API-ключ
 
@@ -25,7 +25,7 @@ OpenMPFlow предоставляет **54 MCP инструмента** чере
 ```json title="claude_desktop_config.json"
 {
   "mcpServers": {
-    "openmpflow": {
+    "mpflow": {
       "url": "https://proxy.mp-flow.ru/mcp",
       "headers": {
         "Authorization": "Bearer mpk_your_api_key_here"
@@ -50,7 +50,7 @@ ChatGPT использует OAuth авторизацию автоматичес
 ```json title="claude_desktop_config.json"
 {
   "mcpServers": {
-    "openmpflow-local": {
+    "mpflow-local": {
       "url": "http://localhost:8000/mcp",
       "headers": {
         "Authorization": "Bearer mpk_your_api_key_here"
@@ -62,7 +62,7 @@ ChatGPT использует OAuth авторизацию автоматичес
 
 ## Транспорт
 
-OpenMPFlow использует **Streamable HTTP** транспорт — стандартный MCP транспорт для веб-серверов. Endpoint: `/mcp`.
+MPFlow использует **Streamable HTTP** транспорт — стандартный MCP транспорт для веб-серверов. Endpoint: `/mcp`.
 
 ## Аутентификация
 

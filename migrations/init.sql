@@ -1,6 +1,6 @@
 -- ============================================================
 -- MP-Flow ERP: Initial Schema
--- Merged from openmpflow migrations 008 through 026
+-- Merged from mpflow migrations 008 through 026
 -- All Admin ERP tables with final column definitions
 -- ============================================================
 

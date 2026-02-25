@@ -4,11 +4,15 @@ import type { ReactNode } from "react";
 
 export const metadata = {
   title: {
-    template: "%s | OpenMPFlow",
-    default: "OpenMPFlow — документация",
+    template: "%s | MPFlow",
+    default: "MPFlow — документация",
   },
   description:
-    "Документация OpenMPFlow — open source ERP для продавцов на Ozon. FIFO учёт, юнит-экономика, ценообразование, AI-агент.",
+    "Документация MPFlow — open source ERP для продавцов на Ozon. FIFO учёт, юнит-экономика, ценообразование, AI-агент.",
+  icons: {
+    icon: "/favicon.png",
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export default function Layout({ children }: { children: ReactNode }) {

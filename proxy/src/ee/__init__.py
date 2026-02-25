@@ -1,4 +1,4 @@
-"""OpenMPFlow Enterprise Edition — feature gating and license validation.
+"""MPFlow Enterprise Edition — feature gating and license validation.
 
 Usage in route handlers:
 

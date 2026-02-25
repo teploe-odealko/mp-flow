@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "title": "1688.com Suppliers",
   "description": "Enrich product cards with supplier data from 1688.com — photos, prices, SKU variants",
-  "author": "openmpflow",
+  "author": "mpflow",
 
   "engine": {
     "core_version": ">=1.0.0",

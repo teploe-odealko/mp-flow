@@ -1,86 +1,90 @@
-# Contributing to OpenMPFlow
+# Как внести вклад в MPFlow
 
-Thank you for your interest in contributing! This document will help you get started.
+Спасибо за интерес к проекту! Этот документ поможет начать.
 
-## Development Setup
+## Настройка окружения
 
 ```bash
-git clone https://github.com/openmpflow/openmpflow.git
-cd openmpflow
+git clone https://github.com/teploe-odealko/mp-flow.git
+cd mp-flow
 cp .env.example .env
 docker compose up --build
 ```
 
-Open http://localhost:3000, log in with `admin` / `admin`.
+Откройте http://localhost:3000, войдите с `admin` / паролем из `.env`.
 
-## Project Structure
+## Структура проекта
 
 ```
-proxy/           Python backend (FastAPI)
-admin-ui/        Frontend SPA (vanilla JS, Tailwind CSS)
-migrations/      PostgreSQL migrations (sequential SQL files)
-proxy/src/plugins/  Plugin system
-proxy/src/ee/    Premium features (see ee/LICENSE)
-scripts/         Dev and CI scripts
-tests/admin/     Integration tests (Docker Postgres)
+proxy/               Python бэкенд (FastAPI)
+admin-ui/            Фронтенд SPA (vanilla JS, Tailwind CSS)
+landing/             Лэндинг (статический HTML + Tailwind CDN)
+website/             Документация (Next.js 16 + Fumadocs)
+brand/               Логотип, брендбук
+migrations/          PostgreSQL миграции (последовательные SQL файлы)
+proxy/src/plugins/   Система плагинов
+proxy/src/ee/        Premium-функции (см. ee/LICENSE)
+ee/                  Лицензия EE
+scripts/             Dev и CI скрипты
+tests/admin/         Интеграционные тесты (Docker Postgres)
 ```
 
-## Code Style
+## Стиль кода
 
-Python code is linted with [ruff](https://github.com/astral-sh/ruff):
+Python код проверяется [ruff](https://github.com/astral-sh/ruff):
 
 ```bash
 ruff check proxy/
 ruff format proxy/
 ```
 
-Config is in `proxy/pyproject.toml`: line-length 100, target Python 3.11.
+Конфигурация в `proxy/pyproject.toml`: line-length 100, target Python 3.11.
 
-## Running Tests
+## Тесты
 
 ```bash
-# Integration tests (spins up Docker Postgres)
+# Интеграционные тесты (поднимают Docker Postgres)
 PYTHONPATH=. pytest tests/admin/ -v
 ```
 
-Tests use `asyncio_mode = "auto"`, no need for `@pytest.mark.asyncio`.
+Тесты используют `asyncio_mode = "auto"`, декоратор `@pytest.mark.asyncio` не нужен.
 
 ## Pull Requests
 
-1. Fork the repo and create a branch: `git checkout -b feature/my-feature`
-2. Make your changes
-3. Run lint: `ruff check proxy/ && ruff format proxy/`
-4. Run tests: `PYTHONPATH=. pytest tests/admin/ -v`
-5. Open a PR against `main`
+1. Форкните репо и создайте ветку: `git checkout -b feature/my-feature`
+2. Внесите изменения
+3. Запустите линтер: `ruff check proxy/ && ruff format proxy/`
+4. Запустите тесты: `PYTHONPATH=. pytest tests/admin/ -v`
+5. Откройте PR в `main`
 
-CI runs automatically: lint, format check, tests, migration verification.
+CI запускается автоматически: линтер, форматирование, тесты, проверка миграций.
 
-## Migrations
+## Миграции
 
-- Files go in `migrations/` with sequential numbering (e.g., `027_my_feature.sql`)
-- Use `CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for idempotency
-- Test with a fresh database: `docker compose down -v && docker compose up --build`
-- The `scripts/init-db.sh` runner tracks applied migrations in `schema_migrations` table
+- Файлы в `migrations/` с последовательной нумерацией (например, `027_my_feature.sql`)
+- Используйте `CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` для идемпотентности
+- Тестируйте на чистой базе: `docker compose down -v && docker compose up --build`
+- Скрипт `scripts/init-db.sh` отслеживает применённые миграции в таблице `schema_migrations`
 
-## Plugins
+## Плагины
 
-Plugins extend the UI and API. See the `ali1688` plugin for a reference implementation:
+Плагины расширяют UI и API. Смотрите плагин `ali1688` как референс:
 
 ```
-proxy/src/plugins/ali1688/   Backend (manifest, routes, service)
-admin-ui/plugins/ali1688/    Frontend (ESM module)
+proxy/src/plugins/ali1688/   Бэкенд (manifest, routes, service)
+admin-ui/plugins/ali1688/    Фронтенд (ESM модуль)
 ```
 
-Plugins can be contributed as built-in (in this repo) or as separate repositories.
+Плагины можно контрибьютить как встроенные (в этом репо) или как отдельные репозитории.
 
-## EE Directory
+## EE код
 
-Files in `proxy/src/ee/` and `ee/` are under a proprietary license (see `ee/LICENSE`).
-Production use of EE features requires an active subscription.
+Файлы в `proxy/src/ee/` и `ee/` — под проприетарной лицензией (см. `ee/LICENSE`).
+Использование EE-функций в продакшене требует активной подписки.
 
-You're welcome to contribute to EE code — by opening a PR that modifies EE files,
-you agree to the terms in `ee/LICENSE`.
+Контрибьюшены в EE код приветствуются — открывая PR с изменениями EE файлов,
+вы соглашаетесь с условиями `ee/LICENSE`.
 
-## Questions?
+## Вопросы?
 
-Open an issue on GitHub: https://github.com/openmpflow/openmpflow/issues
+Откройте issue на GitHub: https://github.com/teploe-odealko/mp-flow/issues

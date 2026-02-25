@@ -4976,10 +4976,10 @@ async function loadMcpSection() {
 function renderMcpSnippets(apiKey) {
   const key = apiKey || "<YOUR_API_KEY>";
   $("mcpSnippetClaude").textContent =
-    `claude mcp add \\\n  --transport http \\\n  --header "Authorization: Bearer ${key}" \\\n  -s user \\\n  openmpflow-erp \\\n  "${MCP_SERVER_URL}"`;
+    `claude mcp add \\\n  --transport http \\\n  --header "Authorization: Bearer ${key}" \\\n  -s user \\\n  mpflow-erp \\\n  "${MCP_SERVER_URL}"`;
   $("mcpSnippetCursor").textContent = JSON.stringify({
     mcpServers: {
-      "openmpflow-erp": {
+      "mpflow-erp": {
         type: "http",
         url: MCP_SERVER_URL,
         headers: { Authorization: `Bearer ${key}` },

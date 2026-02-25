@@ -1,7 +1,7 @@
 [project]
-name = "openmpflow-proxy"
+name = "mpflow-proxy"
 version = "1.0.0"
-description = "Proxy service for OpenMPFlow - centralized API key management and tool execution"
+description = "Proxy service for MPFlow - centralized API key management and tool execution"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.109.0",

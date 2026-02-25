@@ -117,7 +117,7 @@ async def scalar_docs() -> HTMLResponse:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OpenMPFlow API</title>
+  <title>MPFlow API</title>
   <style>
     :root {
       --scalar-color-1: #E6EDF3;

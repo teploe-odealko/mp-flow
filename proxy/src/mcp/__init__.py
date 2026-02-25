@@ -1,4 +1,4 @@
-"""MCP server factory for OpenMPFlow ERP.
+"""MCP server factory for MPFlow ERP.
 
 Creates a FastMCP instance, registers all tools, and returns an ASGI app
 wrapped with authentication middleware.
@@ -39,7 +39,7 @@ def get_mcp():
             pass
 
         _mcp_instance = FastMCP(
-            "OpenMPFlow ERP",
+            "MPFlow ERP",
             instructions=(
                 "ERP-система продавца на маркетплейсе Ozon.\n\n"
                 "Сущности: карточка (товар/SKU) → заказ поставщику → FIFO-лот "

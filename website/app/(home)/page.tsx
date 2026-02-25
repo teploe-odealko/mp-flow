@@ -4,38 +4,11 @@ export default function HomePage() {
   return (
     <main className="flex flex-1 flex-col items-center justify-center px-4 text-center">
       <div className="inline-flex items-center gap-2 rounded-full border border-fd-border bg-fd-secondary px-4 py-1.5 text-sm text-fd-muted-foreground mb-6">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 32 32"
-          fill="none"
-          className="h-4 w-4"
-        >
-          <defs>
-            <linearGradient
-              id="badge-grad"
-              x1="0"
-              y1="0"
-              x2="32"
-              y2="32"
-              gradientUnits="userSpaceOnUse"
-            >
-              <stop offset="0%" stopColor="#0EA5E9" />
-              <stop offset="100%" stopColor="#38BDF8" />
-            </linearGradient>
-          </defs>
-          <rect width="32" height="32" rx="7" fill="url(#badge-grad)" />
-          <path
-            d="M5 16 C10 16, 13 22, 18 22 C23 22, 26 16, 31 16"
-            stroke="white"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            fill="none"
-          />
-        </svg>
+        <img src="/logo.png" alt="" width={16} height={16} className="rounded-sm" />
         Open Source ERP для маркетплейсов
       </div>
       <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl">
-        OpenMPFlow
+        MPFlow
       </h1>
       <p className="mt-4 max-w-2xl text-lg text-fd-muted-foreground">
         FIFO складской учёт, юнит-экономика, управление ценами и акциями на

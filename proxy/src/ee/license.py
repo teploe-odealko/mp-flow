@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # Ed25519 public key for license verification.
 # The matching private key is used by generate_license.py to sign keys.
 # Replace this with your own key pair (run: python scripts/generate_license.py keygen)
-LICENSE_PUBLIC_KEY_B64 = os.environ.get("OPENMPFLOW_LICENSE_PUBLIC_KEY", "")
+LICENSE_PUBLIC_KEY_B64 = os.environ.get("MPFLOW_LICENSE_PUBLIC_KEY", "")
 
 
 def _b64url_decode(s: str) -> bytes:
@@ -45,9 +45,9 @@ class LicenseManager:
         self._load()
 
     def _load(self) -> None:
-        key = os.environ.get("OPENMPFLOW_LICENSE_KEY", "").strip()
+        key = os.environ.get("MPFLOW_LICENSE_KEY", "").strip()
         if not key:
-            for path in ["/etc/openmpflow/license.key", "license.key"]:
+            for path in ["/etc/mpflow/license.key", "license.key"]:
                 try:
                     with open(path) as f:
                         key = f.read().strip()

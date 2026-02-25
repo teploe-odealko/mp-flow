@@ -37,7 +37,7 @@ async def create_pool() -> asyncpg.Pool | None:
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="OpenMPFlow Admin API",
+        title="MPFlow Admin API",
         version="1.0.0",
         description=OPENAPI_DESCRIPTION,
         openapi_tags=OPENAPI_TAGS,
