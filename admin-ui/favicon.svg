@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-  <rect width="32" height="32" rx="7.5" fill="#0EA5E9"/>
-  <!-- Three M-shaped flow lines (goods, money, data) dipping downward -->
-  <path d="M5,9 Q10.5,15.5 16,9 Q21.5,15.5 27,9" stroke="white" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.4"/>
-  <path d="M4.5,16 Q10.5,23.5 16,16 Q21.5,23.5 27.5,16" stroke="white" stroke-width="2.8" stroke-linecap="round" fill="none"/>
-  <path d="M5,23 Q10.5,29.5 16,23 Q21.5,29.5 27,23" stroke="white" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.4"/>
-</svg>
