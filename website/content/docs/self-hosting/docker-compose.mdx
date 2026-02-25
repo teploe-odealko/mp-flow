@@ -1,7 +1,15 @@
 ---
 title: Установка через Docker Compose
-description: Пошаговая установка OpenMPFlow на своём сервере через Docker Compose — все функции бесплатно
+description: Установите OpenMPFlow на своём сервере одной командой — Docker Compose, все функции бесплатно
 ---
+
+## Быстрая установка
+
+```bash
+git clone https://github.com/teploe-odealko/mp-flow && cd mp-flow && docker compose up -d
+```
+
+Готово. Откройте [http://localhost:3000](http://localhost:3000) — логин `admin` / `admin`.
 
 ## Требования
 
@@ -10,37 +18,32 @@ description: Пошаговая установка OpenMPFlow на своём с
 - Git
 - Минимум 1 GB RAM, 5 GB диска
 
-## Установка
+## Настройка
+
+Скопируйте и отредактируйте файл конфигурации:
 
 ```bash
-git clone https://github.com/nickthecook/mpflow
-cd mpflow
 cp .env.example .env
 ```
 
-### Настройте .env
-
-Обязательно измените:
+Обязательно измените для продакшена:
 
 ```bash title=".env"
 # Пароль базы данных
 POSTGRES_PASSWORD=ваш_надёжный_пароль
 
-# Секрет для токенов — сгенерируйте:
-# openssl rand -base64 32
+# Секрет для токенов — сгенерируйте: openssl rand -base64 32
 HMAC_SECRET=ваш_секрет
 
 # Пароль администратора
 ADMIN_BOOTSTRAP_PASSWORD=ваш_пароль
 ```
 
-### Запуск
+Затем перезапустите:
 
 ```bash
-docker compose up -d
+docker compose down && docker compose up -d
 ```
-
-Готово. Откройте [http://localhost:3000](http://localhost:3000).
 
 ## Что запускается
 
@@ -52,9 +55,9 @@ docker compose up -d
 
 ## Доступ извне (HTTPS)
 
-Для продакшен-развёртывания рекомендуем использовать reverse proxy (Traefik, nginx, Caddy) с SSL-сертификатом.
+Для продакшен-развёртывания используйте reverse proxy (Traefik, nginx, Caddy) с SSL-сертификатом.
 
-Пример с Traefik (как на mp-flow.ru):
+Пример с Traefik:
 
 ```yaml title="docker-compose.prod.yml"
 services:
@@ -90,3 +93,4 @@ docker compose down
 
 - [Переменные окружения](/docs/self-hosting/environment) — полный список настроек
 - [Обновления](/docs/self-hosting/upgrades) — как обновлять систему
+- [Интеграция с Ozon](/docs/getting-started/ozon-integration) — подключение Ozon API
