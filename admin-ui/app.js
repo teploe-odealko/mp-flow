@@ -8,6 +8,8 @@ const API_BASE =
 /* Auth                                                         */
 /* ============================================================ */
 let _hmacToken = localStorage.getItem("_mpflow_token") || null;
+let _authConfig = null;   // { mode: "password" | "logto", logto_endpoint, logto_app_id, logto_api_resource }
+let _logtoClient = null;  // Logto SDK instance (loaded dynamically)
 
 const state = {
   user: null,
@@ -537,8 +539,15 @@ function switchAnalyticsTab(tab) {
 /* ============================================================ */
 async function apiRequest(path, options = {}) {
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
-  if (!options.skipAuth && _hmacToken) {
-    headers["Authorization"] = `Bearer ${_hmacToken}`;
+  if (!options.skipAuth) {
+    // In Logto mode, refresh token from SDK; otherwise use stored HMAC token
+    if (_logtoClient) {
+      const token = await _getLogtoAccessToken();
+      if (token) { _hmacToken = token; }
+    }
+    if (_hmacToken) {
+      headers["Authorization"] = `Bearer ${_hmacToken}`;
+    }
   }
   const response = await fetch(`${API_BASE}${path}`, {
     method: options.method || "GET",
@@ -2305,6 +2314,10 @@ async function logout() {
   state.selectedCardDetail = null;
   _hmacToken = null;
   localStorage.removeItem("_mpflow_token");
+  if (_logtoClient) {
+    await _logtoClient.signOut(window.location.origin);
+    return; // signOut redirects the page
+  }
   setLoginMode(true);
 }
 
@@ -5145,13 +5158,79 @@ window.addEventListener("hashchange", () => {
 });
 
 function showLoginUI() {
+  if (_authConfig && _authConfig.mode === "logto") return; // Logto handles its own UI
   $("passwordLoginForm").classList.remove("hidden");
+}
+
+async function _initLogto(cfg) {
+  const { default: LogtoClient } = await import(
+    "https://cdn.jsdelivr.net/npm/@logto/browser@3/+esm"
+  );
+  _logtoClient = new LogtoClient({
+    endpoint: cfg.logto_endpoint,
+    appId: cfg.logto_app_id,
+    resources: cfg.logto_api_resource ? [cfg.logto_api_resource] : [],
+    scopes: ["openid", "profile", "email", "offline_access"],
+  });
+  window.__LogtoClient = _logtoClient;
+}
+
+async function _getLogtoAccessToken() {
+  if (!_logtoClient) return null;
+  try {
+    return await _logtoClient.getAccessToken(_authConfig.logto_api_resource);
+  } catch (e) {
+    console.warn("[auth] Failed to get Logto access token:", e);
+    return null;
+  }
 }
 
 async function bootApp() {
   console.log("[auth] bootApp at:", window.location.pathname);
 
-  // Check stored token
+  // 1. Fetch auth config from backend
+  try {
+    const cfgResp = await fetch(`${API_BASE}/auth/config`);
+    if (cfgResp.ok) _authConfig = await cfgResp.json();
+  } catch (e) {
+    console.warn("[auth] Failed to fetch auth config:", e);
+  }
+  _authConfig = _authConfig || { mode: "password" };
+  console.log("[auth] mode:", _authConfig.mode);
+
+  // 2. Logto SSO mode
+  if (_authConfig.mode === "logto") {
+    await _initLogto(_authConfig);
+
+    // Handle callback
+    if (window.location.pathname === "/callback") {
+      try {
+        await _logtoClient.handleSignInCallback(window.location.href);
+        window.history.replaceState({}, "", "/");
+      } catch (e) {
+        console.error("[auth] Logto callback error:", e);
+        window.history.replaceState({}, "", "/");
+      }
+    }
+
+    const isAuth = await _logtoClient.isAuthenticated();
+    if (isAuth) {
+      const token = await _getLogtoAccessToken();
+      if (token) {
+        _hmacToken = token;
+        // Don't persist JWT in localStorage — it's managed by Logto SDK
+        setLoginMode(false);
+        setActiveSection(sectionFromHash());
+        await bootstrapApp();
+        return;
+      }
+    }
+    // Not authenticated — redirect to Logto sign-in
+    await _logtoClient.signIn(window.location.origin + "/callback");
+    return;
+  }
+
+  // 3. Password mode — check stored token
   if (_hmacToken) {
     try {
       const resp = await fetch(`${API_BASE}/auth/me`, {
