@@ -3,6 +3,9 @@ import { loadEnv, defineConfig } from '@medusajs/framework/utils'
 loadEnv(process.env.NODE_ENV || 'development', process.cwd())
 
 module.exports = defineConfig({
+  plugins: [
+    { resolve: "./plugins/ozon" },
+  ],
   projectConfig: {
     databaseUrl: process.env.DATABASE_URL,
     redisUrl: process.env.REDIS_URL,
@@ -101,7 +104,6 @@ module.exports = defineConfig({
     { resolve: "./src/modules/fifo-lot" },
     { resolve: "./src/modules/supplier-order" },
     { resolve: "./src/modules/finance" },
-    { resolve: "./src/modules/ozon-integration" },
 
     // ── Logto OIDC auth provider ─────────────────────────────────
     ...(process.env.LOGTO_CLIENT_ID ? [{

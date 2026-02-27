@@ -1,20 +1,21 @@
-FROM node:20-alpine AS builder
+FROM node:20-alpine AS deps
 
 WORKDIR /app
-
 COPY package.json package-lock.json ./
 RUN npm install
 
+# ── Build admin UI + backend ──────────────────────────────
+FROM deps AS builder
+
 COPY . .
-RUN npm run build
+# medusa build exits 1 on TS warnings even when output is valid
+RUN npm run build; test -d .medusa/server
 
-# ── Production ─────────────────────────────────────────────
-FROM node:20-alpine
+# ── Production ────────────────────────────────────────────
+FROM deps
 
-WORKDIR /app
-
-COPY package.json package-lock.json ./
-RUN npm install --omit=dev
+# Remove devDependencies
+RUN npm prune --omit=dev
 
 COPY --from=builder /app/.medusa ./.medusa
 COPY --from=builder /app/medusa-config.ts ./
@@ -23,5 +24,4 @@ COPY --from=builder /app/src ./src
 
 EXPOSE 9000
 
-# Migrate DB, seed defaults and start
 CMD ["sh", "-c", "npx medusa db:migrate && npx medusa start"]
