@@ -29,8 +29,8 @@ FROM deps
 RUN npm prune --omit=dev
 
 COPY --from=builder /app/.medusa ./.medusa
-COPY --from=builder /app/medusa-config.ts ./
-COPY --from=builder /app/tsconfig.json ./
+# Copy compiled JS config (TS source can't load without devDeps after prune)
+COPY --from=builder /app/.medusa/server/medusa-config.js ./medusa-config.js
 COPY --from=builder /app/src ./src
 
 # Plugin (package.json + compiled .medusa for exports resolution)
