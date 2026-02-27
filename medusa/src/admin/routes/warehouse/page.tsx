@@ -35,10 +35,12 @@ const InventoryPage = () => {
             <Text size="small" className="text-ui-fg-subtle">На складе (шт)</Text>
             <Heading level="h2">{fmt(data.totals.warehouse_stock)}</Heading>
           </Container>
-          <Container>
-            <Text size="small" className="text-ui-fg-subtle">На Ozon FBO</Text>
-            <Heading level="h2">{fmt(data.totals.ozon_fbo)}</Heading>
-          </Container>
+          {data.totals.ozon_fbo != null && (
+            <Container>
+              <Text size="small" className="text-ui-fg-subtle">На Ozon FBO</Text>
+              <Heading level="h2">{fmt(data.totals.ozon_fbo)}</Heading>
+            </Container>
+          )}
           <Container>
             <Text size="small" className="text-ui-fg-subtle">Стоимость запасов</Text>
             <Heading level="h2">{fmtR(data.totals.stock_value)}</Heading>
@@ -68,36 +70,48 @@ const InventoryPage = () => {
                       <Table.HeaderCell className="text-right">Заказано</Table.HeaderCell>
                       <Table.HeaderCell className="text-right">Получено</Table.HeaderCell>
                       <Table.HeaderCell className="text-right">Наш склад</Table.HeaderCell>
-                      <Table.HeaderCell className="text-right">Ozon FBO</Table.HeaderCell>
-                      <Table.HeaderCell className="text-right">Продано</Table.HeaderCell>
+                      {data.rows.some((r: any) => r.ozon_fbo != null) && (
+                        <Table.HeaderCell className="text-right">Ozon FBO</Table.HeaderCell>
+                      )}
+                      {data.rows.some((r: any) => r.sold_qty != null) && (
+                        <Table.HeaderCell className="text-right">Продано</Table.HeaderCell>
+                      )}
                       <Table.HeaderCell className="text-right">Ср. себест.</Table.HeaderCell>
                     </Table.Row>
                   </Table.Header>
                   <Table.Body>
-                    {data.rows.map((row: any) => (
-                      <Table.Row
-                        key={row.variant_id}
-                        className="cursor-pointer"
-                        onClick={() => navigate(`/warehouse/sku/${row.variant_id}`)}
-                      >
-                        <Table.Cell>
-                          <Text className="font-medium">{row.product_title}</Text>
-                        </Table.Cell>
-                        <Table.Cell className="font-mono text-xs">{row.sku || "—"}</Table.Cell>
-                        <Table.Cell className="text-right">{row.ordered_qty}</Table.Cell>
-                        <Table.Cell className="text-right">{row.received_qty}</Table.Cell>
-                        <Table.Cell className="text-right">
-                          <Badge color={row.warehouse_stock > 0 ? "green" : "grey"}>
-                            {row.warehouse_stock}
-                          </Badge>
-                        </Table.Cell>
-                        <Table.Cell className="text-right">{row.ozon_fbo ?? "—"}</Table.Cell>
-                        <Table.Cell className="text-right">{row.sold_qty}</Table.Cell>
-                        <Table.Cell className="text-right">
-                          {row.avg_cost > 0 ? fmtR(row.avg_cost) : "—"}
-                        </Table.Cell>
-                      </Table.Row>
-                    ))}
+                    {data.rows.map((row: any) => {
+                      const hasOzonFbo = data.rows.some((r: any) => r.ozon_fbo != null)
+                      const hasSoldQty = data.rows.some((r: any) => r.sold_qty != null)
+                      return (
+                        <Table.Row
+                          key={row.variant_id}
+                          className="cursor-pointer"
+                          onClick={() => navigate(`/warehouse/sku/${row.variant_id}`)}
+                        >
+                          <Table.Cell>
+                            <Text className="font-medium">{row.product_title}</Text>
+                          </Table.Cell>
+                          <Table.Cell className="font-mono text-xs">{row.sku || "—"}</Table.Cell>
+                          <Table.Cell className="text-right">{row.ordered_qty}</Table.Cell>
+                          <Table.Cell className="text-right">{row.received_qty}</Table.Cell>
+                          <Table.Cell className="text-right">
+                            <Badge color={row.warehouse_stock > 0 ? "green" : "grey"}>
+                              {row.warehouse_stock}
+                            </Badge>
+                          </Table.Cell>
+                          {hasOzonFbo && (
+                            <Table.Cell className="text-right">{row.ozon_fbo ?? "—"}</Table.Cell>
+                          )}
+                          {hasSoldQty && (
+                            <Table.Cell className="text-right">{row.sold_qty ?? "—"}</Table.Cell>
+                          )}
+                          <Table.Cell className="text-right">
+                            {row.avg_cost > 0 ? fmtR(row.avg_cost) : "—"}
+                          </Table.Cell>
+                        </Table.Row>
+                      )
+                    })}
                   </Table.Body>
                 </Table>
               </div>

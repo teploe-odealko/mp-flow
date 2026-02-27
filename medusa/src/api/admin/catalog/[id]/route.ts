@@ -1,15 +1,14 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { MASTER_CARD_MODULE } from "../../../../modules/master-card"
 import { FIFO_LOT_MODULE } from "../../../../modules/fifo-lot"
-import { OZON_MODULE } from "../../../../modules/ozon-integration"
 import { SUPPLIER_ORDER_MODULE } from "../../../../modules/supplier-order"
 
-// GET /admin/catalog/:id — master card detail with FIFO, Ozon, supplier data
+// GET /admin/catalog/:id — master card detail with FIFO and supplier data
+// Ozon data (ozon, ozon_stock, recent_sales) is added by plugin middleware
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const { id } = req.params
   const cardService = req.scope.resolve(MASTER_CARD_MODULE)
   const fifoService = req.scope.resolve(FIFO_LOT_MODULE)
-  const ozonService = req.scope.resolve(OZON_MODULE)
   const supplierService = req.scope.resolve(SUPPLIER_ORDER_MODULE)
 
   const userId = (req as any).auth_context?.actor_id
@@ -40,39 +39,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     avgCost = await fifoService.getWeightedAverageCost(id)
   } catch { /* no lots */ }
 
-  // Ozon product link
-  let ozonLink: any = null
-  let ozonStock: any = null
-  let sales: any[] = []
-  try {
-    const links = await ozonService.listOzonProductLinks({
-      master_card_id: id,
-    })
-    if (links.length > 0) {
-      ozonLink = links[0]
-
-      // Stock snapshots
-      try {
-        const snapshots = await ozonService.listOzonStockSnapshots({
-          offer_id: ozonLink.offer_id,
-        })
-        ozonStock = {
-          fbo_present: snapshots.reduce((s: number, snap: any) => s + (snap.fbo_present || 0), 0),
-          fbo_reserved: snapshots.reduce((s: number, snap: any) => s + (snap.fbo_reserved || 0), 0),
-          last_synced: snapshots[0]?.synced_at || null,
-        }
-      } catch { /* skip */ }
-
-      // Recent sales
-      try {
-        sales = await ozonService.listOzonSales(
-          { offer_id: ozonLink.offer_id },
-          { order: { sold_at: "DESC" }, take: 50 }
-        )
-      } catch { /* skip */ }
-    }
-  } catch { /* no ozon link */ }
-
   // Supplier order items
   let supplierItems: any[] = []
   try {
@@ -94,21 +60,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         received_at: l.received_at,
         supplier_order_item_id: l.supplier_order_item_id,
       })),
-      ozon: ozonLink
-        ? {
-            ozon_product_id: ozonLink.ozon_product_id,
-            offer_id: ozonLink.offer_id,
-            ozon_sku: ozonLink.ozon_sku,
-            ozon_fbo_sku: ozonLink.ozon_fbo_sku,
-            ozon_name: ozonLink.ozon_name,
-            ozon_status: ozonLink.ozon_status,
-            ozon_price: ozonLink.ozon_price,
-            ozon_min_price: ozonLink.ozon_min_price,
-            ozon_marketing_price: ozonLink.ozon_marketing_price,
-            last_synced_at: ozonLink.last_synced_at,
-          }
-        : null,
-      ozon_stock: ozonStock,
       supplier_orders: supplierItems.map((item) => ({
         id: item.id,
         supplier_order_id: item.supplier_order_id,
@@ -116,16 +67,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         received_qty: item.received_qty,
         unit_cost: item.unit_cost,
         status: item.status,
-      })),
-      recent_sales: sales.map((s: any) => ({
-        id: s.id,
-        posting_number: s.posting_number,
-        quantity: s.quantity,
-        sale_price: s.sale_price,
-        commission: s.commission,
-        cogs: s.cogs,
-        sold_at: s.sold_at,
-        status: s.status,
       })),
     },
   })

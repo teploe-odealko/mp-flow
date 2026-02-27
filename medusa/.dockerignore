@@ -1,0 +1,6 @@
+node_modules/
+.medusa/
+.env
+.env.*
+plugins/ozon/node_modules/
+plugins/ozon/.medusa/

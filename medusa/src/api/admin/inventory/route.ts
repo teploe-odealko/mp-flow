@@ -1,14 +1,13 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { MASTER_CARD_MODULE } from "../../../modules/master-card"
 import { FIFO_LOT_MODULE } from "../../../modules/fifo-lot"
-import { OZON_MODULE } from "../../../modules/ozon-integration"
 import { SUPPLIER_ORDER_MODULE } from "../../../modules/supplier-order"
 
 // GET /admin/inventory — supply chain matrix
+// Ozon data (ozon_fbo, sold_qty) is added by plugin middleware
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const cardService = req.scope.resolve(MASTER_CARD_MODULE)
   const fifoService = req.scope.resolve(FIFO_LOT_MODULE)
-  const ozonService = req.scope.resolve(OZON_MODULE)
   const supplierService = req.scope.resolve(SUPPLIER_ORDER_MODULE)
 
   const { q, limit = "50", offset = "0" } = req.query as {
@@ -35,7 +34,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   })
 
   let totalWarehouseStock = 0
-  let totalOzonStock = 0
   let totalStockValue = 0
 
   const rows: any[] = []
@@ -58,27 +56,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       avgCost = await fifoService.getWeightedAverageCost(card.id)
     } catch { /* skip */ }
 
-    let ozonFbo = 0
-    let offerId: string | null = null
-    try {
-      const links = await ozonService.listOzonProductLinks({ master_card_id: card.id })
-      if (links.length > 0) {
-        offerId = links[0].offer_id
-        const snapshots = await ozonService.listOzonStockSnapshots({ offer_id: offerId })
-        ozonFbo = snapshots.reduce((s: number, snap: any) => s + (snap.fbo_present || 0), 0)
-      }
-    } catch { /* skip */ }
-
-    let soldQty = 0
-    if (offerId) {
-      try {
-        const sales = await ozonService.listOzonSales({ offer_id: offerId })
-        soldQty = sales.reduce((s: number, sale: any) => s + (sale.quantity || 0), 0)
-      } catch { /* skip */ }
-    }
-
     totalWarehouseStock += warehouseStock
-    totalOzonStock += ozonFbo
     totalStockValue += warehouseStock * avgCost
 
     rows.push({
@@ -88,8 +66,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       ordered_qty: orderedQty,
       received_qty: receivedQty,
       warehouse_stock: warehouseStock,
-      ozon_fbo: ozonFbo,
-      sold_qty: soldQty,
       avg_cost: avgCost,
     })
   }
@@ -99,7 +75,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     totals: {
       products: rows.length,
       warehouse_stock: totalWarehouseStock,
-      ozon_fbo: totalOzonStock,
       stock_value: Math.round(totalStockValue * 100) / 100,
     },
     count: rows.length,

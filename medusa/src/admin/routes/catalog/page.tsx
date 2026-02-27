@@ -80,12 +80,14 @@ const CatalogPage = () => {
             {data?.products?.reduce((s, p) => s + p.warehouse_stock, 0) ?? "..."}
           </Heading>
         </Container>
-        <Container>
-          <Text size="small" className="text-ui-fg-subtle">На Ozon FBO</Text>
-          <Heading level="h2">
-            {data?.products?.reduce((s, p) => s + p.ozon_fbo_stock, 0) ?? "..."}
-          </Heading>
-        </Container>
+        {data?.products?.some((p) => p.ozon_fbo_stock != null) && (
+          <Container>
+            <Text size="small" className="text-ui-fg-subtle">На Ozon FBO</Text>
+            <Heading level="h2">
+              {data?.products?.reduce((s, p) => s + (p.ozon_fbo_stock || 0), 0) ?? "..."}
+            </Heading>
+          </Container>
+        )}
       </div>
 
       <Container>
@@ -99,10 +101,16 @@ const CatalogPage = () => {
               <Table.Row>
                 <Table.HeaderCell>Товар</Table.HeaderCell>
                 <Table.HeaderCell>SKU</Table.HeaderCell>
-                <Table.HeaderCell>Ozon</Table.HeaderCell>
+                {data.products.some((p) => p.ozon) && (
+                  <Table.HeaderCell>Ozon</Table.HeaderCell>
+                )}
                 <Table.HeaderCell className="text-right">Склад</Table.HeaderCell>
-                <Table.HeaderCell className="text-right">Ozon FBO</Table.HeaderCell>
-                <Table.HeaderCell className="text-right">Цена Ozon</Table.HeaderCell>
+                {data.products.some((p) => p.ozon_fbo_stock != null) && (
+                  <Table.HeaderCell className="text-right">Ozon FBO</Table.HeaderCell>
+                )}
+                {data.products.some((p) => p.ozon) && (
+                  <Table.HeaderCell className="text-right">Цена Ozon</Table.HeaderCell>
+                )}
                 <Table.HeaderCell className="text-right">Себестоимость</Table.HeaderCell>
                 <Table.HeaderCell>Статус</Table.HeaderCell>
               </Table.Row>
@@ -111,6 +119,7 @@ const CatalogPage = () => {
               {data.products.map((product) => {
                 const badge = statusBadge(product)
                 const sku = product.variants?.[0]?.sku || "—"
+                const hasOzon = data.products.some((p) => p.ozon)
                 return (
                   <Table.Row
                     key={product.id}
@@ -130,16 +139,22 @@ const CatalogPage = () => {
                       </div>
                     </Table.Cell>
                     <Table.Cell className="font-mono text-xs">{sku}</Table.Cell>
-                    <Table.Cell className="font-mono text-xs">
-                      {product.ozon?.offer_id || "—"}
-                    </Table.Cell>
+                    {hasOzon && (
+                      <Table.Cell className="font-mono text-xs">
+                        {product.ozon?.offer_id || "—"}
+                      </Table.Cell>
+                    )}
                     <Table.Cell className="text-right">{product.warehouse_stock}</Table.Cell>
-                    <Table.Cell className="text-right">{product.ozon_fbo_stock}</Table.Cell>
-                    <Table.Cell className="text-right">
-                      {product.ozon?.ozon_price
-                        ? `${Number(product.ozon.ozon_price).toLocaleString("ru-RU")} ₽`
-                        : "—"}
-                    </Table.Cell>
+                    {hasOzon && (
+                      <Table.Cell className="text-right">{product.ozon_fbo_stock ?? "—"}</Table.Cell>
+                    )}
+                    {hasOzon && (
+                      <Table.Cell className="text-right">
+                        {product.ozon?.ozon_price
+                          ? `${Number(product.ozon.ozon_price).toLocaleString("ru-RU")} ₽`
+                          : "—"}
+                      </Table.Cell>
+                    )}
                     <Table.Cell className="text-right">
                       {product.avg_cost > 0
                         ? `${product.avg_cost.toLocaleString("ru-RU")} ₽`
