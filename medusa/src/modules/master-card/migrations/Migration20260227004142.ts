@@ -1,0 +1,16 @@
+import { Migration } from "@medusajs/framework/mikro-orm/migrations";
+
+export class Migration20260227004142 extends Migration {
+
+  override async up(): Promise<void> {
+    this.addSql(`create table if not exists "master_card" ("id" text not null, "title" text not null, "sku" text null, "description" text null, "status" text check ("status" in ('active', 'draft', 'archived')) not null default 'draft', "thumbnail" text null, "metadata" jsonb null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now(), "deleted_at" timestamptz null, constraint "master_card_pkey" primary key ("id"));`);
+    this.addSql(`CREATE INDEX IF NOT EXISTS "IDX_master_card_deleted_at" ON "master_card" ("deleted_at") WHERE deleted_at IS NULL;`);
+    this.addSql(`CREATE INDEX IF NOT EXISTS "IDX_master_card_sku" ON "master_card" ("sku") WHERE deleted_at IS NULL;`);
+    this.addSql(`CREATE INDEX IF NOT EXISTS "IDX_master_card_status" ON "master_card" ("status") WHERE deleted_at IS NULL;`);
+  }
+
+  override async down(): Promise<void> {
+    this.addSql(`drop table if exists "master_card" cascade;`);
+  }
+
+}

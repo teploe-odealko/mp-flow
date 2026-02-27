@@ -1,59 +1,68 @@
 # Production compose for Dokploy deployment.
-# PostgreSQL is managed as a separate Dokploy Database service.
-# Set DATABASE_URL in Dokploy environment variables.
+# Medusa v2 replaces old proxy + admin-ui.
 
 services:
-  migrate:
-    build: ./migrations
-    command: sh -c 'psql "$$DATABASE_URL" -f /migrations/init.sql'
+  # ── Medusa v2 (backend + admin UI) ─────────────────────
+  medusa-db:
+    image: postgres:17-alpine
     environment:
-      DATABASE_URL: ${DATABASE_URL}
-    networks:
-      - dokploy-network
-    restart: "no"
-
-  proxy:
-    build: ./proxy
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
-      HMAC_SECRET: ${HMAC_SECRET}
-      BASE_URL: ${BASE_URL:-https://proxy.mp-flow.ru}
-      ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-admin}
-      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD}
-      ADMIN_CORS_ORIGINS: ${ADMIN_CORS_ORIGINS:-https://admin.mp-flow.ru}
-      HOST: 0.0.0.0
-      PORT: 8000
-      # Optional integrations
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      TMAPI_API_TOKEN: ${TMAPI_API_TOKEN:-}
-      OZON_CLIENT_ID: ${OZON_CLIENT_ID:-}
-      OZON_API_KEY: ${OZON_API_KEY:-}
-      LOGTO_ENDPOINT: ${LOGTO_ENDPOINT:-}
-      LOGTO_API_RESOURCE: ${LOGTO_API_RESOURCE:-}
-      LOGTO_SPA_APP_ID: ${LOGTO_SPA_APP_ID:-}
-      LOGTO_MCP_CLIENT_ID: ${LOGTO_MCP_CLIENT_ID:-}
+      POSTGRES_USER: medusa
+      POSTGRES_PASSWORD: ${MEDUSA_DB_PASSWORD:-medusa_prod_2026}
+      POSTGRES_DB: mpflow_medusa
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 10s
+      test: ['CMD-SHELL', 'pg_isready -U medusa -d mpflow_medusa']
+      interval: 5s
       timeout: 5s
       retries: 5
-      start_period: 15s
+    volumes:
+      - medusa-db-data:/var/lib/postgresql/data
     networks:
       - dokploy-network
 
-  admin-ui:
-    build: ./admin-ui
+  medusa-redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dokploy-network
+
+  medusa:
+    build: ./medusa
     depends_on:
-      proxy:
+      medusa-db:
+        condition: service_healthy
+      medusa-redis:
         condition: service_healthy
     environment:
+      DATABASE_URL: postgresql://medusa:${MEDUSA_DB_PASSWORD:-medusa_prod_2026}@medusa-db:5432/mpflow_medusa
+      REDIS_URL: redis://medusa-redis:6379
       NODE_ENV: production
+      # CORS — admin UI is served from same origin, allow landing too
+      STORE_CORS: https://mp-flow.ru
+      ADMIN_CORS: https://admin.mp-flow.ru
+      AUTH_CORS: https://admin.mp-flow.ru
+      MEDUSA_BACKEND_URL: https://admin.mp-flow.ru
+      # Secrets
+      COOKIE_SECRET: ${MEDUSA_COOKIE_SECRET:-change-in-production}
+      JWT_SECRET: ${MEDUSA_JWT_SECRET:-change-in-production}
+      # Logto OIDC (optional — set LOGTO_CLIENT_ID to enable)
+      LOGTO_ENDPOINT: ${LOGTO_ENDPOINT:-}
+      LOGTO_CLIENT_ID: ${LOGTO_CLIENT_ID:-}
+      LOGTO_CLIENT_SECRET: ${LOGTO_CLIENT_SECRET:-}
+      LOGTO_CALLBACK_URL: https://admin.mp-flow.ru/app/login?auth_provider=logto
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     networks:
       - dokploy-network
 
+  # ── Landing page ────────────────────────────────────────
   landing:
     build: ./landing
     environment:
@@ -61,11 +70,13 @@ services:
     networks:
       - dokploy-network
 
+  # ── Documentation ───────────────────────────────────────
   docs:
     build: ./website
     networks:
       - dokploy-network
 
+  # ── Logto (OIDC auth provider) ──────────────────────────
   logto-db:
     image: postgres:17-alpine
     environment:
@@ -101,4 +112,5 @@ networks:
     external: true
 
 volumes:
+  medusa-db-data:
   logto-db-data:
