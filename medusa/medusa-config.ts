@@ -41,6 +41,29 @@ module.exports = defineConfig({
                   display: none !important;
                 }
 
+                /* ── MPFlow brand: sidebar logo ── */
+                aside button[aria-haspopup="menu"] > span:first-child {
+                  background: url('https://mp-flow.ru/logo.png') center/cover no-repeat !important;
+                  border-radius: 6px !important;
+                }
+                aside button[aria-haspopup="menu"] > span:first-child > span {
+                  visibility: hidden !important;
+                }
+
+                /* ── MPFlow brand: accent color overrides ── */
+                :root {
+                  --fg-interactive: #0EA5E9 !important;
+                  --fg-interactive-hover: #38BDF8 !important;
+                }
+                button[class*="bg-ui-button-inverted"],
+                button.bg-ui-button-inverted {
+                  background-color: #0EA5E9 !important;
+                }
+                button[class*="bg-ui-button-inverted"]:hover,
+                button.bg-ui-button-inverted:hover {
+                  background-color: #0284C7 !important;
+                }
+
                 /* ── Settings: hide irrelevant sections ── */
                 /* General section: hide Regions, Tax, Returns, Refunds, Sales Channels, Product Types/Tags, Locations */
                 a[href="/app/settings/regions"],
@@ -86,6 +109,24 @@ module.exports = defineConfig({
                       g.style.display = 'none';
                     }
                   });
+                }).observe(document.documentElement, { childList: true, subtree: true });
+
+                // MPFlow branding: favicon + title
+                document.title = 'MPFlow';
+                const favLink = document.querySelector('link[rel="icon"]') || document.createElement('link');
+                favLink.rel = 'icon';
+                favLink.href = 'https://mp-flow.ru/favicon.png';
+                if (!favLink.parentNode) document.head.appendChild(favLink);
+
+                // MPFlow branding: replace "Medusa Store" with "MPFlow"
+                new MutationObserver((_, obs) => {
+                  const btn = document.querySelector('aside button[aria-haspopup="menu"]');
+                  if (btn) {
+                    const nameEl = btn.querySelector('div p');
+                    if (nameEl && nameEl.textContent !== 'MPFlow') {
+                      nameEl.textContent = 'MPFlow';
+                    }
+                  }
                 }).observe(document.documentElement, { childList: true, subtree: true });
 
                 // Intercept logout: also end Logto session to prevent auto-re-login
