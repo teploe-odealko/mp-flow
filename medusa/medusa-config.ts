@@ -84,7 +84,7 @@ module.exports = defineConfig({
             // otherwise the Medusa SDK captures native fetch at import time.
             const headScript = `
               <script>
-                // Intercept logout: also end Logto session to prevent auto-re-login
+                // Intercept logout: end Logto session + clear SDK state
                 (function() {
                   var _origFetch = window.fetch;
                   window.fetch = function() {
@@ -96,14 +96,20 @@ module.exports = defineConfig({
                     var result = _origFetch.apply(this, args);
                     if (url.indexOf('/auth/session') !== -1 && method === 'DELETE') {
                       result.then(function() {
-                        var host = window.location.hostname;
-                        var parts = host.split('.');
-                        if (parts.length >= 2) {
-                          var baseDomain = parts.slice(-2).join('.');
-                          var logtoEndpoint = 'https://auth.' + baseDomain;
-                          var returnUrl = window.location.origin + '/app/login';
-                          window.location.href = logtoEndpoint + '/oidc/session/end?post_logout_redirect_uri=' + encodeURIComponent(returnUrl);
-                        }
+                        // Clear @logto/browser SDK localStorage
+                        Object.keys(localStorage).forEach(function(k) {
+                          if (k.startsWith('logto:')) localStorage.removeItem(k);
+                        });
+                        _origFetch('/auth/logto-config').then(function(r) { return r.json(); }).then(function(cfg) {
+                          if (cfg.endpoint && cfg.app_id) {
+                            var returnUrl = window.location.origin + '/app/login';
+                            window.location.href = cfg.endpoint + '/oidc/session/end?client_id=' + cfg.app_id + '&post_logout_redirect_uri=' + encodeURIComponent(returnUrl);
+                          } else {
+                            window.location.href = '/app/login';
+                          }
+                        }).catch(function() {
+                          window.location.href = '/app/login';
+                        });
                       });
                     }
                     return result;
@@ -177,7 +183,7 @@ module.exports = defineConfig({
     { resolve: "./src/modules/supplier-order" },
     { resolve: "./src/modules/finance" },
 
-    // ── Auth module: emailpass (default) + Logto OIDC ─────────────
+    // ── Auth module: emailpass only (Logto handled client-side) ────
     {
       resolve: "@medusajs/medusa/auth",
       options: {
@@ -188,17 +194,6 @@ module.exports = defineConfig({
             id: "emailpass",
             options: {},
           },
-          // Logto OIDC provider (optional — only when LOGTO_CLIENT_ID is set)
-          ...(process.env.LOGTO_CLIENT_ID ? [{
-            resolve: "./src/modules/logto-auth",
-            id: "logto",
-            options: {
-              clientId: process.env.LOGTO_CLIENT_ID,
-              clientSecret: process.env.LOGTO_CLIENT_SECRET,
-              callbackUrl: process.env.LOGTO_CALLBACK_URL || "http://localhost:9000/app/login?auth_provider=logto",
-              endpoint: process.env.LOGTO_ENDPOINT,
-            },
-          }] : []),
         ],
       },
     },

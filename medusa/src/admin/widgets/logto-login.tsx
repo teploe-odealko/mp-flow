@@ -3,64 +3,118 @@ import { Spinner } from "@medusajs/icons"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 
-const AUTH_PROVIDER = "logto"
+type LogtoConfig = { endpoint: string; app_id: string }
 
-function getSdk(): any {
-  return (window as any).__sdk
-}
-
-function decodeJwtPayload(token: string): any {
-  try {
-    const payload = token.split(".")[1]
-    return JSON.parse(atob(payload))
-  } catch {
-    return null
-  }
-}
-
+/**
+ * Full-screen login widget that uses @logto/browser SDK directly.
+ * Replaces the built-in Medusa email/password form with Logto SSO.
+ *
+ * Flow:
+ * 1. Fetch /auth/logto-config → { endpoint, app_id }
+ * 2. Init LogtoClient (CDN import)
+ * 3. If callback (URL has code+state) → handleSignInCallback → exchange → redirect
+ * 4. If already authenticated → exchange → redirect
+ * 5. Otherwise → signIn → redirect to Logto
+ */
 const LogtoLoginWidget = () => {
-  const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [error, setError] = useState<string | null>(null)
+  const [status, setStatus] = useState<string>("Загрузка...")
+  const initiated = useRef(false)
 
-  const isCallback =
-    searchParams.get("auth_provider") === AUTH_PROVIDER &&
-    searchParams.has("code")
+  const run = useCallback(async () => {
+    if (initiated.current) return
+    initiated.current = true
 
-  // If Logto returned an error, or our callback failed — show error
-  const hasError =
-    searchParams.has("error") ||
-    searchParams.get("login_error") === "1"
+    try {
+      // 1. Fetch Logto config
+      setStatus("Загрузка конфигурации...")
+      const cfgRes = await fetch("/auth/logto-config")
+      const cfg: LogtoConfig = await cfgRes.json()
 
-  const { handleLogin } = useLogtoLogin(setError)
-  const { handleCallback } = useLogtoCallback(searchParams)
+      if (!cfg.app_id || !cfg.endpoint) {
+        // Logto not configured — show default Medusa login form
+        setError(null)
+        setStatus("")
+        initiated.current = false
+        return
+      }
 
-  const actionInitiated = useRef(false)
-  useEffect(() => {
-    if (actionInitiated.current) return
-    if (hasError) return // Don't auto-redirect if there was an error
+      // 2. Init @logto/browser SDK (CDN import)
+      setStatus("Инициализация...")
+      const { default: LogtoClient } = await import(
+        /* @vite-ignore */
+        "https://cdn.jsdelivr.net/npm/@logto/browser@3/+esm"
+      )
 
-    if (isCallback) {
-      actionInitiated.current = true
-      handleCallback()
-    } else {
-      actionInitiated.current = true
-      handleLogin()
+      const callbackUrl = `${window.location.origin}/app/login`
+      const client = new LogtoClient({
+        endpoint: cfg.endpoint,
+        appId: cfg.app_id,
+        scopes: ["openid", "profile", "email"],
+      })
+
+      // 3. Handle callback (Logto redirected back with code+state)
+      const hasCode = searchParams.has("code") && searchParams.has("state")
+
+      if (hasCode) {
+        setStatus("Авторизация...")
+        await client.handleSignInCallback(window.location.href)
+        // Clean URL params
+        window.history.replaceState(null, "", "/app/login")
+      }
+
+      // 4. Check if authenticated
+      const isAuth = await client.isAuthenticated()
+
+      if (isAuth) {
+        setStatus("Создание сессии...")
+        const token = await client.getAccessToken()
+
+        const exchangeRes = await fetch("/auth/logto-exchange", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ access_token: token }),
+        })
+
+        if (!exchangeRes.ok) {
+          const body = await exchangeRes.text()
+          throw new Error(`Ошибка создания сессии (${exchangeRes.status}): ${body}`)
+        }
+
+        // Session cookie is now set — redirect to catalog
+        navigate("/catalog", { replace: true })
+        return
+      }
+
+      // 5. Not authenticated — redirect to Logto sign-in
+      setStatus("Перенаправление...")
+      await client.signIn(callbackUrl)
+    } catch (e: any) {
+      console.error("Logto login error:", e)
+      setError(e.message || "Ошибка авторизации")
     }
-  }, [isCallback, hasError, handleCallback, handleLogin])
+  }, [navigate, searchParams])
 
-  if (error || hasError) {
+  useEffect(() => {
+    run()
+  }, [run])
+
+  // If no status — Logto not configured, don't cover the default form
+  if (!status && !error) return null
+
+  if (error) {
     return (
       <div className="bg-ui-bg-subtle fixed inset-0 z-50 flex flex-col items-center justify-center gap-4">
-        <p className="text-ui-fg-subtle text-sm">
-          {error || "Ошибка авторизации"}
-        </p>
+        <p className="text-ui-fg-subtle text-sm">{error}</p>
         <button
           onClick={() => {
             setError(null)
-            actionInitiated.current = false
-            // Clear error params from URL
-            setSearchParams({})
+            setStatus("Загрузка...")
+            initiated.current = false
+            run()
           }}
           className="text-ui-fg-interactive text-sm underline"
         >
@@ -70,92 +124,12 @@ const LogtoLoginWidget = () => {
     )
   }
 
-  // Full-screen spinner — covers the built-in email/password form
   return (
     <div className="bg-ui-bg-subtle fixed inset-0 z-50 flex flex-col items-center justify-center gap-4">
       <Spinner className="text-ui-fg-subtle animate-spin" />
-      <p className="text-ui-fg-subtle text-sm">
-        {isCallback ? "Авторизация..." : "Перенаправление..."}
-      </p>
+      <p className="text-ui-fg-subtle text-sm">{status}</p>
     </div>
   )
-}
-
-function useLogtoLogin(setError: (e: string | null) => void) {
-  const [isPending, setIsPending] = useState(false)
-
-  const handleLogin = useCallback(async () => {
-    setIsPending(true)
-    try {
-      const sdk = getSdk()
-      const result = await sdk.auth.login("user", AUTH_PROVIDER, {
-        callback_url: `${window.location.origin}/app/login?auth_provider=${AUTH_PROVIDER}`,
-      })
-
-      if (typeof result === "object" && result.location) {
-        window.location.href = result.location
-        return
-      }
-
-      throw new Error("Unexpected login response")
-    } catch (e: any) {
-      console.error("Logto login error:", e)
-      setError("Ошибка подключения к серверу авторизации")
-    }
-    setIsPending(false)
-  }, [setError])
-
-  return { handleLogin, isLoginPending: isPending }
-}
-
-function useLogtoCallback(searchParams: URLSearchParams) {
-  const navigate = useNavigate()
-  const [isPending, setIsPending] = useState(false)
-
-  const handleCallback = useCallback(async () => {
-    setIsPending(true)
-    try {
-      const sdk = getSdk()
-
-      const query = Object.fromEntries(searchParams)
-      delete query.auth_provider
-      const token = await sdk.auth.callback("user", AUTH_PROVIDER, query)
-
-      const decoded = decodeJwtPayload(token)
-
-      if (!decoded?.actor_id) {
-        // First login — create admin user
-        const res = await fetch("/admin/auth/create-user", {
-          method: "POST",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-        })
-
-        if (!res.ok) {
-          const body = await res.text()
-          console.error("create-user failed:", res.status, body)
-          throw new Error(`Не удалось создать пользователя (${res.status})`)
-        }
-
-        // Refresh token to get actor_id populated
-        await sdk.auth.refresh({
-          Authorization: `Bearer ${token}`,
-        })
-      }
-
-      navigate("/catalog", { replace: true })
-    } catch (e: any) {
-      console.error("Logto callback error:", e)
-      // Navigate with error flag — prevents auto-redirect loop
-      navigate("/login?login_error=1", { replace: true })
-    }
-    setIsPending(false)
-  }, [searchParams, navigate])
-
-  return { handleCallback, isCallbackPending: isPending }
 }
 
 export const config = defineWidgetConfig({

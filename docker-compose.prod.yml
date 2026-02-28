@@ -48,11 +48,9 @@ services:
       # Secrets
       COOKIE_SECRET: ${MEDUSA_COOKIE_SECRET:-change-in-production}
       JWT_SECRET: ${MEDUSA_JWT_SECRET:-change-in-production}
-      # Logto OIDC (optional — set LOGTO_CLIENT_ID to enable)
+      # Logto Auth (client-side @logto/browser SDK)
       LOGTO_ENDPOINT: ${LOGTO_ENDPOINT:-}
-      LOGTO_CLIENT_ID: ${LOGTO_CLIENT_ID:-}
-      LOGTO_CLIENT_SECRET: ${LOGTO_CLIENT_SECRET:-}
-      LOGTO_CALLBACK_URL: https://admin.mp-flow.ru/app/login?auth_provider=logto
+      LOGTO_SPA_APP_ID: ${LOGTO_SPA_APP_ID:-}
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/health"]
       interval: 15s
