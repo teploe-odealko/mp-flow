@@ -89,10 +89,9 @@ module.exports = defineConfig({
                   var _origFetch = window.fetch;
                   window.fetch = function() {
                     var args = arguments;
-                    var url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url ? args[0].url : '');
-                    var method = (args[0] && typeof args[0] !== 'string' && args[0].method)
-                      ? args[0].method
-                      : (args[1] && args[1].method ? args[1].method : 'GET');
+                    var url = (args[0] && typeof args[0] === 'object') ? args[0].toString() : String(args[0] || '');
+                    var method = (args[1] && args[1].method) ? args[1].method
+                      : (args[0] && typeof args[0] === 'object' && args[0].method) ? args[0].method : 'GET';
                     method = method.toUpperCase();
                     var result = _origFetch.apply(this, args);
                     if (url.indexOf('/auth/session') !== -1 && method === 'DELETE') {
