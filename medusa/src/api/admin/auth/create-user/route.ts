@@ -2,6 +2,11 @@ import type { MedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { createUserAccountWorkflow, setAuthAppMetadataWorkflow } from "@medusajs/core-flows"
 import { ContainerRegistrationKeys, MedusaError } from "@medusajs/framework/utils"
 
+// Opt out of the global /admin/* auth middleware (which doesn't allow
+// unregistered users). Our custom middleware in src/api/middlewares.ts
+// handles auth with allowUnregistered: true.
+export const AUTHENTICATE = false
+
 /**
  * POST /admin/auth/create-user
  *
