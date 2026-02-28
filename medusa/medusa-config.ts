@@ -105,15 +105,20 @@ module.exports = defineConfig({
     { resolve: "./src/modules/supplier-order" },
     { resolve: "./src/modules/finance" },
 
-    // ── Logto OIDC auth provider ─────────────────────────────────
+    // ── Auth module with Logto OIDC provider ───────────────────────
     ...(process.env.LOGTO_CLIENT_ID ? [{
-      resolve: "./src/modules/logto-auth",
-      id: "logto",
+      resolve: "@medusajs/medusa/auth",
       options: {
-        clientId: process.env.LOGTO_CLIENT_ID,
-        clientSecret: process.env.LOGTO_CLIENT_SECRET,
-        callbackUrl: process.env.LOGTO_CALLBACK_URL || "http://localhost:9000/app/login?auth_provider=logto",
-        endpoint: process.env.LOGTO_ENDPOINT,
+        providers: [{
+          resolve: "./src/modules/logto-auth",
+          id: "logto",
+          options: {
+            clientId: process.env.LOGTO_CLIENT_ID,
+            clientSecret: process.env.LOGTO_CLIENT_SECRET,
+            callbackUrl: process.env.LOGTO_CALLBACK_URL || "http://localhost:9000/app/login?auth_provider=logto",
+            endpoint: process.env.LOGTO_ENDPOINT,
+          },
+        }],
       },
     }] : []),
 
