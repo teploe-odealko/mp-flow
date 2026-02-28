@@ -105,22 +105,31 @@ module.exports = defineConfig({
     { resolve: "./src/modules/supplier-order" },
     { resolve: "./src/modules/finance" },
 
-    // ── Auth module with Logto OIDC provider ───────────────────────
-    ...(process.env.LOGTO_CLIENT_ID ? [{
+    // ── Auth module: emailpass (default) + Logto OIDC ─────────────
+    {
       resolve: "@medusajs/medusa/auth",
       options: {
-        providers: [{
-          resolve: "./src/modules/logto-auth",
-          id: "logto",
-          options: {
-            clientId: process.env.LOGTO_CLIENT_ID,
-            clientSecret: process.env.LOGTO_CLIENT_SECRET,
-            callbackUrl: process.env.LOGTO_CALLBACK_URL || "http://localhost:9000/app/login?auth_provider=logto",
-            endpoint: process.env.LOGTO_ENDPOINT,
+        providers: [
+          // Built-in emailpass provider (required for CLI user creation)
+          {
+            resolve: "@medusajs/medusa/auth-emailpass",
+            id: "emailpass",
+            options: {},
           },
-        }],
+          // Logto OIDC provider (optional — only when LOGTO_CLIENT_ID is set)
+          ...(process.env.LOGTO_CLIENT_ID ? [{
+            resolve: "./src/modules/logto-auth",
+            id: "logto",
+            options: {
+              clientId: process.env.LOGTO_CLIENT_ID,
+              clientSecret: process.env.LOGTO_CLIENT_SECRET,
+              callbackUrl: process.env.LOGTO_CALLBACK_URL || "http://localhost:9000/app/login?auth_provider=logto",
+              endpoint: process.env.LOGTO_ENDPOINT,
+            },
+          }] : []),
+        ],
       },
-    }] : []),
+    },
 
     // ── Disable heavy built-in e-commerce modules ───────────────
     // These are auto-added by defineConfig() — override with disable.
