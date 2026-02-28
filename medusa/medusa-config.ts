@@ -87,6 +87,22 @@ module.exports = defineConfig({
                     }
                   });
                 }).observe(document.documentElement, { childList: true, subtree: true });
+
+                // Intercept logout: also end Logto session to prevent auto-re-login
+                const _origFetch = window.fetch;
+                window.fetch = async function(...args) {
+                  const res = await _origFetch.apply(this, args);
+                  const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+                  const method = (args[1]?.method || 'GET').toUpperCase();
+                  if (url.includes('/auth/session') && method === 'DELETE') {
+                    const logtoEndpoint = '${process.env.LOGTO_ENDPOINT || ""}';
+                    if (logtoEndpoint) {
+                      const returnUrl = window.location.origin + '/app/login';
+                      window.location.href = logtoEndpoint + '/oidc/session/end?post_logout_redirect_uri=' + encodeURIComponent(returnUrl);
+                    }
+                  }
+                  return res;
+                };
               </script>
             `
 
