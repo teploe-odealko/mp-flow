@@ -29,9 +29,10 @@ FROM deps
 RUN npm prune --omit=dev
 
 COPY --from=builder /app/.medusa ./.medusa
-# Copy compiled JS config (TS source can't load without devDeps after prune)
+# Compiled config (TS source can't load after prune removes @swc/core)
 COPY --from=builder /app/.medusa/server/medusa-config.js ./medusa-config.js
-COPY --from=builder /app/src ./src
+# Symlink src → compiled output so module paths resolve to JS not TS
+RUN ln -s .medusa/server/src src
 
 # Plugin (package.json + compiled .medusa for exports resolution)
 RUN mkdir -p node_modules/mpflow-plugin-ozon
