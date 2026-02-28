@@ -136,7 +136,14 @@ module.exports = defineConfig({
                   const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
                   const method = (args[1]?.method || 'GET').toUpperCase();
                   if (url.includes('/auth/session') && method === 'DELETE') {
-                    const logtoEndpoint = '${process.env.LOGTO_ENDPOINT || ""}';
+                    // Derive Logto endpoint from hostname (auth.{domain})
+                    const host = window.location.hostname;
+                    const parts = host.split('.');
+                    let logtoEndpoint = '';
+                    if (parts.length >= 2) {
+                      const baseDomain = parts.slice(-2).join('.');
+                      logtoEndpoint = 'https://auth.' + baseDomain;
+                    }
                     if (logtoEndpoint) {
                       const returnUrl = window.location.origin + '/app/login';
                       window.location.href = logtoEndpoint + '/oidc/session/end?post_logout_redirect_uri=' + encodeURIComponent(returnUrl);
