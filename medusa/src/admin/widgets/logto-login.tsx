@@ -146,11 +146,11 @@ function useLogtoCallback(searchParams: URLSearchParams) {
         })
       }
 
-      navigate("/app/catalog", { replace: true })
+      navigate("/catalog", { replace: true })
     } catch (e: any) {
       console.error("Logto callback error:", e)
       // Navigate with error flag — prevents auto-redirect loop
-      navigate("/app/login?login_error=1", { replace: true })
+      navigate("/login?login_error=1", { replace: true })
     }
     setIsPending(false)
   }, [searchParams, navigate])
