@@ -33,6 +33,8 @@ COPY --from=builder /app/.medusa ./.medusa
 COPY --from=builder /app/.medusa/server/medusa-config.js ./medusa-config.js
 # Symlink src → compiled output so module paths resolve to JS not TS
 RUN ln -s .medusa/server/src src
+# Admin UI build (served from ./public/admin/)
+COPY --from=builder /app/.medusa/server/public ./public
 
 # Plugin (package.json + compiled .medusa for exports resolution)
 RUN mkdir -p node_modules/mpflow-plugin-ozon
