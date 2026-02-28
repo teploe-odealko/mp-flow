@@ -80,7 +80,40 @@ module.exports = defineConfig({
               </style>
             `
 
-            const script = `
+            // Fetch interceptor MUST load in <head> before the React bundle,
+            // otherwise the Medusa SDK captures native fetch at import time.
+            const headScript = `
+              <script>
+                // Intercept logout: also end Logto session to prevent auto-re-login
+                (function() {
+                  var _origFetch = window.fetch;
+                  window.fetch = function() {
+                    var args = arguments;
+                    var url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url ? args[0].url : '');
+                    var method = (args[0] && typeof args[0] !== 'string' && args[0].method)
+                      ? args[0].method
+                      : (args[1] && args[1].method ? args[1].method : 'GET');
+                    method = method.toUpperCase();
+                    var result = _origFetch.apply(this, args);
+                    if (url.indexOf('/auth/session') !== -1 && method === 'DELETE') {
+                      result.then(function() {
+                        var host = window.location.hostname;
+                        var parts = host.split('.');
+                        if (parts.length >= 2) {
+                          var baseDomain = parts.slice(-2).join('.');
+                          var logtoEndpoint = 'https://auth.' + baseDomain;
+                          var returnUrl = window.location.origin + '/app/login';
+                          window.location.href = logtoEndpoint + '/oidc/session/end?post_logout_redirect_uri=' + encodeURIComponent(returnUrl);
+                        }
+                      });
+                    }
+                    return result;
+                  };
+                })();
+              </script>
+            `
+
+            const bodyScript = `
               <script>
                 // Redirect /app/orders → /app/catalog (default landing page)
                 if (window.location.pathname === '/app' || window.location.pathname === '/app/orders') {
@@ -88,24 +121,23 @@ module.exports = defineConfig({
                 }
 
                 // Hide unwanted items from Command Palette (Search modal)
-                const HIDDEN_CMDK = [
+                var HIDDEN_CMDK = [
                   'campaigns', 'categories', 'collections', 'customer groups',
                   'customers', 'inventory', 'orders', 'price lists', 'products',
                   'promotions', 'reservations',
                   'locations', 'product types', 'regions', 'return reasons',
                   'sales channels', 'store', 'tax regions',
                 ];
-                new MutationObserver(() => {
-                  document.querySelectorAll('[cmdk-item]').forEach(el => {
-                    const val = el.getAttribute('data-value') || '';
-                    if (HIDDEN_CMDK.some(h => val.startsWith(h))) {
+                new MutationObserver(function() {
+                  document.querySelectorAll('[cmdk-item]').forEach(function(el) {
+                    var val = el.getAttribute('data-value') || '';
+                    if (HIDDEN_CMDK.some(function(h) { return val.startsWith(h); })) {
                       el.style.display = 'none';
                     }
                   });
-                  // Hide group headers when all items inside are hidden
-                  document.querySelectorAll('[cmdk-group]').forEach(g => {
-                    const items = g.querySelectorAll('[cmdk-item]');
-                    if (items.length > 0 && Array.from(items).every(i => i.style.display === 'none')) {
+                  document.querySelectorAll('[cmdk-group]').forEach(function(g) {
+                    var items = g.querySelectorAll('[cmdk-item]');
+                    if (items.length > 0 && Array.from(items).every(function(i) { return i.style.display === 'none'; })) {
                       g.style.display = 'none';
                     }
                   });
@@ -113,50 +145,27 @@ module.exports = defineConfig({
 
                 // MPFlow branding: favicon + title
                 document.title = 'MPFlow';
-                const favLink = document.querySelector('link[rel="icon"]') || document.createElement('link');
+                var favLink = document.querySelector('link[rel="icon"]') || document.createElement('link');
                 favLink.rel = 'icon';
                 favLink.href = 'https://mp-flow.ru/favicon.png';
                 if (!favLink.parentNode) document.head.appendChild(favLink);
 
                 // MPFlow branding: replace "Medusa Store" with "MPFlow"
-                new MutationObserver((_, obs) => {
-                  const btn = document.querySelector('aside button[aria-haspopup="menu"]');
+                new MutationObserver(function() {
+                  var btn = document.querySelector('aside button[aria-haspopup="menu"]');
                   if (btn) {
-                    const nameEl = btn.querySelector('div p');
+                    var nameEl = btn.querySelector('div p');
                     if (nameEl && nameEl.textContent !== 'MPFlow') {
                       nameEl.textContent = 'MPFlow';
                     }
                   }
                 }).observe(document.documentElement, { childList: true, subtree: true });
-
-                // Intercept logout: also end Logto session to prevent auto-re-login
-                const _origFetch = window.fetch;
-                window.fetch = async function(...args) {
-                  const res = await _origFetch.apply(this, args);
-                  const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
-                  const method = (args[1]?.method || 'GET').toUpperCase();
-                  if (url.includes('/auth/session') && method === 'DELETE') {
-                    // Derive Logto endpoint from hostname (auth.{domain})
-                    const host = window.location.hostname;
-                    const parts = host.split('.');
-                    let logtoEndpoint = '';
-                    if (parts.length >= 2) {
-                      const baseDomain = parts.slice(-2).join('.');
-                      logtoEndpoint = 'https://auth.' + baseDomain;
-                    }
-                    if (logtoEndpoint) {
-                      const returnUrl = window.location.origin + '/app/login';
-                      window.location.href = logtoEndpoint + '/oidc/session/end?post_logout_redirect_uri=' + encodeURIComponent(returnUrl);
-                    }
-                  }
-                  return res;
-                };
               </script>
             `
 
             return html
-              .replace("</head>", css + "</head>")
-              .replace("</body>", script + "</body>")
+              .replace("</head>", css + headScript + "</head>")
+              .replace("</body>", bodyScript + "</body>")
           },
         },
       ],
