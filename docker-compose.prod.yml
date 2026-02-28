@@ -37,7 +37,7 @@ services:
       medusa-redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://medusa:${MEDUSA_DB_PASSWORD:-medusa_prod_2026}@medusa-db:5432/mpflow_medusa
+      DATABASE_URL: postgresql://medusa:${MEDUSA_DB_PASSWORD:-medusa_prod_2026}@medusa-db:5432/mpflow_medusa?sslmode=disable
       REDIS_URL: redis://medusa-redis:6379
       NODE_ENV: production
       # CORS — admin UI is served from same origin, allow landing too
