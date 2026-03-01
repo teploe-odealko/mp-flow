@@ -4,54 +4,41 @@
 #   curl -O https://raw.githubusercontent.com/teploe-odealko/mp-flow/main/docker-compose.yml
 #   docker compose up -d
 #
-# Admin UI: http://localhost:9000/app
-# Create first user:
-#   docker compose exec medusa npx medusa user -e admin@example.com -p your_password
+# Admin UI: http://localhost:3000
+# First login: via Logto OIDC (or set up your own auth)
 
 services:
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_USER: medusa
-      POSTGRES_PASSWORD: ${MEDUSA_DB_PASSWORD:-medusa_selfhost}
-      POSTGRES_DB: mpflow_medusa
+      POSTGRES_USER: mpflow
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-mpflow_selfhost}
+      POSTGRES_DB: mpflow
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U medusa -d mpflow_medusa']
+      test: ['CMD-SHELL', 'pg_isready -U mpflow -d mpflow']
       interval: 5s
       timeout: 5s
       retries: 5
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
-  redis:
-    image: redis:7-alpine
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  medusa:
-    image: ghcr.io/teploe-odealko/mp-flow/medusa:latest
+  admin:
+    image: ghcr.io/teploe-odealko/mp-flow/admin:latest
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://medusa:${MEDUSA_DB_PASSWORD:-medusa_selfhost}@postgres:5432/mpflow_medusa?sslmode=disable
-      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://mpflow:${DB_PASSWORD:-mpflow_selfhost}@postgres:5432/mpflow?sslmode=disable
       NODE_ENV: production
       COOKIE_SECRET: ${COOKIE_SECRET:-change-me-in-production}
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
     ports:
-      - "${PORT:-9000}:9000"
+      - "${PORT:-3000}:3000"
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
       interval: 15s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 30s
 
 volumes:
   postgres-data:

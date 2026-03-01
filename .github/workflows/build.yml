@@ -14,7 +14,7 @@ permissions:
   packages: write
 
 jobs:
-  build-medusa:
+  build-admin:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,7 +28,7 @@ jobs:
       - uses: docker/metadata-action@v5
         id: meta
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}/medusa
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/admin
           tags: |
             type=sha
             type=ref,event=branch
@@ -37,7 +37,7 @@ jobs:
 
       - uses: docker/build-push-action@v6
         with:
-          context: ./medusa
+          context: ./admin
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

@@ -1,46 +1,24 @@
 # Production compose for Dokploy deployment.
-# Medusa v2 replaces old proxy + admin-ui.
-# medusa image is pre-built by GitHub Actions and pushed to ghcr.io.
+# admin image is pre-built by GitHub Actions and pushed to ghcr.io.
 
 services:
-  # ── Medusa v2 (backend + admin UI) ─────────────────────
-  medusa-redis:
-    image: redis:7-alpine
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    networks:
-      - dokploy-network
-
-  medusa:
-    image: ghcr.io/teploe-odealko/mp-flow/medusa:latest
+  # ── Admin (backend + frontend) ─────────────────────────
+  admin:
+    image: ghcr.io/teploe-odealko/mp-flow/admin:latest
     pull_policy: always
-    depends_on:
-      medusa-redis:
-        condition: service_healthy
     environment:
       DATABASE_URL: ${DATABASE_URL}
-      REDIS_URL: redis://medusa-redis:6379
       NODE_ENV: production
-      # CORS — admin UI is served from same origin, allow landing too
-      STORE_CORS: https://mp-flow.ru
-      ADMIN_CORS: https://admin.mp-flow.ru
-      AUTH_CORS: https://admin.mp-flow.ru
-      MEDUSA_BACKEND_URL: https://admin.mp-flow.ru
-      # Secrets
       COOKIE_SECRET: ${MEDUSA_COOKIE_SECRET:-change-in-production}
-      JWT_SECRET: ${MEDUSA_JWT_SECRET:-change-in-production}
       # Logto Auth (client-side @logto/browser SDK)
       LOGTO_ENDPOINT: ${LOGTO_ENDPOINT:-}
       LOGTO_SPA_APP_ID: ${LOGTO_SPA_APP_ID:-}
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
       interval: 15s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 30s
     networks:
       - dokploy-network
 

@@ -5,7 +5,7 @@ description: Пошаговая инструкция по развёртыван
 
 # Self-hosting
 
-MPFlow распространяется как Docker-образ. Для работы нужны **PostgreSQL** и **Redis** — оба поднимаются автоматически из `docker-compose.yml`.
+MPFlow распространяется как Docker-образ. Для работы нужен **PostgreSQL** — поднимается автоматически из `docker-compose.yml`.
 
 ## Требования
 
@@ -25,17 +25,15 @@ curl -O https://raw.githubusercontent.com/teploe-odealko/mp-flow/main/docker-com
 
 ```bash
 cat > .env << 'EOF'
-MEDUSA_DB_PASSWORD=ваш_пароль_для_бд
+DB_PASSWORD=ваш_пароль_для_бд
 COOKIE_SECRET=сгенерируйте_openssl_rand_base64_32
-JWT_SECRET=сгенерируйте_openssl_rand_base64_32
 EOF
 ```
 
-Сгенерировать секреты:
+Сгенерировать секрет:
 
 ```bash
 openssl rand -base64 32  # для COOKIE_SECRET
-openssl rand -base64 32  # для JWT_SECRET
 ```
 
 ### 3. Запустить
@@ -44,29 +42,23 @@ openssl rand -base64 32  # для JWT_SECRET
 docker compose up -d
 ```
 
-Ждём пока сервисы стартуют (~60 секунд на первый запуск — миграции БД запускаются автоматически):
+Ждём пока сервисы стартуют (~30 секунд на первый запуск):
 
 ```bash
-docker compose logs -f medusa
+docker compose logs -f admin
 ```
 
-Когда увидите `Medusa server started` — система готова.
+Когда увидите `Admin server running` — система готова.
 
-### 4. Создать админ-пользователя
-
-```bash
-docker compose exec medusa npx medusa user -e admin@example.com -p ваш_пароль
-```
-
-### 5. Войти в админку
+### 4. Войти в админку
 
 Откройте в браузере:
 
 ```
-http://localhost:9000/app
+http://localhost:3000
 ```
 
-Авторизуйтесь с email и паролем, заданными на предыдущем шаге.
+Авторизация — через Logto OIDC (если настроен) или напрямую.
 
 ## Обновление
 
@@ -75,60 +67,54 @@ docker compose pull
 docker compose up -d
 ```
 
-Миграции БД применяются автоматически при старте контейнера.
-
 ## Локальная разработка (без Docker)
-
-Для разработки удобнее запускать только инфраструктуру в Docker, а Medusa — нативно.
 
 ### 1. Клонировать репозиторий
 
 ```bash
 git clone https://github.com/teploe-odealko/mp-flow.git
-cd mp-flow/medusa
+cd mp-flow/admin
 ```
 
-### 2. Поднять PostgreSQL и Redis
-
-```bash
-docker compose up -d
-```
-
-Это запустит:
-- PostgreSQL на порту **5433** (user: `medusa`, password: `medusa123`, db: `mpflow_medusa`)
-- Redis на порту **6380**
-
-### 3. Установить зависимости
+### 2. Установить зависимости
 
 ```bash
 npm install
 ```
 
-Встроенные плагины (Ozon и др.) собираются и линкуются автоматически через `postinstall`.
+### 3. Настроить `.env`
 
-### 4. Создать `.env` для Medusa
-
-Создайте `medusa/.env`:
+Создайте `admin/.env`:
 
 ```bash
-DATABASE_URL=postgresql://medusa:medusa123@localhost:5433/mpflow_medusa
-REDIS_URL=redis://localhost:6380
+DATABASE_URL=postgresql://mpflow:mpflow@localhost:5432/mpflow
+COOKIE_SECRET=dev-secret
 ```
 
-### 5. Применить миграции и создать пользователя
+### 4. Запустить PostgreSQL
 
 ```bash
-npx medusa db:migrate
-npx medusa user -e admin@example.com -p your_password
+docker run -d --name mpflow-postgres \
+  -e POSTGRES_USER=mpflow \
+  -e POSTGRES_PASSWORD=mpflow \
+  -e POSTGRES_DB=mpflow \
+  -p 5432:5432 \
+  postgres:17-alpine
+```
+
+### 5. Применить миграции
+
+```bash
+npm run db:migrate
 ```
 
 ### 6. Запустить в dev-режиме
 
 ```bash
-npx medusa develop
+npm run dev
 ```
 
-Админка будет доступна по адресу `http://localhost:9000/app`.
+Админка будет доступна по адресу `http://localhost:5173` (клиент) с прокси на API `http://localhost:3000`.
 
 ## Переменные окружения
 
@@ -136,67 +122,66 @@ npx medusa develop
 
 | Переменная | Обязательная | Описание |
 |---|---|---|
-| `MEDUSA_DB_PASSWORD` | Да | Пароль PostgreSQL (используется в docker-compose) |
+| `DB_PASSWORD` | Да | Пароль PostgreSQL (используется в docker-compose) |
 | `COOKIE_SECRET` | Да | Секрет для cookies. Генерируйте: `openssl rand -base64 32` |
-| `JWT_SECRET` | Да | Секрет для JWT. Генерируйте: `openssl rand -base64 32` |
-| `PORT` | Нет | Порт для доступа к админке. По умолчанию: `9000` |
+| `PORT` | Нет | Порт для доступа к админке. По умолчанию: `3000` |
 
 ### Локальная разработка
 
 | Переменная | Обязательная | Описание |
 |---|---|---|
 | `DATABASE_URL` | Да | PostgreSQL connection string |
-| `REDIS_URL` | Да | Redis connection string |
-| `STORE_CORS` | Нет | CORS для store API |
-| `ADMIN_CORS` | Нет | CORS для admin API |
-| `AUTH_CORS` | Нет | CORS для auth API |
-| `MEDUSA_BACKEND_URL` | Нет | Публичный URL бэкенда (для admin UI за reverse proxy) |
+| `COOKIE_SECRET` | Нет | Секрет для cookies (по умолчанию dev-значение) |
+| `LOGTO_ENDPOINT` | Нет | URL Logto для OIDC авторизации |
+| `LOGTO_SPA_APP_ID` | Нет | App ID Logto SPA приложения |
 
 ## Архитектура
 
 ```
 ┌─────────────────────────────────┐
 │   Браузер                       │
-│   http://localhost:9000/app     │
+│   http://localhost:3000         │
 └────────────┬────────────────────┘
              │
 ┌────────────▼────────────────────┐
-│   Medusa v2 (Node.js)          │
-│   - Backend API (:9000)        │
-│   - Admin UI (встроена)        │
-│   - Плагины                    │
+│   MPFlow Admin (Node.js)       │
+│   - Hono API (:3000)          │
+│   - React SPA (встроена)      │
+│   - Плагины (Ozon)            │
 ├─────────────────────────────────┤
 │   Модули:                       │
 │   - master-card (каталог)      │
 │   - supplier-order (закупки)   │
 │   - finance (транзакции)       │
 │   - sale (продажи)             │
-└──────┬──────────────┬───────────┘
-       │              │
-┌──────▼──────┐ ┌─────▼─────┐
-│ PostgreSQL  │ │   Redis   │
-│ :5432       │ │   :6379   │
-└─────────────┘ └───────────┘
+└──────┬──────────────────────────┘
+       │
+┌──────▼──────┐
+│ PostgreSQL  │
+│ :5432       │
+└─────────────┘
 ```
 
 ## Troubleshooting
 
-### Medusa не стартует — ошибки миграции
+### Сервер не стартует — ошибки подключения к БД
 
 Проверьте, что PostgreSQL доступен и работает:
 
 ```bash
-docker compose exec postgres pg_isready -U medusa -d mpflow_medusa
+docker compose exec postgres pg_isready -U mpflow -d mpflow
 ```
 
-### Не могу зайти в админку
+### Health check не проходит
 
-Убедитесь, что создали пользователя:
+Проверьте логи:
 
 ```bash
-docker compose exec medusa npx medusa user -e admin@example.com -p your_password
+docker compose logs admin
 ```
 
-### Admin UI не загружается (белый экран)
+И убедитесь что API отвечает:
 
-Проверьте, что `MEDUSA_BACKEND_URL` совпадает с URL, по которому вы открываете админку. Для локального доступа через `localhost:9000` можно оставить пустым.
+```bash
+curl http://localhost:3000/api/health
+```

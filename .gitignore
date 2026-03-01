@@ -37,4 +37,4 @@ postgres-data/
 *.session
 session
 
-.CLAUDE.md
+.CLAUDE.mddist/

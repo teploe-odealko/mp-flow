@@ -7,11 +7,11 @@ on:
     branches: [main]
 
 jobs:
-  medusa:
+  admin:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./medusa
+        working-directory: ./admin
     steps:
       - uses: actions/checkout@v4
 
@@ -20,20 +20,13 @@ jobs:
           node-version: "20"
 
       - name: Install dependencies
-        run: yarn install --frozen-lockfile
+        run: npm ci --ignore-scripts
 
-      - name: Install plugin dependencies
-        run: cd plugins/ozon && yarn install
+      - name: Build client
+        run: npm run build:client
 
-      - name: Build plugin
-        run: |
-          cd plugins/ozon && ../../node_modules/.bin/medusa plugin:build
-          mkdir -p ../node_modules/mpflow-plugin-ozon
-          cp package.json ../node_modules/mpflow-plugin-ozon/
-          cp -r .medusa ../node_modules/mpflow-plugin-ozon/
+      - name: Build server
+        run: npm run build:server
 
-      - name: Build medusa
-        run: yarn build || test -d .medusa/server
-
-      - name: Run tests
-        run: yarn test
+      - name: Build plugins
+        run: npm run build:plugins
