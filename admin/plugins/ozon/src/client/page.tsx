@@ -56,15 +56,12 @@ export default function OzonPage() {
     },
   })
 
-  const [syncingAction, setSyncingAction] = useState<string | null>(null)
   const syncMutation = useMutation({
-    mutationFn: (action: string) => apiPost("/api/ozon-sync", { action }),
+    mutationFn: () => apiPost("/api/ozon-sync", {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["ozon-sync"] })
       queryClient.invalidateQueries({ queryKey: ["ozon-accounts"] })
-      setSyncingAction(null)
     },
-    onError: () => setSyncingAction(null),
   })
 
   const accounts = accountsData?.accounts || []
@@ -79,9 +76,8 @@ export default function OzonPage() {
     createMutation.mutate(form)
   }
 
-  function handleSync(action: string) {
-    setSyncingAction(action)
-    syncMutation.mutate(action)
+  function handleSync() {
+    syncMutation.mutate()
   }
 
   function formatDate(d: string | null) {
@@ -235,25 +231,18 @@ export default function OzonPage() {
             </div>
           )}
 
-          <div className="flex gap-2">
-            {(["products", "stocks", "sales"] as const).map((action) => (
-              <button
-                key={action}
-                onClick={() => handleSync(action)}
-                disabled={syncingAction !== null}
-                className="px-3 py-1.5 bg-bg-surface border border-bg-border rounded text-sm hover:bg-bg-elevated disabled:opacity-50"
-              >
-                {syncingAction === action ? "Синхронизирую..." : `Синхронизировать ${
-                  action === "products" ? "товары" : action === "stocks" ? "остатки" : "продажи"
-                }`}
-              </button>
-            ))}
-          </div>
+          <button
+            onClick={handleSync}
+            disabled={syncMutation.isPending}
+            className="px-4 py-2 bg-accent text-white rounded text-sm hover:bg-accent-dark disabled:opacity-50"
+          >
+            {syncMutation.isPending ? "Синхронизирую..." : "Синхронизировать"}
+          </button>
 
           {syncMutation.isError && (
             <p className="text-outflow text-sm mt-2">Ошибка: {(syncMutation.error as Error).message}</p>
           )}
-          {syncMutation.isSuccess && !syncingAction && (
+          {syncMutation.isSuccess && (
             <p className="text-inflow text-sm mt-2">Синхронизация завершена</p>
           )}
         </div>
