@@ -1,8 +1,8 @@
 FROM node:20-alpine AS deps
 
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm install
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile
 
 # ── Build plugin + admin UI + backend ─────────────────────
 FROM deps AS builder
@@ -10,7 +10,7 @@ FROM deps AS builder
 COPY . .
 
 # Plugin: install deps and build (.medusa/ is gitignored, must build here)
-RUN cd plugins/ozon && npm install
+RUN cd plugins/ozon && yarn install
 RUN cd plugins/ozon && ../../node_modules/.bin/medusa plugin:build
 
 # Copy built plugin into node_modules (symlinks unreliable in Docker)
@@ -25,7 +25,7 @@ RUN npm run build; test -d .medusa/server
 # ── Production ────────────────────────────────────────────
 FROM deps
 
-RUN npm prune --omit=dev
+RUN yarn install --frozen-lockfile --production
 
 COPY --from=builder /app/.medusa ./.medusa
 COPY --from=builder /app/.medusa/server/medusa-config.js ./medusa-config.js
