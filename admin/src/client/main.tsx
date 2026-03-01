@@ -54,7 +54,7 @@ function AppRoutes() {
   const { user, loading } = useAuth()
 
   // Fetch enabled plugins to create dynamic routes (deduped with Layout's query)
-  const { data: pluginsData } = useQuery({
+  const { data: pluginsData, isLoading: pluginsLoading } = useQuery({
     queryKey: ["plugins"],
     queryFn: () => apiGet<{ plugins: Array<{ is_enabled: boolean; adminNav?: Array<{ path: string; label: string }> }> }>("/api/plugins"),
     enabled: !!user,
@@ -103,7 +103,7 @@ function AppRoutes() {
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/plugins" element={<PluginsPage />} />
         {dynamicRoutes}
-        <Route path="*" element={<Navigate to="/catalog" replace />} />
+        {!pluginsLoading && <Route path="*" element={<Navigate to="/catalog" replace />} />}
       </Routes>
     </Layout>
   )
