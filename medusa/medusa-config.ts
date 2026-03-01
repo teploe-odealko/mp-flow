@@ -5,7 +5,6 @@ loadEnv(process.env.NODE_ENV || 'development', process.cwd())
 module.exports = defineConfig({
   plugins: [
     { resolve: "mpflow-plugin-ozon" },
-    { resolve: "mpflow-plugin-test" },
   ],
   projectConfig: {
     databaseUrl: process.env.DATABASE_URL,
