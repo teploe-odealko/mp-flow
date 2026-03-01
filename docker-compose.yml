@@ -1,109 +1,57 @@
+# MPFlow — self-hosted deployment
+#
+# Quick start:
+#   curl -O https://raw.githubusercontent.com/teploe-odealko/mp-flow/main/docker-compose.yml
+#   docker compose up -d
+#
+# Admin UI: http://localhost:9000/app
+# Create first user:
+#   docker compose exec medusa npx medusa user -e admin@example.com -p your_password
+
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     environment:
-      POSTGRES_USER: mpflow
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mpflow_dev_2026}
-      POSTGRES_DB: mpflow
+      POSTGRES_USER: medusa
+      POSTGRES_PASSWORD: ${MEDUSA_DB_PASSWORD:-medusa_selfhost}
+      POSTGRES_DB: mpflow_medusa
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U medusa -d mpflow_medusa']
+      interval: 5s
+      timeout: 5s
+      retries: 5
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
-      - ./migrations:/migrations:ro
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mpflow"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    networks:
-      - internal
 
-  proxy:
-    build: ./proxy
-    environment:
-      DATABASE_URL: postgresql://mpflow:${POSTGRES_PASSWORD:-mpflow_dev_2026}@postgres:5432/mpflow
-      HMAC_SECRET: ${HMAC_SECRET:-dev-hmac-secret-change-in-production}
-      BASE_URL: ${BASE_URL:-http://localhost:8000}
-      ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-admin}
-      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-admin}
-      ADMIN_CORS_ORIGINS: ${ADMIN_CORS_ORIGINS:-http://localhost:3000}
-      HOST: 0.0.0.0
-      PORT: 8000
-      # Optional integrations
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      TMAPI_API_TOKEN: ${TMAPI_API_TOKEN:-}
-      OZON_CLIENT_ID: ${OZON_CLIENT_ID:-}
-      OZON_API_KEY: ${OZON_API_KEY:-}
-      LOGTO_ENDPOINT: ${LOGTO_ENDPOINT:-}
-      LOGTO_API_RESOURCE: ${LOGTO_API_RESOURCE:-}
-      LOGTO_SPA_APP_ID: ${LOGTO_SPA_APP_ID:-}
-      LOGTO_MCP_CLIENT_ID: ${LOGTO_MCP_CLIENT_ID:-}
-    ports:
-      - "${PROXY_PORT:-8000}:8000"
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  medusa:
+    image: ghcr.io/teploe-odealko/mp-flow/medusa:latest
     depends_on:
       postgres:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
-    networks:
-      - internal
-      - dokploy-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.mpflow-proxy.rule=Host(`${PROXY_DOMAIN:-proxy.mp-flow.ru}`)"
-      - "traefik.http.routers.mpflow-proxy.entrypoints=websecure"
-      - "traefik.http.routers.mpflow-proxy.tls.certresolver=letsencrypt"
-      - "traefik.http.services.mpflow-proxy.loadbalancer.server.port=8000"
-      - "traefik.http.routers.mpflow-proxy-http.rule=Host(`${PROXY_DOMAIN:-proxy.mp-flow.ru}`)"
-      - "traefik.http.routers.mpflow-proxy-http.entrypoints=web"
-      - "traefik.http.middlewares.mpflow-proxy-redirect.redirectscheme.scheme=https"
-      - "traefik.http.routers.mpflow-proxy-http.middlewares=mpflow-proxy-redirect"
-
-  admin-ui:
-    build: ./admin-ui
-    ports:
-      - "${ADMIN_UI_PORT:-3000}:80"
-    depends_on:
-      proxy:
+      redis:
         condition: service_healthy
-    networks:
-      - internal
-      - dokploy-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.mpflow-admin.rule=Host(`${ADMIN_DOMAIN:-admin.mp-flow.ru}`)"
-      - "traefik.http.routers.mpflow-admin.entrypoints=websecure"
-      - "traefik.http.routers.mpflow-admin.tls.certresolver=letsencrypt"
-      - "traefik.http.services.mpflow-admin.loadbalancer.server.port=80"
-      - "traefik.http.routers.mpflow-admin-http.rule=Host(`${ADMIN_DOMAIN:-admin.mp-flow.ru}`)"
-      - "traefik.http.routers.mpflow-admin-http.entrypoints=web"
-      - "traefik.http.middlewares.mpflow-admin-redirect.redirectscheme.scheme=https"
-      - "traefik.http.routers.mpflow-admin-http.middlewares=mpflow-admin-redirect"
-
-  landing:
-    build: ./landing
-    networks:
-      - dokploy-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.mpflow-landing.rule=Host(`${LANDING_DOMAIN:-mp-flow.ru}`) || Host(`www.${LANDING_DOMAIN:-mp-flow.ru}`)"
-      - "traefik.http.routers.mpflow-landing.entrypoints=websecure"
-      - "traefik.http.routers.mpflow-landing.tls.certresolver=letsencrypt"
-      - "traefik.http.services.mpflow-landing.loadbalancer.server.port=80"
-      - "traefik.http.routers.mpflow-landing-http.rule=Host(`${LANDING_DOMAIN:-mp-flow.ru}`) || Host(`www.${LANDING_DOMAIN:-mp-flow.ru}`)"
-      - "traefik.http.routers.mpflow-landing-http.entrypoints=web"
-      - "traefik.http.middlewares.mpflow-landing-redirect.redirectscheme.scheme=https"
-      - "traefik.http.routers.mpflow-landing-http.middlewares=mpflow-landing-redirect"
-
-networks:
-  internal:
-  dokploy-network:
-    external: true
+    environment:
+      DATABASE_URL: postgresql://medusa:${MEDUSA_DB_PASSWORD:-medusa_selfhost}@postgres:5432/mpflow_medusa?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: production
+      COOKIE_SECRET: ${COOKIE_SECRET:-change-me-in-production}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+    ports:
+      - "${PORT:-9000}:9000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
 volumes:
   postgres-data:

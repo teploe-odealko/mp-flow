@@ -1,24 +1,9 @@
 # Production compose for Dokploy deployment.
 # Medusa v2 replaces old proxy + admin-ui.
+# medusa image is pre-built by GitHub Actions and pushed to ghcr.io.
 
 services:
   # ── Medusa v2 (backend + admin UI) ─────────────────────
-  medusa-db:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_USER: medusa
-      POSTGRES_PASSWORD: ${MEDUSA_DB_PASSWORD:-medusa_prod_2026}
-      POSTGRES_DB: mpflow_medusa
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U medusa -d mpflow_medusa']
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    volumes:
-      - medusa-db-data:/var/lib/postgresql/data
-    networks:
-      - dokploy-network
-
   medusa-redis:
     image: redis:7-alpine
     healthcheck:
@@ -30,14 +15,12 @@ services:
       - dokploy-network
 
   medusa:
-    build: ./medusa
+    image: ghcr.io/teploe-odealko/mp-flow/medusa:latest
     depends_on:
-      medusa-db:
-        condition: service_healthy
       medusa-redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://medusa:${MEDUSA_DB_PASSWORD:-medusa_prod_2026}@medusa-db:5432/mpflow_medusa?sslmode=disable
+      DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: redis://medusa-redis:6379
       NODE_ENV: production
       # CORS — admin UI is served from same origin, allow landing too
@@ -110,5 +93,4 @@ networks:
     external: true
 
 volumes:
-  medusa-db-data:
   logto-db-data:
