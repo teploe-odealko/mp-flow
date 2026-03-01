@@ -1,10 +1,10 @@
 import { MikroORM } from "@mikro-orm/core"
 import { PostgreSqlDriver } from "@mikro-orm/postgresql"
 import { Migrator } from "@mikro-orm/migrations"
-import { MasterCard } from "../modules/master-card/entity.js"
-import { SupplierOrder, SupplierOrderItem, Supplier } from "../modules/supplier-order/entities.js"
-import { FinanceTransaction } from "../modules/finance/entity.js"
-import { Sale } from "../modules/sale/entity.js"
+import { MasterCard } from "./modules/master-card/entity.js"
+import { SupplierOrder, SupplierOrderItem, Supplier } from "./modules/supplier-order/entities.js"
+import { FinanceTransaction } from "./modules/finance/entity.js"
+import { Sale } from "./modules/sale/entity.js"
 
 const DATABASE_URL = process.env.DATABASE_URL || "postgresql://mpflow:mpflow@localhost:5432/mpflow"
 
@@ -15,8 +15,9 @@ async function run() {
     entities: [MasterCard, SupplierOrder, SupplierOrderItem, Supplier, FinanceTransaction, Sale],
     extensions: [Migrator],
     migrations: {
-      path: "./dist/server/migrations",
+      path: "./dist/src/server/migrations",
       pathTs: "./src/server/migrations",
+      glob: "Migration_*",
     },
   })
 

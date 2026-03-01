@@ -12,7 +12,7 @@
     "build:plugins": "echo plugins built with server",
     "build": "npm run build:client && npm run build:server && npm run build:plugins",
     "start": "node dist/src/server/index.js",
-    "db:migrate": "tsx src/server/migrations/run.ts",
+    "db:migrate": "tsx src/server/db-migrate.ts",
     "test": "vitest run"
   },
   "dependencies": {

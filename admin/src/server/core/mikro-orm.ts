@@ -7,7 +7,7 @@ let orm: MikroORM | null = null
 export async function initORM(config: {
   url: string
   entities: any[]
-  migrations?: { path?: string; pathTs?: string }
+  migrations?: { path?: string; pathTs?: string; glob?: string }
 }): Promise<MikroORM> {
   if (orm) return orm
 
@@ -17,8 +17,9 @@ export async function initORM(config: {
     entities: config.entities,
     extensions: [Migrator],
     migrations: config.migrations || {
-      path: "./dist/server/migrations",
+      path: "./dist/src/server/migrations",
       pathTs: "./src/server/migrations",
+      glob: "Migration_*",
     },
     debug: process.env.NODE_ENV !== "production",
   }
