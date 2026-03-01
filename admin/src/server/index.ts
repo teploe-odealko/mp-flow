@@ -43,6 +43,21 @@ async function main() {
 
   console.log("[mpflow] ORM connected")
 
+  // Run pending migrations
+  try {
+    const migrator = orm.getMigrator()
+    const pending = await migrator.getPendingMigrations()
+    if (pending.length > 0) {
+      console.log(`[mpflow] Running ${pending.length} pending migration(s)...`)
+      await migrator.up()
+      console.log("[mpflow] Migrations complete")
+    } else {
+      console.log("[mpflow] No pending migrations")
+    }
+  } catch (err) {
+    console.error("[mpflow] Migration error:", err)
+  }
+
   // Create DI container
   const container = createAppContainer(orm, {
     database: { url: DATABASE_URL },
