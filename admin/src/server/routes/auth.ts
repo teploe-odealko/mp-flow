@@ -45,27 +45,45 @@ auth.post("/logto-exchange", async (c) => {
   // Find or create user in our DB
   const orm = c.get("orm")
   const em = orm.em.fork()
+  const conn = em.getConnection()
 
-  // Simple user table — we'll use a lightweight mpflow_user table
   let userId: string
   let userName: string | null = null
 
-  const result = await em.getConnection().execute(
-    `SELECT id, email, name FROM mpflow_user WHERE email = ? AND deleted_at IS NULL LIMIT 1`,
-    [userinfo.email],
-  )
+  try {
+    // Ensure user table exists (idempotent)
+    await conn.execute(`
+      CREATE TABLE IF NOT EXISTS "mpflow_user" (
+        "id" text NOT NULL,
+        "email" text NOT NULL UNIQUE,
+        "name" text,
+        "created_at" timestamptz NOT NULL DEFAULT now(),
+        "updated_at" timestamptz NOT NULL DEFAULT now(),
+        "deleted_at" timestamptz,
+        CONSTRAINT "mpflow_user_pkey" PRIMARY KEY ("id")
+      )
+    `)
 
-  if (result.length > 0) {
-    userId = result[0].id
-    userName = result[0].name
-  } else {
-    const { v4 } = await import("uuid")
-    userId = v4()
-    userName = userinfo.name || null
-    await em.getConnection().execute(
-      `INSERT INTO mpflow_user (id, email, name, created_at, updated_at) VALUES (?, ?, ?, NOW(), NOW())`,
-      [userId, userinfo.email, userName],
+    const result = await conn.execute(
+      `SELECT id, email, name FROM mpflow_user WHERE email = ? AND deleted_at IS NULL LIMIT 1`,
+      [userinfo.email],
     )
+
+    if (result.length > 0) {
+      userId = result[0].id
+      userName = result[0].name
+    } else {
+      const { v4 } = await import("uuid")
+      userId = v4()
+      userName = userinfo.name || null
+      await conn.execute(
+        `INSERT INTO mpflow_user (id, email, name, created_at, updated_at) VALUES (?, ?, ?, NOW(), NOW())`,
+        [userId, userinfo.email, userName],
+      )
+    }
+  } catch (err: any) {
+    console.error("[auth] DB error in logto-exchange:", err)
+    return c.json({ error: "Database error: " + (err.message || "unknown") }, 500)
   }
 
   // Set session
