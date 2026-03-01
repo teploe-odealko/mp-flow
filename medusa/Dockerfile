@@ -50,13 +50,15 @@ EXPOSE 9000
 CMD ["sh", "-c", "\
   if [ \"$RESET_DB\" = 'true' ]; then \
     echo 'RESET_DB: dropping and recreating database...' && \
-    PGPASSWORD=$(echo $DATABASE_URL | sed 's|.*://[^:]*:\\([^@]*\\)@.*|\\1|') \
-    DB_HOST=$(echo $DATABASE_URL | sed 's|.*@\\([^:]*\\):.*|\\1|') \
-    DB_PORT=$(echo $DATABASE_URL | sed 's|.*:\\([0-9]*\\)/.*|\\1|') \
-    DB_USER=$(echo $DATABASE_URL | sed 's|.*://\\([^:]*\\):.*|\\1|') \
-    DB_NAME=$(echo $DATABASE_URL | sed 's|.*/\\([^?]*\\).*|\\1|') && \
-    PGPASSWORD=$PGPASSWORD dropdb -h $DB_HOST -p $DB_PORT -U $DB_USER --if-exists $DB_NAME && \
-    PGPASSWORD=$PGPASSWORD createdb -h $DB_HOST -p $DB_PORT -U $DB_USER $DB_NAME && \
-    echo 'Database reset complete'; \
+    node -e \" \
+      const u = new URL(process.env.DATABASE_URL); \
+      const env = { PGPASSWORD: u.password, PGHOST: u.hostname, PGPORT: u.port, PGUSER: u.username }; \
+      const db = u.pathname.slice(1); \
+      const {execSync} = require('child_process'); \
+      const opts = {env: {...process.env, ...env}, stdio: 'inherit'}; \
+      execSync('dropdb --if-exists ' + db, opts); \
+      execSync('createdb ' + db, opts); \
+      console.log('Database ' + db + ' reset complete'); \
+    \"; \
   fi && \
   npx medusa db:migrate && npx medusa start"]
