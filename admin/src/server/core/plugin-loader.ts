@@ -11,15 +11,61 @@ export interface PluginMiddleware {
 
 export interface PluginDefinition {
   name: string
+  label: string
+  description?: string
   entities?: any[]
   services?: Record<string, any>
   routes?: (app: Hono, container: AwilixContainer) => void
   middleware?: PluginMiddleware[]
   jobs?: Job[]
+  adminNav?: Array<{ path: string; label: string }>
+  apiPrefixes?: string[]
+}
+
+const loadedPlugins = new Map<string, PluginDefinition>()
+
+export function getLoadedPlugins(): PluginDefinition[] {
+  return Array.from(loadedPlugins.values())
 }
 
 export function definePlugin(def: PluginDefinition): PluginDefinition {
   return def
+}
+
+async function resolvePluginPath(resolve: string): Promise<string> {
+  if (resolve.startsWith(".")) {
+    const pluginName = resolve.replace(/^\.\/plugins\//, "")
+    const distPath = `${process.cwd()}/dist/plugins/${pluginName}/plugin.js`
+    const srcPath = `${process.cwd()}/plugins/${pluginName}/plugin.ts`
+    try {
+      await import(distPath)
+      return distPath
+    } catch {
+      return srcPath
+    }
+  }
+  return resolve
+}
+
+/**
+ * Collect entities from plugins WITHOUT loading routes/middleware/jobs.
+ * Used before ORM init so all entities are registered in metadata.
+ */
+export async function collectPluginEntities(
+  pluginPaths: Array<{ resolve: string }>,
+): Promise<any[]> {
+  const allEntities: any[] = []
+  for (const pluginRef of pluginPaths) {
+    try {
+      const pluginPath = await resolvePluginPath(pluginRef.resolve)
+      const mod = await import(pluginPath)
+      const plugin: PluginDefinition = mod.default || mod
+      if (plugin.entities) allEntities.push(...plugin.entities)
+    } catch (err) {
+      console.error(`[plugin] Failed to collect entities from ${pluginRef.resolve}:`, err)
+    }
+  }
+  return allEntities
 }
 
 export async function loadPlugins(
@@ -32,30 +78,14 @@ export async function loadPlugins(
 
   for (const pluginRef of pluginPaths) {
     try {
-      let pluginPath: string
-      if (pluginRef.resolve.startsWith(".")) {
-        // Resolve relative to cwd — works for both dev (tsx) and prod (tsc output)
-        // In dev: ./plugins/ozon/plugin.ts loaded by tsx
-        // In prod: ./dist/plugins/ozon/plugin.js loaded by node
-        const pluginName = pluginRef.resolve.replace(/^\.\/plugins\//, "")
-        const distPath = `${process.cwd()}/dist/plugins/${pluginName}/plugin.js`
-        const srcPath = `${process.cwd()}/plugins/${pluginName}/plugin.ts`
-
-        // Try dist first, then source
-        try {
-          await import(distPath)
-          pluginPath = distPath
-        } catch {
-          pluginPath = srcPath
-        }
-      } else {
-        pluginPath = pluginRef.resolve
-      }
-
+      const pluginPath = await resolvePluginPath(pluginRef.resolve)
       const mod = await import(pluginPath)
       const plugin: PluginDefinition = mod.default || mod
 
       console.log(`[plugin] Loading: ${plugin.name}`)
+
+      // Register in plugin registry
+      loadedPlugins.set(plugin.name, plugin)
 
       // Collect entities
       if (plugin.entities) {

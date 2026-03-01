@@ -80,9 +80,9 @@ export async function ozonCatalogEnrichment(c: Context, next: Next) {
 
           try {
             const saleService: any = container.resolve("saleService")
-            const sales = await saleService.list(
+            const sales = await saleService.listSales(
               { master_card_id: body.product.id, channel: "ozon" },
-              { orderBy: { sold_at: "DESC" }, limit: 50 },
+              { order: { sold_at: "DESC" }, take: 50 },
             )
             body.product.recent_sales = sales.map((s: any) => ({
               id: s.id,

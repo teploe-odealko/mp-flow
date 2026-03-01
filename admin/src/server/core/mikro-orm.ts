@@ -21,7 +21,6 @@ export async function initORM(config: {
       pathTs: "./src/server/migrations",
     },
     debug: process.env.NODE_ENV !== "production",
-    allowGlobalContext: true,
   }
 
   orm = await MikroORM.init(options)

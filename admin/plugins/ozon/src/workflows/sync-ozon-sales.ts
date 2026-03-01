@@ -2,7 +2,7 @@ import type { AwilixContainer } from "awilix"
 import type { OzonIntegrationService } from "../modules/ozon-integration/service.js"
 
 async function calculateAvgCost(supplierOrderService: any, masterCardId: string): Promise<number> {
-  const items = await supplierOrderService.listItems({ master_card_id: masterCardId })
+  const items = await supplierOrderService.listSupplierOrderItems({ master_card_id: masterCardId })
   let totalValue = 0
   let totalQty = 0
   for (const item of items) {
@@ -80,7 +80,7 @@ export async function syncOzonSales(
       const revenue = salePrice * qty
 
       // Check if Sale already exists
-      const existingSales = await saleService.list({
+      const existingSales = await saleService.listSales({
         channel: "ozon",
         channel_order_id: postingNumber,
         channel_sku: offerId,
@@ -151,7 +151,7 @@ export async function syncOzonSales(
         }
 
         if (Object.keys(updateData).length > 0) {
-          await saleService.update(existing.id, updateData)
+          await saleService.updateSales({ id: existing.id, ...updateData })
           updated++
         } else {
           skipped++
@@ -161,7 +161,7 @@ export async function syncOzonSales(
 
       // Create new Sale
       try {
-        await saleService.create({
+        await saleService.createSales({
           user_id: (account as any).user_id || undefined,
           master_card_id: masterCardId || undefined,
           channel: "ozon",

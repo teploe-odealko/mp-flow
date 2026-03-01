@@ -2,17 +2,15 @@ import { serve } from "@hono/node-server"
 import { serveStatic } from "@hono/node-server/serve-static"
 import { createApp } from "./app.js"
 import { initORM, closeORM } from "./core/mikro-orm.js"
-import { createAppContainer, asValue } from "./core/container.js"
-import { loadPlugins } from "./core/plugin-loader.js"
-import { stopAllJobs, setSchedulerContainer } from "./core/scheduler.js"
+import { createAppContainer } from "./core/container.js"
+import { createRequestScope } from "./core/request-scope.js"
+import { collectPluginEntities, loadPlugins, getLoadedPlugins } from "./core/plugin-loader.js"
+import { stopAllJobs, setSchedulerContext } from "./core/scheduler.js"
 import { MasterCard } from "./modules/master-card/entity.js"
-import { MasterCardService } from "./modules/master-card/service.js"
 import { SupplierOrder, SupplierOrderItem, Supplier } from "./modules/supplier-order/entities.js"
-import { SupplierOrderService } from "./modules/supplier-order/service.js"
 import { FinanceTransaction } from "./modules/finance/entity.js"
-import { FinanceService } from "./modules/finance/service.js"
 import { Sale } from "./modules/sale/entity.js"
-import { SaleService } from "./modules/sale/service.js"
+import { PluginSetting } from "./modules/plugin-setting/entity.js"
 import catalogRoutes from "./routes/catalog.js"
 import suppliersRoutes from "./routes/suppliers.js"
 import suppliersRegistryRoutes from "./routes/suppliers-registry.js"
@@ -21,20 +19,33 @@ import financeRoutes from "./routes/finance.js"
 import inventoryRoutes from "./routes/inventory.js"
 import analyticsRoutes from "./routes/analytics.js"
 import authRoutes from "./routes/auth.js"
+import pluginsRoutes from "./routes/plugins.js"
+import { getSession } from "./core/session.js"
+import type { PluginSettingService } from "./modules/plugin-setting/service.js"
 
 const DATABASE_URL = process.env.DATABASE_URL || "postgresql://mpflow:mpflow@localhost:5432/mpflow"
-const COOKIE_SECRET = process.env.COOKIE_SECRET || "mpflow-dev-secret-change-in-production"
 const PORT = Number(process.env.PORT) || 3000
+
+if (!process.env.COOKIE_SECRET) {
+  throw new Error("COOKIE_SECRET env var is required. Set it to a random 32+ char string.")
+}
+const COOKIE_SECRET: string = process.env.COOKIE_SECRET
 
 async function main() {
   console.log("[mpflow] Starting admin server...")
 
-  // Initialize ORM with core entities (plugin entities added after load)
-  const coreEntities = [MasterCard, SupplierOrder, SupplierOrderItem, Supplier, FinanceTransaction, Sale]
+  // Collect ALL entities (core + plugins) before ORM init
+  const coreEntities = [MasterCard, SupplierOrder, SupplierOrderItem, Supplier, FinanceTransaction, Sale, PluginSetting]
+  const pluginPaths = [{ resolve: "./plugins/ozon" }]
+  const pluginEntities = await collectPluginEntities(pluginPaths)
+  const allEntities = [...coreEntities, ...pluginEntities]
+  if (pluginEntities.length > 0) {
+    console.log(`[mpflow] Collected ${pluginEntities.length} plugin entities`)
+  }
 
   const orm = await initORM({
     url: DATABASE_URL,
-    entities: coreEntities,
+    entities: allEntities,
     migrations: {
       path: "./dist/src/server/migrations",
       pathTs: "./src/server/migrations",
@@ -58,6 +69,19 @@ async function main() {
     console.error("[mpflow] Migration error:", err)
   }
 
+  // Auto-apply safe schema changes from plugin entities (create tables, add columns — no drops)
+  try {
+    const generator = orm.getSchemaGenerator()
+    const diff = await generator.getUpdateSchemaSQL({ safe: true, wrap: false })
+    if (diff.trim()) {
+      console.log("[mpflow] Applying auto-schema updates for plugin entities...")
+      await generator.updateSchema({ safe: true, wrap: false })
+      console.log("[mpflow] Schema updated")
+    }
+  } catch (err) {
+    console.error("[mpflow] Schema update error:", err)
+  }
+
   // Create DI container
   const container = createAppContainer(orm, {
     database: { url: DATABASE_URL },
@@ -65,39 +89,46 @@ async function main() {
     plugins: [{ resolve: "./plugins/ozon" }],
   })
 
-  // Register EntityManager and core services
-  const em = orm.em.fork()
-  container.register({
-    em: asValue(em),
-    masterCardService: asValue(new MasterCardService(em)),
-    supplierOrderService: asValue(new SupplierOrderService(em)),
-    financeService: asValue(new FinanceService(em)),
-    saleService: asValue(new SaleService(em)),
-  })
-
   // Create Hono app
   const app = createApp(COOKIE_SECRET)
 
-  // Inject container + ORM into context
-  app.use("*", async (c, next) => {
-    c.set("container", container)
+  // Request-scoped middleware: each request gets fresh EM + services
+  app.use("/api/*", async (c, next) => {
+    const { scope, em } = createRequestScope(container, orm)
+    c.set("container", scope)
+    c.set("orm", orm)
+    await next()
+    em.clear()
+  })
+  app.use("/auth/*", async (c, next) => {
     c.set("orm", orm)
     await next()
   })
 
-  // Load plugins (entities, services, routes, middleware, jobs)
-  setSchedulerContainer(container)
-  const pluginResult = await loadPlugins(
-    [{ resolve: "./plugins/ozon" }],
-    app,
-    container,
-    orm,
-  )
+  // Middleware: block API requests to disabled plugins
+  app.use("/api/*", async (c, next) => {
+    const session = getSession(c)
+    const userId = session.userId
+    if (!userId) return next()
 
-  // Register plugin entities with ORM discovery
-  if (pluginResult.entities.length > 0) {
-    console.log(`[mpflow] Registered ${pluginResult.entities.length} plugin entities`)
-  }
+    const path = c.req.path
+    const loaded = getLoadedPlugins()
+    for (const plugin of loaded) {
+      if (plugin.apiPrefixes?.some((prefix) => path.startsWith(prefix))) {
+        const settingService: PluginSettingService = c.get("container").resolve("pluginSettingService")
+        const enabled = await settingService.isPluginEnabled(plugin.name, userId)
+        if (!enabled) {
+          return c.json({ error: "Plugin disabled" }, 403)
+        }
+        break
+      }
+    }
+    await next()
+  })
+
+  // Load plugins (services, routes, middleware, jobs — entities already registered)
+  setSchedulerContext(container, orm)
+  await loadPlugins(pluginPaths, app, container, orm)
 
   // Register core routes
   app.route("/api/catalog", catalogRoutes)
@@ -107,6 +138,7 @@ async function main() {
   app.route("/api/finance", financeRoutes)
   app.route("/api/inventory", inventoryRoutes)
   app.route("/api/analytics", analyticsRoutes)
+  app.route("/api/plugins", pluginsRoutes)
   app.route("/auth", authRoutes)
 
   // Health check

@@ -9,6 +9,9 @@ import { asClass, Lifetime } from "awilix"
 
 export default definePlugin({
   name: "mpflow-plugin-ozon",
+  label: "Ozon",
+  description: "Интеграция с маркетплейсом Ozon (FBO)",
+  apiPrefixes: ["/api/ozon-accounts", "/api/ozon-sync"],
 
   entities: [OzonAccount, OzonProductLink, OzonStockSnapshot],
 

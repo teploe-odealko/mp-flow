@@ -9,13 +9,18 @@ export function createApp(cookieSecret: string) {
 
   // Global middleware
   app.use("*", logger())
+
+  const allowedOrigins = (process.env.CORS_ORIGINS || "")
+    .split(",").map(s => s.trim()).filter(Boolean)
+
   app.use("*", cors({
-    origin: (origin) => origin || "*",
+    origin: (origin) => {
+      if (!origin) return "*" // same-origin requests
+      if (allowedOrigins.length === 0) return origin // dev mode: allow all
+      return allowedOrigins.includes(origin) ? origin : ""
+    },
     credentials: true,
   }))
-
-  // Health check (no auth)
-  app.get("/api/health", (c) => c.json({ status: "ok" }))
 
   // Session middleware for all /api and /auth routes
   app.use("/api/*", sessionMiddleware(cookieSecret))

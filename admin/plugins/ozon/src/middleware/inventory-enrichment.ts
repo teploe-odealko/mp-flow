@@ -32,7 +32,7 @@ export async function ozonInventoryEnrichment(c: Context, next: Next) {
               0,
             )
 
-            const sales = await saleService.list({
+            const sales = await saleService.listSales({
               master_card_id: row.card_id,
               channel: "ozon",
             })
@@ -98,9 +98,9 @@ export async function ozonInventoryEnrichment(c: Context, next: Next) {
           } catch { /* skip */ }
 
           try {
-            const sales = await saleService.list(
+            const sales = await saleService.listSales(
               { master_card_id: cardId, channel: "ozon" },
-              { orderBy: { sold_at: "DESC" }, limit: 50 },
+              { order: { sold_at: "DESC" }, take: 50 },
             )
             body.recent_sales = sales.map((s: any) => ({
               id: s.id,
