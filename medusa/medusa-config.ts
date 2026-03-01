@@ -156,6 +156,7 @@ module.exports = defineConfig({
                 if (!favLink.parentNode) document.head.appendChild(favLink);
 
                 // MPFlow branding: replace "Medusa Store" with "MPFlow"
+                // + redirect Documentation link in user popup to MPFlow docs
                 new MutationObserver(function() {
                   var btn = document.querySelector('aside button[aria-haspopup="menu"]');
                   if (btn) {
@@ -164,6 +165,9 @@ module.exports = defineConfig({
                       nameEl.textContent = 'MPFlow';
                     }
                   }
+                  document.querySelectorAll('a[href*="docs.medusajs.com"]').forEach(function(a) {
+                    a.href = 'https://docs.mp-flow.ru';
+                  });
                 }).observe(document.documentElement, { childList: true, subtree: true });
               </script>
             `

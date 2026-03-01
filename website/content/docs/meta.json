@@ -2,17 +2,9 @@
   "title": "MPFlow",
   "pages": [
     "index",
-    "---Начало работы---",
-    "getting-started",
-    "---Возможности---",
-    "features",
-    "---AI агенты---",
-    "ai-agents",
-    "---Self-hosting---",
-    "self-hosting",
-    "---Архитектура---",
-    "concepts",
-    "---Плагины---",
-    "plugins"
+    "---Для пользователя---",
+    "user",
+    "---Для разработчика---",
+    "developer"
   ]
 }

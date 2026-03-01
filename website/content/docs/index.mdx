@@ -1,44 +1,17 @@
 ---
-title: MPFlow — Open Source ERP для маркетплейсов
-description: Документация MPFlow — FIFO складской учёт, юнит-экономика, управление ценами и акциями на Ozon, AI-агент с 54+ MCP инструментами.
+title: MPFlow — Документация
+description: Документация системы управления маркетплейсами MPFlow
 ---
 
-MPFlow — open source ERP-система для продавцов на маркетплейсах (Ozon FBO).
+# MPFlow
 
-## Что умеет MPFlow
-
-| Модуль | Что делает |
-|--------|-----------|
-| **Каталог** | Карточки товаров, обогащение данными поставщиков |
-| **Закупки** | Заказы поставщикам, распределение затрат, приёмка |
-| **Складской учёт** | FIFO по партиям, остатки, синхронизация с Ozon |
-| **Аналитика** | Юнит-экономика, PnL, ДДС |
-| **Ценообразование** | Калькулятор прибыли с комиссиями Ozon, массовое обновление цен |
-| **Акции** | Массовое управление акциями Ozon с защитой маржи |
-| **AI-агент** | 54+ MCP инструментов для Claude, ChatGPT и других клиентов |
-
-## Архитектура
-
-```
-┌─────────────┐     ┌─────────────┐     ┌──────────────┐
-│  Admin UI   │────▶│   Proxy     │────▶│  PostgreSQL   │
-│  (nginx)    │     │  (FastAPI)  │     │              │
-│  :3000      │     │  :8000      │     │  :5432       │
-└─────────────┘     └─────────────┘     └──────────────┘
-                          │
-                    ┌─────┴─────┐
-                    │  MCP /mcp │
-                    │  54 tools │
-                    └───────────┘
-```
-
-## Разделы документации
+Документация системы управления маркетплейсами MPFlow.
 
 <Cards>
-  <Card title="Облако mp-flow.ru" href="/docs/getting-started/cloud" description="Начните за 2 минуты — без установки" />
-  <Card title="Интеграция с Ozon" href="/docs/getting-started/ozon-integration" description="Подключение Ozon Seller API" />
-  <Card title="FIFO складской учёт" href="/docs/features/fifo-accounting" description="Учёт по партиям и расчёт себестоимости" />
-  <Card title="AI-агент и MCP" href="/docs/ai-agents/overview" description="54+ инструментов для Claude и ChatGPT" />
-  <Card title="Self-hosting" href="/docs/self-hosting/docker-compose" description="Развёртывание на своём сервере" />
-  <Card title="Управление ценами" href="/docs/features/pricing" description="Калькулятор прибыли с комиссиями Ozon" />
+  <Card title="Для пользователя" href="/docs/user">
+    Руководство по работе с системой: каталог, склад, закупки, продажи, аналитика.
+  </Card>
+  <Card title="Для разработчика" href="/docs/developer">
+    Архитектура, self-hosting, API, разработка плагинов.
+  </Card>
 </Cards>
