@@ -2,7 +2,7 @@ FROM node:20-alpine AS deps
 
 WORKDIR /app
 COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile
+RUN yarn install --frozen-lockfile --ignore-scripts
 
 # ── Build plugin + admin UI + backend ─────────────────────
 FROM deps AS builder
@@ -25,7 +25,7 @@ RUN npm run build; test -d .medusa/server
 # ── Production ────────────────────────────────────────────
 FROM deps
 
-RUN yarn install --frozen-lockfile --production
+RUN yarn install --frozen-lockfile --production --ignore-scripts
 
 COPY --from=builder /app/.medusa ./.medusa
 COPY --from=builder /app/.medusa/server/medusa-config.js ./medusa-config.js
