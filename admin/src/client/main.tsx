@@ -57,7 +57,6 @@ function AppRoutes() {
         <Route path="/finance" element={<FinancePage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/plugins" element={<PluginsPage />} />
-        <Route path="/callback" element={<Navigate to="/catalog" replace />} />
         <Route path="*" element={<Navigate to="/catalog" replace />} />
       </Routes>
     </Layout>

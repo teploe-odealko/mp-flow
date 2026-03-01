@@ -38,4 +38,6 @@ export interface SessionData {
   userId: string
   email: string
   name?: string
+  codeVerifier?: string
+  oauthState?: string
 }

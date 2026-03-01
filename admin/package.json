@@ -17,7 +17,6 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.13.0",
-    "@logto/browser": "^3.0.12",
     "@mikro-orm/core": "^6.4.0",
     "@mikro-orm/migrations": "^6.4.0",
     "@mikro-orm/postgresql": "^6.4.0",

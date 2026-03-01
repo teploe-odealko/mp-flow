@@ -28,9 +28,8 @@ export function createApp(cookieSecret: string) {
 
   // Auth middleware for /api/* routes (except health)
   app.use("/api/*", async (c, next) => {
-    // Skip auth for health and logto-config
-    const path = c.req.path
-    if (path === "/api/health" || path === "/auth/logto-config") {
+    // Skip auth for health check
+    if (c.req.path === "/api/health") {
       return next()
     }
     return authMiddleware()(c, next)

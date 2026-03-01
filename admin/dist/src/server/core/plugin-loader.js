@@ -87,7 +87,7 @@ export async function loadPlugins(pluginPaths, app, container, _orm) {
             // Schedule jobs
             if (plugin.jobs) {
                 for (const job of plugin.jobs) {
-                    scheduleJob(job);
+                    scheduleJob(job, plugin.name);
                 }
             }
             console.log(`[plugin] Loaded: ${plugin.name}`);
