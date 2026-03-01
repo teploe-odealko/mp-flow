@@ -16,6 +16,24 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
 })
 
+function LoginScreen() {
+  const { login } = useAuth()
+  return (
+    <div className="flex items-center justify-center h-screen bg-bg-deep text-text-primary">
+      <div className="text-center">
+        <h1 className="text-2xl font-semibold mb-4">MPFlow</h1>
+        <p className="text-text-secondary mb-4">Войдите через Logto для доступа</p>
+        <button
+          onClick={login}
+          className="px-6 py-2 bg-accent text-white rounded-lg hover:bg-accent-dark"
+        >
+          Войти
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function AppRoutes() {
   const { user, loading } = useAuth()
 
@@ -24,18 +42,7 @@ function AppRoutes() {
   }
 
   if (!user) {
-    return <div className="flex items-center justify-center h-screen bg-bg-deep text-text-primary">
-      <div className="text-center">
-        <h1 className="text-2xl font-semibold mb-4">MPFlow</h1>
-        <p className="text-text-secondary mb-4">Войдите через Logto для доступа</p>
-        <button
-          onClick={() => window.location.href = "/auth/logto-config"}
-          className="px-6 py-2 bg-accent text-white rounded-lg hover:bg-accent-dark"
-        >
-          Войти
-        </button>
-      </div>
-    </div>
+    return <LoginScreen />
   }
 
   return (
@@ -48,6 +55,8 @@ function AppRoutes() {
         <Route path="/sales" element={<SalesPage />} />
         <Route path="/finance" element={<FinancePage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route path="/callback" element={<Navigate to="/catalog" replace />} />
+        <Route path="*" element={<Navigate to="/catalog" replace />} />
       </Routes>
     </Layout>
   )
