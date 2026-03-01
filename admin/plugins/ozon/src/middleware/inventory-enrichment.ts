@@ -2,6 +2,20 @@ import type { Context, Next } from "hono"
 import type { OzonIntegrationService } from "../modules/ozon-integration/service.js"
 
 /**
+ * Filter snapshots to only the latest sync (by max synced_at).
+ * Each sync creates one snapshot per warehouse — we want only the latest set.
+ */
+function getLatestSnapshots(snapshots: any[]): any[] {
+  if (snapshots.length === 0) return []
+  let maxTime = 0
+  for (const s of snapshots) {
+    const t = new Date(s.synced_at).getTime()
+    if (t > maxTime) maxTime = t
+  }
+  return snapshots.filter((s) => new Date(s.synced_at).getTime() === maxTime)
+}
+
+/**
  * Hono middleware that enriches inventory responses with Ozon stock data.
  * Adds Ozon FBO/reserved entries to stock_breakdown and adjusts "local" stock.
  */
@@ -24,10 +38,15 @@ export async function ozonInventoryEnrichment(c: Context, next: Next) {
           })
           if (links.length === 0) continue
 
+          // Skip if already enriched (middleware may fire twice)
+          if (Array.isArray(row.stock_breakdown) &&
+            row.stock_breakdown.some((e: any) => e.source === "ozon_fbo")) continue
+
           const offerId = links[0].offer_id
-          const snapshots = await ozonService.listOzonStockSnapshots({
+          const allSnapshots = await ozonService.listOzonStockSnapshots({
             offer_id: offerId,
           })
+          const snapshots = getLatestSnapshots(allSnapshots)
 
           const fboPresent = snapshots.reduce(
             (s: number, snap: any) => s + (snap.fbo_present || 0), 0,
@@ -37,11 +56,7 @@ export async function ozonInventoryEnrichment(c: Context, next: Next) {
           )
           const marketplaceQty = fboPresent + fboReserved
 
-          // Skip if already enriched (middleware may fire twice for /api/inventory and /api/inventory/*)
-          const alreadyEnriched = Array.isArray(row.stock_breakdown) &&
-            row.stock_breakdown.some((e: any) => e.source === "ozon_fbo")
-
-          if (marketplaceQty > 0 && Array.isArray(row.stock_breakdown) && !alreadyEnriched) {
+          if (marketplaceQty > 0 && Array.isArray(row.stock_breakdown)) {
             // Decrease "local" stock by marketplace amount
             const localEntry = row.stock_breakdown.find((e: any) => e.source === "local")
             if (localEntry) {
@@ -89,9 +104,10 @@ export async function ozonInventoryEnrichment(c: Context, next: Next) {
           }
 
           try {
-            const snapshots = await ozonService.listOzonStockSnapshots({
+            const allSnapshots = await ozonService.listOzonStockSnapshots({
               offer_id: ozonLink.offer_id,
             })
+            const snapshots = getLatestSnapshots(allSnapshots)
             if (snapshots.length > 0) {
               body.ozon_stock = {
                 fbo_present: snapshots.reduce((s: number, snap: any) => s + (snap.fbo_present || 0), 0),
