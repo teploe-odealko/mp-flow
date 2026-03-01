@@ -25,12 +25,13 @@ type CreateSaleInput = {
   metadata?: Record<string, any>
 }
 
-// Step 1: Create Sale record with avg_cost
-const createSaleStep = createStep(
-  "create-sale-record",
+// Single step: create Sale record + finance transaction
+const createSaleAndFinanceStep = createStep(
+  "create-sale-and-finance",
   async (input: CreateSaleInput, { container }) => {
     const saleService: any = container.resolve(SALE_MODULE)
     const supplierService: any = container.resolve(SUPPLIER_ORDER_MODULE)
+    const financeService: any = container.resolve(FINANCE_MODULE)
 
     // Calculate avg cost if master_card_id provided
     let unitCogs = 0
@@ -44,6 +45,7 @@ const createSaleStep = createStep(
     const totalCogs = qty * unitCogs
     const feeDetails = input.fee_details || []
     const totalFees = feeDetails.reduce((s, f) => s + Number(f.amount || 0), 0)
+    const profit = revenue - totalCogs - totalFees
 
     const sale = await saleService.createSales({
       user_id: input.user_id || null,
@@ -65,74 +67,44 @@ const createSaleStep = createStep(
       metadata: input.metadata || null,
     })
 
-    return new StepResponse(
-      { sale, revenue, totalCogs, totalFees },
-      sale.id
-    )
-  },
-  async (saleId: string, { container }) => {
-    if (!saleId) return
-    const saleService: any = container.resolve(SALE_MODULE)
-    await saleService.deleteSales(saleId)
-  }
-)
-
-// Step 2: Create finance transaction
-const createFinanceTxStep = createStep(
-  "create-sale-finance-tx",
-  async (
-    input: { saleId: string; userId: string | null; revenue: number; totalCogs: number; totalFees: number },
-    { container }
-  ) => {
-    const financeService: any = container.resolve(FINANCE_MODULE)
-    const txIds: string[] = []
-
-    if (input.revenue > 0) {
+    // Create finance transaction
+    let txId: string | null = null
+    if (revenue > 0) {
       const tx = await financeService.createFinanceTransactions({
-        user_id: input.userId,
+        user_id: input.user_id || null,
         type: "sale_revenue",
         direction: "income",
-        amount: input.revenue,
+        amount: revenue,
         currency_code: "RUB",
-        order_id: input.saleId,
+        order_id: sale.id,
         category: "sale",
-        description: `Sale ${input.saleId}`,
+        description: `Sale ${sale.id}`,
         transaction_date: new Date(),
         source: "system",
       })
-      txIds.push(tx.id)
+      txId = tx.id
     }
 
-    return new StepResponse(txIds, txIds)
+    return new StepResponse(
+      { sale_id: sale.id, revenue, total_cogs: totalCogs, total_fees: totalFees, profit },
+      { saleId: sale.id, txId }
+    )
   },
-  async (txIds: string[], { container }) => {
-    if (!txIds?.length) return
+  async (prev: { saleId: string; txId: string | null }, { container }) => {
+    if (!prev) return
+    const saleService: any = container.resolve(SALE_MODULE)
     const financeService: any = container.resolve(FINANCE_MODULE)
-    for (const id of txIds) {
-      await financeService.deleteFinanceTransactions(id)
+    if (prev.txId) {
+      await financeService.deleteFinanceTransactions(prev.txId)
     }
+    await saleService.deleteSales(prev.saleId)
   }
 )
 
 export const createSaleWorkflow = createWorkflow(
   "create-sale",
   (input: CreateSaleInput) => {
-    const { sale, revenue, totalCogs, totalFees } = createSaleStep(input)
-
-    createFinanceTxStep({
-      saleId: sale.id,
-      userId: input.user_id || null,
-      revenue,
-      totalCogs,
-      totalFees,
-    })
-
-    return new WorkflowResponse({
-      sale_id: sale.id,
-      revenue,
-      total_cogs: totalCogs,
-      total_fees: totalFees,
-      profit: revenue - totalCogs - totalFees,
-    })
+    const result = createSaleAndFinanceStep(input)
+    return new WorkflowResponse(result)
   }
 )
