@@ -41,6 +41,22 @@ RUN mkdir -p node_modules/mpflow-plugin-ozon
 COPY --from=builder /app/plugins/ozon/package.json ./node_modules/mpflow-plugin-ozon/package.json
 COPY --from=builder /app/plugins/ozon/.medusa ./node_modules/mpflow-plugin-ozon/.medusa
 
+# psql for DB reset capability
+RUN apk add --no-cache postgresql-client
+
 EXPOSE 9000
 
-CMD ["sh", "-c", "npx medusa db:migrate && npx medusa start"]
+# RESET_DB=true → drop and recreate the database before migrating (one-time use)
+CMD ["sh", "-c", "\
+  if [ \"$RESET_DB\" = 'true' ]; then \
+    echo 'RESET_DB: dropping and recreating database...' && \
+    PGPASSWORD=$(echo $DATABASE_URL | sed 's|.*://[^:]*:\\([^@]*\\)@.*|\\1|') \
+    DB_HOST=$(echo $DATABASE_URL | sed 's|.*@\\([^:]*\\):.*|\\1|') \
+    DB_PORT=$(echo $DATABASE_URL | sed 's|.*:\\([0-9]*\\)/.*|\\1|') \
+    DB_USER=$(echo $DATABASE_URL | sed 's|.*://\\([^:]*\\):.*|\\1|') \
+    DB_NAME=$(echo $DATABASE_URL | sed 's|.*/\\([^?]*\\).*|\\1|') && \
+    PGPASSWORD=$PGPASSWORD dropdb -h $DB_HOST -p $DB_PORT -U $DB_USER --if-exists $DB_NAME && \
+    PGPASSWORD=$PGPASSWORD createdb -h $DB_HOST -p $DB_PORT -U $DB_USER $DB_NAME && \
+    echo 'Database reset complete'; \
+  fi && \
+  npx medusa db:migrate && npx medusa start"]

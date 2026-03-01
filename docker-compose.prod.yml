@@ -51,6 +51,8 @@ services:
       # Logto Auth (client-side @logto/browser SDK)
       LOGTO_ENDPOINT: ${LOGTO_ENDPOINT:-}
       LOGTO_SPA_APP_ID: ${LOGTO_SPA_APP_ID:-}
+      # Set to 'true' to drop and recreate database (one-time migration reset)
+      RESET_DB: "true"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/health"]
       interval: 15s
