@@ -5,6 +5,7 @@ loadEnv(process.env.NODE_ENV || 'development', process.cwd())
 module.exports = defineConfig({
   plugins: [
     { resolve: "mpflow-plugin-ozon" },
+    { resolve: "mpflow-plugin-test" },
   ],
   projectConfig: {
     databaseUrl: process.env.DATABASE_URL,
@@ -202,9 +203,8 @@ module.exports = defineConfig({
       },
     },
 
-    // ── Disable heavy built-in e-commerce modules ───────────────
+    // ── Disable ALL unused built-in e-commerce modules ──────────
     // These are auto-added by defineConfig() — override with disable.
-    // Saves ~80 tables in the database.
     // @ts-ignore — key is valid at runtime for built-in module overrides
     { key: "product", disable: true },
     // @ts-ignore
@@ -225,8 +225,13 @@ module.exports = defineConfig({
     { key: "stock_location", disable: true },
     // @ts-ignore
     { key: "tax", disable: true },
-
-    // ── Keep light built-in modules (needed by create-defaults) ─
-    // pricing, sales_channel, region, currency — ~12 tables total
+    // @ts-ignore
+    { key: "pricing", disable: true },
+    // @ts-ignore
+    { key: "sales_channel", disable: true },
+    // @ts-ignore
+    { key: "region", disable: true },
+    // @ts-ignore
+    { key: "notification", disable: true },
   ],
 })
