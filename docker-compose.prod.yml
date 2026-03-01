@@ -16,6 +16,7 @@ services:
 
   medusa:
     image: ghcr.io/teploe-odealko/mp-flow/medusa:latest
+    pull_policy: always
     depends_on:
       medusa-redis:
         condition: service_healthy
