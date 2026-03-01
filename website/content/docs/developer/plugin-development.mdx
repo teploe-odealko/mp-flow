@@ -287,10 +287,38 @@ plugins: [
 ],
 ```
 
-### Применить миграции
+### Сгенерировать и применить миграции
+
+Команда `db:generate` принимает **имя модуля** (значение константы из `Module()`), а не имя npm-пакета:
 
 ```bash
-npx medusa db:generate mpflow-plugin-my-plugin
+cd medusa/
+npx medusa db:generate myModuleService
+```
+
+Миграция создастся в `node_modules/mpflow-plugin-my-plugin/.medusa/server/src/modules/my-module/migrations/`. Скопируйте её обратно в исходники плагина:
+
+```bash
+# Скопировать миграции из node_modules обратно в исходники
+cp -R node_modules/mpflow-plugin-my-plugin/.medusa/server/src/modules/my-module/migrations/ \
+  plugins/my-plugin/src/modules/my-module/migrations/
+```
+
+Пересоберите плагин с миграциями и примените:
+
+```bash
+# Пересобрать плагин (теперь с миграциями в исходниках)
+cd plugins/my-plugin && npx medusa plugin:build && cd ../..
+
+# Обновить в node_modules
+rm -rf node_modules/mpflow-plugin-my-plugin/.medusa
+cp -R plugins/my-plugin/.medusa node_modules/mpflow-plugin-my-plugin/
+
+# Также скопировать snapshot-файлы (plugin:build не копирует .json из migrations)
+cp plugins/my-plugin/src/modules/my-module/migrations/.snapshot-*.json \
+  node_modules/mpflow-plugin-my-plugin/.medusa/server/src/modules/my-module/migrations/ 2>/dev/null || true
+
+# Применить миграции
 npx medusa db:migrate
 ```
 

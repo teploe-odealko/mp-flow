@@ -129,8 +129,8 @@ npx medusa develop
 |---|---|---|
 | `DATABASE_URL` | Да | PostgreSQL connection string. Для Docker без SSL: добавьте `?sslmode=disable` |
 | `REDIS_URL` | Да | Redis connection string |
-| `COOKIE_SECRET` | Да | Секрет для подписи cookies. Генерируйте: `openssl rand -base64 32` |
-| `JWT_SECRET` | Да | Секрет для JWT-токенов. Генерируйте: `openssl rand -base64 32` |
+| `COOKIE_SECRET` | Прод | Секрет для подписи session cookies. Без него cookies можно подделать. Для локальной разработки не нужен. Генерируйте: `openssl rand -base64 32` |
+| `JWT_SECRET` | Прод | Секрет для подписи JWT auth-токенов. Для локальной разработки не нужен. Генерируйте: `openssl rand -base64 32` |
 | `STORE_CORS` | Нет | CORS для store API. По умолчанию: `http://localhost:8000` |
 | `ADMIN_CORS` | Нет | CORS для admin API. По умолчанию: `http://localhost:9000` |
 | `AUTH_CORS` | Нет | CORS для auth API. По умолчанию: `http://localhost:9000` |
