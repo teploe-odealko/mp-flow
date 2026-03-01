@@ -224,13 +224,7 @@ module.exports = defineConfig({
     { key: "stock_location", disable: true },
     // @ts-ignore
     { key: "tax", disable: true },
-    // @ts-ignore
-    { key: "pricing", disable: true },
-    // @ts-ignore
-    { key: "sales_channel", disable: true },
-    // @ts-ignore
-    { key: "region", disable: true },
-    // @ts-ignore
-    { key: "notification", disable: true },
+    // pricing, sales_channel, region, notification — can't disable,
+    // Medusa core depends on them at startup.
   ],
 })
