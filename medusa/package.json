@@ -10,7 +10,8 @@
     "seed": "medusa exec ./src/scripts/seed.ts",
     "db:generate": "medusa db:generate",
     "db:migrate": "medusa db:migrate",
-    "test": "jest --runInBand --forceExit"
+    "test": "jest --runInBand --forceExit",
+    "postinstall": "node scripts/build-plugins.js"
   },
   "dependencies": {
     "@medusajs/admin-sdk": "2.13.1",

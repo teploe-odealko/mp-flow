@@ -98,24 +98,13 @@ docker compose up -d
 - PostgreSQL на порту **5433** (user: `medusa`, password: `medusa123`, db: `mpflow_medusa`)
 - Redis на порту **6380**
 
-### 3. Установить зависимости и собрать плагины
+### 3. Установить зависимости
 
 ```bash
 npm install
 ```
 
-MPFlow включает плагин Ozon — его нужно собрать перед первым запуском:
-
-```bash
-# Собрать ozon-плагин
-cd plugins/ozon && npm install && npx medusa plugin:build && cd ../..
-
-# Слинковать в node_modules
-rm -rf node_modules/mpflow-plugin-ozon
-mkdir -p node_modules/mpflow-plugin-ozon
-cp plugins/ozon/package.json node_modules/mpflow-plugin-ozon/
-cp -R plugins/ozon/.medusa node_modules/mpflow-plugin-ozon/
-```
+Встроенные плагины (Ozon и др.) собираются и линкуются автоматически через `postinstall`.
 
 ### 4. Создать `.env` для Medusa
 
