@@ -17,7 +17,7 @@ async function run() {
     migrations: {
       path: "./dist/src/server/migrations",
       pathTs: "./src/server/migrations",
-      glob: "Migration_*",
+      glob: "Migration_*.{js,ts}",
     },
   })
 

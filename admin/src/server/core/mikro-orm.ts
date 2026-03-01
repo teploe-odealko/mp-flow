@@ -19,7 +19,7 @@ export async function initORM(config: {
     migrations: config.migrations || {
       path: "./dist/src/server/migrations",
       pathTs: "./src/server/migrations",
-      glob: "Migration_*",
+      glob: "Migration_*.{js,ts}",
     },
     debug: process.env.NODE_ENV !== "production",
   }
