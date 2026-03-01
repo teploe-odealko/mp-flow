@@ -13,7 +13,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   if (userId) accountFilters.user_id = userId
 
   const accounts = await ozonService.listOzonAccounts(accountFilters)
-  const productLinks = await ozonService.listOzonProductLinks(accountFilters)
+  const accountIds = accounts.map((a: any) => a.id)
+  const productLinks = accountIds.length
+    ? await ozonService.listOzonProductLinks({ ozon_account_id: accountIds })
+    : []
 
   // Get latest sync timestamps
   const now = new Date()
@@ -44,17 +47,19 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   // Count sales and stock snapshots
   let totalSales = 0
   let totalSnapshots = 0
-  try {
-    const sales = await ozonService.listOzonSales({})
-    totalSales = sales.length
-  } catch {
-    // skip
-  }
-  try {
-    const snapshots = await ozonService.listOzonStockSnapshots({})
-    totalSnapshots = snapshots.length
-  } catch {
-    // skip
+  if (accountIds.length) {
+    try {
+      const sales = await ozonService.listOzonSales({ ozon_account_id: accountIds })
+      totalSales = sales.length
+    } catch {
+      // skip
+    }
+    try {
+      const snapshots = await ozonService.listOzonStockSnapshots({ ozon_account_id: accountIds })
+      totalSnapshots = snapshots.length
+    } catch {
+      // skip
+    }
   }
 
   res.json({
