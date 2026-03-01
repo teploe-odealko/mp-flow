@@ -16,7 +16,7 @@ analytics.get("/", async (c) => {
     return c.json({ error: "report parameter is required (unit-economics, pnl, stock-valuation)" }, 400)
   }
 
-  const filters: { user_id?: string; channel?: string } = {}
+  const filters: { user_id?: string; channel?: string; hasFees?: boolean } = { hasFees: true }
   if (userId) filters.user_id = userId
   if (channel) filters.channel = channel
 
