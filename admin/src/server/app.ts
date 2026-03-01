@@ -31,5 +31,11 @@ export function createApp(cookieSecret: string) {
     return authMiddleware()(c, next)
   })
 
+  // Global error handler — return error details (not just "Internal Server Error")
+  app.onError((err, c) => {
+    console.error("[mpflow] Unhandled error:", err)
+    return c.json({ error: err.message, stack: err.stack?.split("\n").slice(0, 5) }, 500)
+  })
+
   return app
 }
