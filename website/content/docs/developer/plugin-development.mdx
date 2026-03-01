@@ -264,17 +264,20 @@ npm install
 Соберите и слинкуйте плагин:
 
 ```bash
-# Собрать плагин
+# Собрать плагин (admin-расширения + серверный код)
 cd medusa/plugins/my-plugin
 npx medusa plugin:build
+npx tsc --project tsconfig.json
 
 # Скопировать в node_modules основного проекта
 cd ../../  # вернуться в medusa/
 rm -rf node_modules/mpflow-plugin-my-plugin
 mkdir -p node_modules/mpflow-plugin-my-plugin
 cp plugins/my-plugin/package.json node_modules/mpflow-plugin-my-plugin/
-cp -r plugins/my-plugin/.medusa node_modules/mpflow-plugin-my-plugin/
+cp -R plugins/my-plugin/.medusa node_modules/mpflow-plugin-my-plugin/
 ```
+
+`plugin:build` компилирует admin-расширения (React). `tsc` компилирует серверный код (модули, API-роуты) в `.medusa/server/`, откуда Medusa их загружает.
 
 ### Зарегистрировать в medusa-config.ts
 
@@ -308,13 +311,16 @@ cp -R node_modules/mpflow-plugin-my-plugin/.medusa/server/src/modules/my-module/
 
 ```bash
 # Пересобрать плагин (теперь с миграциями в исходниках)
-cd plugins/my-plugin && npx medusa plugin:build && cd ../..
+cd plugins/my-plugin
+npx medusa plugin:build
+npx tsc --project tsconfig.json
+cd ../..
 
 # Обновить в node_modules
 rm -rf node_modules/mpflow-plugin-my-plugin/.medusa
 cp -R plugins/my-plugin/.medusa node_modules/mpflow-plugin-my-plugin/
 
-# Также скопировать snapshot-файлы (plugin:build не копирует .json из migrations)
+# Скопировать snapshot-файлы (tsc не копирует .json из migrations)
 cp plugins/my-plugin/src/modules/my-module/migrations/.snapshot-*.json \
   node_modules/mpflow-plugin-my-plugin/.medusa/server/src/modules/my-module/migrations/ 2>/dev/null || true
 
@@ -343,9 +349,10 @@ RUN npm install
 FROM deps AS builder
 COPY . .
 
-# Собрать плагин
+# Собрать плагин (admin + server)
 RUN cd plugins/my-plugin && npm install
 RUN cd plugins/my-plugin && ../../node_modules/.bin/medusa plugin:build
+RUN cd plugins/my-plugin && npx tsc --project tsconfig.json
 
 # Скопировать плагин в node_modules
 RUN rm -rf node_modules/mpflow-plugin-my-plugin \
