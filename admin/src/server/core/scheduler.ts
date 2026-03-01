@@ -57,3 +57,33 @@ export function stopAllJobs(): void {
   }
   tasks.clear()
 }
+
+export function stopJobsByPlugin(pluginName: string): void {
+  for (const [jobName, owner] of jobPluginMap) {
+    if (owner === pluginName) {
+      const task = tasks.get(jobName)
+      if (task) {
+        task.stop()
+        console.log(`[cron] Stopped job: ${jobName} (plugin: ${pluginName})`)
+      }
+    }
+  }
+}
+
+export function startJobsByPlugin(pluginName: string): void {
+  for (const [jobName, owner] of jobPluginMap) {
+    if (owner === pluginName) {
+      const existing = tasks.get(jobName)
+      if (existing) {
+        existing.start()
+        console.log(`[cron] Restarted job: ${jobName} (plugin: ${pluginName})`)
+      } else {
+        // Re-schedule from stored definition
+        const job = jobDefinitions.get(jobName)
+        if (job) {
+          scheduleJob(job, pluginName)
+        }
+      }
+    }
+  }
+}

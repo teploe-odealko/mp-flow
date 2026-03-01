@@ -10,6 +10,7 @@ import WarehousePage from "./pages/warehouse/page"
 import FinancePage from "./pages/finance/page"
 import AnalyticsPage from "./pages/analytics/page"
 import SuppliersPage from "./pages/suppliers/page"
+import PluginsPage from "./pages/plugins/page"
 import "./styles/globals.css"
 
 const queryClient = new QueryClient({
@@ -55,6 +56,7 @@ function AppRoutes() {
         <Route path="/sales" element={<SalesPage />} />
         <Route path="/finance" element={<FinancePage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route path="/plugins" element={<PluginsPage />} />
         <Route path="/callback" element={<Navigate to="/catalog" replace />} />
         <Route path="*" element={<Navigate to="/catalog" replace />} />
       </Routes>

@@ -126,7 +126,7 @@ export async function loadPlugins(
       // Schedule jobs
       if (plugin.jobs) {
         for (const job of plugin.jobs) {
-          scheduleJob(job)
+          scheduleJob(job, plugin.name)
         }
       }
 
