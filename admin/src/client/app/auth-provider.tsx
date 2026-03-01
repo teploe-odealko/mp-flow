@@ -53,6 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const logto = new LogtoClient({
         endpoint: config.endpoint,
         appId: config.app_id,
+        scopes: ["email"],
       })
       logtoRef.current = logto
 
@@ -61,8 +62,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (url.searchParams.has("code") && url.searchParams.has("state")) {
         try {
           await logto.handleSignInCallback(window.location.href)
-          // Clean URL
-          window.history.replaceState({}, "", url.pathname)
+          // Clean URL — redirect to root after callback
+          window.history.replaceState({}, "", "/")
         } catch (err) {
           console.error("[auth] Callback handling failed:", err)
         }
@@ -103,6 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logtoRef.current = new LogtoClient({
           endpoint: config.endpoint,
           appId: config.app_id,
+          scopes: ["email"],
         })
       }
       await logtoRef.current.signIn(window.location.origin + "/callback")
