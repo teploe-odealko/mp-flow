@@ -1,0 +1,198 @@
+---
+title: Self-hosting
+description: Пошаговая инструкция по развёртыванию MPFlow на своём сервере или локально
+---
+
+# Self-hosting
+
+MPFlow разворачивается через Docker Compose. Для работы нужны **PostgreSQL** и **Redis** — оба поднимаются автоматически.
+
+## Требования
+
+- Docker 24+ и Docker Compose v2
+- Git
+- 2 GB RAM (минимум)
+- Node.js 20+ (только для локальной разработки без Docker)
+
+## Быстрый старт (Docker)
+
+### 1. Клонировать репозиторий
+
+```bash
+git clone https://github.com/teploe-odealko/mp-flow.git
+cd mp-flow
+```
+
+### 2. Создать файл окружения
+
+```bash
+cp .env.example .env
+```
+
+Откройте `.env` и задайте секреты:
+
+```bash
+# Обязательные (измените перед использованием)
+MEDUSA_DB_PASSWORD=ваш_пароль_для_бд
+MEDUSA_COOKIE_SECRET=сгенерируйте_openssl_rand_-base64_32
+MEDUSA_JWT_SECRET=сгенерируйте_openssl_rand_-base64_32
+```
+
+Сгенерировать секреты:
+
+```bash
+echo "MEDUSA_COOKIE_SECRET=$(openssl rand -base64 32)" >> .env
+echo "MEDUSA_JWT_SECRET=$(openssl rand -base64 32)" >> .env
+```
+
+### 3. Запустить
+
+```bash
+docker compose -f docker-compose.prod.yml up -d medusa-db medusa-redis medusa
+```
+
+Ждём пока сервисы стартуют (~60 секунд на первый запуск — миграции БД запускаются автоматически):
+
+```bash
+docker compose -f docker-compose.prod.yml logs -f medusa
+```
+
+Когда увидите `Medusa server started` — система готова.
+
+### 4. Создать админ-пользователя
+
+MPFlow использует встроенную email/password аутентификацию Medusa. Создайте первого пользователя через CLI:
+
+```bash
+docker compose -f docker-compose.prod.yml exec medusa \
+  npx medusa user -e admin@example.com -p ваш_пароль
+```
+
+### 5. Войти в админку
+
+Откройте в браузере:
+
+```
+http://localhost:9000/app
+```
+
+Авторизуйтесь с email и паролем, заданными на предыдущем шаге.
+
+## Локальная разработка (без Docker)
+
+Для разработки удобнее запускать только инфраструктуру в Docker, а Medusa — нативно.
+
+### 1. Поднять PostgreSQL и Redis
+
+```bash
+cd medusa
+docker compose up -d
+```
+
+Это запустит:
+- PostgreSQL на порту **5433** (user: `medusa`, password: `medusa123`, db: `mpflow_medusa`)
+- Redis на порту **6380**
+
+### 2. Установить зависимости
+
+```bash
+npm install
+```
+
+### 3. Создать `.env` для Medusa
+
+Создайте `medusa/.env`:
+
+```bash
+DATABASE_URL=postgresql://medusa:medusa123@localhost:5433/mpflow_medusa
+REDIS_URL=redis://localhost:6380
+```
+
+### 4. Применить миграции и создать пользователя
+
+```bash
+npx medusa db:migrate
+npx medusa user -e admin@example.com -p your_password
+```
+
+### 5. Запустить в dev-режиме
+
+```bash
+npx medusa develop
+```
+
+Админка будет доступна по адресу `http://localhost:9000/app`.
+
+## Переменные окружения
+
+| Переменная | Обязательная | Описание |
+|---|---|---|
+| `DATABASE_URL` | Да | PostgreSQL connection string. Для Docker без SSL: добавьте `?sslmode=disable` |
+| `REDIS_URL` | Да | Redis connection string |
+| `COOKIE_SECRET` | Да | Секрет для подписи cookies. Генерируйте: `openssl rand -base64 32` |
+| `JWT_SECRET` | Да | Секрет для JWT-токенов. Генерируйте: `openssl rand -base64 32` |
+| `STORE_CORS` | Нет | CORS для store API. По умолчанию: `http://localhost:8000` |
+| `ADMIN_CORS` | Нет | CORS для admin API. По умолчанию: `http://localhost:9000` |
+| `AUTH_CORS` | Нет | CORS для auth API. По умолчанию: `http://localhost:9000` |
+| `MEDUSA_BACKEND_URL` | Нет | Публичный URL бэкенда (для admin UI) |
+
+## Архитектура
+
+```
+┌─────────────────────────────────┐
+│   Браузер                       │
+│   http://localhost:9000/app     │
+└────────────┬────────────────────┘
+             │
+┌────────────▼────────────────────┐
+│   Medusa v2 (Node.js)          │
+│   - Backend API (:9000)        │
+│   - Admin UI (встроена)        │
+│   - Плагины                    │
+├─────────────────────────────────┤
+│   Модули:                       │
+│   - master-card (каталог)      │
+│   - supplier-order (закупки)   │
+│   - finance (транзакции)       │
+│   - sale (продажи)             │
+└──────┬──────────────┬───────────┘
+       │              │
+┌──────▼──────┐ ┌─────▼─────┐
+│ PostgreSQL  │ │   Redis   │
+│ :5432       │ │   :6379   │
+└─────────────┘ └───────────┘
+```
+
+## Обновление
+
+```bash
+cd mp-flow
+git pull origin main
+docker compose -f docker-compose.prod.yml up -d --build medusa
+```
+
+Миграции БД применяются автоматически при старте контейнера.
+
+## Troubleshooting
+
+### Medusa не стартует — ошибки миграции
+
+Проверьте, что PostgreSQL доступен и работает:
+
+```bash
+docker compose -f docker-compose.prod.yml exec medusa-db \
+  pg_isready -U medusa -d mpflow_medusa
+```
+
+### Не могу зайти в админку
+
+Убедитесь, что создали пользователя:
+
+```bash
+docker compose -f docker-compose.prod.yml exec medusa \
+  npx medusa user -e admin@example.com -p your_password
+```
+
+### Admin UI не загружается (белый экран)
+
+Проверьте, что `MEDUSA_BACKEND_URL` совпадает с URL, по которому вы открываете админку. Для локальной разработки можно оставить пустым.

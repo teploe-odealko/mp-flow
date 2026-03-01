@@ -1,0 +1,355 @@
+---
+title: Разработка плагинов
+description: Как создать свой плагин для MPFlow — модуль данных, API, страница в админке
+---
+
+# Разработка плагинов
+
+Плагины MPFlow — это стандартные Medusa v2 плагины. Каждый плагин — отдельный npm-пакет с собственными моделями данных, API-роутами, страницами в админке и фоновыми задачами.
+
+## Структура плагина
+
+```
+medusa/plugins/my-plugin/
+├── package.json          # Метаданные пакета
+├── tsconfig.json         # Конфигурация TypeScript
+└── src/
+    ├── index.ts          # Экспорт модуля
+    ├── modules/
+    │   └── my-module/
+    │       ├── index.ts      # Определение модуля
+    │       ├── service.ts    # Бизнес-логика
+    │       └── models/
+    │           └── my-model.ts   # Модель данных (ORM)
+    ├── api/
+    │   └── admin/
+    │       └── my-resource/
+    │           └── route.ts  # API-эндпоинты (GET/POST/PUT/DELETE)
+    └── admin/
+        └── routes/
+            └── my-page/
+                └── page.tsx  # Страница в админке (React)
+```
+
+## Пошагово: создаём плагин
+
+### 1. Создать директорию и package.json
+
+```bash
+mkdir -p medusa/plugins/my-plugin/src
+cd medusa/plugins/my-plugin
+```
+
+Создайте `package.json`:
+
+```json
+{
+  "name": "mpflow-plugin-my-plugin",
+  "version": "0.1.0",
+  "description": "Описание вашего плагина",
+  "keywords": ["medusa-plugin"],
+  "scripts": {
+    "build": "medusa plugin:build",
+    "dev": "medusa plugin:develop"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./.medusa/server/src/index.js",
+    "./admin": {
+      "import": "./.medusa/server/src/admin/index.mjs",
+      "require": "./.medusa/server/src/admin/index.js",
+      "default": "./.medusa/server/src/admin/index.js"
+    },
+    "./.medusa/server/src/modules/*": "./.medusa/server/src/modules/*/index.js",
+    "./modules/*": "./.medusa/server/src/modules/*/index.js",
+    "./*": "./.medusa/server/src/*.js"
+  },
+  "files": [".medusa/server"],
+  "devDependencies": {
+    "@medusajs/framework": "^2.13.0",
+    "@medusajs/admin-sdk": "^2.13.0",
+    "@medusajs/icons": "^2.0.0",
+    "@medusajs/ui": "^4.0.0",
+    "@medusajs/cli": "^2.13.0",
+    "@swc/core": "^1.5.0",
+    "@tanstack/react-query": "^5.0.0",
+    "react": "^18.0.0"
+  },
+  "peerDependencies": {
+    "@medusajs/framework": "^2.13.0",
+    "@medusajs/admin-sdk": "^2.13.0"
+  }
+}
+```
+
+### 2. Создать tsconfig.json
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2021",
+    "esModuleInterop": true,
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "skipLibCheck": true,
+    "declaration": false,
+    "sourceMap": false,
+    "inlineSourceMap": true,
+    "outDir": "./.medusa/server",
+    "rootDir": "./",
+    "jsx": "react-jsx",
+    "resolveJsonModule": true,
+    "strictNullChecks": true
+  },
+  "ts-node": { "swc": true },
+  "include": ["**/*", ".medusa/types/*"],
+  "exclude": ["node_modules", ".medusa/server", ".medusa/admin", ".cache"]
+}
+```
+
+### 3. Модель данных
+
+Создайте `src/modules/my-module/models/my-model.ts`:
+
+```typescript
+import { model } from "@medusajs/utils"
+
+const MyModel = model.define("my_model", {
+  id: model.id().primaryKey(),
+  name: model.text(),
+  description: model.text().nullable(),
+  is_active: model.boolean().default(true),
+  metadata: model.json().nullable(),
+})
+
+export default MyModel
+```
+
+Доступные типы полей: `text()`, `number()`, `boolean()`, `dateTime()`, `json()`, `bigNumber()`, `enum()`, `id()`. Модификаторы: `.nullable()`, `.default(value)`, `.primaryKey()`, `.unique()`.
+
+### 4. Сервис (бизнес-логика)
+
+Создайте `src/modules/my-module/service.ts`:
+
+```typescript
+import { MedusaService } from "@medusajs/framework/utils"
+import MyModel from "./models/my-model"
+
+class MyModuleService extends MedusaService({
+  MyModel,
+}) {
+  // MedusaService автоматически генерирует CRUD-методы:
+  // - listMyModels(filters?)
+  // - retrieveMyModel(id)
+  // - createMyModels(data)
+  // - updateMyModels(data)
+  // - deleteMyModels(id)
+
+  // Добавляйте свои методы:
+  async getActiveItems() {
+    return this.listMyModels({ is_active: true })
+  }
+}
+
+export default MyModuleService
+```
+
+### 5. Определение модуля
+
+Создайте `src/modules/my-module/index.ts`:
+
+```typescript
+import { Module } from "@medusajs/utils"
+import MyModuleService from "./service"
+
+export const MY_MODULE = "myModuleService"
+
+export default Module(MY_MODULE, {
+  service: MyModuleService,
+})
+```
+
+### 6. Экспорт из плагина
+
+Создайте `src/index.ts`:
+
+```typescript
+export { MY_MODULE } from "./modules/my-module"
+```
+
+### 7. API-роуты
+
+Создайте `src/api/admin/my-resource/route.ts`:
+
+```typescript
+import type { MedusaRequest, MedusaResponse } from "@medusajs/framework"
+import { MY_MODULE } from "../../../modules/my-module"
+
+export async function GET(req: MedusaRequest, res: MedusaResponse) {
+  const service: any = req.scope.resolve(MY_MODULE)
+  const items = await service.listMyModels()
+  res.json({ items })
+}
+
+export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  const { name, description } = req.body as {
+    name: string
+    description?: string
+  }
+
+  if (!name) {
+    res.status(400).json({ error: "name is required" })
+    return
+  }
+
+  const service: any = req.scope.resolve(MY_MODULE)
+  const item = await service.createMyModels({ name, description })
+  res.status(201).json({ item })
+}
+```
+
+Эндпоинты будут доступны по адресу `/admin/my-resource`.
+
+### 8. Страница в админке
+
+Создайте `src/admin/routes/my-page/page.tsx`:
+
+```tsx
+import { defineRouteConfig } from "@medusajs/admin-sdk"
+import { ChatBubble } from "@medusajs/icons"
+import { Container, Heading, Text } from "@medusajs/ui"
+import { useQuery } from "@tanstack/react-query"
+
+const MyPage = () => {
+  const { data, isLoading } = useQuery({
+    queryKey: ["my-resource"],
+    queryFn: () =>
+      fetch("/admin/my-resource", { credentials: "include" })
+        .then((r) => r.json()),
+  })
+
+  return (
+    <Container>
+      <Heading level="h1">My Plugin</Heading>
+      {isLoading ? (
+        <Text>Загрузка...</Text>
+      ) : (
+        <Text>Элементов: {data?.items?.length ?? 0}</Text>
+      )}
+    </Container>
+  )
+}
+
+export const config = defineRouteConfig({
+  label: "My Plugin",
+  icon: ChatBubble,
+})
+
+export default MyPage
+```
+
+Страница появится в сайдбаре админки автоматически.
+
+## Установка плагина
+
+### Для разработки
+
+```bash
+cd medusa/plugins/my-plugin
+npm install
+```
+
+Соберите и слинкуйте плагин:
+
+```bash
+# Собрать плагин
+cd medusa/plugins/my-plugin
+npx medusa plugin:build
+
+# Скопировать в node_modules основного проекта
+cd ../../  # вернуться в medusa/
+rm -rf node_modules/mpflow-plugin-my-plugin
+mkdir -p node_modules/mpflow-plugin-my-plugin
+cp plugins/my-plugin/package.json node_modules/mpflow-plugin-my-plugin/
+cp -r plugins/my-plugin/.medusa node_modules/mpflow-plugin-my-plugin/
+```
+
+### Зарегистрировать в medusa-config.ts
+
+Добавьте плагин в массив `plugins`:
+
+```typescript
+plugins: [
+  { resolve: "mpflow-plugin-ozon" },
+  { resolve: "mpflow-plugin-my-plugin" },  // ← ваш плагин
+],
+```
+
+### Применить миграции
+
+```bash
+npx medusa db:generate mpflow-plugin-my-plugin
+npx medusa db:migrate
+```
+
+### Запустить
+
+```bash
+npx medusa develop
+```
+
+Откройте `http://localhost:9000/app` — в сайдбаре появится пункт "My Plugin".
+
+## Docker-сборка с плагином
+
+Для production-деплоя плагин собирается в Dockerfile:
+
+```dockerfile
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm install
+
+FROM deps AS builder
+COPY . .
+
+# Собрать плагин
+RUN cd plugins/my-plugin && npm install
+RUN cd plugins/my-plugin && ../../node_modules/.bin/medusa plugin:build
+
+# Скопировать плагин в node_modules
+RUN rm -rf node_modules/mpflow-plugin-my-plugin \
+    && mkdir -p node_modules/mpflow-plugin-my-plugin \
+    && cp plugins/my-plugin/package.json node_modules/mpflow-plugin-my-plugin/ \
+    && cp -r plugins/my-plugin/.medusa node_modules/mpflow-plugin-my-plugin/
+
+# Собрать основное приложение
+RUN npm run build; test -d .medusa/server
+
+FROM deps
+RUN npm prune --omit=dev
+
+COPY --from=builder /app/.medusa ./.medusa
+COPY --from=builder /app/.medusa/server/medusa-config.js ./medusa-config.js
+RUN ln -s .medusa/server/src src
+COPY --from=builder /app/.medusa/server/public ./public
+
+# Плагин
+RUN mkdir -p node_modules/mpflow-plugin-my-plugin
+COPY --from=builder /app/plugins/my-plugin/package.json ./node_modules/mpflow-plugin-my-plugin/package.json
+COPY --from=builder /app/plugins/my-plugin/.medusa ./node_modules/mpflow-plugin-my-plugin/.medusa
+
+EXPOSE 9000
+CMD ["sh", "-c", "npx medusa db:migrate && npx medusa start"]
+```
+
+## Что дальше
+
+- **Middleware**: обогащение ответов core API через `src/api/middlewares.ts`
+- **Workflows**: сложные операции через `src/workflows/`
+- **Jobs**: фоновые задачи по расписанию через `src/jobs/`
+- **Links**: связь с core-модулями через `src/links/` и `defineLink()`
+
+В качестве примера смотрите плагин `mpflow-plugin-ozon` в `medusa/plugins/ozon/`.

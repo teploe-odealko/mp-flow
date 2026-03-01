@@ -1,6 +1,8 @@
 {
   "title": "Для разработчика",
   "pages": [
-    "index"
+    "index",
+    "self-hosting",
+    "plugin-development"
   ]
 }
