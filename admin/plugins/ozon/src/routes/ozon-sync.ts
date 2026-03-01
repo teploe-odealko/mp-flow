@@ -1,15 +1,16 @@
 import { Hono } from "hono"
+import { getUserIdOptional } from "../../../../src/server/core/auth.js"
 import type { OzonIntegrationService } from "../modules/ozon-integration/service.js"
 import { syncOzonProducts } from "../workflows/sync-ozon-products.js"
 import { syncOzonStocks } from "../workflows/sync-ozon-stocks.js"
 import { syncOzonSales } from "../workflows/sync-ozon-sales.js"
 
-const ozonSyncRoutes = new Hono()
+const ozonSyncRoutes = new Hono<{ Variables: Record<string, any> }>()
 
 // GET /api/ozon-sync — sync status with freshness
 ozonSyncRoutes.get("/", async (c) => {
   const container = c.get("container")
-  const userId = c.get("userId")
+  const userId = getUserIdOptional(c)
   const ozonService: OzonIntegrationService = container.resolve("ozonService")
 
   const filters: Record<string, any> = {}
@@ -75,7 +76,7 @@ ozonSyncRoutes.get("/", async (c) => {
 // POST /api/ozon-sync — trigger sync
 ozonSyncRoutes.post("/", async (c) => {
   const container = c.get("container")
-  const userId = c.get("userId")
+  const userId = getUserIdOptional(c)
   const { action, account_id, date_from, date_to } = await c.req.json()
 
   const ozonService: OzonIntegrationService = container.resolve("ozonService")

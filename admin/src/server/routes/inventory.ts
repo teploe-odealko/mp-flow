@@ -8,7 +8,7 @@ import { calculateAvgCost, getAvailableStock } from "../utils/cost-stock.js"
 import { initialBalance } from "../workflows/initial-balance.js"
 import { writeOff } from "../workflows/write-off.js"
 
-const inventory = new Hono()
+const inventory = new Hono<{ Variables: Record<string, any> }>()
 
 // GET /api/inventory
 inventory.get("/", async (c) => {

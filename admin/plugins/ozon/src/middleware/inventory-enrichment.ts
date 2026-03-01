@@ -10,7 +10,7 @@ export async function ozonInventoryEnrichment(c: Context, next: Next) {
   if (c.req.method !== "GET") return
 
   try {
-    const body = await c.res.json()
+    const body: any = await c.res.json()
     const container = c.get("container")
     const ozonService: OzonIntegrationService = container.resolve("ozonService")
     const saleService: any = container.resolve("saleService")

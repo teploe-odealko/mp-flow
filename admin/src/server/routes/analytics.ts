@@ -5,7 +5,7 @@ import type { MasterCardService } from "../modules/master-card/service.js"
 import type { SupplierOrderService } from "../modules/supplier-order/service.js"
 import { calculateAvgCost, getAvailableStock } from "../utils/cost-stock.js"
 
-const analytics = new Hono()
+const analytics = new Hono<{ Variables: Record<string, any> }>()
 
 // GET /api/analytics?report=unit-economics|pnl|stock-valuation
 analytics.get("/", async (c) => {

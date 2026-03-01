@@ -15,6 +15,8 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "paths": {
       "@server/*": ["./src/server/*"],
       "@client/*": ["./src/client/*"],
@@ -22,6 +24,6 @@
     },
     "baseUrl": "."
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "plugins/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

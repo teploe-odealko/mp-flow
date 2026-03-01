@@ -4,7 +4,7 @@ import type { SaleService } from "../modules/sale/service.js"
 import { createSale } from "../workflows/create-sale.js"
 import { returnSale } from "../workflows/return-sale.js"
 
-const sales = new Hono()
+const sales = new Hono<{ Variables: Record<string, any> }>()
 
 // GET /api/sales
 sales.get("/", async (c) => {

@@ -8,10 +8,10 @@
     "dev:server": "tsx watch src/server/index.ts",
     "dev:client": "vite",
     "build:client": "vite build",
-    "build:server": "tsup src/server/index.ts --format esm --target node20 --out-dir dist/server",
-    "build:plugins": "tsup plugins/ozon/plugin.ts --format esm --target node20 --out-dir dist/plugins/ozon --external hono --external @mikro-orm/core --external awilix",
+    "build:server": "tsc -p tsconfig.server.json",
+    "build:plugins": "echo plugins built with server",
     "build": "npm run build:client && npm run build:server && npm run build:plugins",
-    "start": "node dist/server/index.js",
+    "start": "node dist/src/server/index.js",
     "db:migrate": "tsx src/server/migrations/run.ts",
     "test": "vitest run"
   },

@@ -1,12 +1,13 @@
 import { Hono } from "hono"
+import { getUserIdOptional } from "../../../../src/server/core/auth.js"
 import type { OzonIntegrationService } from "../modules/ozon-integration/service.js"
 
-const ozonAccountsRoutes = new Hono()
+const ozonAccountsRoutes = new Hono<{ Variables: Record<string, any> }>()
 
 // GET /api/ozon-accounts — list accounts
 ozonAccountsRoutes.get("/", async (c) => {
   const container = c.get("container")
-  const userId = c.get("userId")
+  const userId = getUserIdOptional(c)
   const ozonService: OzonIntegrationService = container.resolve("ozonService")
 
   const filters: Record<string, any> = {}
@@ -19,7 +20,7 @@ ozonAccountsRoutes.get("/", async (c) => {
 // POST /api/ozon-accounts — create account
 ozonAccountsRoutes.post("/", async (c) => {
   const container = c.get("container")
-  const userId = c.get("userId")
+  const userId = getUserIdOptional(c)
   const { name, client_id, api_key } = await c.req.json()
 
   if (!name || !client_id || !api_key) {
@@ -67,7 +68,7 @@ ozonAccountsRoutes.post("/verify", async (c) => {
 ozonAccountsRoutes.put("/:id", async (c) => {
   const { id } = c.req.param()
   const container = c.get("container")
-  const userId = c.get("userId")
+  const userId = getUserIdOptional(c)
   const data = await c.req.json()
 
   const ozonService: OzonIntegrationService = container.resolve("ozonService")
@@ -85,7 +86,7 @@ ozonAccountsRoutes.put("/:id", async (c) => {
 ozonAccountsRoutes.delete("/:id", async (c) => {
   const { id } = c.req.param()
   const container = c.get("container")
-  const userId = c.get("userId")
+  const userId = getUserIdOptional(c)
 
   const ozonService: OzonIntegrationService = container.resolve("ozonService")
 

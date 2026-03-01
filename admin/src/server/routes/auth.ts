@@ -1,7 +1,7 @@
 import { Hono } from "hono"
 import { getSession } from "../core/session.js"
 
-const auth = new Hono()
+const auth = new Hono<{ Variables: Record<string, any> }>()
 
 // GET /auth/logto-config — public Logto SPA config
 auth.get("/logto-config", (c) => {
@@ -33,7 +33,7 @@ auth.post("/logto-exchange", async (c) => {
     if (!userinfoRes.ok) {
       return c.json({ error: "Invalid or expired Logto token" }, 401)
     }
-    userinfo = await userinfoRes.json()
+    userinfo = await userinfoRes.json() as any
   } catch {
     return c.json({ error: "Failed to validate token with Logto" }, 401)
   }

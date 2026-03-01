@@ -5,7 +5,7 @@ import type { SupplierOrderService } from "../modules/supplier-order/service.js"
 import type { SaleService } from "../modules/sale/service.js"
 import { calculateAvgCost, getAvailableStock } from "../utils/cost-stock.js"
 
-const catalog = new Hono()
+const catalog = new Hono<{ Variables: Record<string, any> }>()
 
 // GET /api/catalog
 catalog.get("/", async (c) => {

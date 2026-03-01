@@ -8,7 +8,6 @@ FROM deps AS builder
 COPY . .
 RUN npm run build:client
 RUN npm run build:server
-RUN npm run build:plugins
 
 # ── Production ────────────────────────────────
 FROM node:20-alpine
@@ -20,4 +19,4 @@ COPY --from=builder /app/package.json ./
 
 ENV NODE_ENV=production
 EXPOSE 3000
-CMD ["node", "dist/server/index.js"]
+CMD ["node", "dist/src/server/index.js"]

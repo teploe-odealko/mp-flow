@@ -18,7 +18,7 @@ export class MasterCardService {
   }
 
   async create(data: Partial<MasterCard>) {
-    const card = this.em.create(MasterCard, { ...data, deleted_at: null })
+    const card = this.em.create(MasterCard, { ...data, deleted_at: null } as any)
     await this.em.persistAndFlush(card)
     return card
   }

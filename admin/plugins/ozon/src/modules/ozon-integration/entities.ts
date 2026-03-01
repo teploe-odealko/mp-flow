@@ -1,4 +1,4 @@
-import { Entity, Property, PrimaryKey, Index, Enum } from "@mikro-orm/core"
+import { Entity, Property, PrimaryKey, Index, Unique } from "@mikro-orm/core"
 import { v4 } from "uuid"
 
 @Entity({ tableName: "ozon_account" })
@@ -63,7 +63,7 @@ export class OzonProductLink {
   ozon_account_id!: string
 
   @Property({ type: "bigint" })
-  @Index({ unique: true })
+  @Unique()
   ozon_product_id!: string
 
   @Property({ type: "bigint", nullable: true })

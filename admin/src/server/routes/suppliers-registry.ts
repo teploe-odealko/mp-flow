@@ -2,7 +2,7 @@ import { Hono } from "hono"
 import { getUserId } from "../core/auth.js"
 import type { SupplierOrderService } from "../modules/supplier-order/service.js"
 
-const suppliersRegistry = new Hono()
+const suppliersRegistry = new Hono<{ Variables: Record<string, any> }>()
 
 // GET /api/suppliers-registry
 suppliersRegistry.get("/", async (c) => {

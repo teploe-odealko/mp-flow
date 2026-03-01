@@ -4,7 +4,7 @@ import type { SupplierOrderService } from "../modules/supplier-order/service.js"
 import { receiveOrder } from "../workflows/receive-order.js"
 import { unreceiveOrder } from "../workflows/unreceive-order.js"
 
-const suppliers = new Hono()
+const suppliers = new Hono<{ Variables: Record<string, any> }>()
 
 // GET /api/suppliers
 suppliers.get("/", async (c) => {

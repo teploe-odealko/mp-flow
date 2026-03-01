@@ -24,7 +24,7 @@ export function definePlugin(def: PluginDefinition): PluginDefinition {
 
 export async function loadPlugins(
   pluginPaths: Array<{ resolve: string }>,
-  app: Hono,
+  app: Hono<any>,
   container: AwilixContainer,
   _orm: MikroORM,
 ): Promise<{ entities: any[] }> {
@@ -32,15 +32,21 @@ export async function loadPlugins(
 
   for (const pluginRef of pluginPaths) {
     try {
-      const isProduction = process.env.NODE_ENV === "production"
       let pluginPath: string
       if (pluginRef.resolve.startsWith(".")) {
-        if (isProduction) {
-          // In production, plugins are compiled to dist/plugins/<name>/plugin.js
-          const pluginName = pluginRef.resolve.replace(/^\.\/plugins\//, "")
-          pluginPath = `${process.cwd()}/dist/plugins/${pluginName}/plugin.js`
-        } else {
-          pluginPath = `${process.cwd()}/${pluginRef.resolve}/plugin.ts`
+        // Resolve relative to cwd — works for both dev (tsx) and prod (tsc output)
+        // In dev: ./plugins/ozon/plugin.ts loaded by tsx
+        // In prod: ./dist/plugins/ozon/plugin.js loaded by node
+        const pluginName = pluginRef.resolve.replace(/^\.\/plugins\//, "")
+        const distPath = `${process.cwd()}/dist/plugins/${pluginName}/plugin.js`
+        const srcPath = `${process.cwd()}/plugins/${pluginName}/plugin.ts`
+
+        // Try dist first, then source
+        try {
+          await import(distPath)
+          pluginPath = distPath
+        } catch {
+          pluginPath = srcPath
         }
       } else {
         pluginPath = pluginRef.resolve

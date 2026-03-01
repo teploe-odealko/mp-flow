@@ -36,7 +36,7 @@ async function main() {
     url: DATABASE_URL,
     entities: coreEntities,
     migrations: {
-      path: "./dist/server/migrations",
+      path: "./dist/src/server/migrations",
       pathTs: "./src/server/migrations",
     },
   })

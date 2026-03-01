@@ -4,8 +4,8 @@ import { logger } from "hono/logger"
 import { sessionMiddleware } from "./core/session.js"
 import { authMiddleware } from "./core/auth.js"
 
-export function createApp(cookieSecret: string): Hono {
-  const app = new Hono()
+export function createApp(cookieSecret: string) {
+  const app = new Hono<{ Variables: Record<string, any> }>()
 
   // Global middleware
   app.use("*", logger())
