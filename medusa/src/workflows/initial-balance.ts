@@ -5,10 +5,10 @@ import {
   WorkflowResponse,
 } from "@medusajs/framework/workflows-sdk"
 import { SUPPLIER_ORDER_MODULE } from "../modules/supplier-order"
-import { FIFO_LOT_MODULE } from "../modules/fifo-lot"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
 type InitialBalanceInput = {
+  user_id?: string
   items: Array<{
     master_card_id: string
     quantity: number
@@ -16,108 +16,62 @@ type InitialBalanceInput = {
   }>
 }
 
-// Step 1: Create synthetic supplier order (status = received)
-const createSyntheticOrderStep = createStep(
-  "create-synthetic-order",
-  async (input: { items: InitialBalanceInput["items"] }, { container }) => {
-    const supplierService = container.resolve(SUPPLIER_ORDER_MODULE)
-    const order = await (supplierService as any).createSupplierOrders({
+// Step 1: Create manual supplier order with items (type="manual", status="received")
+const createManualOrderStep = createStep(
+  "create-manual-order",
+  async (input: InitialBalanceInput, { container }) => {
+    const supplierService: any = container.resolve(SUPPLIER_ORDER_MODULE)
+    const link: any = container.resolve(ContainerRegistrationKeys.LINK)
+
+    const order = await supplierService.createSupplierOrders({
+      user_id: input.user_id || null,
       supplier_name: "Начальный остаток",
       order_number: `INIT-${Date.now()}`,
+      type: "manual",
       status: "received",
       received_at: new Date(),
       order_date: new Date(),
-      notes: "Автоматический заказ для начального остатка",
+      notes: "Оприходование начального остатка",
     })
-    return new StepResponse(order, order.id)
-  },
-  async (orderId: string, { container }) => {
-    if (!orderId) return
-    const supplierService = container.resolve(SUPPLIER_ORDER_MODULE)
-    await supplierService.deleteSupplierOrders(orderId)
-  }
-)
 
-// Step 2: Create items, lots, and links
-const createItemsAndLotsStep = createStep(
-  "create-initial-items-and-lots",
-  async (
-    input: { orderId: string; items: InitialBalanceInput["items"] },
-    { container }
-  ) => {
-    const supplierService = container.resolve(SUPPLIER_ORDER_MODULE)
-    const fifoService = container.resolve(FIFO_LOT_MODULE)
-    const link = container.resolve(ContainerRegistrationKeys.LINK)
-
-    const results: Array<{ itemId: string; lotId: string; masterCardId: string }> = []
+    const results: Array<{ itemId: string; masterCardId: string }> = []
 
     for (const item of input.items) {
-      // Create supplier order item
-      const orderItem = await (supplierService as any).createSupplierOrderItems({
-        order_id: input.orderId,
+      const totalCost = item.unit_cost_rub * item.quantity
+
+      const orderItem = await supplierService.createSupplierOrderItems({
+        order_id: order.id,
         master_card_id: item.master_card_id,
         ordered_qty: item.quantity,
         received_qty: item.quantity,
         purchase_price_rub: item.unit_cost_rub,
         unit_cost: item.unit_cost_rub,
-        total_cost: item.unit_cost_rub * item.quantity,
+        total_cost: totalCost,
         status: "received",
       })
 
-      // Create FIFO lot
-      const lot = await fifoService.createFifoLots({
-        master_card_id: item.master_card_id,
-        supplier_order_item_id: orderItem.id,
-        initial_qty: item.quantity,
-        remaining_qty: item.quantity,
-        cost_per_unit: item.unit_cost_rub,
-        currency_code: "RUB",
-        received_at: new Date(),
-        notes: "Initial balance",
-      })
-
-      // Create links
-      await link.create({
-        masterCardModuleService: { master_card_id: item.master_card_id },
-        fifoLotModuleService: { fifo_lot_id: lot.id },
-      })
-      await link.create({
-        fifoLotModuleService: { fifo_lot_id: lot.id },
-        supplierOrderModuleService: { supplier_order_item_id: orderItem.id },
-      })
+      // Create card ↔ supplier-item link
       await link.create({
         masterCardModuleService: { master_card_id: item.master_card_id },
         supplierOrderModuleService: { supplier_order_item_id: orderItem.id },
       })
 
-      results.push({
-        itemId: orderItem.id,
-        lotId: lot.id,
-        masterCardId: item.master_card_id,
-      })
+      results.push({ itemId: orderItem.id, masterCardId: item.master_card_id })
     }
 
-    return new StepResponse(results, results)
+    return new StepResponse({ order_id: order.id, items: results }, order.id)
   },
-  async (results: Array<any>, { container }) => {
-    if (!results?.length) return
-    const fifoService = container.resolve(FIFO_LOT_MODULE)
-    const supplierService = container.resolve(SUPPLIER_ORDER_MODULE)
-    for (const r of results) {
-      await fifoService.deleteFifoLots(r.lotId)
-      await supplierService.deleteSupplierOrderItems(r.itemId)
-    }
+  async (orderId: string, { container }) => {
+    if (!orderId) return
+    const supplierService: any = container.resolve(SUPPLIER_ORDER_MODULE)
+    await supplierService.deleteSupplierOrders(orderId)
   }
 )
 
 export const initialBalanceWorkflow = createWorkflow(
   "initial-balance",
   (input: InitialBalanceInput) => {
-    const order = createSyntheticOrderStep({ items: input.items })
-    const results = createItemsAndLotsStep({
-      orderId: order.id,
-      items: input.items,
-    })
-    return new WorkflowResponse({ order_id: order.id, items: results })
+    const result = createManualOrderStep(input)
+    return new WorkflowResponse(result)
   }
 )

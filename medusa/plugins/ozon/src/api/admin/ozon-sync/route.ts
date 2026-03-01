@@ -44,12 +44,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
   })
 
-  // Count sales and stock snapshots
+  // Count sales (from core Sale module) and stock snapshots
   let totalSales = 0
   let totalSnapshots = 0
   if (accountIds.length) {
     try {
-      const sales = await ozonService.listOzonSales({ ozon_account_id: accountIds })
+      const saleService: any = req.scope.resolve("saleModuleService")
+      const sales = await saleService.listSales({ channel: "ozon" })
       totalSales = sales.length
     } catch {
       // skip

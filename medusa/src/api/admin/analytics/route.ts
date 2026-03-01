@@ -1,7 +1,8 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { SALE_MODULE } from "../../../modules/sale"
-import { FIFO_LOT_MODULE } from "../../../modules/fifo-lot"
-import { Modules } from "@medusajs/framework/utils"
+import { MASTER_CARD_MODULE } from "../../../modules/master-card"
+import { SUPPLIER_ORDER_MODULE } from "../../../modules/supplier-order"
+import { calculateAvgCost, getAvailableStock } from "../../../utils/cost-stock"
 
 // GET /admin/analytics?report=unit-economics|pnl|stock-valuation
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
@@ -49,58 +50,34 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     case "stock-valuation": {
-      const fifoService: any = req.scope.resolve(FIFO_LOT_MODULE)
-      const productService: any = req.scope.resolve(Modules.PRODUCT)
+      const cardService: any = req.scope.resolve(MASTER_CARD_MODULE)
+      const supplierService: any = req.scope.resolve(SUPPLIER_ORDER_MODULE)
+      const saleService: any = req.scope.resolve(SALE_MODULE)
 
-      // Get all FIFO lots with remaining stock
-      const lots = await fifoService.listFifoLots(
-        { remaining_qty: { $gt: 0 } },
-        { order: { received_at: "ASC" } }
-      )
+      const cardFilters: Record<string, any> = {}
+      if (userId) cardFilters.user_id = userId
 
-      // Group by master_card_id
-      const byCard: Record<string, {
+      const cards = await cardService.listMasterCards(cardFilters)
+
+      const items: Array<{
         master_card_id: string
         title: string
         quantity: number
         total_cost: number
         avg_cost: number
-      }> = {}
+      }> = []
 
-      for (const lot of lots) {
-        const key = lot.master_card_id
-        if (!byCard[key]) {
-          byCard[key] = {
-            master_card_id: key,
-            title: "",
-            quantity: 0,
-            total_cost: 0,
-            avg_cost: 0,
-          }
-        }
-        byCard[key].quantity += lot.remaining_qty
-        byCard[key].total_cost += lot.remaining_qty * Number(lot.cost_per_unit)
-      }
-
-      // Calculate avg cost
-      const items = Object.values(byCard)
-      for (const item of items) {
-        item.avg_cost = item.quantity > 0 ? item.total_cost / item.quantity : 0
-      }
-
-      // Try to enrich with product titles
-      try {
-        const masterCardModule: any = req.scope.resolve("masterCardModuleService")
-        for (const item of items) {
-          try {
-            const card = await masterCardModule.retrieveMasterCard(item.master_card_id)
-            item.title = card?.title || ""
-          } catch {
-            // Card may not exist
-          }
-        }
-      } catch {
-        // Module may not be available
+      for (const card of cards) {
+        const stock = await getAvailableStock(supplierService, saleService, card.id)
+        if (stock <= 0) continue
+        const avg = await calculateAvgCost(supplierService, card.id)
+        items.push({
+          master_card_id: card.id,
+          title: card.title || "",
+          quantity: stock,
+          total_cost: Math.round(stock * avg * 100) / 100,
+          avg_cost: avg,
+        })
       }
 
       const totalValue = items.reduce((sum, i) => sum + i.total_cost, 0)

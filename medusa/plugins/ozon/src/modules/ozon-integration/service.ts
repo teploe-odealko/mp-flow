@@ -1,13 +1,11 @@
 import { MedusaService } from "@medusajs/framework/utils"
 import OzonAccount from "./models/ozon-account"
 import OzonProductLink from "./models/ozon-product-link"
-import OzonSale from "./models/ozon-sale"
 import OzonStockSnapshot from "./models/ozon-stock-snapshot"
 
 class OzonIntegrationModuleService extends MedusaService({
   OzonAccount,
   OzonProductLink,
-  OzonSale,
   OzonStockSnapshot,
 }) {
   /**
@@ -121,20 +119,27 @@ class OzonIntegrationModuleService extends MedusaService({
   }
 
   /**
-   * Map Ozon service category to our 10 standard categories.
-   * Ported from old system OZON_SERVICE_CATEGORY_MAP.
+   * Map Ozon service category to standard fee keys.
    */
-  classifyOzonService(serviceName: string): string {
+  classifyOzonService(serviceName: string): { key: string; label: string } {
     const lower = serviceName.toLowerCase()
-    if (lower.includes("lastmile") || lower.includes("last_mile") || lower.includes("flexibleshipment")) return "last_mile"
-    if (lower.includes("pipeline") || lower.includes("deliverytocustomer")) return "pipeline"
-    if (lower.includes("fulfillment") || lower.includes("processing")) return "fulfillment"
-    if (lower.includes("dropoff") || lower.includes("drop_off")) return "direct_flow_trans"
-    if (lower.includes("acquiring")) return "acquiring"
-    if (lower.includes("returnafterdelivery") || lower.includes("reverse")) return "reverse_flow_trans"
-    if (lower.includes("returnprocessing")) return "return_processing"
-    if (lower.includes("marketing") || lower.includes("promotion")) return "marketplace_service"
-    return "other_fees"
+    if (lower.includes("lastmile") || lower.includes("last_mile") || lower.includes("flexibleshipment"))
+      return { key: "last_mile", label: "Последняя миля" }
+    if (lower.includes("pipeline") || lower.includes("deliverytocustomer"))
+      return { key: "pipeline", label: "Доставка до покупателя" }
+    if (lower.includes("fulfillment") || lower.includes("processing"))
+      return { key: "fulfillment", label: "Обработка отправления" }
+    if (lower.includes("dropoff") || lower.includes("drop_off"))
+      return { key: "direct_flow", label: "Приёмка на складе" }
+    if (lower.includes("acquiring"))
+      return { key: "acquiring", label: "Эквайринг" }
+    if (lower.includes("returnafterdelivery") || lower.includes("reverse"))
+      return { key: "reverse_logistics", label: "Обратная логистика" }
+    if (lower.includes("returnprocessing"))
+      return { key: "return_processing", label: "Обработка возврата" }
+    if (lower.includes("marketing") || lower.includes("promotion"))
+      return { key: "marketplace_service", label: "Услуги маркетплейса" }
+    return { key: "other_fees", label: "Прочие расходы" }
   }
 }
 

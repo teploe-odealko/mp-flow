@@ -2,6 +2,8 @@ import { defineMiddlewares } from "@medusajs/framework/http"
 import type { MedusaRequest, MedusaResponse, MedusaNextFunction } from "@medusajs/framework"
 import { OZON_MODULE } from "../modules/ozon-integration"
 
+const SALE_MODULE = "saleModuleService"
+
 /**
  * Middleware that enriches /admin/catalog GET response with Ozon data.
  * Handles both list (body.products[]) and detail (body.product) responses.
@@ -59,7 +61,7 @@ async function ozonCatalogEnrichmentMiddleware(
 
     // Detail: enrich body.product
     if (body?.product && body.product.id) {
-      enrichProductDetail(ozonService, body.product).then((enriched) => {
+      enrichProductDetail(ozonService, req, body.product).then((enriched) => {
         body.product = enriched
         return originalJson(body)
       }).catch(() => {
@@ -78,7 +80,7 @@ async function ozonCatalogEnrichmentMiddleware(
 /**
  * Enrich a single product detail with Ozon link, stock, and sales.
  */
-async function enrichProductDetail(ozonService: any, product: any) {
+async function enrichProductDetail(ozonService: any, req: MedusaRequest, product: any) {
   try {
     const links = await ozonService.listOzonProductLinks({
       master_card_id: product.id,
@@ -109,18 +111,21 @@ async function enrichProductDetail(ozonService: any, product: any) {
         }
       } catch { /* skip */ }
 
+      // Recent sales from core Sale module (channel=ozon)
       try {
-        const sales = await ozonService.listOzonSales(
-          { offer_id: ozonLink.offer_id },
+        const saleService: any = req.scope.resolve(SALE_MODULE)
+        const sales = await saleService.listSales(
+          { master_card_id: product.id, channel: "ozon" },
           { order: { sold_at: "DESC" }, take: 50 }
         )
         product.recent_sales = sales.map((s: any) => ({
           id: s.id,
-          posting_number: s.posting_number,
+          channel_order_id: s.channel_order_id,
           quantity: s.quantity,
-          sale_price: s.sale_price,
-          commission: s.commission,
-          cogs: s.cogs,
+          price_per_unit: s.price_per_unit,
+          revenue: s.revenue,
+          fee_details: s.fee_details,
+          total_cogs: s.total_cogs,
           sold_at: s.sold_at,
           status: s.status,
         }))
@@ -134,7 +139,6 @@ async function enrichProductDetail(ozonService: any, product: any) {
 
 /**
  * Middleware that enriches /admin/inventory GET response with Ozon data.
- * Handles list (body.rows[]) responses.
  */
 async function ozonInventoryEnrichmentMiddleware(
   req: MedusaRequest,
@@ -153,6 +157,7 @@ async function ozonInventoryEnrichmentMiddleware(
     }
 
     const ozonService: any = req.scope.resolve(OZON_MODULE)
+    const saleService: any = req.scope.resolve(SALE_MODULE)
 
     Promise.all(
       body.rows.map(async (row: any) => {
@@ -170,8 +175,11 @@ async function ozonInventoryEnrichmentMiddleware(
               0
             )
 
-            const sales = await ozonService.listOzonSales({
-              offer_id: offerId,
+            // Sold qty from core Sale module
+            const sales = await saleService.listSales({
+              master_card_id: row.card_id,
+              channel: "ozon",
+              status: { $in: ["active", "delivered"] },
             })
             row.sold_qty = sales.reduce(
               (s: number, sale: any) => s + (sale.quantity || 0),
@@ -223,6 +231,7 @@ async function ozonInventoryDetailMiddleware(
     }
 
     const ozonService: any = req.scope.resolve(OZON_MODULE)
+    const saleService: any = req.scope.resolve(SALE_MODULE)
     const cardId = body.card.id
 
     ;(async () => {
@@ -266,34 +275,32 @@ async function ozonInventoryDetailMiddleware(
             }
           } catch { /* skip */ }
 
+          // Recent sales from core Sale module
           try {
-            const ozonSales = await ozonService.listOzonSales(
-              { offer_id: ozonLink.offer_id },
+            const sales = await saleService.listSales(
+              { master_card_id: cardId, channel: "ozon" },
               { order: { sold_at: "DESC" }, take: 50 }
             )
-            body.recent_sales = ozonSales.map((s: any) => ({
+            body.recent_sales = sales.map((s: any) => ({
               id: s.id,
-              posting_number: s.posting_number,
+              channel_order_id: s.channel_order_id,
+              channel_sku: s.channel_sku,
               quantity: s.quantity,
-              sale_price: s.sale_price,
-              commission: s.commission,
-              last_mile: s.last_mile,
-              pipeline: s.pipeline,
-              fulfillment: s.fulfillment,
-              acquiring: s.acquiring,
-              cogs: s.cogs,
-              fifo_allocated: s.fifo_allocated,
+              price_per_unit: s.price_per_unit,
+              revenue: s.revenue,
+              fee_details: s.fee_details,
+              total_cogs: s.total_cogs,
               sold_at: s.sold_at,
               status: s.status,
             }))
 
             if (body.summary) {
-              body.summary.total_sold = ozonSales.reduce(
+              body.summary.total_sold = sales.reduce(
                 (s: number, sale: any) => s + (sale.quantity || 0), 0
               )
               body.summary.total_revenue = Math.round(
-                ozonSales.reduce(
-                  (s: number, sale: any) => s + Number(sale.sale_price || 0) * (sale.quantity || 0), 0
+                sales.reduce(
+                  (s: number, sale: any) => s + Number(sale.revenue || 0), 0
                 ) * 100
               ) / 100
             }

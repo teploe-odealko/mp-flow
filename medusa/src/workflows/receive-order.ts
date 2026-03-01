@@ -5,7 +5,6 @@ import {
   WorkflowResponse,
 } from "@medusajs/framework/workflows-sdk"
 import { SUPPLIER_ORDER_MODULE } from "../modules/supplier-order"
-import { FIFO_LOT_MODULE } from "../modules/fifo-lot"
 import { FINANCE_MODULE } from "../modules/finance"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
@@ -14,11 +13,12 @@ type ReceiveOrderInput = {
   items: Array<{ item_id: string; received_qty: number }>
 }
 
-// Step 1: Validate order exists and is not already received
-const validateOrderStep = createStep(
-  "validate-order-for-receive",
+// Step 1: Update received_qty on items and calculate costs
+const updateReceivedStep = createStep(
+  "update-received-quantities",
   async (input: ReceiveOrderInput, { container }) => {
-    const supplierService = container.resolve(SUPPLIER_ORDER_MODULE)
+    const supplierService: any = container.resolve(SUPPLIER_ORDER_MODULE)
+
     const order = await supplierService.retrieveSupplierOrder(input.supplier_order_id)
     if (!order) throw new Error("Supplier order not found")
     if (order.status === "received") throw new Error("Order already received")
@@ -28,39 +28,32 @@ const validateOrderStep = createStep(
       order_id: input.supplier_order_id,
     } as any)
 
-    return new StepResponse({ order, items })
-  }
-)
-
-// Step 2: Calculate unit costs for each item, including shared cost allocation
-const calculateCostsStep = createStep(
-  "calculate-item-costs",
-  async (
-    input: {
-      order: any
-      items: any[]
-      receivedMap: Array<{ item_id: string; received_qty: number }>
-    },
-    { container }
-  ) => {
-    const { order, items, receivedMap } = input
     const sharedCosts: Array<{ name: string; total_rub: number }> =
       typeof order.shared_costs === "string"
         ? JSON.parse(order.shared_costs)
         : order.shared_costs || []
 
-    const totalShared = sharedCosts.reduce((s, c) => s + (c.total_rub || 0), 0)
-
-    // Map received quantities
-    const receivedLookup = new Map(receivedMap.map((r) => [r.item_id, r.received_qty]))
-    const receivingItems = items.filter(
-      (item) => (receivedLookup.get(item.id) || 0) > 0
-    )
+    const totalShared = sharedCosts.reduce((s: number, c: any) => s + (c.total_rub || 0), 0)
+    const receivedLookup = new Map(input.items.map((r) => [r.item_id, r.received_qty]))
+    const receivingItems = items.filter((item: any) => (receivedLookup.get(item.id) || 0) > 0)
     const itemCount = receivingItems.length || 1
     const sharedPerItem = totalShared / itemCount
 
-    const costResults = receivingItems.map((item) => {
+    let totalCost = 0
+    const prevItems: Array<{ id: string; received_qty: number; status: string; unit_cost: number; total_cost: number }> = []
+
+    for (const item of items) {
       const receivedQty = receivedLookup.get(item.id) || 0
+      if (receivedQty <= 0) continue
+
+      prevItems.push({
+        id: item.id,
+        received_qty: item.received_qty,
+        status: item.status,
+        unit_cost: item.unit_cost,
+        total_cost: item.total_cost,
+      })
+
       const purchasePrice = Number(item.purchase_price_rub || item.unit_cost || 0)
       const packaging = Number(item.packaging_cost_rub || 0)
       const logistics = Number(item.logistics_cost_rub || 0)
@@ -70,106 +63,93 @@ const calculateCostsStep = createStep(
       const unitCost = receivedQty > 0
         ? Math.round(((purchasePrice + individualCost) / receivedQty) * 100) / 100
         : 0
+      const itemTotalCost = Math.round(unitCost * receivedQty * 100) / 100
 
-      return {
-        item_id: item.id,
-        master_card_id: item.master_card_id,
+      await supplierService.updateSupplierOrderItems({
+        id: item.id,
         received_qty: receivedQty,
         unit_cost: unitCost,
-        total_cost: Math.round(unitCost * receivedQty * 100) / 100,
-      }
+        total_cost: itemTotalCost,
+        status: "received",
+      })
+
+      totalCost += itemTotalCost
+    }
+
+    return new StepResponse(
+      { order, totalCost, prevItems },
+      prevItems
+    )
+  },
+  async (prevItems: any[], { container }) => {
+    if (!prevItems?.length) return
+    const supplierService: any = container.resolve(SUPPLIER_ORDER_MODULE)
+    for (const item of prevItems) {
+      await supplierService.updateSupplierOrderItems({
+        id: item.id,
+        received_qty: item.received_qty,
+        unit_cost: item.unit_cost,
+        total_cost: item.total_cost,
+        status: item.status,
+      })
+    }
+  }
+)
+
+// Step 2: Update order status + create links
+const updateOrderStatusStep = createStep(
+  "update-order-status-received",
+  async (
+    input: { orderId: string; receivedItems: Array<{ item_id: string; received_qty: number }>; items: any[] },
+    { container }
+  ) => {
+    const supplierService: any = container.resolve(SUPPLIER_ORDER_MODULE)
+    const link: any = container.resolve(ContainerRegistrationKeys.LINK)
+
+    const order = await supplierService.retrieveSupplierOrder(input.orderId)
+    const prevStatus = order.status
+
+    await supplierService.updateSupplierOrders({
+      id: input.orderId,
+      status: "received" as const,
+      received_at: new Date(),
     })
 
-    const totalCost = costResults.reduce(
-      (sum, r) => sum + (r.total_cost || 0),
-      0
-    )
-
-    return new StepResponse({ items: costResults, totalCost })
-  }
-)
-
-// Step 3: Create FIFO lots from received items
-const createFifoLotsStep = createStep(
-  "create-fifo-lots-from-order",
-  async (input: { items: Array<any> }, { container }) => {
-    const costResults = input.items
-    const fifoService = container.resolve(FIFO_LOT_MODULE)
-    const createdLots: any[] = []
-
-    for (const item of costResults) {
-      if (item.received_qty <= 0) continue
-
-      const lot = await fifoService.createFifoLots({
-        master_card_id: item.master_card_id,
-        supplier_order_item_id: item.item_id,
-        initial_qty: item.received_qty,
-        remaining_qty: item.received_qty,
-        cost_per_unit: item.unit_cost,
-        currency_code: "RUB",
-        received_at: new Date(),
-        batch_number: null,
-        notes: `From supplier order item ${item.item_id}`,
-      })
-
-      createdLots.push({ lot_id: lot.id, item })
+    // Create card ↔ supplier-item links
+    const receivedLookup = new Map(input.receivedItems.map((r) => [r.item_id, r.received_qty]))
+    for (const item of input.items) {
+      if ((receivedLookup.get(item.id) || 0) <= 0) continue
+      try {
+        await link.create({
+          masterCardModuleService: { master_card_id: item.master_card_id },
+          supplierOrderModuleService: { supplier_order_item_id: item.id },
+        })
+      } catch { /* link may already exist */ }
     }
 
-    return new StepResponse(createdLots, createdLots.map((l) => l.lot_id))
+    return new StepResponse({ orderId: input.orderId }, { orderId: input.orderId, prevStatus })
   },
-  // Compensation: delete created lots on failure
-  async (lotIds: string[], { container }) => {
-    if (!lotIds?.length) return
-    const fifoService = container.resolve(FIFO_LOT_MODULE)
-    for (const id of lotIds) {
-      await fifoService.deleteFifoLots(id)
-    }
+  async (prev: { orderId: string; prevStatus: string }, { container }) => {
+    if (!prev) return
+    const supplierService: any = container.resolve(SUPPLIER_ORDER_MODULE)
+    await supplierService.updateSupplierOrders({
+      id: prev.orderId,
+      status: prev.prevStatus as any,
+      received_at: null,
+    })
   }
 )
 
-// Step 4: Create module links (lot↔variant, lot↔supplier-item)
-const createLinksStep = createStep(
-  "create-receive-links",
-  async (createdLots: Array<any>, { container }) => {
-    const link = container.resolve(ContainerRegistrationKeys.LINK)
-    const linkIds: string[] = []
-
-    for (const { lot_id, item } of createdLots) {
-      // Link MasterCard ↔ FifoLot
-      await link.create({
-        masterCardModuleService: { master_card_id: item.master_card_id },
-        fifoLotModuleService: { fifo_lot_id: lot_id },
-      })
-      // Link FifoLot ↔ SupplierOrderItem
-      await link.create({
-        fifoLotModuleService: { fifo_lot_id: lot_id },
-        supplierOrderModuleService: { supplier_order_item_id: item.item_id },
-      })
-      linkIds.push(lot_id)
-    }
-
-    return new StepResponse(linkIds, linkIds)
-  },
-  async (linkIds: string[], { container }) => {
-    if (!linkIds?.length) return
-    const link = container.resolve(ContainerRegistrationKeys.LINK)
-    for (const lotId of linkIds) {
-      await link.dismiss({
-        fifoLotModuleService: { fifo_lot_id: lotId },
-      })
-    }
-  }
-)
-
-// Step 5: Create finance transaction for the purchase
+// Step 3: Create finance transaction for the purchase
 const createFinanceTxStep = createStep(
   "create-receive-finance-tx",
   async (
-    input: { orderId: string; totalCost: number },
+    input: { orderId: string; totalCost: number; userId?: string },
     { container }
   ) => {
-    const financeService = container.resolve(FINANCE_MODULE)
+    const financeService: any = container.resolve(FINANCE_MODULE)
     const tx = await financeService.createFinanceTransactions({
+      user_id: input.userId || null,
       type: "supplier_payment",
       direction: "expense",
       amount: input.totalCost,
@@ -185,72 +165,28 @@ const createFinanceTxStep = createStep(
   },
   async (txId: string, { container }) => {
     if (!txId) return
-    const financeService = container.resolve(FINANCE_MODULE)
+    const financeService: any = container.resolve(FINANCE_MODULE)
     await financeService.deleteFinanceTransactions(txId)
   }
 )
 
-// Step 6: Update order status to "received"
-const updateOrderStatusStep = createStep(
-  "update-order-status-received",
-  async (
-    input: { orderId: string; receivedMap: Array<{ item_id: string; received_qty: number }> },
-    { container }
-  ) => {
-    const supplierService = container.resolve(SUPPLIER_ORDER_MODULE)
-    const order = await supplierService.retrieveSupplierOrder(input.orderId)
-    const prevStatus = order.status
-
-    await supplierService.updateSupplierOrders({
-      id: input.orderId,
-      status: "received" as const,
-      received_at: new Date(),
-    })
-
-    // Update items with received qty
-    for (const { item_id, received_qty } of input.receivedMap) {
-      await supplierService.updateSupplierOrderItems({
-        id: item_id,
-        received_qty,
-        status: "received",
-      })
-    }
-
-    return new StepResponse({ orderId: input.orderId }, { orderId: input.orderId, prevStatus })
-  },
-  async (prev: { orderId: string; prevStatus: string }, { container }) => {
-    if (!prev) return
-    const supplierService = container.resolve(SUPPLIER_ORDER_MODULE)
-    await supplierService.updateSupplierOrders({
-      id: prev.orderId,
-      status: prev.prevStatus as any,
-      received_at: null,
-    })
-  }
-)
-
-// Workflow
 export const receiveOrderWorkflow = createWorkflow(
   "receive-order",
   (input: ReceiveOrderInput) => {
-    const { order, items } = validateOrderStep(input)
-
-    const costResult = calculateCostsStep({
-      order,
-      items,
-      receivedMap: input.items,
-    })
-
-    const createdLots = createFifoLotsStep({ items: costResult.items })
-    createLinksStep(createdLots)
-
-    createFinanceTxStep({ orderId: input.supplier_order_id, totalCost: costResult.totalCost })
+    const { order, totalCost, prevItems } = updateReceivedStep(input)
 
     updateOrderStatusStep({
       orderId: input.supplier_order_id,
-      receivedMap: input.items,
+      receivedItems: input.items,
+      items: prevItems,
     })
 
-    return new WorkflowResponse({ success: true, lots: createdLots })
+    createFinanceTxStep({
+      orderId: input.supplier_order_id,
+      totalCost,
+      userId: order.user_id,
+    })
+
+    return new WorkflowResponse({ success: true, total_cost: totalCost })
   }
 )

@@ -93,7 +93,6 @@ const CatalogDetailPage = () => {
       <Tabs defaultValue="overview">
         <Tabs.List>
           <Tabs.Trigger value="overview">Обзор</Tabs.Trigger>
-          <Tabs.Trigger value="fifo">FIFO Лоты</Tabs.Trigger>
           <Tabs.Trigger value="orders">Закупки</Tabs.Trigger>
           <Tabs.Trigger value="ozon">Ozon</Tabs.Trigger>
           <Tabs.Trigger value="sales">Продажи</Tabs.Trigger>
@@ -128,44 +127,6 @@ const CatalogDetailPage = () => {
               <Text>{product.description}</Text>
             </Container>
           )}
-        </Tabs.Content>
-
-        <Tabs.Content value="fifo">
-          <Container className="mt-4">
-            <Heading level="h2" className="mb-4">FIFO Лоты</Heading>
-            {!variant?.fifo_lots?.length ? (
-              <Text className="text-ui-fg-subtle">Нет лотов FIFO для этого товара.</Text>
-            ) : (
-              <Table>
-                <Table.Header>
-                  <Table.Row>
-                    <Table.HeaderCell>Дата получения</Table.HeaderCell>
-                    <Table.HeaderCell className="text-right">Начальное кол-во</Table.HeaderCell>
-                    <Table.HeaderCell className="text-right">Остаток</Table.HeaderCell>
-                    <Table.HeaderCell className="text-right">Себестоимость/ед</Table.HeaderCell>
-                  </Table.Row>
-                </Table.Header>
-                <Table.Body>
-                  {variant.fifo_lots.map((lot: any) => (
-                    <Table.Row key={lot.id}>
-                      <Table.Cell>
-                        {new Date(lot.received_at).toLocaleDateString("ru-RU")}
-                      </Table.Cell>
-                      <Table.Cell className="text-right">{lot.initial_qty}</Table.Cell>
-                      <Table.Cell className="text-right">
-                        <Badge color={lot.remaining_qty > 0 ? "green" : "grey"}>
-                          {lot.remaining_qty}
-                        </Badge>
-                      </Table.Cell>
-                      <Table.Cell className="text-right">
-                        {Number(lot.cost_per_unit).toLocaleString("ru-RU")} ₽
-                      </Table.Cell>
-                    </Table.Row>
-                  ))}
-                </Table.Body>
-              </Table>
-            )}
-          </Container>
         </Tabs.Content>
 
         <Tabs.Content value="orders">
@@ -270,10 +231,9 @@ const CatalogDetailPage = () => {
                 <Table.Header>
                   <Table.Row>
                     <Table.HeaderCell>Дата</Table.HeaderCell>
-                    <Table.HeaderCell>Posting</Table.HeaderCell>
+                    <Table.HeaderCell>Заказ</Table.HeaderCell>
                     <Table.HeaderCell className="text-right">Кол-во</Table.HeaderCell>
-                    <Table.HeaderCell className="text-right">Цена</Table.HeaderCell>
-                    <Table.HeaderCell className="text-right">Комиссия</Table.HeaderCell>
+                    <Table.HeaderCell className="text-right">Выручка</Table.HeaderCell>
                     <Table.HeaderCell className="text-right">COGS</Table.HeaderCell>
                     <Table.HeaderCell>Статус</Table.HeaderCell>
                   </Table.Row>
@@ -284,20 +244,17 @@ const CatalogDetailPage = () => {
                       <Table.Cell>
                         {new Date(sale.sold_at).toLocaleDateString("ru-RU")}
                       </Table.Cell>
-                      <Table.Cell className="font-mono text-xs">{sale.posting_number}</Table.Cell>
+                      <Table.Cell className="font-mono text-xs">{sale.channel_order_id}</Table.Cell>
                       <Table.Cell className="text-right">{sale.quantity}</Table.Cell>
                       <Table.Cell className="text-right">
-                        {Number(sale.sale_price).toLocaleString("ru-RU")} ₽
+                        {Number(sale.revenue).toLocaleString("ru-RU")} ₽
                       </Table.Cell>
                       <Table.Cell className="text-right">
-                        {Number(sale.commission).toLocaleString("ru-RU")} ₽
-                      </Table.Cell>
-                      <Table.Cell className="text-right">
-                        {sale.cogs ? `${Number(sale.cogs).toLocaleString("ru-RU")} ₽` : "—"}
+                        {sale.total_cogs ? `${Number(sale.total_cogs).toLocaleString("ru-RU")} ₽` : "—"}
                       </Table.Cell>
                       <Table.Cell>
-                        <Badge color={sale.status === "delivered" ? "green" : "grey"}>
-                          {sale.status}
+                        <Badge color={sale.status === "delivered" ? "green" : sale.status === "active" ? "blue" : "grey"}>
+                          {sale.status === "active" ? "В работе" : sale.status === "delivered" ? "Доставлен" : "Возврат"}
                         </Badge>
                       </Table.Cell>
                     </Table.Row>

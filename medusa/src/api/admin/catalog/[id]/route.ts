@@ -1,15 +1,16 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { MASTER_CARD_MODULE } from "../../../../modules/master-card"
-import { FIFO_LOT_MODULE } from "../../../../modules/fifo-lot"
 import { SUPPLIER_ORDER_MODULE } from "../../../../modules/supplier-order"
+import { SALE_MODULE } from "../../../../modules/sale"
+import { calculateAvgCost, getAvailableStock } from "../../../../utils/cost-stock"
 
-// GET /admin/catalog/:id — master card detail with FIFO and supplier data
+// GET /admin/catalog/:id — master card detail with stock and supplier data
 // Ozon data (ozon, ozon_stock, recent_sales) is added by plugin middleware
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const { id } = req.params
   const cardService = req.scope.resolve(MASTER_CARD_MODULE)
-  const fifoService = req.scope.resolve(FIFO_LOT_MODULE)
   const supplierService = req.scope.resolve(SUPPLIER_ORDER_MODULE)
+  const saleService = req.scope.resolve(SALE_MODULE)
 
   const userId = (req as any).auth_context?.actor_id
 
@@ -26,18 +27,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return
   }
 
-  // FIFO lots
-  let lots: any[] = []
+  // Stock data
   let warehouseStock = 0
   let avgCost = 0
   try {
-    lots = await fifoService.listFifoLots(
-      { master_card_id: id, remaining_qty: { $gt: 0 } },
-      { order: { received_at: "ASC" } }
-    )
-    warehouseStock = lots.reduce((s, l) => s + l.remaining_qty, 0)
-    avgCost = await fifoService.getWeightedAverageCost(id)
-  } catch { /* no lots */ }
+    warehouseStock = await getAvailableStock(supplierService, saleService, id)
+    avgCost = await calculateAvgCost(supplierService, id)
+  } catch { /* no data */ }
 
   // Supplier order items
   let supplierItems: any[] = []
@@ -52,14 +48,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       ...card,
       warehouse_stock: warehouseStock,
       avg_cost: avgCost,
-      fifo_lots: lots.map((l) => ({
-        id: l.id,
-        initial_qty: l.initial_qty,
-        remaining_qty: l.remaining_qty,
-        cost_per_unit: l.cost_per_unit,
-        received_at: l.received_at,
-        supplier_order_item_id: l.supplier_order_item_id,
-      })),
       supplier_orders: supplierItems.map((item) => ({
         id: item.id,
         supplier_order_id: item.supplier_order_id,

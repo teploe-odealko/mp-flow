@@ -18,15 +18,6 @@ const AnalyticsPage = () => {
   const [dateTo, setDateTo] = useState(defaultTo)
   const [channel, setChannel] = useState("")
 
-  // Fetch channels for filter
-  const { data: salesData } = useQuery<any>({
-    queryKey: ["sales-channels"],
-    queryFn: async () => {
-      const res = await fetch(`/admin/sales?limit=0`, { credentials: "include" })
-      return res.json()
-    },
-  })
-
   return (
     <Container>
       <div className="flex items-center justify-between mb-6">
@@ -38,11 +29,9 @@ const AnalyticsPage = () => {
             </Select.Trigger>
             <Select.Content>
               <Select.Item value="__all__">Все каналы</Select.Item>
-              {(salesData?.channels || []).map((ch: any) => (
-                <Select.Item key={ch.code} value={ch.code}>
-                  {ch.name}
-                </Select.Item>
-              ))}
+              <Select.Item value="ozon">Ozon</Select.Item>
+              <Select.Item value="wb">WB</Select.Item>
+              <Select.Item value="manual">Ручная</Select.Item>
             </Select.Content>
           </Select>
           <div>

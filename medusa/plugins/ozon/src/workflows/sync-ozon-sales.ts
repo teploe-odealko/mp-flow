@@ -6,9 +6,26 @@ import {
 } from "@medusajs/framework/workflows-sdk"
 import { OZON_MODULE } from "../modules/ozon-integration"
 
-// Core module keys — resolved from DI container, no direct imports
+// Core module keys — resolved from DI container
 const SALE_MODULE = "saleModuleService"
-const FIFO_LOT_MODULE = "fifoLotModuleService"
+const SUPPLIER_ORDER_MODULE = "supplierOrderModuleService"
+
+// Inlined from src/utils/cost-stock.ts (plugin can't import from core src)
+async function calculateAvgCost(supplierOrderService: any, masterCardId: string): Promise<number> {
+  const items = await supplierOrderService.listSupplierOrderItems({
+    master_card_id: masterCardId,
+  })
+  let totalValue = 0
+  let totalQty = 0
+  for (const item of items) {
+    const qty = Number(item.received_qty || 0)
+    if (qty > 0) {
+      totalValue += qty * Number(item.unit_cost || 0)
+      totalQty += qty
+    }
+  }
+  return totalQty > 0 ? totalValue / totalQty : 0
+}
 
 type SyncOzonSalesInput = {
   account_id: string
@@ -40,31 +57,22 @@ const fetchPostingsStep = createStep(
   }
 )
 
-// Step 2: Create core Sales + OzonSale records from postings
-const createCoreSalesStep = createStep(
-  "create-core-sales-from-ozon",
+// Step 2: Create flat Sale records from postings (1 row per product per posting)
+const createSalesStep = createStep(
+  "create-flat-sales-from-ozon",
   async (input: { account: any; postings: any[] }, { container }) => {
     const ozonService: any = container.resolve(OZON_MODULE)
     const saleService: any = container.resolve(SALE_MODULE)
+    const supplierService: any = container.resolve(SUPPLIER_ORDER_MODULE)
 
     let created = 0
+    let updated = 0
     let skipped = 0
 
     for (const posting of input.postings) {
       const postingNumber = posting.posting_number
       if (!postingNumber) continue
 
-      // Check if core Sale already exists for this posting
-      const existingSales = await saleService.listSales({
-        channel: "ozon",
-        channel_order_id: postingNumber,
-      })
-      if (existingSales.length > 0) {
-        skipped++
-        continue
-      }
-
-      // Parse products from posting
       const postingProducts = posting.products || []
       if (postingProducts.length === 0) {
         skipped++
@@ -78,229 +86,141 @@ const createCoreSalesStep = createStep(
         finByProductId[fp.product_id] = fp
       }
 
-      try {
-        // Create core Sale
-        const sale = await saleService.createSales({
-          user_id: input.account.user_id || null,
+      for (const product of postingProducts) {
+        const offerId = product.offer_id || ""
+        const sku = product.sku || 0
+        const salePrice = product.price ? Number(product.price) : 0
+        const qty = product.quantity || 1
+        const revenue = salePrice * qty
+
+        // Check if Sale already exists for this posting+product
+        const existingSales = await saleService.listSales({
           channel: "ozon",
           channel_order_id: postingNumber,
-          status: mapOzonStatus(posting.status),
-          sold_at: new Date(posting.in_process_at || posting.created_at || new Date()),
-          total_revenue: 0,
-          total_fees: 0,
-          total_cogs: 0,
-          total_profit: 0,
-          currency_code: "RUB",
-          metadata: { ozon_account_id: input.account.id },
+          channel_sku: offerId,
         })
 
-        let totalRevenue = 0
-        let totalFees = 0
-
-        // Create SaleItems
-        for (let i = 0; i < postingProducts.length; i++) {
-          const product = postingProducts[i]
-          const offerId = product.offer_id || ""
-          const sku = product.sku || 0
-          const salePrice = product.price ? Number(product.price) : 0
-          const qty = product.quantity || 1
-          const itemTotal = salePrice * qty
-
-          // Find linked master card
+        // Find linked master card
+        let masterCardId: string | null = null
+        try {
           const links = await ozonService.listOzonProductLinks({
             ozon_account_id: input.account.id,
             offer_id: offerId,
           })
+          if (links.length > 0) masterCardId = links[0].master_card_id
+        } catch { /* skip */ }
 
-          await saleService.createSaleItems({
-            sale_id: sale.id,
-            master_card_id: links[0]?.master_card_id || `ozon_${offerId}`,
+        // Calculate avg cost if master card is known
+        let unitCogs = 0
+        if (masterCardId) {
+          try {
+            unitCogs = await calculateAvgCost(supplierService, masterCardId)
+          } catch { /* skip */ }
+        }
+
+        // Build fee_details from financial data
+        const feeDetails: Array<{ key: string; label: string; amount: number }> = []
+        const finData = finByProductId[sku] || finByProductId[product.product_id] || {}
+
+        const commissionAmount = Math.abs(Number(finData.commission_amount || 0))
+        if (commissionAmount > 0) {
+          feeDetails.push({ key: "commission", label: "Комиссия", amount: commissionAmount * qty })
+        }
+
+        // Parse item services
+        const itemServices = finData.item_services || {}
+        const serviceMapping: Record<string, { key: string; label: string }> = {
+          marketplace_service_item_fulfillment: { key: "fulfillment", label: "Обработка отправления" },
+          marketplace_service_item_direct_flow_trans: { key: "logistics", label: "Магистральная логистика" },
+          marketplace_service_item_return_flow_trans: { key: "reverse_logistics", label: "Обратная логистика" },
+          marketplace_service_item_deliv_to_customer: { key: "last_mile", label: "Последняя миля" },
+          marketplace_service_item_return_not_deliv_to_customer: { key: "return_processing", label: "Обработка возврата" },
+          marketplace_service_item_return_part_goods_customer: { key: "return_processing_partial", label: "Обработка частичного возврата" },
+          marketplace_service_item_dropoff_sc: { key: "direct_flow_sc", label: "Приёмка SC" },
+          marketplace_service_item_dropoff_ff: { key: "direct_flow_ff", label: "Приёмка FF" },
+          marketplace_service_item_dropoff_pvz: { key: "direct_flow_pvz", label: "Приёмка ПВЗ" },
+        }
+
+        for (const [serviceKey, feeInfo] of Object.entries(serviceMapping)) {
+          const amount = Math.abs(Number(itemServices[serviceKey] || 0))
+          if (amount > 0) {
+            feeDetails.push({ key: feeInfo.key, label: feeInfo.label, amount: amount * qty })
+          }
+        }
+
+        const status = mapOzonStatus(posting.status)
+
+        if (existingSales.length > 0) {
+          // Update existing sale (e.g., status change, fee enrichment)
+          const existing = existingSales[0]
+          const updateData: Record<string, any> = { id: existing.id }
+
+          // Update status if changed
+          if (existing.status !== status) updateData.status = status
+
+          // Update master_card_id if newly linked
+          if (!existing.master_card_id && masterCardId) {
+            updateData.master_card_id = masterCardId
+            updateData.unit_cogs = unitCogs
+            updateData.total_cogs = qty * unitCogs
+          }
+
+          // Update fee_details if we have new data and existing is empty
+          const existingFees = existing.fee_details || []
+          if (feeDetails.length > 0 && existingFees.length === 0) {
+            updateData.fee_details = feeDetails
+          }
+
+          if (Object.keys(updateData).length > 1) {
+            await saleService.updateSales(updateData)
+            updated++
+          } else {
+            skipped++
+          }
+          continue
+        }
+
+        // Create new Sale
+        try {
+          await saleService.createSales({
+            user_id: input.account.user_id || null,
+            master_card_id: masterCardId,
+            channel: "ozon",
+            channel_order_id: postingNumber,
             channel_sku: offerId,
             product_name: product.name || offerId,
             quantity: qty,
             price_per_unit: salePrice,
-            total: itemTotal,
-            cogs: 0,
-            fifo_allocated: false,
+            revenue,
+            unit_cogs: unitCogs,
+            total_cogs: qty * unitCogs,
+            fee_details: feeDetails,
+            status,
+            sold_at: new Date(posting.in_process_at || posting.created_at || new Date()),
+            currency_code: "RUB",
+            metadata: {
+              ozon_account_id: input.account.id,
+              ozon_sku: sku,
+              posting_status: posting.status,
+            },
           })
-
-          totalRevenue += itemTotal
-
-          // Extract fees from financial data
-          const finData =
-            finByProductId[sku] || finByProductId[product.product_id] || {}
-          const commissionAmount = Math.abs(Number(finData.commission_amount || 0))
-
-          if (commissionAmount > 0) {
-            await saleService.createSaleFees({
-              sale_id: sale.id,
-              fee_type: "commission",
-              amount: commissionAmount * qty,
-            })
-            totalFees += commissionAmount * qty
-          }
-
-          // Parse item services for detailed fees
-          const itemServices = finData.item_services || {}
-          const serviceMapping: Record<string, string> = {
-            marketplace_service_item_fulfillment: "fulfillment",
-            marketplace_service_item_direct_flow_trans: "logistics",
-            marketplace_service_item_return_flow_trans: "reverse_logistics",
-            marketplace_service_item_deliv_to_customer: "last_mile",
-            marketplace_service_item_return_not_deliv_to_customer: "return_processing",
-            marketplace_service_item_return_part_goods_customer: "return_processing",
-            marketplace_service_item_dropoff_sc: "direct_flow",
-            marketplace_service_item_dropoff_ff: "direct_flow",
-            marketplace_service_item_dropoff_pvz: "direct_flow",
-          }
-
-          for (const [serviceKey, feeType] of Object.entries(serviceMapping)) {
-            const amount = Math.abs(Number(itemServices[serviceKey] || 0))
-            if (amount > 0) {
-              await saleService.createSaleFees({
-                sale_id: sale.id,
-                fee_type: feeType,
-                amount: amount * qty,
-                description: serviceKey,
-              })
-              totalFees += amount * qty
-            }
+          created++
+        } catch (e: any) {
+          if (e.message?.includes("duplicate") || e.message?.includes("unique")) {
+            skipped++
+          } else {
+            console.error(`Failed to create sale for ${postingNumber}/${offerId}:`, e.message)
+            skipped++
           }
         }
-
-        // Update sale totals
-        const totalProfit = totalRevenue - totalFees
-        await saleService.updateSales({
-          id: sale.id,
-          total_revenue: totalRevenue,
-          total_fees: totalFees,
-          total_profit: totalProfit,
-        })
-
-        created++
-      } catch (e: any) {
-        if (e.message?.includes("duplicate") || e.message?.includes("unique")) {
-          skipped++
-        } else {
-          console.error(`Failed to create sale for posting ${postingNumber}:`, e.message)
-          skipped++
-        }
-      }
-
-      // Also keep OzonSale records for raw data / audit
-      for (const product of postingProducts) {
-        const offerId = product.offer_id || ""
-        const sku = product.sku || 0
-        const ozonPostingKey = `${postingNumber}_${offerId}`
-
-        const existingOzon = await ozonService.listOzonSales({
-          posting_number: ozonPostingKey,
-        })
-        if (existingOzon.length > 0) continue
-
-        const links = await ozonService.listOzonProductLinks({
-          ozon_account_id: input.account.id,
-          offer_id: offerId,
-        })
-        const finData =
-          finByProductId[sku] || finByProductId[product.product_id] || {}
-
-        await ozonService.createOzonSales({
-          ozon_account_id: input.account.id,
-          posting_number: ozonPostingKey,
-          master_card_id: links[0]?.master_card_id || null,
-          sku: typeof sku === "number" ? sku : 0,
-          offer_id: offerId,
-          product_name: product.name || null,
-          quantity: product.quantity || 1,
-          sale_price: product.price ? Number(product.price) : 0,
-          commission: Math.abs(Number(finData.commission_amount || 0)),
-          last_mile: 0,
-          pipeline: 0,
-          fulfillment: 0,
-          direct_flow_trans: 0,
-          reverse_flow_trans: 0,
-          return_processing: 0,
-          acquiring: 0,
-          marketplace_service: 0,
-          other_fees: 0,
-          sold_at: posting.created_at ? new Date(posting.created_at) : new Date(),
-          status: posting.status || "delivered",
-          raw_data: posting,
-        })
       }
     }
 
-    return new StepResponse({ created, skipped })
+    return new StepResponse({ created, updated, skipped })
   }
 )
 
-// Step 3: Allocate FIFO for unallocated core Sale items
-const allocateFifoStep = createStep(
-  "allocate-fifo-for-ozon-sales",
-  async (_input: { trigger: boolean }, { container }) => {
-    const saleService: any = container.resolve(SALE_MODULE)
-    const fifoService: any = container.resolve(FIFO_LOT_MODULE)
-
-    // Find sale items from ozon channel that are not FIFO allocated
-    const unallocatedItems = await saleService.listSaleItems({
-      fifo_allocated: false,
-    })
-
-    let allocated = 0
-    let failed = 0
-
-    for (const item of unallocatedItems) {
-      if (!item.master_card_id || item.master_card_id.startsWith("ozon_")) continue
-
-      try {
-        const { allocations, unallocated } = await fifoService.allocateFifoPartial(
-          item.master_card_id,
-          item.quantity,
-          item.sale_id,
-          item.id
-        )
-
-        if (allocations.length > 0) {
-          const totalCogs = allocations.reduce(
-            (s: number, a: any) => s + Number(a.total_cost || 0),
-            0
-          )
-
-          await saleService.updateSaleItems({
-            id: item.id,
-            cogs: totalCogs,
-            fifo_allocated: unallocated <= 0.001,
-          })
-
-          // Update sale totals
-          const sale = await saleService.retrieveSale(item.sale_id)
-          const allItems = await saleService.listSaleItems({ sale_id: item.sale_id })
-          const totalCOGS = allItems.reduce(
-            (s: number, i: any) => s + Number(i.cogs || 0),
-            0
-          )
-          const totalProfit =
-            Number(sale.total_revenue) - Number(sale.total_fees) - totalCOGS
-
-          await saleService.updateSales({
-            id: item.sale_id,
-            total_cogs: totalCOGS,
-            total_profit: totalProfit,
-          })
-
-          allocated++
-        }
-      } catch {
-        failed++
-      }
-    }
-
-    return new StepResponse({ allocated, failed })
-  }
-)
-
-// Step 4: Update account sync timestamp
+// Step 3: Update account sync timestamp
 const updateSyncStep = createStep(
   "update-account-after-sales-sync",
   async (input: { accountId: string }, { container }) => {
@@ -314,14 +234,14 @@ const updateSyncStep = createStep(
   }
 )
 
-function mapOzonStatus(ozonStatus: string): string {
-  const map: Record<string, string> = {
-    awaiting_packaging: "processing",
-    awaiting_deliver: "processing",
-    delivering: "processing",
+function mapOzonStatus(ozonStatus: string): "active" | "delivered" | "returned" {
+  const map: Record<string, "active" | "delivered" | "returned"> = {
+    awaiting_packaging: "active",
+    awaiting_deliver: "active",
+    delivering: "active",
     delivered: "delivered",
-    cancelled: "cancelled",
-    not_accepted: "cancelled",
+    cancelled: "returned",
+    not_accepted: "returned",
   }
   return map[ozonStatus] || "delivered"
 }
@@ -330,9 +250,8 @@ export const syncOzonSalesWorkflow = createWorkflow(
   "sync-ozon-sales",
   (input: SyncOzonSalesInput) => {
     const { account, postings } = fetchPostingsStep(input)
-    const salesResult = createCoreSalesStep({ account, postings })
-    const fifoResult = allocateFifoStep({ trigger: true })
+    const salesResult = createSalesStep({ account, postings })
     updateSyncStep({ accountId: input.account_id })
-    return new WorkflowResponse({ sales: salesResult, fifo: fifoResult })
+    return new WorkflowResponse({ sales: salesResult })
   }
 )

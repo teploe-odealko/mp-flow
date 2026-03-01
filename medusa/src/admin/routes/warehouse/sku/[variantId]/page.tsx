@@ -19,9 +19,10 @@ const SkuDetailPage = () => {
   })
 
   if (isLoading) return <Container><Text>Загрузка...</Text></Container>
-  if (!data?.variant) return <Container><Text>Вариант не найден</Text></Container>
+  if (!data?.card) return <Container><Text>Товар не найден</Text></Container>
 
-  const v = data.variant
+  const card = data.card
+  const summary = data.summary || {}
 
   return (
     <Container>
@@ -29,73 +30,41 @@ const SkuDetailPage = () => {
         <Button variant="transparent" size="small" onClick={() => navigate("/warehouse")}>
           &larr; Склад
         </Button>
-        <Heading level="h1" className="mt-2">{v.product_title}</Heading>
+        <Heading level="h1" className="mt-2">{card.title}</Heading>
         <Text className="text-ui-fg-subtle">
-          {v.sku ? `SKU: ${v.sku}` : v.variant_title} | Variant: {variantId}
+          {card.sku ? `SKU: ${card.sku}` : card.id}
         </Text>
       </div>
 
       <div className="grid grid-cols-4 gap-4 mb-6">
         <Container>
           <Text size="small" className="text-ui-fg-subtle">На складе</Text>
-          <Heading level="h2">{v.warehouse_stock}</Heading>
+          <Heading level="h2">{summary.warehouse_stock ?? 0}</Heading>
         </Container>
         <Container>
           <Text size="small" className="text-ui-fg-subtle">Средняя себестоимость</Text>
-          <Heading level="h2">{v.avg_cost > 0 ? fmtR(v.avg_cost) : "—"}</Heading>
+          <Heading level="h2">{summary.avg_cost > 0 ? fmtR(summary.avg_cost) : "—"}</Heading>
+        </Container>
+        <Container>
+          <Text size="small" className="text-ui-fg-subtle">Стоимость остатка</Text>
+          <Heading level="h2">{summary.stock_value > 0 ? fmtR(summary.stock_value) : "—"}</Heading>
         </Container>
         <Container>
           <Text size="small" className="text-ui-fg-subtle">Ozon FBO</Text>
-          <Heading level="h2">{v.ozon_stock?.fbo_present ?? "—"}</Heading>
-        </Container>
-        <Container>
-          <Text size="small" className="text-ui-fg-subtle">Цена Ozon</Text>
-          <Heading level="h2">{v.ozon?.ozon_price ? fmtR(Number(v.ozon.ozon_price)) : "—"}</Heading>
+          <Heading level="h2">{data.ozon_stock?.fbo_present ?? "—"}</Heading>
         </Container>
       </div>
-
-      {/* FIFO Lots */}
-      <Container className="mb-6">
-        <Heading level="h2" className="mb-4">FIFO Лоты</Heading>
-        {!v.fifo_lots?.length ? (
-          <Text className="text-ui-fg-subtle">Нет лотов.</Text>
-        ) : (
-          <Table>
-            <Table.Header>
-              <Table.Row>
-                <Table.HeaderCell>Дата получения</Table.HeaderCell>
-                <Table.HeaderCell className="text-right">Начальное</Table.HeaderCell>
-                <Table.HeaderCell className="text-right">Остаток</Table.HeaderCell>
-                <Table.HeaderCell className="text-right">Себестоимость/ед</Table.HeaderCell>
-                <Table.HeaderCell>Заметки</Table.HeaderCell>
-              </Table.Row>
-            </Table.Header>
-            <Table.Body>
-              {v.fifo_lots.map((lot: any) => (
-                <Table.Row key={lot.id}>
-                  <Table.Cell>{new Date(lot.received_at).toLocaleDateString("ru-RU")}</Table.Cell>
-                  <Table.Cell className="text-right">{lot.initial_qty}</Table.Cell>
-                  <Table.Cell className="text-right">
-                    <Badge color={lot.remaining_qty > 0 ? "green" : "grey"}>{lot.remaining_qty}</Badge>
-                  </Table.Cell>
-                  <Table.Cell className="text-right">{fmtR(Number(lot.cost_per_unit))}</Table.Cell>
-                  <Table.Cell className="text-ui-fg-subtle text-xs">{lot.notes || "—"}</Table.Cell>
-                </Table.Row>
-              ))}
-            </Table.Body>
-          </Table>
-        )}
-      </Container>
 
       {/* Supplier Orders */}
       <Container className="mb-6">
         <Heading level="h2" className="mb-4">Заказы поставщикам</Heading>
-        {!v.supplier_orders?.length ? (
+        {!data.supplier_orders?.length ? (
           <Text className="text-ui-fg-subtle">Нет заказов.</Text>
         ) : (
           <Table>
             <Table.Header>
               <Table.Row>
+                <Table.HeaderCell>Поставщик</Table.HeaderCell>
                 <Table.HeaderCell>Заказ</Table.HeaderCell>
                 <Table.HeaderCell className="text-right">Заказано</Table.HeaderCell>
                 <Table.HeaderCell className="text-right">Получено</Table.HeaderCell>
@@ -104,18 +73,21 @@ const SkuDetailPage = () => {
               </Table.Row>
             </Table.Header>
             <Table.Body>
-              {v.supplier_orders.map((item: any) => (
+              {data.supplier_orders.map((item: any) => (
                 <Table.Row
                   key={item.id}
                   className="cursor-pointer"
-                  onClick={() => navigate(`/suppliers/${item.order_id}`)}
+                  onClick={() => navigate(`/suppliers/${item.supplier_order_id || item.order_id}`)}
                 >
-                  <Table.Cell className="font-mono text-xs">{item.order_id}</Table.Cell>
+                  <Table.Cell>{item.supplier_name || "—"}</Table.Cell>
+                  <Table.Cell className="font-mono text-xs">{item.order_number || "—"}</Table.Cell>
                   <Table.Cell className="text-right">{item.ordered_qty}</Table.Cell>
                   <Table.Cell className="text-right">{item.received_qty}</Table.Cell>
                   <Table.Cell className="text-right">{fmtR(Number(item.unit_cost))}</Table.Cell>
                   <Table.Cell>
-                    <Badge color={item.status === "received" ? "green" : "grey"}>{item.status}</Badge>
+                    <Badge color={item.order_status === "received" ? "green" : "grey"}>
+                      {item.order_status || item.status}
+                    </Badge>
                   </Table.Cell>
                 </Table.Row>
               ))}
@@ -124,35 +96,41 @@ const SkuDetailPage = () => {
         )}
       </Container>
 
-      {/* Recent Sales */}
+      {/* Sales */}
       <Container className="mb-6">
-        <Heading level="h2" className="mb-4">Последние продажи</Heading>
-        {!v.recent_sales?.length ? (
+        <Heading level="h2" className="mb-4">Продажи</Heading>
+        {!data.sales?.length ? (
           <Text className="text-ui-fg-subtle">Нет продаж.</Text>
         ) : (
           <Table>
             <Table.Header>
               <Table.Row>
                 <Table.HeaderCell>Дата</Table.HeaderCell>
-                <Table.HeaderCell>Posting</Table.HeaderCell>
+                <Table.HeaderCell>Канал</Table.HeaderCell>
+                <Table.HeaderCell>Заказ</Table.HeaderCell>
                 <Table.HeaderCell className="text-right">Кол-во</Table.HeaderCell>
-                <Table.HeaderCell className="text-right">Цена</Table.HeaderCell>
-                <Table.HeaderCell className="text-right">Комиссия</Table.HeaderCell>
+                <Table.HeaderCell className="text-right">Выручка</Table.HeaderCell>
                 <Table.HeaderCell className="text-right">COGS</Table.HeaderCell>
                 <Table.HeaderCell>Статус</Table.HeaderCell>
               </Table.Row>
             </Table.Header>
             <Table.Body>
-              {v.recent_sales.map((sale: any) => (
+              {data.sales.map((sale: any) => (
                 <Table.Row key={sale.id}>
                   <Table.Cell>{new Date(sale.sold_at).toLocaleDateString("ru-RU")}</Table.Cell>
-                  <Table.Cell className="font-mono text-xs">{sale.posting_number}</Table.Cell>
-                  <Table.Cell className="text-right">{sale.quantity}</Table.Cell>
-                  <Table.Cell className="text-right">{fmtR(Number(sale.sale_price))}</Table.Cell>
-                  <Table.Cell className="text-right">{fmtR(Number(sale.commission))}</Table.Cell>
-                  <Table.Cell className="text-right">{sale.cogs ? fmtR(Number(sale.cogs)) : "—"}</Table.Cell>
                   <Table.Cell>
-                    <Badge color={sale.status === "delivered" ? "green" : "grey"}>{sale.status}</Badge>
+                    <Badge color="blue">{sale.channel}</Badge>
+                  </Table.Cell>
+                  <Table.Cell className="font-mono text-xs">{sale.channel_order_id || "—"}</Table.Cell>
+                  <Table.Cell className="text-right">{sale.quantity}</Table.Cell>
+                  <Table.Cell className="text-right">{fmtR(Number(sale.revenue))}</Table.Cell>
+                  <Table.Cell className="text-right">
+                    {sale.total_cogs ? fmtR(Number(sale.total_cogs)) : "—"}
+                  </Table.Cell>
+                  <Table.Cell>
+                    <Badge color={sale.status === "delivered" ? "green" : sale.status === "active" ? "blue" : "grey"}>
+                      {sale.status === "active" ? "В работе" : sale.status === "delivered" ? "Доставлен" : "Возврат"}
+                    </Badge>
                   </Table.Cell>
                 </Table.Row>
               ))}
@@ -162,22 +140,22 @@ const SkuDetailPage = () => {
       </Container>
 
       {/* Ozon Link */}
-      {v.ozon && (
+      {data.ozon && (
         <Container className="mb-6">
           <Heading level="h2" className="mb-4">Ozon</Heading>
           <div className="grid grid-cols-3 gap-4">
             <div>
               <Text size="small" className="text-ui-fg-subtle">Offer ID</Text>
-              <Text className="font-mono">{v.ozon.offer_id}</Text>
+              <Text className="font-mono">{data.ozon.offer_id}</Text>
             </div>
             <div>
               <Text size="small" className="text-ui-fg-subtle">Product ID</Text>
-              <Text>{v.ozon.ozon_product_id}</Text>
+              <Text>{data.ozon.ozon_product_id}</Text>
             </div>
             <div>
               <Text size="small" className="text-ui-fg-subtle">Статус</Text>
-              <Badge color={v.ozon.ozon_status === "active" ? "green" : "grey"}>
-                {v.ozon.ozon_status}
+              <Badge color={data.ozon.ozon_status === "active" ? "green" : "grey"}>
+                {data.ozon.ozon_status}
               </Badge>
             </div>
           </div>
@@ -187,7 +165,7 @@ const SkuDetailPage = () => {
       {/* Finance Movements */}
       <Container>
         <Heading level="h2" className="mb-4">Финансовые движения</Heading>
-        {!v.finance_movements?.length ? (
+        {!data.finance_movements?.length ? (
           <Text className="text-ui-fg-subtle">Нет движений.</Text>
         ) : (
           <Table>
@@ -200,7 +178,7 @@ const SkuDetailPage = () => {
               </Table.Row>
             </Table.Header>
             <Table.Body>
-              {v.finance_movements.map((tx: any) => (
+              {data.finance_movements.map((tx: any) => (
                 <Table.Row key={tx.id}>
                   <Table.Cell>{new Date(tx.transaction_date).toLocaleDateString("ru-RU")}</Table.Cell>
                   <Table.Cell>

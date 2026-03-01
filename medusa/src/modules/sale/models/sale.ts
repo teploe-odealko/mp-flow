@@ -1,37 +1,44 @@
 import { model } from "@medusajs/framework/utils"
-import SaleItem from "./sale-item"
-import SaleFee from "./sale-fee"
 
 const Sale = model.define("sale", {
   id: model.id().primaryKey(),
   user_id: model.text().nullable(),
-  // Sales channel
-  channel: model.text(), // "ozon", "wildberries", "manual", etc.
+  // Product reference (linked via Module Links to MasterCard)
+  master_card_id: model.text().nullable(),
+  // Channel identification
+  channel: model.text(), // "ozon" | "wb" | "manual" | "write-off"
   channel_order_id: model.text().nullable(), // posting_number (Ozon), order_id (WB)
+  channel_sku: model.text().nullable(), // offer_id (Ozon), barcode (WB)
+  product_name: model.text().nullable(), // Cached display name
+  // Sale data
+  quantity: model.number().default(1),
+  price_per_unit: model.bigNumber().default(0),
+  revenue: model.bigNumber().default(0), // qty × price
+  // Cost of goods sold (avg cost)
+  unit_cogs: model.bigNumber().default(0), // avg cost at time of sale
+  total_cogs: model.bigNumber().default(0), // qty × unit_cogs
+  // Fees: [ { key, label, amount }, ... ]
+  fee_details: model.json().nullable(),
   // Status
-  status: model.enum(["pending", "processing", "delivered", "returned", "cancelled"]).default("pending"),
+  status: model.enum(["active", "delivered", "returned"]).default("active"),
   // Date
   sold_at: model.dateTime(),
-  // Totals (calculated from items + fees)
-  total_revenue: model.bigNumber().default(0),
-  total_fees: model.bigNumber().default(0),
-  total_cogs: model.bigNumber().default(0),
-  total_profit: model.bigNumber().default(0),
   currency_code: model.text().default("RUB"),
   // Notes
   notes: model.text().nullable(),
   metadata: model.json().nullable(),
-  // Relations
-  items: model.hasMany(() => SaleItem, { mappedBy: "sale" }),
-  fees: model.hasMany(() => SaleFee, { mappedBy: "sale" }),
 })
-  .cascades({ delete: ["items", "fees"] })
   .indexes([
+    { on: ["master_card_id"] },
     { on: ["channel"] },
     { on: ["status"] },
     { on: ["sold_at"] },
     { on: ["user_id"] },
-    { on: ["channel", "channel_order_id"], unique: true, where: "channel_order_id IS NOT NULL" },
+    {
+      on: ["channel", "channel_order_id", "channel_sku"],
+      unique: true,
+      where: "channel_order_id IS NOT NULL AND channel_sku IS NOT NULL",
+    },
   ])
 
 export default Sale

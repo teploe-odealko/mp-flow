@@ -1,6 +1,5 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { SUPPLIER_ORDER_MODULE } from "../../../../modules/supplier-order"
-import { FIFO_LOT_MODULE } from "../../../../modules/fifo-lot"
 import { receiveOrderWorkflow } from "../../../../workflows/receive-order"
 import { unreceiveOrderWorkflow } from "../../../../workflows/unreceive-order"
 
@@ -8,7 +7,6 @@ import { unreceiveOrderWorkflow } from "../../../../workflows/unreceive-order"
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const { id } = req.params
   const supplierService = req.scope.resolve(SUPPLIER_ORDER_MODULE)
-  const fifoService = req.scope.resolve(FIFO_LOT_MODULE)
   const userId = (req as any).auth_context?.actor_id
 
   const order = await supplierService.retrieveSupplierOrder(id)
@@ -25,42 +23,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     order_id: id,
   })
 
-  // Enrich items with FIFO lots if received
-  const enrichedItems = await Promise.all(
-    items.map(async (item: any) => {
-      let lots: any[] = []
-      if (order.status === "received") {
-        try {
-          lots = await fifoService.listFifoLots({
-            supplier_order_item_id: item.id,
-          })
-        } catch {
-          // no lots
-        }
-      }
-      return {
-        ...item,
-        fifo_lots: lots.map((l) => ({
-          id: l.id,
-          initial_qty: l.initial_qty,
-          remaining_qty: l.remaining_qty,
-          cost_per_unit: l.cost_per_unit,
-          received_at: l.received_at,
-        })),
-      }
-    })
-  )
-
   // Calculate totals
-  const totalAmount = enrichedItems.reduce(
-    (sum, item) => sum + Number(item.total_cost || 0),
+  const totalAmount = items.reduce(
+    (sum: number, item: any) => sum + Number(item.total_cost || 0),
     0
   )
 
   res.json({
     supplier_order: {
       ...order,
-      items: enrichedItems,
+      items,
       calculated_total: totalAmount,
     },
   })

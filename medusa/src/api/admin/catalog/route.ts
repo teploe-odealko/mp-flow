@@ -1,12 +1,15 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { MASTER_CARD_MODULE } from "../../../modules/master-card"
-import { FIFO_LOT_MODULE } from "../../../modules/fifo-lot"
+import { SUPPLIER_ORDER_MODULE } from "../../../modules/supplier-order"
+import { SALE_MODULE } from "../../../modules/sale"
+import { calculateAvgCost, getAvailableStock } from "../../../utils/cost-stock"
 
 // GET /admin/catalog — list master cards with stock data
 // Ozon data is added by plugin middleware (if installed)
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const cardService = req.scope.resolve(MASTER_CARD_MODULE)
-  const fifoService = req.scope.resolve(FIFO_LOT_MODULE)
+  const supplierService = req.scope.resolve(SUPPLIER_ORDER_MODULE)
+  const saleService = req.scope.resolve(SALE_MODULE)
 
   const {
     q,
@@ -39,16 +42,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     take: Number(limit),
   })
 
-  // Enrich with FIFO stock data
+  // Enrich with avg_cost and stock
   const enriched = await Promise.all(
     cards.map(async (card: any) => {
       let warehouseStock = 0
       let avgCost = 0
 
       try {
-        warehouseStock = await fifoService.getAvailableQuantity(card.id)
-        avgCost = await fifoService.getWeightedAverageCost(card.id)
-      } catch { /* no lots */ }
+        warehouseStock = await getAvailableStock(supplierService, saleService, card.id)
+        avgCost = await calculateAvgCost(supplierService, card.id)
+      } catch { /* no data */ }
 
       return {
         ...card,

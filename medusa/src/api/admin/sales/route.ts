@@ -27,33 +27,22 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   }
 
   const sales = await saleService.listSales(filters, {
-    relations: ["items", "fees"],
     order: { sold_at: "DESC" },
     skip: Number(offset),
     take: Number(limit),
   })
 
-  // Get available channels for filtering
-  const channels = await saleService.listSalesChannels(
-    userId ? { user_id: userId } : {}
-  )
-
   // Summary stats
   let totalRevenue = 0
-  let totalProfit = 0
   for (const sale of sales) {
-    totalRevenue += Number((sale as any).total_revenue)
-    totalProfit += Number((sale as any).total_profit)
+    totalRevenue += Number((sale as any).revenue || 0)
   }
 
   res.json({
     sales,
-    channels,
     stats: {
       count: sales.length,
       total_revenue: totalRevenue,
-      total_profit: totalProfit,
-      margin: totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0,
     },
   })
 }
@@ -69,12 +58,16 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         user_id: userId,
         channel: body.channel || "manual",
         channel_order_id: body.channel_order_id,
+        channel_sku: body.channel_sku,
+        master_card_id: body.master_card_id,
+        product_name: body.product_name,
+        quantity: body.quantity || 1,
+        price_per_unit: body.price_per_unit || 0,
+        fee_details: body.fee_details || [],
         sold_at: body.sold_at || new Date().toISOString(),
         status: body.status,
         notes: body.notes,
         metadata: body.metadata,
-        items: body.items || [],
-        fees: body.fees || [],
       },
     })
 

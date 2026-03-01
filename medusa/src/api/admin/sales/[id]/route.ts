@@ -2,7 +2,7 @@ import type { MedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { SALE_MODULE } from "../../../../modules/sale"
 import { returnSaleWorkflow } from "../../../../workflows/return-sale"
 
-// GET /admin/sales/:id — sale detail with items and fees
+// GET /admin/sales/:id — sale detail
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const { id } = req.params
   const userId = (req as any).auth_context?.actor_id
@@ -14,10 +14,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return
   }
 
-  const items = await saleService.listSaleItems({ sale_id: id })
-  const fees = await saleService.listSaleFees({ sale_id: id })
-
-  res.json({ sale: { ...sale, items, fees } })
+  res.json({ sale })
 }
 
 // PUT /admin/sales/:id — update sale (status, notes)
@@ -58,7 +55,7 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
   res.json({ id, deleted: true })
 }
 
-// POST /admin/sales/:id/return — return a sale
+// POST /admin/sales/:id — return a sale
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const { id } = req.params
 

@@ -261,40 +261,6 @@ const SupplierDetailPage = () => {
         </Container>
       )}
 
-      {/* FIFO lots (only for received) */}
-      {order.status === "received" && items.some((i: any) => i.fifo_lots?.length) && (
-        <Container>
-          <Heading level="h2" className="mb-4">FIFO Лоты</Heading>
-          <Table>
-            <Table.Header>
-              <Table.Row>
-                <Table.HeaderCell>Товар</Table.HeaderCell>
-                <Table.HeaderCell>Дата получения</Table.HeaderCell>
-                <Table.HeaderCell className="text-right">Начальное</Table.HeaderCell>
-                <Table.HeaderCell className="text-right">Остаток</Table.HeaderCell>
-                <Table.HeaderCell className="text-right">Себестоимость/ед</Table.HeaderCell>
-              </Table.Row>
-            </Table.Header>
-            <Table.Body>
-              {items.flatMap((item: any) =>
-                (item.fifo_lots || []).map((lot: any) => (
-                  <Table.Row key={lot.id}>
-                    <Table.Cell>{item.variant_title || item.variant_id}</Table.Cell>
-                    <Table.Cell>{new Date(lot.received_at).toLocaleDateString("ru-RU")}</Table.Cell>
-                    <Table.Cell className="text-right">{lot.initial_qty}</Table.Cell>
-                    <Table.Cell className="text-right">
-                      <Badge color={lot.remaining_qty > 0 ? "green" : "grey"}>
-                        {lot.remaining_qty}
-                      </Badge>
-                    </Table.Cell>
-                    <Table.Cell className="text-right">{fmtR(Number(lot.cost_per_unit))}</Table.Cell>
-                  </Table.Row>
-                ))
-              )}
-            </Table.Body>
-          </Table>
-        </Container>
-      )}
     </Container>
   )
 }

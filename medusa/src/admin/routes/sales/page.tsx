@@ -14,55 +14,56 @@ const defaultFrom = () => {
 const defaultTo = () => new Date().toISOString().slice(0, 10)
 
 const statusColors: Record<string, string> = {
-  pending: "orange",
-  processing: "blue",
+  active: "blue",
   delivered: "green",
   returned: "red",
-  cancelled: "grey",
 }
 
 const statusLabels: Record<string, string> = {
-  pending: "Ожидание",
-  processing: "Обработка",
+  active: "В работе",
   delivered: "Доставлено",
   returned: "Возврат",
-  cancelled: "Отменено",
 }
 
 const channelBadge = (channel: string) => {
   const map: Record<string, { color: string; label: string }> = {
     ozon: { color: "blue", label: "Ozon" },
-    wildberries: { color: "purple", label: "WB" },
+    wb: { color: "purple", label: "WB" },
     manual: { color: "grey", label: "Ручная" },
+    "write-off": { color: "orange", label: "Списание" },
   }
   return map[channel] || { color: "grey", label: channel }
 }
+
+type FeeDetail = { key: string; label: string; amount: number }
 
 type SaleRow = {
   id: string
   channel: string
   channel_order_id: string | null
+  channel_sku: string | null
+  product_name: string | null
+  quantity: number
+  price_per_unit: number
+  revenue: number
+  unit_cogs: number
+  total_cogs: number
+  fee_details: FeeDetail[]
   status: string
   sold_at: string
-  total_revenue: number
-  total_fees: number
-  total_cogs: number
-  total_profit: number
   notes: string | null
-  items: Array<{ product_name: string; quantity: number; price_per_unit: number }>
-  fees: Array<{ fee_type: string; amount: number }>
 }
 
 type SalesResponse = {
   sales: SaleRow[]
-  channels: Array<{ code: string; name: string }>
   stats: {
     count: number
     total_revenue: number
-    total_profit: number
-    margin: number
   }
 }
+
+const sumFees = (fees: FeeDetail[]) =>
+  (fees || []).reduce((s, f) => s + Number(f.amount || 0), 0)
 
 const SalesPage = () => {
   const [dateFrom, setDateFrom] = useState(defaultFrom)
@@ -83,6 +84,13 @@ const SalesPage = () => {
       return res.json()
     },
   })
+
+  // Compute totals from flat sales
+  const totalFees = (data?.sales || []).reduce((s, sale) => s + sumFees(sale.fee_details), 0)
+  const totalCogs = (data?.sales || []).reduce((s, sale) => s + Number(sale.total_cogs || 0), 0)
+  const totalRevenue = data?.stats?.total_revenue ?? 0
+  const totalProfit = totalRevenue - totalCogs - totalFees
+  const margin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0
 
   return (
     <Container>
@@ -108,11 +116,10 @@ const SalesPage = () => {
           </Select.Trigger>
           <Select.Content>
             <Select.Item value="__all__">Все каналы</Select.Item>
-            {(data?.channels || []).map((ch) => (
-              <Select.Item key={ch.code} value={ch.code}>
-                {ch.name}
-              </Select.Item>
-            ))}
+            <Select.Item value="ozon">Ozon</Select.Item>
+            <Select.Item value="wb">WB</Select.Item>
+            <Select.Item value="manual">Ручная</Select.Item>
+            <Select.Item value="write-off">Списание</Select.Item>
           </Select.Content>
         </Select>
 
@@ -122,11 +129,9 @@ const SalesPage = () => {
           </Select.Trigger>
           <Select.Content>
             <Select.Item value="__all__">Все статусы</Select.Item>
+            <Select.Item value="active">В работе</Select.Item>
             <Select.Item value="delivered">Доставлено</Select.Item>
-            <Select.Item value="pending">Ожидание</Select.Item>
-            <Select.Item value="processing">Обработка</Select.Item>
             <Select.Item value="returned">Возврат</Select.Item>
-            <Select.Item value="cancelled">Отменено</Select.Item>
           </Select.Content>
         </Select>
       </div>
@@ -139,14 +144,14 @@ const SalesPage = () => {
         </Container>
         <Container>
           <Text size="small" className="text-ui-fg-subtle">Выручка</Text>
-          <Heading level="h2">{data?.stats ? fmtR(data.stats.total_revenue) : "..."}</Heading>
+          <Heading level="h2">{data?.stats ? fmtR(totalRevenue) : "..."}</Heading>
         </Container>
         <Container>
           <Text size="small" className="text-ui-fg-subtle">Прибыль</Text>
           <Heading level="h2">
             {data?.stats ? (
-              <span className={data.stats.total_profit >= 0 ? "text-ui-fg-interactive" : "text-ui-fg-error"}>
-                {fmtR(data.stats.total_profit)}
+              <span className={totalProfit >= 0 ? "text-ui-fg-interactive" : "text-ui-fg-error"}>
+                {fmtR(totalProfit)}
               </span>
             ) : "..."}
           </Heading>
@@ -155,8 +160,8 @@ const SalesPage = () => {
           <Text size="small" className="text-ui-fg-subtle">Маржа</Text>
           <Heading level="h2">
             {data?.stats ? (
-              <Badge color={data.stats.margin >= 20 ? "green" : data.stats.margin >= 0 ? "orange" : "red"}>
-                {data.stats.margin.toFixed(1)}%
+              <Badge color={margin >= 20 ? "green" : margin >= 0 ? "orange" : "red"}>
+                {margin.toFixed(1)}%
               </Badge>
             ) : "..."}
           </Heading>
@@ -176,7 +181,8 @@ const SalesPage = () => {
                 <Table.HeaderCell>Дата</Table.HeaderCell>
                 <Table.HeaderCell>Канал</Table.HeaderCell>
                 <Table.HeaderCell>№ заказа</Table.HeaderCell>
-                <Table.HeaderCell>Товары</Table.HeaderCell>
+                <Table.HeaderCell>Товар</Table.HeaderCell>
+                <Table.HeaderCell className="text-right">Кол-во</Table.HeaderCell>
                 <Table.HeaderCell className="text-right">Выручка</Table.HeaderCell>
                 <Table.HeaderCell className="text-right">Комиссии</Table.HeaderCell>
                 <Table.HeaderCell className="text-right">COGS</Table.HeaderCell>
@@ -189,9 +195,8 @@ const SalesPage = () => {
                 const ch = channelBadge(sale.channel)
                 const st = statusColors[sale.status] || "grey"
                 const isExpanded = expandedId === sale.id
-                const itemsSummary = (sale.items || [])
-                  .map((i) => `${i.product_name || "Товар"} x${i.quantity}`)
-                  .join(", ")
+                const fees = sumFees(sale.fee_details)
+                const profit = Number(sale.revenue || 0) - Number(sale.total_cogs || 0) - fees
 
                 return (
                   <>
@@ -211,15 +216,16 @@ const SalesPage = () => {
                       </Table.Cell>
                       <Table.Cell>
                         <Text size="small" className="max-w-[200px] truncate">
-                          {itemsSummary || "—"}
+                          {sale.product_name || "—"}
                         </Text>
                       </Table.Cell>
-                      <Table.Cell className="text-right">{fmtR(sale.total_revenue)}</Table.Cell>
-                      <Table.Cell className="text-right">{fmtR(sale.total_fees)}</Table.Cell>
-                      <Table.Cell className="text-right">{fmtR(sale.total_cogs)}</Table.Cell>
+                      <Table.Cell className="text-right">{sale.quantity}</Table.Cell>
+                      <Table.Cell className="text-right">{fmtR(Number(sale.revenue || 0))}</Table.Cell>
+                      <Table.Cell className="text-right">{fmtR(fees)}</Table.Cell>
+                      <Table.Cell className="text-right">{fmtR(Number(sale.total_cogs || 0))}</Table.Cell>
                       <Table.Cell className="text-right">
-                        <span className={sale.total_profit >= 0 ? "text-ui-fg-interactive" : "text-ui-fg-error"}>
-                          {fmtR(sale.total_profit)}
+                        <span className={profit >= 0 ? "text-ui-fg-interactive" : "text-ui-fg-error"}>
+                          {fmtR(profit)}
                         </span>
                       </Table.Cell>
                       <Table.Cell>
@@ -229,33 +235,37 @@ const SalesPage = () => {
 
                     {isExpanded && (
                       <Table.Row key={`${sale.id}-detail`}>
-                        <td colSpan={9}>
+                        <td colSpan={10}>
                           <div className="p-4 bg-ui-bg-subtle rounded-lg">
                             <div className="grid grid-cols-2 gap-6">
                               <div>
-                                <Text className="font-semibold mb-2">Позиции</Text>
-                                {(sale.items || []).map((item, idx) => (
-                                  <div key={idx} className="flex justify-between py-1">
-                                    <Text size="small">
-                                      {item.product_name || "Товар"} x{item.quantity}
-                                    </Text>
-                                    <Text size="small" className="font-mono">
-                                      {fmtR(item.quantity * item.price_per_unit)}
-                                    </Text>
+                                <Text className="font-semibold mb-2">Детали</Text>
+                                <div className="flex justify-between py-1">
+                                  <Text size="small">Цена за ед.</Text>
+                                  <Text size="small" className="font-mono">{fmtR(Number(sale.price_per_unit || 0))}</Text>
+                                </div>
+                                <div className="flex justify-between py-1">
+                                  <Text size="small">Себестоимость/ед</Text>
+                                  <Text size="small" className="font-mono">{fmtR(Number(sale.unit_cogs || 0))}</Text>
+                                </div>
+                                {sale.channel_sku && (
+                                  <div className="flex justify-between py-1">
+                                    <Text size="small">SKU канала</Text>
+                                    <Text size="small" className="font-mono">{sale.channel_sku}</Text>
                                   </div>
-                                ))}
+                                )}
                               </div>
                               <div>
                                 <Text className="font-semibold mb-2">Комиссии</Text>
-                                {(sale.fees || []).map((fee, idx) => (
+                                {(sale.fee_details || []).map((fee, idx) => (
                                   <div key={idx} className="flex justify-between py-1">
-                                    <Text size="small">{fee.fee_type}</Text>
+                                    <Text size="small">{fee.label || fee.key}</Text>
                                     <Text size="small" className="font-mono">
-                                      {fmtR(fee.amount)}
+                                      {fmtR(Number(fee.amount || 0))}
                                     </Text>
                                   </div>
                                 ))}
-                                {(!sale.fees || sale.fees.length === 0) && (
+                                {(!sale.fee_details || sale.fee_details.length === 0) && (
                                   <Text size="small" className="text-ui-fg-subtle">Нет комиссий</Text>
                                 )}
                               </div>

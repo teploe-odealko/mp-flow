@@ -1,14 +1,15 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { MASTER_CARD_MODULE } from "../../../modules/master-card"
-import { FIFO_LOT_MODULE } from "../../../modules/fifo-lot"
 import { SUPPLIER_ORDER_MODULE } from "../../../modules/supplier-order"
+import { SALE_MODULE } from "../../../modules/sale"
+import { calculateAvgCost, getAvailableStock } from "../../../utils/cost-stock"
 
 // GET /admin/inventory — supply chain matrix
 // Ozon data (ozon_fbo, sold_qty) is added by plugin middleware
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const cardService = req.scope.resolve(MASTER_CARD_MODULE)
-  const fifoService = req.scope.resolve(FIFO_LOT_MODULE)
   const supplierService = req.scope.resolve(SUPPLIER_ORDER_MODULE)
+  const saleService = req.scope.resolve(SALE_MODULE)
 
   const { q, limit = "50", offset = "0" } = req.query as {
     q?: string
@@ -52,8 +53,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     let warehouseStock = 0
     let avgCost = 0
     try {
-      warehouseStock = await fifoService.getAvailableQuantity(card.id)
-      avgCost = await fifoService.getWeightedAverageCost(card.id)
+      warehouseStock = await getAvailableStock(supplierService, saleService, card.id)
+      avgCost = await calculateAvgCost(supplierService, card.id)
     } catch { /* skip */ }
 
     totalWarehouseStock += warehouseStock
@@ -85,7 +86,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
 // POST /admin/inventory — actions (initial-balance, write-off)
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const userId = (req as any).auth_context?.actor_id
   const { action } = req.body as { action: string }
 
   if (action === "initial-balance") {
@@ -106,8 +106,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       return
     }
 
+    const userId = (req as any).auth_context?.actor_id
     const { result } = await initialBalanceWorkflow(req.scope).run({
-      input: { items },
+      input: { items, user_id: userId },
     })
     res.json({ success: true, result })
   } else if (action === "write-off") {
@@ -124,8 +125,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       return
     }
 
+    const userId = (req as any).auth_context?.actor_id
     const { result } = await writeOffWorkflow(req.scope).run({
-      input: { master_card_id, quantity, reason },
+      input: { master_card_id, quantity, reason, user_id: userId },
     })
     res.json({ success: true, result })
   } else {

@@ -179,7 +179,6 @@ module.exports = defineConfig({
   modules: [
     // ── Custom modules ──────────────────────────────────────────
     { resolve: "./src/modules/master-card" },
-    { resolve: "./src/modules/fifo-lot" },
     { resolve: "./src/modules/supplier-order" },
     { resolve: "./src/modules/finance" },
     { resolve: "./src/modules/sale" },

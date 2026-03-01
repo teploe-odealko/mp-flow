@@ -5,7 +5,7 @@ import { defineLink } from "@medusajs/framework/utils"
 export default defineLink(
   MasterCardModule.linkable.masterCard,
   {
-    linkable: SaleModule.linkable.saleItem,
+    linkable: SaleModule.linkable.sale,
     isList: true,
   }
 )

@@ -10,6 +10,7 @@ const SupplierOrder = model.define("supplier_order", {
   supplier_contact: model.text().nullable(),
   // Order details
   order_number: model.text().nullable(),
+  type: model.enum(["purchase", "manual"]).default("purchase"),
   status: model.enum(["draft", "ordered", "shipped", "received", "cancelled"]).default("draft"),
   // Financial
   total_amount: model.bigNumber().default(0),
