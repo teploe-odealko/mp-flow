@@ -218,11 +218,11 @@ export default function OzonPage() {
             <div className="grid grid-cols-4 gap-3 mb-4">
               <div className="bg-bg-surface border border-bg-border rounded-lg p-3">
                 <div className="text-text-secondary text-xs mb-1">Товаров</div>
-                <div className="text-lg font-semibold">{stats.total_products ?? 0}</div>
+                <div className="text-lg font-semibold">{stats.total_linked_products ?? 0}</div>
               </div>
               <div className="bg-bg-surface border border-bg-border rounded-lg p-3">
                 <div className="text-text-secondary text-xs mb-1">Остатков</div>
-                <div className="text-lg font-semibold">{stats.total_stocks ?? 0}</div>
+                <div className="text-lg font-semibold">{stats.total_stock_snapshots ?? 0}</div>
               </div>
               <div className="bg-bg-surface border border-bg-border rounded-lg p-3">
                 <div className="text-text-secondary text-xs mb-1">Продаж</div>
