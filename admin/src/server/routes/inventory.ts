@@ -10,7 +10,7 @@ import { writeOff } from "../workflows/write-off.js"
 
 const inventory = new Hono<{ Variables: Record<string, any> }>()
 
-// GET /api/inventory
+// GET /api/inventory — equation-of-states with breakdown
 inventory.get("/", async (c) => {
   const cardService: MasterCardService = c.get("container").resolve("masterCardService")
   const supplierService: SupplierOrderService = c.get("container").resolve("supplierOrderService")
@@ -26,33 +26,80 @@ inventory.get("/", async (c) => {
     order: { title: "ASC" }, skip: Number(offset), take: Number(limit),
   })
 
-  let totalWarehouseStock = 0, totalStockValue = 0
+  let totalStock = 0, totalStockValue = 0, noCostCount = 0
   const rows: any[] = []
 
   for (const card of cards) {
-    let orderedQty = 0, receivedQty = 0
+    let receivedQty = 0
     try {
       const items = await supplierService.listSupplierOrderItems({ master_card_id: card.id })
-      orderedQty = items.reduce((s: number, i: any) => s + (i.ordered_qty || 0), 0)
       receivedQty = items.reduce((s: number, i: any) => s + (i.received_qty || 0), 0)
     } catch {}
 
-    let warehouseStock = 0, avgCost = 0
+    // Group sales by (status, channel)
+    let soldTotal = 0, deliveringTotal = 0, writtenOffQty = 0
+    const soldByChannel: Record<string, number> = {}
+    const deliveringByChannel: Record<string, number> = {}
     try {
-      warehouseStock = await getAvailableStock(supplierService, saleService, card.id)
-      avgCost = await calculateAvgCost(supplierService, card.id)
+      const sales = await saleService.listSales({ master_card_id: card.id })
+      for (const sale of sales) {
+        const qty = Number(sale.quantity || 0)
+        const ch = sale.channel || "unknown"
+        if (ch === "write-off") {
+          writtenOffQty += qty
+        } else if (sale.status === "delivered") {
+          soldTotal += qty
+          soldByChannel[ch] = (soldByChannel[ch] || 0) + qty
+        } else if (sale.status === "active") {
+          deliveringTotal += qty
+          deliveringByChannel[ch] = (deliveringByChannel[ch] || 0) + qty
+        }
+      }
     } catch {}
 
-    totalWarehouseStock += warehouseStock; totalStockValue += warehouseStock * avgCost
+    const stockTotal = receivedQty - soldTotal - deliveringTotal - writtenOffQty
+    const avgCost = await calculateAvgCost(supplierService, card.id)
+    const hasCost = avgCost > 0
+    if (!hasCost) noCostCount++
+
+    totalStock += stockTotal
+    totalStockValue += stockTotal * avgCost
+
+    // Build breakdowns
+    const soldBreakdown = Object.entries(soldByChannel).map(([ch, qty]) => ({
+      source: ch, label: ch.charAt(0).toUpperCase() + ch.slice(1), qty,
+    }))
+    const deliveringBreakdown = Object.entries(deliveringByChannel).map(([ch, qty]) => ({
+      source: ch, label: ch.charAt(0).toUpperCase() + ch.slice(1), qty,
+    }))
+
     rows.push({
-      card_id: card.id, product_title: card.title, sku: card.sku,
-      ordered_qty: orderedQty, received_qty: receivedQty,
-      warehouse_stock: warehouseStock, avg_cost: avgCost,
+      card_id: card.id,
+      product_title: card.title,
+      sku: card.sku,
+      thumbnail: (card as any).thumbnail || undefined,
+      received_qty: receivedQty,
+      stock_total: stockTotal,
+      stock_breakdown: [{ source: "local", label: "Наш склад", qty: stockTotal }],
+      sold_total: soldTotal,
+      sold_breakdown: soldBreakdown,
+      delivering_total: deliveringTotal,
+      delivering_breakdown: deliveringBreakdown,
+      written_off_qty: writtenOffQty,
+      discrepancy: 0,
+      avg_cost: avgCost,
+      has_cost: hasCost,
     })
   }
 
   return c.json({
-    rows, totals: { products: rows.length, warehouse_stock: totalWarehouseStock, stock_value: Math.round(totalStockValue * 100) / 100 },
+    rows,
+    totals: {
+      products: rows.length,
+      stock_total: totalStock,
+      stock_value: Math.round(totalStockValue * 100) / 100,
+      no_cost_count: noCostCount,
+    },
     count: rows.length, offset: Number(offset), limit: Number(limit),
   })
 })
@@ -109,6 +156,15 @@ inventory.post("/", async (c) => {
   if (body.action === "initial-balance") {
     if (!body.items?.length) return c.json({ error: "Items required" }, 400)
     const result = await initialBalance(container, { items: body.items, user_id: userId })
+    return c.json({ success: true, result })
+  } else if (body.action === "assign-cost") {
+    if (!body.master_card_id || !body.quantity || !body.unit_cost_rub) {
+      return c.json({ error: "master_card_id, quantity and unit_cost_rub required" }, 400)
+    }
+    const result = await initialBalance(container, {
+      items: [{ master_card_id: body.master_card_id, quantity: body.quantity, unit_cost_rub: body.unit_cost_rub }],
+      user_id: userId,
+    })
     return c.json({ success: true, result })
   } else if (body.action === "write-off") {
     if (!body.master_card_id || !body.quantity) return c.json({ error: "master_card_id and quantity required" }, 400)
