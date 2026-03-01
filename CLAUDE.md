@@ -14,8 +14,7 @@ Open source — основные функции можно развернуть 
 |-------|------------|
 | mp-flow.ru | Лэндинг |
 | admin.mp-flow.ru | Личный кабинет (Admin UI) |
-| proxy.mp-flow.ru | Бэкенд API (тот же admin сервис) |
-| docs.mp-flow.ru | Документация для пользователей и AI-агентов (Fumadocs) |
+| docs.mp-flow.ru | Документация для пользователей и разработчиков (Fumadocs) |
 | auth.mp-flow.ru | Logto OIDC авторизация |
 
 ## Деплой
@@ -27,7 +26,7 @@ DNS: reg.ru, wildcard A-запись → 155.212.164.184
 
 ## GitHub
 
-https://github.com/teploe-odealko/mp-flow (main branch)
+https://github.com/teploe-odealko/mp-flow (main branch, autoDeploy: true)
 
 ## Структура
 
@@ -54,8 +53,15 @@ ee/              Лицензия EE
 | Frontend | React 19 + Vite 6 + Tailwind CSS 3 |
 | Data fetching | TanStack Query 5 |
 | Router | React Router 7 |
-| Build server | tsup |
+| Build server | tsc (tsconfig.server.json) |
 | Cron | node-cron |
+
+## Ключевые паттерны (admin/)
+
+- **Request-scoped EM**: каждый HTTP-запрос получает `orm.em.fork()`, сервисы создаются per-request через awilix scope
+- **Auto-schema для плагинов**: plugin entities собираются перед ORM init, `SchemaGenerator.updateSchema({ safe: true })` автоматически создаёт таблицы/колонки
+- **Плагины**: `definePlugin()` в `plugins/*/plugin.ts` — entities, services, routes, middleware, jobs, adminNav
+- **COOKIE_SECRET обязателен**: сервер не стартует без этой env-переменной
 
 ## Креды и доступы
 

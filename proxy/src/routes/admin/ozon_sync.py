@@ -27,27 +27,22 @@ from proxy.src.routes.admin_models import (
     OzonSupplySyncRequest,
     OzonSyncRequest,
     OzonWarehouseStockSyncRequest,
-    SaleCreateRequest,
-    SaleItemCreate,
 )
 from proxy.src.routes.admin_ozon import (
     create_sync_run,
     finish_sync_run,
-    is_ozon_endpoint_not_found,
     load_ozon_products,
     ozon_post,
     resolve_ozon_creds,
     safe_parse_datetime,
 )
-from proxy.src.routes.admin_sales import create_sale
 from proxy.src.services.admin.fifo_service import reverse_fifo_allocations
-from proxy.src.services.admin.sales_service import create_sale as create_sale_v2
+from proxy.src.services.admin.sales_service import create_sale
 from proxy.src.services.admin_logic import (
     merge_card_source,
     parse_ozon_cluster_stock,
     parse_ozon_finance_transactions,
     parse_ozon_operation_economics,
-    parse_ozon_postings,
     to_money,
     to_qty,
 )
@@ -678,234 +673,6 @@ async def sync_ozon_finance(
         "error_count": errors + len(api_errors),
         "pages_fetched": pages_fetched,
         "api_errors": api_errors,
-        "error_samples": error_samples,
-    }
-
-
-# ---------------------------------------------------------------------------
-# POST /ozon/sync/sales
-# ---------------------------------------------------------------------------
-
-
-@router.post("/ozon/sync/sales", response_model=SyncResultResponse)
-async def sync_ozon_sales(
-    payload: OzonSyncRequest,
-    request: Request,
-    admin: dict[str, Any] = Depends(get_current_user),
-) -> dict[str, Any]:
-    """Синхронизация продаж из Ozon (FBO postings) с FIFO-списанием."""
-    today = datetime.now(tz=timezone.utc).date()
-    from_date = payload.date_from or (today - timedelta(days=90))
-    to_date = payload.date_to or today
-    if to_date < from_date:
-        raise HTTPException(status_code=400, detail="date_to must be >= date_from")
-
-    pool = get_db_pool(request)
-    async with pool.acquire() as conn:
-        client_id, api_key = await resolve_ozon_creds(
-            conn,
-            admin_user_id=str(admin["id"]),
-            client_id=payload.client_id,
-            api_key=payload.api_key,
-        )
-        run_id = await create_sync_run(conn, sync_type="ozon_sales", user_id=admin["id"])
-
-    parsed_postings: list[dict[str, Any]] = []
-    errors: list[str] = []
-    posting_path_variants: tuple[tuple[str, ...], ...] = (
-        ("/v3/posting/fbo/list", "/v2/posting/fbo/list"),
-        ("/v3/posting/fbs/list", "/v2/posting/fbs/list"),
-    )
-    async with httpx.AsyncClient(timeout=90.0) as ozon_client:
-        for path_variants in posting_path_variants:
-            variant_loaded = False
-            for path in path_variants:
-                path_unsupported = False
-                path_errors: list[str] = []
-                path_postings: list[dict[str, Any]] = []
-
-                for chunk_from, chunk_to in _date_windows(from_date, to_date, window_days=7):
-                    offset = 0
-                    for _ in range(payload.max_pages):
-                        postings_request = {
-                            "dir": "ASC",
-                            "filter": {
-                                "since": f"{chunk_from.isoformat()}T00:00:00Z",
-                                "to": f"{chunk_to.isoformat()}T23:59:59Z",
-                            },
-                            "limit": payload.limit,
-                            "offset": offset,
-                            "with": {"analytics_data": True, "financial_data": True},
-                        }
-                        try:
-                            response_data = await ozon_post(
-                                path,
-                                postings_request,
-                                client_id=client_id,
-                                api_key=api_key,
-                                http_client=ozon_client,
-                            )
-                        except HTTPException as exc:
-                            detail = str(exc.detail)
-                            if is_ozon_endpoint_not_found(detail):
-                                path_unsupported = True
-                                break
-                            path_errors.append(
-                                f"{path} ({chunk_from}..{chunk_to}, offset {offset}): {detail}",
-                            )
-                            break
-
-                        parsed_batch = parse_ozon_postings(response_data)
-                        if not parsed_batch:
-                            break
-                        path_postings.extend(parsed_batch)
-                        if len(parsed_batch) < payload.limit:
-                            break
-                        offset += payload.limit
-                    if path_unsupported:
-                        break
-
-                if path_unsupported:
-                    continue
-
-                parsed_postings.extend(path_postings)
-                errors.extend(path_errors)
-                variant_loaded = True
-                break
-
-            if not variant_loaded:
-                continue
-
-    unique_postings: dict[str, dict[str, Any]] = {}
-    for posting in parsed_postings:
-        unique_postings[posting["external_order_id"]] = posting
-    parsed_postings = list(unique_postings.values())
-
-    created = 0
-    skipped = 0
-    failed = 0
-    unmatched_offers: set[str] = set()
-    error_samples: list[str] = []
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            offer_ids = {
-                str(item["offer_id"])
-                for posting in parsed_postings
-                for item in posting["items"]
-                if item.get("offer_id")
-            }
-            card_map: dict[str, str] = {}
-            if offer_ids:
-                card_rows = await _safe_fetch(
-                    conn,
-                    """
-                    SELECT id, ozon_offer_id, sku
-                    FROM master_cards
-                    WHERE user_id = $2
-                      AND (ozon_offer_id = ANY($1::text[])
-                        OR sku = ANY($1::text[]))
-                    """,
-                    list(offer_ids),
-                    str(admin["id"]),
-                )
-                for row in card_rows:
-                    if row["ozon_offer_id"]:
-                        card_map[str(row["ozon_offer_id"])] = str(row["id"])
-                    if row["sku"]:
-                        card_map[str(row["sku"])] = str(row["id"])
-
-            for posting in parsed_postings:
-                sale_items: list[dict[str, Any]] = []
-                for posting_item in posting["items"]:
-                    offer_id = str(posting_item["offer_id"])
-                    card_id = card_map.get(offer_id)
-                    if not card_id:
-                        unmatched_offers.add(offer_id)
-                        continue
-                    sale_items.append(
-                        {
-                            "master_card_id": card_id,
-                            "quantity": posting_item["quantity"],
-                            "unit_sale_price_rub": posting_item["unit_sale_price_rub"],
-                            "fee_rub": posting_item["fee_rub"],
-                            "extra_cost_rub": Decimal("0.00"),
-                            "source_offer_id": offer_id,
-                        }
-                    )
-                if not sale_items:
-                    skipped += 1
-                    continue
-
-                sale_payload = SaleCreateRequest(
-                    marketplace="ozon",
-                    external_order_id=posting["external_order_id"],
-                    sold_at=safe_parse_datetime(posting["sold_at"]),
-                    status="completed",
-                    items=[SaleItemCreate(**item) for item in sale_items],
-                    raw_payload=posting["payload"],
-                )
-                try:
-                    async with conn.transaction():
-                        result = await create_sale(
-                            conn=conn,
-                            actor_user_id=admin["id"],
-                            payload=sale_payload,
-                            source="ozon_sync",
-                            record_finance_transactions=False,
-                        )
-                    if result.get("existing"):
-                        skipped += 1
-                    else:
-                        created += 1
-                except HTTPException as exc:
-                    failed += 1
-                    if len(error_samples) < 20:
-                        detail = str(exc.detail)
-                        if len(detail) > 500:
-                            detail = detail[:500] + "..."
-                        error_samples.append(f"{posting['external_order_id']}: {detail}")
-                except Exception as exc:
-                    failed += 1
-                    if len(error_samples) < 20:
-                        detail = str(exc)
-                        if len(detail) > 500:
-                            detail = detail[:500] + "..."
-                        error_samples.append(f"{posting['external_order_id']}: {detail}")
-
-            await finish_sync_run(
-                conn,
-                run_id=run_id,
-                status_text="completed_with_errors" if (failed or errors) else "completed",
-                rows_processed=len(parsed_postings),
-                created_count=created,
-                skipped_count=skipped,
-                error_count=failed + len(errors),
-                details={
-                    "errors": errors,
-                    "request": {
-                        "date_from": from_date.isoformat(),
-                        "date_to": to_date.isoformat(),
-                        "limit": payload.limit,
-                        "max_pages": payload.max_pages,
-                    },
-                    "parsed_postings": len(parsed_postings),
-                    "unmatched_offers_count": len(unmatched_offers),
-                    "unmatched_offers_sample": sorted(unmatched_offers)[:50],
-                    "error_samples": error_samples,
-                },
-            )
-
-    return {
-        "run_id": run_id,
-        "date_from": from_date.isoformat(),
-        "date_to": to_date.isoformat(),
-        "parsed_postings": len(parsed_postings),
-        "created_sales": created,
-        "skipped_sales": skipped,
-        "failed_sales": failed,
-        "api_errors": errors,
-        "unmatched_offers_count": len(unmatched_offers),
-        "unmatched_offers_sample": sorted(unmatched_offers)[:20],
         "error_samples": error_samples,
     }
 
@@ -2213,7 +1980,7 @@ async def sync_fbo_postings(
                 }
                 try:
                     resp = await ozon_post(
-                        "/v2/posting/fbo/list",
+                        "/v3/posting/fbo/list",
                         body,
                         client_id=client_id,
                         api_key=api_key,
@@ -2221,7 +1988,7 @@ async def sync_fbo_postings(
                     )
                 except HTTPException as exc:
                     api_errors.append(
-                        f"/v2/posting/fbo/list ({chunk_from}..{chunk_to}, offset {offset}): "
+                        f"/v3/posting/fbo/list ({chunk_from}..{chunk_to}, offset {offset}): "
                         f"{exc.detail}"
                     )
                     break
@@ -2388,8 +2155,8 @@ async def sync_fbo_postings(
                     else:
                         # New posting
                         if not is_cancelled:
-                            # Full FIFO sale via create_sale_v2
-                            result = await create_sale_v2(
+                            # FIFO sale
+                            result = await create_sale(
                                 conn,
                                 user_id=user_id,
                                 marketplace="ozon",

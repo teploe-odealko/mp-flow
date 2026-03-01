@@ -1,390 +1,322 @@
 ---
 title: Разработка плагинов
-description: Как создать свой плагин для MPFlow — модуль данных, API, страница в админке
+description: Как создать свой плагин для MPFlow — entities, API, middleware, cron jobs, страница в админке
 ---
 
 # Разработка плагинов
 
-Плагины MPFlow — это стандартные Medusa v2 плагины. Каждый плагин — отдельный npm-пакет с собственными моделями данных, API-роутами, страницами в админке и фоновыми задачами.
+Плагины MPFlow расширяют систему: свои таблицы в БД, API-роуты, middleware для обогащения данных, фоновые задачи и страницы в админке. Таблицы для плагинов создаются автоматически — не нужно писать миграции.
+
+## Как это работает
+
+При старте сервера:
+
+1. Собираются entities из всех плагинов
+2. ORM инициализируется со всеми entities (core + plugins)
+3. `SchemaGenerator.updateSchema({ safe: true })` создаёт недостающие таблицы и колонки
+4. Загружаются services, routes, middleware и cron jobs
+
+`safe: true` означает только аддитивные изменения — CREATE TABLE, ADD COLUMN. Без DROP.
 
 ## Структура плагина
 
 ```
-medusa/plugins/my-plugin/
-├── package.json          # Метаданные пакета
-├── tsconfig.json         # Конфигурация TypeScript
+admin/plugins/my-plugin/
+├── plugin.ts                     # Определение плагина (точка входа)
 └── src/
-    ├── index.ts          # Экспорт модуля
     ├── modules/
     │   └── my-module/
-    │       ├── index.ts      # Определение модуля
-    │       ├── service.ts    # Бизнес-логика
-    │       └── models/
-    │           └── my-model.ts   # Модель данных (ORM)
-    ├── api/
-    │   └── admin/
-    │       └── my-resource/
-    │           └── route.ts  # API-эндпоинты (GET/POST/PUT/DELETE)
-    └── admin/
-        └── routes/
-            └── my-page/
-                └── page.tsx  # Страница в админке (React)
+    │       ├── entities.ts       # MikroORM entities
+    │       └── service.ts        # Бизнес-логика
+    ├── routes/
+    │   └── my-routes.ts          # Hono API-роуты
+    ├── middleware/
+    │   └── my-enrichment.ts      # Middleware для обогащения данных
+    └── workflows/
+        └── my-sync.ts            # Логика фоновых задач
 ```
 
 ## Пошагово: создаём плагин
 
-### 1. Создать директорию и package.json
+### 1. Создать директорию
 
 ```bash
-mkdir -p medusa/plugins/my-plugin/src
-cd medusa/plugins/my-plugin
+mkdir -p admin/plugins/my-plugin/src/modules/my-module
 ```
 
-Создайте `package.json`:
+### 2. Определить entity
 
-```json
-{
-  "name": "mpflow-plugin-my-plugin",
-  "version": "0.1.0",
-  "description": "Описание вашего плагина",
-  "keywords": ["medusa-plugin"],
-  "scripts": {
-    "build": "medusa plugin:build",
-    "dev": "medusa plugin:develop"
-  },
-  "exports": {
-    "./package.json": "./package.json",
-    ".": "./.medusa/server/src/index.js",
-    "./admin": {
-      "import": "./.medusa/server/src/admin/index.mjs",
-      "require": "./.medusa/server/src/admin/index.js",
-      "default": "./.medusa/server/src/admin/index.js"
-    },
-    "./.medusa/server/src/modules/*": "./.medusa/server/src/modules/*/index.js",
-    "./modules/*": "./.medusa/server/src/modules/*/index.js",
-    "./*": "./.medusa/server/src/*.js"
-  },
-  "files": [".medusa/server"],
-  "devDependencies": {
-    "@medusajs/framework": "^2.13.0",
-    "@medusajs/admin-sdk": "^2.13.0",
-    "@medusajs/icons": "^2.0.0",
-    "@medusajs/ui": "^4.0.0",
-    "@medusajs/cli": "^2.13.0",
-    "@swc/core": "^1.5.0",
-    "@tanstack/react-query": "^5.0.0",
-    "react": "^18.0.0"
-  },
-  "peerDependencies": {
-    "@medusajs/framework": "^2.13.0",
-    "@medusajs/admin-sdk": "^2.13.0"
-  }
-}
-```
-
-### 2. Создать tsconfig.json
-
-```json
-{
-  "compilerOptions": {
-    "target": "ES2021",
-    "esModuleInterop": true,
-    "module": "Node16",
-    "moduleResolution": "Node16",
-    "emitDecoratorMetadata": true,
-    "experimentalDecorators": true,
-    "skipLibCheck": true,
-    "declaration": false,
-    "sourceMap": false,
-    "inlineSourceMap": true,
-    "outDir": "./.medusa/server",
-    "rootDir": "./",
-    "jsx": "react-jsx",
-    "resolveJsonModule": true,
-    "strictNullChecks": true
-  },
-  "ts-node": { "swc": true },
-  "include": ["**/*", ".medusa/types/*"],
-  "exclude": ["node_modules", ".medusa/server", ".medusa/admin", ".cache"]
-}
-```
-
-### 3. Модель данных
-
-Создайте `src/modules/my-module/models/my-model.ts`:
+Создайте `src/modules/my-module/entities.ts`. Используйте декораторы MikroORM:
 
 ```typescript
-import { model } from "@medusajs/utils"
+import { Entity, PrimaryKey, Property, Index } from "@mikro-orm/core"
+import { v4 } from "uuid"
 
-const MyModel = model.define("my_model", {
-  id: model.id().primaryKey(),
-  name: model.text(),
-  description: model.text().nullable(),
-  is_active: model.boolean().default(true),
-  metadata: model.json().nullable(),
-})
+@Entity({ tableName: "my_record" })
+export class MyRecord {
+  @PrimaryKey()
+  id: string = v4()
 
-export default MyModel
+  @Property()
+  name!: string
+
+  @Property({ nullable: true })
+  description?: string
+
+  @Property({ default: true })
+  is_active: boolean = true
+
+  @Property({ type: "jsonb", nullable: true })
+  metadata?: Record<string, unknown>
+
+  @Property({ defaultRaw: "now()" })
+  created_at: Date = new Date()
+
+  @Property({ defaultRaw: "now()", onUpdate: () => new Date() })
+  updated_at: Date = new Date()
+}
 ```
 
-Доступные типы полей: `text()`, `number()`, `boolean()`, `dateTime()`, `json()`, `bigNumber()`, `enum()`, `id()`. Модификаторы: `.nullable()`, `.default(value)`, `.primaryKey()`, `.unique()`.
+Таблица `my_record` будет создана автоматически при старте сервера.
 
-### 4. Сервис (бизнес-логика)
+Доступные типы: `string`, `number`, `boolean`, `Date`, `jsonb`, `text`, `numeric`, `bigint`. Модификаторы: `nullable`, `default`, `unique`, `index`.
+
+### 3. Создать сервис
 
 Создайте `src/modules/my-module/service.ts`:
 
 ```typescript
-import { MedusaService } from "@medusajs/framework/utils"
-import MyModel from "./models/my-model"
+import type { EntityManager } from "@mikro-orm/core"
+import { MyRecord } from "./entities.js"
 
-class MyModuleService extends MedusaService({
-  MyModel,
-}) {
-  // MedusaService автоматически генерирует CRUD-методы:
-  // - listMyModels(filters?)
-  // - retrieveMyModel(id)
-  // - createMyModels(data)
-  // - updateMyModels(data)
-  // - deleteMyModels(id)
+export class MyRecordService {
+  constructor(private em: EntityManager) {}
 
-  // Добавляйте свои методы:
-  async getActiveItems() {
-    return this.listMyModels({ is_active: true })
+  async list(filters: Record<string, any> = {}) {
+    return this.em.find(MyRecord, filters)
+  }
+
+  async get(id: string) {
+    return this.em.findOneOrFail(MyRecord, { id })
+  }
+
+  async create(data: Partial<MyRecord>) {
+    const record = this.em.create(MyRecord, data as any)
+    await this.em.persistAndFlush(record)
+    return record
+  }
+
+  async update(id: string, data: Partial<MyRecord>) {
+    const record = await this.em.findOneOrFail(MyRecord, { id })
+    this.em.assign(record, data)
+    await this.em.flush()
+    return record
+  }
+
+  async delete(id: string) {
+    const record = await this.em.findOneOrFail(MyRecord, { id })
+    await this.em.removeAndFlush(record)
   }
 }
-
-export default MyModuleService
 ```
 
-### 5. Определение модуля
+Сервис получает `EntityManager` — request-scoped, безопасен для параллельных запросов.
 
-Создайте `src/modules/my-module/index.ts`:
+### 4. Создать API-роуты
+
+Создайте `src/routes/my-routes.ts`:
 
 ```typescript
-import { Module } from "@medusajs/utils"
-import MyModuleService from "./service"
+import { Hono } from "hono"
+import { getUserId } from "../../../src/server/core/auth.js"
+import { MyRecordService } from "../modules/my-module/service.js"
 
-export const MY_MODULE = "myModuleService"
+const routes = new Hono<{ Variables: Record<string, any> }>()
 
-export default Module(MY_MODULE, {
-  service: MyModuleService,
+routes.get("/", async (c) => {
+  const userId = getUserId(c)
+  const service: MyRecordService = c.get("container").resolve("myRecordService")
+  const items = await service.list()
+  return c.json({ items })
 })
+
+routes.post("/", async (c) => {
+  const userId = getUserId(c)
+  const body = await c.req.json()
+  const service: MyRecordService = c.get("container").resolve("myRecordService")
+  const item = await service.create(body)
+  return c.json({ item }, 201)
+})
+
+export default routes
 ```
 
-### 6. Экспорт из плагина
+Сервисы достаются из DI-контейнера через `c.get("container").resolve("serviceName")`.
 
-Создайте `src/index.ts`:
+### 5. Написать plugin.ts
+
+Создайте `plugin.ts` — точку входа плагина:
 
 ```typescript
-export { MY_MODULE } from "./modules/my-module"
-```
+import { definePlugin } from "../../src/server/core/plugin-loader.js"
+import { MyRecord } from "./src/modules/my-module/entities.js"
+import { MyRecordService } from "./src/modules/my-module/service.js"
+import myRoutes from "./src/routes/my-routes.js"
+import { asClass, Lifetime } from "awilix"
 
-### 7. API-роуты
-
-Создайте `src/api/admin/my-resource/route.ts`:
-
-```typescript
-import type { MedusaRequest, MedusaResponse } from "@medusajs/framework"
-import { MY_MODULE } from "../../../modules/my-module"
-
-export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const service: any = req.scope.resolve(MY_MODULE)
-  const items = await service.listMyModels()
-  res.json({ items })
-}
-
-export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const { name, description } = req.body as {
-    name: string
-    description?: string
-  }
-
-  if (!name) {
-    res.status(400).json({ error: "name is required" })
-    return
-  }
-
-  const service: any = req.scope.resolve(MY_MODULE)
-  const item = await service.createMyModels({ name, description })
-  res.status(201).json({ item })
-}
-```
-
-Эндпоинты будут доступны по адресу `/admin/my-resource`.
-
-### 8. Страница в админке
-
-Создайте `src/admin/routes/my-page/page.tsx`:
-
-```tsx
-import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { ChatBubble } from "@medusajs/icons"
-import { Container, Heading, Text } from "@medusajs/ui"
-import { useQuery } from "@tanstack/react-query"
-
-const MyPage = () => {
-  const { data, isLoading } = useQuery({
-    queryKey: ["my-resource"],
-    queryFn: () =>
-      fetch("/admin/my-resource", { credentials: "include" })
-        .then((r) => r.json()),
-  })
-
-  return (
-    <Container>
-      <Heading level="h1">My Plugin</Heading>
-      {isLoading ? (
-        <Text>Загрузка...</Text>
-      ) : (
-        <Text>Элементов: {data?.items?.length ?? 0}</Text>
-      )}
-    </Container>
-  )
-}
-
-export const config = defineRouteConfig({
+export default definePlugin({
+  name: "my-plugin",
   label: "My Plugin",
-  icon: ChatBubble,
+  description: "Описание вашего плагина",
+
+  // Префиксы API — для контроля доступа (отключение плагина блокирует эти роуты)
+  apiPrefixes: ["/api/my-records"],
+
+  // MikroORM entities — таблицы создадутся автоматически
+  entities: [MyRecord],
+
+  // Сервисы в DI-контейнере (SCOPED = новый экземпляр на каждый запрос)
+  services: {
+    myRecordService: asClass(MyRecordService, { lifetime: Lifetime.SCOPED }),
+  },
+
+  // Hono роуты
+  routes: (app, _container) => {
+    app.route("/api/my-records", myRoutes)
+  },
+
+  // Пункты навигации в админке
+  adminNav: [
+    { path: "/my-plugin", label: "My Plugin" },
+  ],
 })
-
-export default MyPage
 ```
 
-Страница появится в сайдбаре админки автоматически.
+### 6. Зарегистрировать плагин
 
-## Установка плагина
-
-### Для разработки
-
-```bash
-cd medusa/plugins/my-plugin
-npm install
-```
-
-Соберите и слинкуйте плагин:
-
-```bash
-# Собрать плагин (admin-расширения + серверный код)
-cd medusa/plugins/my-plugin
-npx medusa plugin:build
-npx tsc --project tsconfig.json
-
-# Скопировать в node_modules основного проекта
-cd ../../  # вернуться в medusa/
-rm -rf node_modules/mpflow-plugin-my-plugin
-mkdir -p node_modules/mpflow-plugin-my-plugin
-cp plugins/my-plugin/package.json node_modules/mpflow-plugin-my-plugin/
-cp -R plugins/my-plugin/.medusa node_modules/mpflow-plugin-my-plugin/
-```
-
-`plugin:build` компилирует admin-расширения (React). `tsc` компилирует серверный код (модули, API-роуты) в `.medusa/server/`, откуда Medusa их загружает.
-
-### Зарегистрировать в medusa-config.ts
-
-Добавьте плагин в массив `plugins`:
+Добавьте плагин в `admin/mpflow.config.ts`:
 
 ```typescript
-plugins: [
-  { resolve: "mpflow-plugin-ozon" },
-  { resolve: "mpflow-plugin-my-plugin" },  // ← ваш плагин
-],
+export default defineConfig({
+  // ...
+  plugins: [
+    { resolve: "./plugins/ozon" },
+    { resolve: "./plugins/my-plugin" },  // ← ваш плагин
+  ],
+})
 ```
 
-### Сгенерировать и применить миграции
+И в `admin/src/server/index.ts` в массив `pluginPaths`:
 
-Команда `db:generate` принимает **имя модуля** (значение константы из `Module()`), а не имя npm-пакета:
+```typescript
+const pluginPaths = [
+  { resolve: "./plugins/ozon" },
+  { resolve: "./plugins/my-plugin" },
+]
+```
+
+### 7. Запустить
 
 ```bash
-cd medusa/
-npx medusa db:generate myModuleService
+cd admin
+npm run dev
 ```
 
-Миграция создастся в `node_modules/mpflow-plugin-my-plugin/.medusa/server/src/modules/my-module/migrations/`. Скопируйте её обратно в исходники плагина:
+При старте в логах будет:
 
-```bash
-# Скопировать миграции из node_modules обратно в исходники
-cp -R node_modules/mpflow-plugin-my-plugin/.medusa/server/src/modules/my-module/migrations/ \
-  plugins/my-plugin/src/modules/my-module/migrations/
+```
+[mpflow] Collected N plugin entities
+[mpflow] Applying auto-schema updates for plugin entities...
+[plugin] Loading: my-plugin
+[plugin] Loaded: my-plugin
 ```
 
-Пересоберите плагин с миграциями и примените:
+## PluginDefinition — полный API
 
-```bash
-# Пересобрать плагин (теперь с миграциями в исходниках)
-cd plugins/my-plugin
-npx medusa plugin:build
-npx tsc --project tsconfig.json
-cd ../..
+```typescript
+interface PluginDefinition {
+  name: string        // Уникальное имя (например, "my-plugin")
+  label: string       // Отображаемое название в UI
+  description?: string
 
-# Обновить в node_modules
-rm -rf node_modules/mpflow-plugin-my-plugin/.medusa
-cp -R plugins/my-plugin/.medusa node_modules/mpflow-plugin-my-plugin/
+  entities?: any[]    // MikroORM entity-классы (таблицы создаются автоматически)
 
-# Скопировать snapshot-файлы (tsc не копирует .json из migrations)
-cp plugins/my-plugin/src/modules/my-module/migrations/.snapshot-*.json \
-  node_modules/mpflow-plugin-my-plugin/.medusa/server/src/modules/my-module/migrations/ 2>/dev/null || true
+  services?: Record<string, any>  // Awilix-регистрации для DI-контейнера
 
-# Применить миграции
-npx medusa db:migrate
+  routes?: (app: Hono, container: AwilixContainer) => void  // Hono роуты
+
+  middleware?: Array<{
+    path: string                    // URL-паттерн (например, "/api/catalog")
+    method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "ALL"
+    handler: (c: any, next: () => Promise<void>) => Promise<any>
+  }>
+
+  jobs?: Array<{
+    name: string                    // Уникальное имя задачи
+    schedule: string                // Cron-выражение (например, "*/30 * * * *")
+    handler: (container: any) => Promise<void>
+  }>
+
+  adminNav?: Array<{
+    path: string                    // Путь в SPA (например, "/my-plugin")
+    label: string                   // Название в сайдбаре
+  }>
+
+  apiPrefixes?: string[]  // Для контроля доступа (при отключении плагина блокируются)
+}
 ```
 
-### Запустить
+## Дополнительные возможности
 
-```bash
-npx medusa develop
+### Middleware (обогащение данных)
+
+Middleware позволяет обогащать ответы core API. Например, Ozon-плагин добавляет данные об остатках к ответу `/api/catalog`:
+
+```typescript
+export async function myEnrichment(c: any, next: () => Promise<void>) {
+  await next() // Сначала выполняется основной обработчик
+
+  // Обогащаем ответ
+  const body = await c.res.json()
+  body.extra_data = "enriched"
+  c.res = new Response(JSON.stringify(body), {
+    status: c.res.status,
+    headers: c.res.headers,
+  })
+}
 ```
 
-Откройте `http://localhost:9000/app` — в сайдбаре появится пункт "My Plugin".
+### Cron jobs (фоновые задачи)
 
-## Docker-сборка с плагином
+Каждый вызов job получает свой request-scoped контейнер с изолированным EntityManager:
 
-Для production-деплоя плагин собирается в Dockerfile:
-
-```dockerfile
-FROM node:20-alpine AS deps
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm install
-
-FROM deps AS builder
-COPY . .
-
-# Собрать плагин (admin + server)
-RUN cd plugins/my-plugin && npm install
-RUN cd plugins/my-plugin && ../../node_modules/.bin/medusa plugin:build
-RUN cd plugins/my-plugin && npx tsc --project tsconfig.json
-
-# Скопировать плагин в node_modules
-RUN rm -rf node_modules/mpflow-plugin-my-plugin \
-    && mkdir -p node_modules/mpflow-plugin-my-plugin \
-    && cp plugins/my-plugin/package.json node_modules/mpflow-plugin-my-plugin/ \
-    && cp -r plugins/my-plugin/.medusa node_modules/mpflow-plugin-my-plugin/
-
-# Собрать основное приложение
-RUN npm run build; test -d .medusa/server
-
-FROM deps
-RUN npm prune --omit=dev
-
-COPY --from=builder /app/.medusa ./.medusa
-COPY --from=builder /app/.medusa/server/medusa-config.js ./medusa-config.js
-RUN ln -s .medusa/server/src src
-COPY --from=builder /app/.medusa/server/public ./public
-
-# Плагин
-RUN mkdir -p node_modules/mpflow-plugin-my-plugin
-COPY --from=builder /app/plugins/my-plugin/package.json ./node_modules/mpflow-plugin-my-plugin/package.json
-COPY --from=builder /app/plugins/my-plugin/.medusa ./node_modules/mpflow-plugin-my-plugin/.medusa
-
-EXPOSE 9000
-CMD ["sh", "-c", "npx medusa db:migrate && npx medusa start"]
+```typescript
+jobs: [
+  {
+    name: "my-sync-job",
+    schedule: "0 */1 * * *", // каждый час
+    handler: async (container) => {
+      const service = container.resolve("myRecordService")
+      await service.doSomething()
+    },
+  },
+]
 ```
+
+При отключении плагина через UI — его cron jobs останавливаются, при включении — возобновляются.
+
+### Страница в админке
+
+Плагин может добавить страницу в клиентский SPA. Создайте React-компонент в `admin/src/client/pages/` и зарегистрируйте роут в `admin/src/client/main.tsx`. Навигация появится автоматически через `adminNav` в определении плагина.
+
+## Контроль доступа
+
+Пользователь может включать/выключать плагины через UI (`/plugins`). При отключении:
+
+- API-роуты с указанными `apiPrefixes` возвращают 403
+- Cron jobs останавливаются
+- Навигация в сайдбаре скрывается
 
 ## Что дальше
 
-- **Middleware**: обогащение ответов core API через `src/api/middlewares.ts`
-- **Workflows**: сложные операции через `src/workflows/`
-- **Jobs**: фоновые задачи по расписанию через `src/jobs/`
-- **Links**: связь с core-модулями через `src/links/` и `defineLink()`
-
-В качестве примера смотрите плагин `mpflow-plugin-ozon` в `medusa/plugins/ozon/`.
+В качестве примера смотрите плагин Ozon: `admin/plugins/ozon/`.

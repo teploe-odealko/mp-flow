@@ -1,0 +1,21 @@
+{
+  "name": "directus-endpoint-ozon-sync",
+  "version": "1.0.0",
+  "description": "Ozon Seller API sync for MPFlow",
+  "license": "MIT",
+  "type": "module",
+  "directus:extension": {
+    "type": "endpoint",
+    "path": "dist/index.js",
+    "source": "src/index.ts",
+    "host": "^11.0.0"
+  },
+  "scripts": {
+    "build": "npx @directus/extensions-sdk@latest build",
+    "dev": "npx @directus/extensions-sdk@latest build -w"
+  },
+  "devDependencies": {
+    "@directus/extensions-sdk": "^13.0.0",
+    "typescript": "^5.7.0"
+  }
+}

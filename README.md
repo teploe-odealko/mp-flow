@@ -1,33 +1,35 @@
 # MPFlow
 
-Open source ERP для продавцов на маркетплейсах. Управление каталогом, закупками, складом (FIFO), ценами, акциями и финансами в одном месте.
+Open source ERP для продавцов на маркетплейсах. Управление каталогом, закупками, складом (FIFO), ценами и финансами в одном месте.
 
-**[mp-flow.ru](https://mp-flow.ru)** · **[Документация](https://docs.mp-flow.ru)** · **[API](https://proxy.mp-flow.ru/docs)**
+**[mp-flow.ru](https://mp-flow.ru)** · **[Документация](https://docs.mp-flow.ru)** · **[Облако](https://admin.mp-flow.ru)**
 
 ## Быстрый старт
 
 ```bash
-git clone https://github.com/teploe-odealko/mp-flow.git
-cd mp-flow
-cp .env.example .env
+curl -O https://raw.githubusercontent.com/teploe-odealko/mp-flow/main/docker-compose.yml
+
+cat > .env << 'EOF'
+DB_PASSWORD=ваш_пароль
+COOKIE_SECRET=$(openssl rand -base64 32)
+EOF
+
 docker compose up -d
 ```
 
-Откройте **http://localhost:3000** и войдите с логином `admin` / паролем из `.env` (`ADMIN_BOOTSTRAP_PASSWORD`).
+Откройте **http://localhost:3000** — админка готова к работе.
 
-> **Важно:** перед публикацией в интернет измените `ADMIN_BOOTSTRAP_PASSWORD` и `HMAC_SECRET` в `.env` на случайные значения.
+> **Важно:** `COOKIE_SECRET` обязателен. Сгенерируйте случайное значение: `openssl rand -base64 32`.
 
 ## Возможности
 
 - **Каталог** — карточки товаров с SKU, размерами, ценами, данными поставщиков
 - **Закупки** — заказы поставщикам с распределением общих затрат (логистика, таможня)
 - **FIFO учёт** — партионный складской учёт с точной себестоимостью каждой единицы
-- **Юнит-экономика** — PnL по товару, ДДС, отчёты с реальной себестоимостью FIFO
-- **Ценообразование** — калькулятор прибыли с учётом всех комиссий Ozon, массовое обновление цен
-- **Управление акциями** — массовое включение/выключение с защитой минимальной маржи
-- **Логистика** — SKU-матрица, поставки на Ozon, планирование закупок
-- **AI Agent (MCP)** — 54+ инструментов для Claude, ChatGPT и других MCP-клиентов
-- **Плагины** — расширяемая архитектура (см. ali1688 плагин)
+- **Юнит-экономика** — PnL по товару с реальной себестоимостью FIFO
+- **Финансы** — транзакции, ДДС, отчёты
+- **Аналитика** — сводные отчёты по продажам и складу
+- **Плагины** — расширяемая архитектура (Ozon интеграция как плагин)
 
 ## Облако
 
@@ -38,71 +40,89 @@ docker compose up -d
 ## Архитектура
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌──────────────┐
-│  Admin UI   │────>│   Proxy     │────>│  PostgreSQL   │
-│ (port 3000) │     │ (port 8000) │     │  (port 5432)  │
-└─────────────┘     └─────────────┘     └──────────────┘
-   nginx SPA         FastAPI + MCP        Данные
+┌───────────────────────────────────┐
+│        Браузер                    │
+│   http://localhost:3000           │
+└──────────────┬────────────────────┘
+               │
+┌──────────────▼────────────────────┐
+│   MPFlow Admin (Node.js)          │
+│   - Hono API (:3000)             │
+│   - React SPA (встроена)         │
+│   - Плагины (Ozon и др.)        │
+├───────────────────────────────────┤
+│   Модули:                         │
+│   - master-card (каталог)        │
+│   - supplier-order (закупки)     │
+│   - finance (транзакции)         │
+│   - sale (продажи)               │
+│   - plugin-setting (плагины)     │
+└──────────┬────────────────────────┘
+           │
+┌──────────▼──────┐
+│   PostgreSQL    │
+│   :5432         │
+└─────────────────┘
 ```
 
-- **Admin UI** — SPA на vanilla JS + Tailwind CSS, проксирует запросы к Proxy
-- **Proxy** — FastAPI с Admin API, MCP сервер (54+ инструментов), система плагинов
-- **PostgreSQL** — все данные, миграции применяются автоматически при запуске
+- **Admin** — Hono API + React SPA в одном Node.js процессе. MikroORM для БД, awilix для DI.
+- **PostgreSQL** — все данные. Миграции + auto-schema применяются при запуске.
+- **Плагины** — свои entities, routes, middleware, cron jobs. Таблицы создаются автоматически.
+
+## Tech Stack
+
+| Слой | Технология |
+|------|-----------|
+| HTTP | Hono 4 |
+| ORM | MikroORM 6 + PostgreSQL 17 |
+| DI | awilix |
+| Сессии | iron-session (encrypted cookies) |
+| Auth | Logto OIDC |
+| Frontend | React 19 + Vite 6 + Tailwind CSS 3 |
+| Data fetching | TanStack Query 5 |
+| Router | React Router 7 |
+| Cron | node-cron |
 
 ## Интеграции
 
-Настраиваются через `.env`:
+| Интеграция | Описание |
+|------------|----------|
+| **Ozon Seller API** | Синхронизация товаров, остатков, продаж (плагин `ozon`) |
+| **Logto OIDC** | SSO авторизация |
 
-| Интеграция | Переменные | Описание |
-|------------|-----------|----------|
-| **Ozon Seller API** | `OZON_CLIENT_ID`, `OZON_API_KEY` | Синхронизация товаров, остатков, продаж, возвратов |
-| **1688 Поставщики** | `TMAPI_API_TOKEN` | Импорт данных поставщиков (цены, фото, SKU) |
-| **AI** | `ANTHROPIC_API_KEY` | AI-функции в MCP сервере |
-| **SSO (Logto)** | `LOGTO_ENDPOINT`, `LOGTO_API_RESOURCE` | OIDC/OAuth2 авторизация |
-
-## MCP сервер
-
-54+ инструментов для AI-агентов через [Model Context Protocol](https://modelcontextprotocol.io/):
-
-```json
-{
-  "mcpServers": {
-    "mpflow": {
-      "url": "https://proxy.mp-flow.ru/mcp",
-      "headers": { "Authorization": "Bearer mpk_..." }
-    }
-  }
-}
-```
-
-Поддерживаются: Claude Desktop, Claude Code, ChatGPT, Cursor, Manus, любой MCP-клиент.
+Интеграции подключаются как плагины. Ozon — встроенный плагин, другие можно создать самостоятельно.
 
 ## Разработка
 
 ```bash
-cd proxy && pip install -r requirements.txt
-uvicorn proxy.src.main:app --reload --port 8000
-
-# Линтер
-ruff check proxy/ && ruff format proxy/
-
-# Тесты
-PYTHONPATH=. pytest tests/admin/ -v
+git clone https://github.com/teploe-odealko/mp-flow.git
+cd mp-flow/admin
+npm install
 ```
 
-Подробнее — [CONTRIBUTING.md](CONTRIBUTING.md).
+Запустить PostgreSQL и dev-сервер:
+
+```bash
+docker run -d --name mpflow-pg -e POSTGRES_USER=mpflow -e POSTGRES_PASSWORD=mpflow -e POSTGRES_DB=mpflow -p 5432:5432 postgres:17-alpine
+
+npm run dev
+```
+
+Админка: `http://localhost:5173` (клиент) с прокси на API `http://localhost:3000`.
+
+Подробнее — [CONTRIBUTING.md](CONTRIBUTING.md) и [документация](https://docs.mp-flow.ru/docs/developer).
 
 ## Обновление
 
 ```bash
-git pull
-docker compose up --build -d
+docker compose pull
+docker compose up -d
 ```
 
-Миграции применяются автоматически при старте контейнера.
+Миграции и auto-schema применяются автоматически при старте.
 
 ## Лицензия
 
 Основной код — [AGPL-3.0](LICENSE).
 
-Enterprise-функции в `proxy/src/ee/` — отдельная лицензия, см. [ee/LICENSE](ee/LICENSE).
+Enterprise-функции в `ee/` — отдельная лицензия, см. [ee/LICENSE](ee/LICENSE).

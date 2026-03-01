@@ -1,0 +1,75 @@
+services:
+  directus:
+    image: directus/directus:11
+    restart: unless-stopped
+    depends_on:
+      directus-db:
+        condition: service_healthy
+      directus-cache:
+        condition: service_started
+    ports:
+      - "8055:8055"
+    volumes:
+      - ./uploads:/directus/uploads
+      - ./extensions:/directus/extensions
+      - ./snapshots:/directus/snapshots
+    environment:
+      SECRET: "${DIRECTUS_SECRET}"
+      ADMIN_EMAIL: "${DIRECTUS_ADMIN_EMAIL:-admin@mp-flow.ru}"
+      ADMIN_PASSWORD: "${DIRECTUS_ADMIN_PASSWORD}"
+
+      # Database
+      DB_CLIENT: pg
+      DB_HOST: directus-db
+      DB_PORT: "5432"
+      DB_DATABASE: directus
+      DB_USER: directus
+      DB_PASSWORD: "${DIRECTUS_DB_PASSWORD}"
+
+      # Cache
+      CACHE_ENABLED: "true"
+      CACHE_STORE: redis
+      REDIS_HOST: directus-cache
+      REDIS_PORT: "6379"
+
+      # Extensions
+      EXTENSIONS_AUTO_RELOAD: "true"
+
+      # Telemetry
+      TELEMETRY: "false"
+    networks:
+      - directus-net
+
+  directus-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    volumes:
+      - directus-db-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: directus
+      POSTGRES_USER: directus
+      POSTGRES_PASSWORD: "${DIRECTUS_DB_PASSWORD}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U directus -d directus"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - directus-net
+
+  directus-cache:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - directus-net
+
+volumes:
+  directus-db-data:
+
+networks:
+  directus-net:

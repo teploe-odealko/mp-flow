@@ -14,21 +14,13 @@ Rules:
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal
-from typing import Any
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Any, Iterable
 
 import asyncpg
-from proxy.src.services.admin_logic import (
-    EPSILON,
-    FifoAllocation,
-    FifoLot,
-    InsufficientInventoryError,
-    allocate_fifo,
-    calculate_sale_metrics,
-    to_money,
-    to_qty,
-)
+from proxy.src.services.admin.utils import EPSILON, QTY_QUANT, to_money, to_qty
 
 __all__ = [
     "FifoLot",
@@ -36,6 +28,7 @@ __all__ = [
     "InsufficientInventoryError",
     "allocate_fifo",
     "allocate_fifo_partial",
+    "calculate_purchase_unit_cost",
     "calculate_sale_metrics",
     "to_money",
     "to_qty",
@@ -47,6 +40,114 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Data classes
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class FifoLot:
+    """Inventory lot used for FIFO allocation."""
+
+    lot_id: str
+    remaining_qty: Decimal
+    unit_cost_rub: Decimal
+    received_at: datetime | None = None
+
+
+@dataclass(slots=True)
+class FifoAllocation:
+    """Concrete sale allocation against a lot."""
+
+    lot_id: str
+    quantity: Decimal
+    unit_cost_rub: Decimal
+    total_cost_rub: Decimal
+
+
+class InsufficientInventoryError(ValueError):
+    """Raised when FIFO allocation cannot satisfy requested quantity."""
+
+    def __init__(self, requested_qty: Decimal, allocated_qty: Decimal):
+        self.requested_qty = requested_qty
+        self.allocated_qty = allocated_qty
+        self.shortage_qty = (requested_qty - allocated_qty).quantize(
+            QTY_QUANT, rounding=ROUND_HALF_UP
+        )
+        super().__init__(
+            "Insufficient inventory: requested={requested} allocated={allocated} shortage={shortage}".format(
+                requested=requested_qty,
+                allocated=allocated_qty,
+                shortage=self.shortage_qty,
+            )
+        )
+
+
+# ---------------------------------------------------------------------------
+# Core FIFO allocation algorithm
+# ---------------------------------------------------------------------------
+
+
+def allocate_fifo(lots: Iterable[FifoLot], requested_qty: Decimal) -> list[FifoAllocation]:
+    """
+    Allocate quantity from lots using FIFO order.
+
+    Args:
+        lots: available lots sorted (or unsorted)
+        requested_qty: quantity to allocate
+
+    Returns:
+        Allocations list.
+
+    Raises:
+        InsufficientInventoryError: if stock is not enough.
+    """
+    need = to_qty(requested_qty)
+    if need <= 0:
+        return []
+
+    sorted_lots = sorted(
+        lots,
+        key=lambda lot: (
+            lot.received_at or datetime.min,
+            lot.lot_id,
+        ),
+    )
+
+    allocations: list[FifoAllocation] = []
+    allocated = Decimal("0.000")
+    for lot in sorted_lots:
+        remaining = to_qty(lot.remaining_qty)
+        if remaining <= EPSILON:
+            continue
+        if need <= EPSILON:
+            break
+
+        take = min(remaining, need).quantize(QTY_QUANT, rounding=ROUND_HALF_UP)
+        if take <= EPSILON:
+            continue
+
+        unit_cost = to_money(lot.unit_cost_rub)
+        total_cost = to_money(take * unit_cost)
+        allocations.append(
+            FifoAllocation(
+                lot_id=lot.lot_id,
+                quantity=take,
+                unit_cost_rub=unit_cost,
+                total_cost_rub=total_cost,
+            )
+        )
+        allocated += take
+        need = (need - take).quantize(QTY_QUANT, rounding=ROUND_HALF_UP)
+
+    if need > EPSILON:
+        raise InsufficientInventoryError(
+            requested_qty=to_qty(requested_qty), allocated_qty=allocated
+        )
+
+    return allocations
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +194,59 @@ def allocate_fifo_partial(lots: list[FifoLot], requested_qty: Decimal) -> list[F
         )
         need = to_qty(need - take)
     return allocations
+
+
+# ---------------------------------------------------------------------------
+# Cost calculation helpers
+# ---------------------------------------------------------------------------
+
+
+def calculate_purchase_unit_cost(
+    *,
+    quantity: Any,
+    purchase_price_rub: Any,
+    packaging_cost_rub: Any = 0,
+    logistics_cost_rub: Any = 0,
+    customs_cost_rub: Any = 0,
+    extra_cost_rub: Any = 0,
+) -> Decimal:
+    """Compute unit cost for supplier-order line."""
+    qty = to_qty(quantity)
+    if qty <= 0:
+        raise ValueError("quantity must be > 0")
+
+    total = (
+        to_money(purchase_price_rub)
+        + to_money(packaging_cost_rub)
+        + to_money(logistics_cost_rub)
+        + to_money(customs_cost_rub)
+        + to_money(extra_cost_rub)
+    )
+    return to_money(total / qty)
+
+
+def calculate_sale_metrics(
+    *,
+    quantity: Any,
+    unit_sale_price_rub: Any,
+    fee_rub: Any = 0,
+    extra_cost_rub: Any = 0,
+    allocations: Iterable[FifoAllocation],
+) -> dict[str, Decimal]:
+    """Calculate revenue, COGS and profit for a sale line."""
+    qty = to_qty(quantity)
+    revenue = to_money(qty * to_money(unit_sale_price_rub))
+    fee = to_money(fee_rub)
+    extra = to_money(extra_cost_rub)
+    cogs = to_money(sum((a.total_cost_rub for a in allocations), start=Decimal("0.00")))
+    gross_profit = to_money(revenue - cogs - fee - extra)
+    return {
+        "revenue_rub": revenue,
+        "fee_rub": fee,
+        "extra_cost_rub": extra,
+        "cogs_rub": cogs,
+        "gross_profit_rub": gross_profit,
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@ __pycache__/
 .venv/
 venv/
 *.egg
+uv.lock
 
 # Environment
 .env
@@ -26,6 +27,7 @@ node_modules/
 .next/
 .source/
 out/
+dist/
 
 # Docker
 postgres-data/
@@ -37,4 +39,13 @@ postgres-data/
 *.session
 session
 
-.CLAUDE.mddist/
+# Build artifacts
+admin-ui/dist/
+
+# Claude internal
+.claude/plan.md
+.claude/plans/
+
+# Misc
+cookies.txt
+directus/uploads/

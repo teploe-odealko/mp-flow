@@ -16,7 +16,6 @@ from proxy.src.services.admin_logic import (
     extract_ozon_products_cursor,
     merge_card_source,
     parse_ozon_finance_transactions,
-    parse_ozon_postings,
     parse_ozon_products,
     parse_tmapi_1688_item,
 )
@@ -170,92 +169,6 @@ def test_parse_ozon_finance_transactions() -> None:
     assert parsed[0]["amount_rub"] == Decimal("1234.56")
     assert parsed[1]["kind"] == "expense"
     assert parsed[1]["amount_rub"] == Decimal("100.00")
-
-
-def test_parse_ozon_postings() -> None:
-    payload = {
-        "result": {
-            "postings": [
-                {
-                    "posting_number": "P-001",
-                    "in_process_at": "2026-02-01T10:00:00Z",
-                    "products": [
-                        {
-                            "offer_id": "SKU-1",
-                            "quantity": 2,
-                            "price": "500",
-                            "commission_amount": "40",
-                        }
-                    ],
-                }
-            ]
-        }
-    }
-    postings = parse_ozon_postings(payload)
-    assert len(postings) == 1
-    assert postings[0]["external_order_id"] == "P-001"
-    assert postings[0]["items"][0]["offer_id"] == "SKU-1"
-    assert postings[0]["items"][0]["unit_sale_price_rub"] == Decimal("500.00")
-    assert postings[0]["items"][0]["fee_rub"] == Decimal("40.00")
-
-
-def test_parse_ozon_postings_supports_v2_result_list() -> None:
-    payload = {
-        "result": [
-            {
-                "posting_number": "43403566-3022-1",
-                "created_at": "2026-01-27T14:28:14.712387Z",
-                "in_process_at": "2026-01-27T14:28:26.177228Z",
-                "products": [
-                    {
-                        "sku": 3267372720,
-                        "offer_id": "manle8mhqc4vcs7meitm",
-                        "quantity": 1,
-                        "price": "250.00",
-                    }
-                ],
-                "financial_data": {
-                    "products": [
-                        {
-                            "product_id": 3267372720,
-                            "commission_amount": -50,
-                        }
-                    ]
-                },
-            }
-        ]
-    }
-    postings = parse_ozon_postings(payload)
-    assert len(postings) == 1
-    assert postings[0]["external_order_id"] == "43403566-3022-1"
-    assert postings[0]["items"][0]["offer_id"] == "manle8mhqc4vcs7meitm"
-    assert postings[0]["items"][0]["quantity"] == Decimal("1.000")
-    assert postings[0]["items"][0]["unit_sale_price_rub"] == Decimal("250.00")
-    assert postings[0]["items"][0]["fee_rub"] == Decimal("50.00")
-
-
-def test_parse_ozon_postings_normalizes_negative_product_fee_to_positive() -> None:
-    payload = {
-        "result": {
-            "postings": [
-                {
-                    "posting_number": "P-NEG",
-                    "in_process_at": "2026-02-01T10:00:00Z",
-                    "products": [
-                        {
-                            "offer_id": "SKU-NEG",
-                            "quantity": 1,
-                            "price": "1000",
-                            "commission_amount": "-123.45",
-                        }
-                    ],
-                }
-            ]
-        }
-    }
-    postings = parse_ozon_postings(payload)
-    assert len(postings) == 1
-    assert postings[0]["items"][0]["fee_rub"] == Decimal("123.45")
 
 
 def test_parse_ozon_products() -> None:

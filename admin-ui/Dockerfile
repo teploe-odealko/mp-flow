@@ -1,11 +1,11 @@
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
 FROM nginx:alpine
-
 COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY index.html /usr/share/nginx/html/index.html
-COPY styles.css /usr/share/nginx/html/styles.css
-COPY app.js /usr/share/nginx/html/app.js
-COPY favicon.png /usr/share/nginx/html/favicon.png
-COPY logo.png /usr/share/nginx/html/logo.png
-COPY plugins/ /usr/share/nginx/html/plugins/
-
+COPY --from=builder /app/dist /usr/share/nginx/html
 EXPOSE 80

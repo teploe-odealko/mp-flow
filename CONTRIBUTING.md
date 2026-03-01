@@ -6,84 +6,98 @@
 
 ```bash
 git clone https://github.com/teploe-odealko/mp-flow.git
-cd mp-flow
-cp .env.example .env
-docker compose up --build
+cd mp-flow/admin
+npm install
 ```
 
-Откройте http://localhost:3000, войдите с `admin` / паролем из `.env`.
+Запустить PostgreSQL:
+
+```bash
+docker run -d --name mpflow-pg \
+  -e POSTGRES_USER=mpflow \
+  -e POSTGRES_PASSWORD=mpflow \
+  -e POSTGRES_DB=mpflow \
+  -p 5432:5432 \
+  postgres:17-alpine
+```
+
+Запустить dev-сервер:
+
+```bash
+npm run dev
+```
+
+Откройте http://localhost:5173 (Vite dev-сервер с прокси на API :3000).
 
 ## Структура проекта
 
 ```
-proxy/               Python бэкенд (FastAPI)
-admin-ui/            Фронтенд SPA (vanilla JS, Tailwind CSS)
-landing/             Лэндинг (статический HTML + Tailwind CDN)
+admin/               Основное приложение (бэкенд + фронтенд)
+  src/server/        Hono API, MikroORM модули, маршруты
+  src/client/        React SPA (Tailwind CSS, TanStack Query)
+  plugins/ozon/      Ozon интеграция (плагин)
+  mpflow.config.ts   Конфигурация (БД, auth, плагины)
+landing/             Лэндинг (статический HTML)
 website/             Документация (Next.js 16 + Fumadocs)
 brand/               Логотип, брендбук
-migrations/          PostgreSQL миграции (последовательные SQL файлы)
-proxy/src/plugins/   Система плагинов
-proxy/src/ee/        Premium-функции (см. ee/LICENSE)
 ee/                  Лицензия EE
-scripts/             Dev и CI скрипты
-tests/admin/         Интеграционные тесты (Docker Postgres)
 ```
 
 ## Стиль кода
 
-Python код проверяется [ruff](https://github.com/astral-sh/ruff):
+TypeScript, проверяется через `tsc`:
 
 ```bash
-ruff check proxy/
-ruff format proxy/
+cd admin
+npm run build:server    # Проверка серверного кода
+npm run build:client    # Проверка клиентского кода
 ```
-
-Конфигурация в `proxy/pyproject.toml`: line-length 100, target Python 3.11.
 
 ## Тесты
 
 ```bash
-# Интеграционные тесты (поднимают Docker Postgres)
-PYTHONPATH=. pytest tests/admin/ -v
+cd admin
+npm test
 ```
 
-Тесты используют `asyncio_mode = "auto"`, декоратор `@pytest.mark.asyncio` не нужен.
+Тесты используют vitest.
 
 ## Pull Requests
 
 1. Форкните репо и создайте ветку: `git checkout -b feature/my-feature`
 2. Внесите изменения
-3. Запустите линтер: `ruff check proxy/ && ruff format proxy/`
-4. Запустите тесты: `PYTHONPATH=. pytest tests/admin/ -v`
+3. Проверьте сборку: `cd admin && npm run build`
+4. Запустите тесты: `npm test`
 5. Откройте PR в `main`
 
-CI запускается автоматически: линтер, форматирование, тесты, проверка миграций.
+CI запускается автоматически: сборка клиента, сервера и плагинов.
 
 ## Миграции
 
-- Файлы в `migrations/` с последовательной нумерацией (например, `027_my_feature.sql`)
-- Используйте `CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` для идемпотентности
-- Тестируйте на чистой базе: `docker compose down -v && docker compose up --build`
-- Скрипт `scripts/init-db.sh` отслеживает применённые миграции в таблице `schema_migrations`
+Два механизма:
+
+1. **Ручные миграции** — для core-модулей, файлы в `admin/src/server/migrations/`
+2. **Auto-schema** — для плагинов. MikroORM автоматически создаёт таблицы и добавляет колонки из plugin entities при старте сервера (`safe: true` — только аддитивные изменения, без удалений)
+
+Создать новую миграцию:
+
+```bash
+cd admin
+npm run db:migrate
+```
 
 ## Плагины
 
-Плагины расширяют UI и API. Смотрите плагин `ali1688` как референс:
+Плагины расширяют систему: свои entities, API-роуты, middleware, cron jobs, страницы в админке.
 
-```
-proxy/src/plugins/ali1688/   Бэкенд (manifest, routes, service)
-admin-ui/plugins/ali1688/    Фронтенд (ESM модуль)
-```
+Смотрите плагин `ozon` как референс: `admin/plugins/ozon/`.
 
-Плагины можно контрибьютить как встроенные (в этом репо) или как отдельные репозитории.
+Подробная документация: [docs.mp-flow.ru/docs/developer/plugin-development](https://docs.mp-flow.ru/docs/developer/plugin-development)
 
 ## EE код
 
-Файлы в `proxy/src/ee/` и `ee/` — под проприетарной лицензией (см. `ee/LICENSE`).
+Файлы в `ee/` — под проприетарной лицензией (см. `ee/LICENSE`).
 Использование EE-функций в продакшене требует активной подписки.
-
-Контрибьюшены в EE код приветствуются — открывая PR с изменениями EE файлов,
-вы соглашаетесь с условиями `ee/LICENSE`.
 
 ## Вопросы?
 

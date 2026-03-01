@@ -131,7 +131,7 @@ npm run dev
 | Переменная | Обязательная | Описание |
 |---|---|---|
 | `DATABASE_URL` | Да | PostgreSQL connection string |
-| `COOKIE_SECRET` | Нет | Секрет для cookies (по умолчанию dev-значение) |
+| `COOKIE_SECRET` | Да | Секрет для cookies. Генерируйте: `openssl rand -base64 32` |
 | `LOGTO_ENDPOINT` | Нет | URL Logto для OIDC авторизации |
 | `LOGTO_SPA_APP_ID` | Нет | App ID Logto SPA приложения |
 
