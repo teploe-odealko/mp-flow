@@ -43,6 +43,7 @@ async function main() {
         migrations: {
             path: "./dist/src/server/migrations",
             pathTs: "./src/server/migrations",
+            glob: "Migration_*.{js,ts}",
         },
     });
     console.log("[mpflow] ORM connected");

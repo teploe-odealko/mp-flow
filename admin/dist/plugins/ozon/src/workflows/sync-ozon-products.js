@@ -1,5 +1,6 @@
 export async function syncOzonProducts(container, accountId) {
     const ozonService = container.resolve("ozonService");
+    const masterCardService = container.resolve("masterCardService");
     const account = await ozonService.retrieveOzonAccount(accountId);
     // Step 1: Fetch products list
     const products = await ozonService.fetchOzonProducts({
@@ -56,10 +57,30 @@ export async function syncOzonProducts(container, accountId) {
             raw_data: product,
         };
         if (existing.length > 0) {
+            // If no master card linked yet, create one
+            if (!existing[0].master_card_id) {
+                const card = await masterCardService.create({
+                    title: product.name || offerId,
+                    sku: offerId,
+                    status: ozonStatus === "archived" ? "archived" : "active",
+                    user_id: account.user_id || undefined,
+                    thumbnail: product.primary_image || undefined,
+                });
+                linkData.master_card_id = card.id;
+            }
             await ozonService.updateOzonProductLink(existing[0].id, linkData);
             updated++;
         }
         else {
+            // Create master card for new product
+            const card = await masterCardService.create({
+                title: product.name || offerId,
+                sku: offerId,
+                status: ozonStatus === "archived" ? "archived" : "active",
+                user_id: account.user_id || undefined,
+                thumbnail: product.primary_image || undefined,
+            });
+            linkData.master_card_id = card.id;
             await ozonService.createOzonProductLink(linkData);
             created++;
         }

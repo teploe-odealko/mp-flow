@@ -90,31 +90,37 @@ ozonSyncRoutes.post("/", async (c) => {
     if (accounts.length === 0) {
         return c.json({ error: "No active Ozon accounts found" }, 400);
     }
+    // Default action is "all" — run products → stocks → sales sequentially
+    const actions = (!action || action === "all")
+        ? ["products", "stocks", "sales"]
+        : [action];
     const results = [];
     for (const account of accounts) {
+        const accountResult = { account: account.name, success: true };
         try {
-            if (action === "products") {
-                const result = await syncOzonProducts(container, account.id);
-                results.push({ account: account.name, success: true, ...result });
-            }
-            else if (action === "stocks") {
-                const result = await syncOzonStocks(container, account.id);
-                results.push({ account: account.name, success: true, ...result });
-            }
-            else if (action === "sales") {
-                const result = await syncOzonSales(container, account.id, date_from, date_to);
-                results.push({ account: account.name, success: true, ...result });
+            for (const act of actions) {
+                if (act === "products") {
+                    accountResult.products = await syncOzonProducts(container, account.id);
+                }
+                else if (act === "stocks") {
+                    accountResult.stocks = await syncOzonStocks(container, account.id);
+                }
+                else if (act === "sales") {
+                    accountResult.sales = await syncOzonSales(container, account.id, date_from, date_to);
+                }
             }
         }
         catch (e) {
+            accountResult.success = false;
+            accountResult.error = e.message;
             try {
                 await ozonService.updateOzonAccount(account.id, { last_error: e.message });
             }
             catch { /* skip */ }
-            results.push({ account: account.name, success: false, error: e.message });
         }
+        results.push(accountResult);
     }
-    return c.json({ action, results });
+    return c.json({ action: action || "all", results });
 });
 export default ozonSyncRoutes;
 //# sourceMappingURL=ozon-sync.js.map

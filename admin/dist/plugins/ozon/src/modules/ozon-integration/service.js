@@ -70,11 +70,23 @@ export class OzonIntegrationService {
         return response.json();
     }
     async fetchOzonProducts(account) {
-        const result = await this.ozonApiCall(account, "/v3/product/list", {
-            filter: { visibility: "ALL" },
-            limit: 1000,
-        });
-        return result.result?.items || [];
+        const items = [];
+        let lastId = "";
+        while (true) {
+            const body = {
+                filter: { visibility: "ALL" },
+                limit: 1000,
+            };
+            if (lastId)
+                body.last_id = lastId;
+            const result = await this.ozonApiCall(account, "/v3/product/list", body);
+            const batch = result.result?.items || [];
+            items.push(...batch);
+            lastId = result.result?.last_id || "";
+            if (batch.length < 1000 || !lastId)
+                break;
+        }
+        return items;
     }
     async fetchOzonProductInfo(account, productIds) {
         const result = await this.ozonApiCall(account, "/v3/product/info/list", {
@@ -83,22 +95,40 @@ export class OzonIntegrationService {
         return result.items || result.result?.items || [];
     }
     async fetchOzonStocks(account) {
-        const result = await this.ozonApiCall(account, "/v2/analytics/stock_on_warehouses", { limit: 1000, offset: 0 });
-        return result.result?.rows || [];
+        const rows = [];
+        let offset = 0;
+        while (true) {
+            const result = await this.ozonApiCall(account, "/v2/analytics/stock_on_warehouses", { limit: 1000, offset });
+            const batch = result.result?.rows || [];
+            rows.push(...batch);
+            if (batch.length < 1000)
+                break;
+            offset += batch.length;
+        }
+        return rows;
     }
     async fetchOzonPostings(account, since, to) {
-        const result = await this.ozonApiCall(account, "/v2/posting/fbo/list", {
-            dir: "DESC",
-            filter: {
-                since: since.toISOString(),
-                to: to.toISOString(),
-            },
-            limit: 1000,
-            offset: 0,
-            with: { analytics_data: true, financial_data: true },
-        });
-        const data = result.result;
-        return Array.isArray(data) ? data : data?.postings || [];
+        const all = [];
+        let offset = 0;
+        while (true) {
+            const result = await this.ozonApiCall(account, "/v2/posting/fbo/list", {
+                dir: "DESC",
+                filter: {
+                    since: since.toISOString(),
+                    to: to.toISOString(),
+                },
+                limit: 1000,
+                offset,
+                with: { analytics_data: true, financial_data: true },
+            });
+            const data = result.result;
+            const batch = Array.isArray(data) ? data : data?.postings || [];
+            all.push(...batch);
+            if (batch.length < 1000)
+                break;
+            offset += batch.length;
+        }
+        return all;
     }
     async fetchOzonFinanceTransactions(account, from, to) {
         const result = await this.ozonApiCall(account, "/v3/finance/transaction/list", {

@@ -87,11 +87,21 @@ export class OzonIntegrationService {
   }
 
   async fetchOzonProducts(account: { client_id: string; api_key: string }) {
-    const result: any = await this.ozonApiCall(account, "/v3/product/list", {
-      filter: { visibility: "ALL" },
-      limit: 1000,
-    })
-    return result.result?.items || []
+    const items: any[] = []
+    let lastId = ""
+    while (true) {
+      const body: Record<string, any> = {
+        filter: { visibility: "ALL" },
+        limit: 1000,
+      }
+      if (lastId) body.last_id = lastId
+      const result: any = await this.ozonApiCall(account, "/v3/product/list", body)
+      const batch = result.result?.items || []
+      items.push(...batch)
+      lastId = result.result?.last_id || ""
+      if (batch.length < 1000 || !lastId) break
+    }
+    return items
   }
 
   async fetchOzonProductInfo(
@@ -105,12 +115,20 @@ export class OzonIntegrationService {
   }
 
   async fetchOzonStocks(account: { client_id: string; api_key: string }) {
-    const result: any = await this.ozonApiCall(
-      account,
-      "/v2/analytics/stock_on_warehouses",
-      { limit: 1000, offset: 0 },
-    )
-    return result.result?.rows || []
+    const rows: any[] = []
+    let offset = 0
+    while (true) {
+      const result: any = await this.ozonApiCall(
+        account,
+        "/v2/analytics/stock_on_warehouses",
+        { limit: 1000, offset },
+      )
+      const batch = result.result?.rows || []
+      rows.push(...batch)
+      if (batch.length < 1000) break
+      offset += batch.length
+    }
+    return rows
   }
 
   async fetchOzonPostings(
@@ -118,18 +136,26 @@ export class OzonIntegrationService {
     since: Date,
     to: Date,
   ) {
-    const result: any = await this.ozonApiCall(account, "/v2/posting/fbo/list", {
-      dir: "DESC",
-      filter: {
-        since: since.toISOString(),
-        to: to.toISOString(),
-      },
-      limit: 1000,
-      offset: 0,
-      with: { analytics_data: true, financial_data: true },
-    })
-    const data = result.result
-    return Array.isArray(data) ? data : data?.postings || []
+    const all: any[] = []
+    let offset = 0
+    while (true) {
+      const result: any = await this.ozonApiCall(account, "/v2/posting/fbo/list", {
+        dir: "DESC",
+        filter: {
+          since: since.toISOString(),
+          to: to.toISOString(),
+        },
+        limit: 1000,
+        offset,
+        with: { analytics_data: true, financial_data: true },
+      })
+      const data = result.result
+      const batch = Array.isArray(data) ? data : data?.postings || []
+      all.push(...batch)
+      if (batch.length < 1000) break
+      offset += batch.length
+    }
+    return all
   }
 
   async fetchOzonFinanceTransactions(

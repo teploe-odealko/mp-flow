@@ -5,15 +5,16 @@ import ozonAccountsRoutes from "./src/routes/ozon-accounts.js";
 import ozonSyncRoutes from "./src/routes/ozon-sync.js";
 import { ozonCatalogEnrichment } from "./src/middleware/catalog-enrichment.js";
 import { ozonInventoryEnrichment } from "./src/middleware/inventory-enrichment.js";
-import { asClass, Lifetime } from "awilix";
+import { asClass, Lifetime, InjectionMode } from "awilix";
 export default definePlugin({
     name: "mpflow-plugin-ozon",
     label: "Ozon",
     description: "Интеграция с маркетплейсом Ozon (FBO)",
     apiPrefixes: ["/api/ozon-accounts", "/api/ozon-sync"],
+    adminNav: [{ path: "/ozon", label: "Ozon" }],
     entities: [OzonAccount, OzonProductLink, OzonStockSnapshot],
     services: {
-        ozonService: asClass(OzonIntegrationService, { lifetime: Lifetime.SCOPED }),
+        ozonService: asClass(OzonIntegrationService, { lifetime: Lifetime.SCOPED, injectionMode: InjectionMode.CLASSIC }),
     },
     routes: (app, _container) => {
         app.route("/api/ozon-accounts", ozonAccountsRoutes);

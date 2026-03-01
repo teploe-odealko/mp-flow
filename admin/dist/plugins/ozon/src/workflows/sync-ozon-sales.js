@@ -28,10 +28,23 @@ export async function syncOzonSales(container, accountId, dateFrom, dateTo) {
     const supplierService = container.resolve("supplierOrderService");
     const account = await ozonService.retrieveOzonAccount(accountId);
     const now = new Date();
-    const since = dateFrom
-        ? new Date(dateFrom)
-        : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const to = dateTo ? new Date(dateTo) : now;
+    let since;
+    if (dateFrom) {
+        since = new Date(dateFrom);
+    }
+    else {
+        // Smart date range: check if any Ozon sales exist
+        const existingSales = await saleService.listSales({ channel: "ozon" }, { take: 1 });
+        if (existingSales.length === 0) {
+            // Initial sync — go back 2 years
+            since = new Date(now.getTime() - 730 * 24 * 60 * 60 * 1000);
+        }
+        else {
+            // Incremental sync — last 30 days
+            since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        }
+    }
     const postings = await ozonService.fetchOzonPostings({ client_id: account.client_id, api_key: account.api_key }, since, to);
     let created = 0;
     let updated = 0;

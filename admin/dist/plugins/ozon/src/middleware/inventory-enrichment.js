@@ -1,5 +1,21 @@
 /**
+ * Filter snapshots to only the latest sync (by max synced_at).
+ * Each sync creates one snapshot per warehouse — we want only the latest set.
+ */
+function getLatestSnapshots(snapshots) {
+    if (snapshots.length === 0)
+        return [];
+    let maxTime = 0;
+    for (const s of snapshots) {
+        const t = new Date(s.synced_at).getTime();
+        if (t > maxTime)
+            maxTime = t;
+    }
+    return snapshots.filter((s) => new Date(s.synced_at).getTime() === maxTime);
+}
+/**
  * Hono middleware that enriches inventory responses with Ozon stock data.
+ * Adds Ozon FBO/reserved entries to stock_breakdown and adjusts "local" stock.
  */
 export async function ozonInventoryEnrichment(c, next) {
     await next();
@@ -9,37 +25,47 @@ export async function ozonInventoryEnrichment(c, next) {
         const body = await c.res.json();
         const container = c.get("container");
         const ozonService = container.resolve("ozonService");
-        const saleService = container.resolve("saleService");
-        // List: enrich rows[]
+        // List: enrich rows[] stock_breakdown
         if (body?.rows && Array.isArray(body.rows)) {
             for (const row of body.rows) {
                 try {
                     const links = await ozonService.listOzonProductLinks({
                         master_card_id: row.card_id,
                     });
-                    if (links.length > 0) {
-                        const offerId = links[0].offer_id;
-                        const snapshots = await ozonService.listOzonStockSnapshots({
-                            offer_id: offerId,
-                        });
-                        row.ozon_fbo = snapshots.reduce((s, snap) => s + (snap.fbo_present || 0), 0);
-                        const sales = await saleService.listSales({
-                            master_card_id: row.card_id,
-                            channel: "ozon",
-                        });
-                        row.sold_qty = sales
-                            .filter((s) => s.status === "active" || s.status === "delivered")
-                            .reduce((s, sale) => s + (sale.quantity || 0), 0);
+                    if (links.length === 0)
+                        continue;
+                    // Skip if already enriched (middleware may fire twice)
+                    if (Array.isArray(row.stock_breakdown) &&
+                        row.stock_breakdown.some((e) => e.source === "ozon_fbo"))
+                        continue;
+                    const offerId = links[0].offer_id;
+                    const allSnapshots = await ozonService.listOzonStockSnapshots({
+                        offer_id: offerId,
+                    });
+                    const snapshots = getLatestSnapshots(allSnapshots);
+                    const fboPresent = snapshots.reduce((s, snap) => s + (snap.fbo_present || 0), 0);
+                    const fboReserved = snapshots.reduce((s, snap) => s + (snap.fbo_reserved || 0), 0);
+                    const marketplaceQty = fboPresent + fboReserved;
+                    if (marketplaceQty > 0 && Array.isArray(row.stock_breakdown)) {
+                        // Decrease "local" stock by marketplace amount
+                        const localEntry = row.stock_breakdown.find((e) => e.source === "local");
+                        if (localEntry) {
+                            localEntry.qty -= marketplaceQty;
+                            if (localEntry.qty < 0) {
+                                row.discrepancy = Math.abs(localEntry.qty);
+                                localEntry.qty = 0;
+                            }
+                        }
+                        // Add Ozon breakdown entries
+                        if (fboPresent > 0) {
+                            row.stock_breakdown.push({ source: "ozon_fbo", label: "Ozon FBO", qty: fboPresent });
+                        }
+                        if (fboReserved > 0) {
+                            row.stock_breakdown.push({ source: "ozon_reserved", label: "Ozon резерв", qty: fboReserved });
+                        }
                     }
                 }
                 catch { /* skip */ }
-            }
-            let totalOzonStock = 0;
-            for (const row of body.rows) {
-                totalOzonStock += row.ozon_fbo || 0;
-            }
-            if (body.totals) {
-                body.totals.ozon_fbo = totalOzonStock;
             }
             c.res = new Response(JSON.stringify(body), {
                 status: c.res.status,
@@ -47,7 +73,7 @@ export async function ozonInventoryEnrichment(c, next) {
             });
             return;
         }
-        // Detail: enrich card + summary
+        // Detail: enrich card + summary with Ozon data
         if (body?.card?.id) {
             const cardId = body.card.id;
             try {
@@ -65,9 +91,10 @@ export async function ozonInventoryEnrichment(c, next) {
                         ozon_price: ozonLink.ozon_price,
                     };
                     try {
-                        const snapshots = await ozonService.listOzonStockSnapshots({
+                        const allSnapshots = await ozonService.listOzonStockSnapshots({
                             offer_id: ozonLink.offer_id,
                         });
+                        const snapshots = getLatestSnapshots(allSnapshots);
                         if (snapshots.length > 0) {
                             body.ozon_stock = {
                                 fbo_present: snapshots.reduce((s, snap) => s + (snap.fbo_present || 0), 0),
@@ -82,26 +109,6 @@ export async function ozonInventoryEnrichment(c, next) {
                             if (body.summary) {
                                 body.summary.ozon_fbo = body.ozon_stock.fbo_present;
                             }
-                        }
-                    }
-                    catch { /* skip */ }
-                    try {
-                        const sales = await saleService.listSales({ master_card_id: cardId, channel: "ozon" }, { order: { sold_at: "DESC" }, take: 50 });
-                        body.recent_sales = sales.map((s) => ({
-                            id: s.id,
-                            channel_order_id: s.channel_order_id,
-                            channel_sku: s.channel_sku,
-                            quantity: s.quantity,
-                            price_per_unit: s.price_per_unit,
-                            revenue: s.revenue,
-                            fee_details: s.fee_details,
-                            total_cogs: s.total_cogs,
-                            sold_at: s.sold_at,
-                            status: s.status,
-                        }));
-                        if (body.summary) {
-                            body.summary.total_sold = sales.reduce((s, sale) => s + (sale.quantity || 0), 0);
-                            body.summary.total_revenue = Math.round(sales.reduce((s, sale) => s + Number(sale.revenue || 0), 0) * 100) / 100;
                         }
                     }
                     catch { /* skip */ }
