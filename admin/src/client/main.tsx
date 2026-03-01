@@ -103,7 +103,7 @@ function AppRoutes() {
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/plugins" element={<PluginsPage />} />
         {dynamicRoutes}
-        {!pluginsLoading && <Route path="*" element={<Navigate to="/catalog" replace />} />}
+        {pluginsData && <Route path="*" element={<Navigate to="/catalog" replace />} />}
       </Routes>
     </Layout>
   )
