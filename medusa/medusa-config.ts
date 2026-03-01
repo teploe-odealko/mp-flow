@@ -182,6 +182,7 @@ module.exports = defineConfig({
     { resolve: "./src/modules/fifo-lot" },
     { resolve: "./src/modules/supplier-order" },
     { resolve: "./src/modules/finance" },
+    { resolve: "./src/modules/sale" },
 
     // ── Auth module: emailpass only (Logto handled client-side) ────
     {

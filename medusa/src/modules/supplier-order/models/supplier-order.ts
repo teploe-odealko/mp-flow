@@ -5,6 +5,7 @@ const SupplierOrder = model.define("supplier_order", {
   id: model.id().primaryKey(),
   user_id: model.text().nullable(),
   // Supplier info
+  supplier_id: model.text().nullable(), // Reference to Supplier registry
   supplier_name: model.text().searchable(),
   supplier_contact: model.text().nullable(),
   // Order details
