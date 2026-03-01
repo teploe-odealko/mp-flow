@@ -1,9 +1,10 @@
-import React from "react"
+import React, { Suspense } from "react"
 import { createRoot } from "react-dom/client"
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query"
 import { AuthProvider, useAuth } from "./app/auth-provider"
 import { Layout } from "./app/layout"
+import { apiGet } from "./lib/api"
 import CatalogPage from "./pages/catalog/page"
 import SalesPage from "./pages/sales/page"
 import WarehousePage from "./pages/warehouse/page"
@@ -16,6 +17,20 @@ import "./styles/globals.css"
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
 })
+
+// Discover plugin client pages via Vite glob — core knows nothing about specific plugins
+const pluginPageModules = import.meta.glob<{ default: React.ComponentType }>(
+  "../../plugins/*/src/client/page.tsx",
+)
+
+// Build map: directory name → lazy component
+const pluginPages: Record<string, React.LazyExoticComponent<React.ComponentType>> = {}
+for (const path in pluginPageModules) {
+  const match = path.match(/\/plugins\/([^/]+)\/src\/client\/page\.tsx$/)
+  if (match) {
+    pluginPages[match[1]] = React.lazy(pluginPageModules[path])
+  }
+}
 
 function LoginScreen() {
   const { login } = useAuth()
@@ -38,6 +53,14 @@ function LoginScreen() {
 function AppRoutes() {
   const { user, loading } = useAuth()
 
+  // Fetch enabled plugins to create dynamic routes (deduped with Layout's query)
+  const { data: pluginsData } = useQuery({
+    queryKey: ["plugins"],
+    queryFn: () => apiGet<{ plugins: Array<{ is_enabled: boolean; adminNav?: Array<{ path: string; label: string }> }> }>("/api/plugins"),
+    enabled: !!user,
+    staleTime: 30_000,
+  })
+
   if (loading) {
     return <div className="flex items-center justify-center h-screen bg-bg-deep text-text-secondary">Загрузка...</div>
   }
@@ -45,6 +68,28 @@ function AppRoutes() {
   if (!user) {
     return <LoginScreen />
   }
+
+  // Build dynamic plugin routes from adminNav + glob-discovered pages
+  const dynamicRoutes = pluginsData?.plugins
+    ?.filter((p) => p.is_enabled && p.adminNav?.length)
+    ?.flatMap((p) => p.adminNav!)
+    ?.map((nav) => {
+      const dirName = nav.path.replace(/^\//, "")
+      const LazyPage = pluginPages[dirName]
+      if (!LazyPage) return null
+      return (
+        <Route
+          key={nav.path}
+          path={nav.path}
+          element={
+            <Suspense fallback={<div className="text-text-secondary">Загрузка...</div>}>
+              <LazyPage />
+            </Suspense>
+          }
+        />
+      )
+    })
+    ?.filter(Boolean) || []
 
   return (
     <Layout>
@@ -57,6 +102,7 @@ function AppRoutes() {
         <Route path="/finance" element={<FinancePage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/plugins" element={<PluginsPage />} />
+        {dynamicRoutes}
         <Route path="*" element={<Navigate to="/catalog" replace />} />
       </Routes>
     </Layout>

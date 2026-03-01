@@ -12,6 +12,7 @@ export default definePlugin({
   label: "Ozon",
   description: "Интеграция с маркетплейсом Ozon (FBO)",
   apiPrefixes: ["/api/ozon-accounts", "/api/ozon-sync"],
+  adminNav: [{ path: "/ozon", label: "Ozon" }],
 
   entities: [OzonAccount, OzonProductLink, OzonStockSnapshot],
 

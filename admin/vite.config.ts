@@ -9,6 +9,7 @@ export default defineConfig({
     alias: {
       "@client": path.resolve(__dirname, "src/client"),
       "@shared": path.resolve(__dirname, "src/shared"),
+      "@plugins": path.resolve(__dirname, "plugins"),
     },
   },
   build: {
