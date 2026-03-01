@@ -71,7 +71,7 @@ const OzonSettingsPage = () => {
 
   const testMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/admin/ozon-accounts/test", {
+      const res = await fetch("/admin/ozon-accounts/verify", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
