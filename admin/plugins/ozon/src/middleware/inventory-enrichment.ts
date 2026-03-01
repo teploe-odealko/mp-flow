@@ -37,7 +37,11 @@ export async function ozonInventoryEnrichment(c: Context, next: Next) {
           )
           const marketplaceQty = fboPresent + fboReserved
 
-          if (marketplaceQty > 0 && Array.isArray(row.stock_breakdown)) {
+          // Skip if already enriched (middleware may fire twice for /api/inventory and /api/inventory/*)
+          const alreadyEnriched = Array.isArray(row.stock_breakdown) &&
+            row.stock_breakdown.some((e: any) => e.source === "ozon_fbo")
+
+          if (marketplaceQty > 0 && Array.isArray(row.stock_breakdown) && !alreadyEnriched) {
             // Decrease "local" stock by marketplace amount
             const localEntry = row.stock_breakdown.find((e: any) => e.source === "local")
             if (localEntry) {
