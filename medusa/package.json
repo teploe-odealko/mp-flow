@@ -9,7 +9,8 @@
     "start": "medusa start",
     "seed": "medusa exec ./src/scripts/seed.ts",
     "db:generate": "medusa db:generate",
-    "db:migrate": "medusa db:migrate"
+    "db:migrate": "medusa db:migrate",
+    "test": "jest --runInBand --forceExit"
   },
   "dependencies": {
     "@medusajs/admin-sdk": "2.13.1",
@@ -19,9 +20,12 @@
   },
   "devDependencies": {
     "@swc/core": "^1.7.28",
+    "@swc/jest": "^0.2.39",
+    "@types/jest": "^30.0.0",
     "@types/node": "^20.12.11",
     "@types/react": "^18.3.2",
     "@types/react-dom": "^18.2.25",
+    "jest": "^30.2.0",
     "prop-types": "^15.8.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

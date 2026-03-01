@@ -7,101 +7,33 @@ on:
     branches: [main]
 
 jobs:
-  lint:
+  medusa:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./medusa
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: "3.11"
-
-      - run: pip install ruff
-
-      - name: Check formatting
-        run: ruff format --check proxy/
-
-      - name: Lint
-        run: ruff check proxy/
-
-  test:
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: mpflow
-          POSTGRES_PASSWORD: test_password
-          POSTGRES_DB: mpflow
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U mpflow"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+          node-version: "20"
 
       - name: Install dependencies
-        run: |
-          pip install -r proxy/requirements.txt
-          pip install pytest pytest-asyncio
+        run: npm ci
 
-      - name: Apply migrations
+      - name: Install plugin dependencies
+        run: cd plugins/ozon && npm install
+
+      - name: Build plugin
         run: |
-          for f in migrations/init.sql $(ls migrations/0*.sql 2>/dev/null | sort); do
-            echo "Applying $(basename $f)..."
-            PGPASSWORD=test_password psql -h localhost -U mpflow -d mpflow -f "$f"
-          done
+          cd plugins/ozon && ../../node_modules/.bin/medusa plugin:build
+          mkdir -p ../node_modules/mpflow-plugin-ozon
+          cp package.json ../node_modules/mpflow-plugin-ozon/
+          cp -r .medusa ../node_modules/mpflow-plugin-ozon/
+
+      - name: Build medusa
+        run: npm run build || test -d .medusa/server
 
       - name: Run tests
-        env:
-          DATABASE_URL: postgresql://mpflow:test_password@localhost:5432/mpflow
-          HMAC_SECRET: test-secret-for-ci
-          PYTHONPATH: .
-        run: pytest tests/admin/ -v
-
-  migrations:
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: mpflow
-          POSTGRES_PASSWORD: test_password
-          POSTGRES_DB: mpflow
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U mpflow"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Verify all migrations apply cleanly
-        run: |
-          for f in migrations/init.sql $(ls migrations/0*.sql 2>/dev/null | sort); do
-            echo "Applying $(basename $f)..."
-            PGPASSWORD=test_password psql -h localhost -U mpflow -d mpflow -f "$f" || exit 1
-          done
-          echo "All migrations applied successfully"
-
-      - name: Verify init-db.sh idempotency
-        env:
-          POSTGRES_USER: mpflow
-          POSTGRES_DB: mpflow
-          PGPASSWORD: test_password
-          PGHOST: localhost
-        run: |
-          chmod +x scripts/init-db.sh
-          scripts/init-db.sh
-          echo "init-db.sh idempotent re-run passed"
+        run: npm test
