@@ -70,7 +70,7 @@ function AssignCostModal({
   onSubmit: (data: { master_card_id: string; quantity: number; unit_cost_rub: number }) => void
   isPending: boolean
 }) {
-  const [quantity, setQuantity] = useState(row.stock_total > 0 ? row.stock_total : 1)
+  const [quantity, setQuantity] = useState(row.discrepancy > 0 ? row.discrepancy : 1)
   const [unitCost, setUnitCost] = useState("")
 
   return (
