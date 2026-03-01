@@ -32,12 +32,12 @@ const AnalyticsPage = () => {
       <div className="flex items-center justify-between mb-6">
         <Heading level="h1">Аналитика</Heading>
         <div className="flex gap-3 items-end">
-          <Select value={channel} onValueChange={setChannel}>
+          <Select value={channel || "__all__"} onValueChange={(v) => setChannel(v === "__all__" ? "" : v)}>
             <Select.Trigger>
               <Select.Value placeholder="Все каналы" />
             </Select.Trigger>
             <Select.Content>
-              <Select.Item value="">Все каналы</Select.Item>
+              <Select.Item value="__all__">Все каналы</Select.Item>
               {(salesData?.channels || []).map((ch: any) => (
                 <Select.Item key={ch.code} value={ch.code}>
                   {ch.name}

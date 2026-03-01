@@ -102,12 +102,12 @@ const SalesPage = () => {
 
       {/* Filters */}
       <div className="flex gap-3 mb-6">
-        <Select value={channel} onValueChange={setChannel}>
+        <Select value={channel || "__all__"} onValueChange={(v) => setChannel(v === "__all__" ? "" : v)}>
           <Select.Trigger>
             <Select.Value placeholder="Все каналы" />
           </Select.Trigger>
           <Select.Content>
-            <Select.Item value="">Все каналы</Select.Item>
+            <Select.Item value="__all__">Все каналы</Select.Item>
             {(data?.channels || []).map((ch) => (
               <Select.Item key={ch.code} value={ch.code}>
                 {ch.name}
@@ -116,12 +116,12 @@ const SalesPage = () => {
           </Select.Content>
         </Select>
 
-        <Select value={status} onValueChange={setStatus}>
+        <Select value={status || "__all__"} onValueChange={(v) => setStatus(v === "__all__" ? "" : v)}>
           <Select.Trigger>
             <Select.Value placeholder="Все статусы" />
           </Select.Trigger>
           <Select.Content>
-            <Select.Item value="">Все статусы</Select.Item>
+            <Select.Item value="__all__">Все статусы</Select.Item>
             <Select.Item value="delivered">Доставлено</Select.Item>
             <Select.Item value="pending">Ожидание</Select.Item>
             <Select.Item value="processing">Обработка</Select.Item>
