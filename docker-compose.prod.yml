@@ -10,6 +10,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       NODE_ENV: production
       COOKIE_SECRET: ${MEDUSA_COOKIE_SECRET:-change-in-production}
+      MPFLOW_CLOUD: ${MPFLOW_CLOUD:-true}
       # Logto Auth (client-side @logto/browser SDK)
       LOGTO_ENDPOINT: ${LOGTO_ENDPOINT:-}
       LOGTO_SPA_APP_ID: ${LOGTO_SPA_APP_ID:-}
