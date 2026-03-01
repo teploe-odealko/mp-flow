@@ -174,29 +174,49 @@ const allocateFifoStep = createStep(
   }
 )
 
-// Step 4: Create finance transactions
-const createFinanceTxsStep = createStep(
-  "create-sale-finance-txs",
+// Step 4: Compute totals + create finance txs + update sale
+const finalizeSaleStep = createStep(
+  "finalize-sale-totals",
   async (
-    input: {
-      saleId: string
-      userId: string | null
-      totalRevenue: number
-      totalCogs: number
-      fees: any[]
-    },
+    input: { saleId: string; userId: string | null; totalCogs: number },
     { container }
   ) => {
+    const saleService: any = container.resolve(SALE_MODULE)
     const financeService: any = container.resolve(FINANCE_MODULE)
+
+    // Fetch actual items and fees from DB to compute totals
+    const items = await saleService.listSaleItems({ sale_id: input.saleId })
+    const fees = await saleService.listSaleFees({ sale_id: input.saleId })
+
+    const totalRevenue = items.reduce(
+      (sum: number, item: any) => sum + Number(item.total || 0),
+      0
+    )
+    const totalFees = fees.reduce(
+      (sum: number, fee: any) => sum + Number(fee.amount || 0),
+      0
+    )
+    const totalCogs = input.totalCogs
+    const profit = totalRevenue - totalFees - totalCogs
+
+    // Update sale totals
+    await saleService.updateSales({
+      id: input.saleId,
+      total_revenue: totalRevenue,
+      total_fees: totalFees,
+      total_cogs: totalCogs,
+      total_profit: profit,
+    })
+
+    // Create finance transactions
     const txIds: string[] = []
 
-    // Revenue
-    if (input.totalRevenue > 0) {
+    if (totalRevenue > 0) {
       const tx = await financeService.createFinanceTransactions({
         user_id: input.userId,
         type: "sale_revenue",
         direction: "income",
-        amount: input.totalRevenue,
+        amount: totalRevenue,
         currency_code: "RUB",
         order_id: input.saleId,
         category: "sale",
@@ -207,13 +227,12 @@ const createFinanceTxsStep = createStep(
       txIds.push(tx.id)
     }
 
-    // COGS
-    if (input.totalCogs > 0) {
+    if (totalCogs > 0) {
       const tx = await financeService.createFinanceTransactions({
         user_id: input.userId,
         type: "cogs",
         direction: "expense",
-        amount: input.totalCogs,
+        amount: totalCogs,
         currency_code: "RUB",
         order_id: input.saleId,
         category: "sale",
@@ -226,15 +245,14 @@ const createFinanceTxsStep = createStep(
 
     // Fees grouped by type
     const feesByType: Record<string, number> = {}
-    for (const fee of input.fees) {
+    for (const fee of fees) {
       feesByType[fee.fee_type] = (feesByType[fee.fee_type] || 0) + Number(fee.amount)
     }
-
     for (const [feeType, amount] of Object.entries(feesByType)) {
       if (amount <= 0) continue
       const tx = await financeService.createFinanceTransactions({
         user_id: input.userId,
-        type: `sale_commission`,
+        type: "sale_commission",
         direction: "expense",
         amount,
         currency_code: "RUB",
@@ -247,36 +265,7 @@ const createFinanceTxsStep = createStep(
       txIds.push(tx.id)
     }
 
-    return new StepResponse(txIds, txIds)
-  },
-  async (txIds: string[], { container }) => {
-    if (!txIds?.length) return
-    const financeService: any = container.resolve(FINANCE_MODULE)
-    for (const id of txIds) {
-      await financeService.deleteFinanceTransactions(id)
-    }
-  }
-)
-
-// Step 5: Update sale totals
-const updateSaleTotalsStep = createStep(
-  "update-sale-totals",
-  async (
-    input: { saleId: string; totalRevenue: number; totalFees: number; totalCogs: number },
-    { container }
-  ) => {
-    const saleService: any = container.resolve(SALE_MODULE)
-    const profit = input.totalRevenue - input.totalFees - input.totalCogs
-
-    await saleService.updateSales({
-      id: input.saleId,
-      total_revenue: input.totalRevenue,
-      total_fees: input.totalFees,
-      total_cogs: input.totalCogs,
-      total_profit: profit,
-    })
-
-    return new StepResponse({ profit })
+    return new StepResponse({ profit, totalRevenue, totalFees, totalCogs, txIds })
   }
 )
 
@@ -284,45 +273,27 @@ const updateSaleTotalsStep = createStep(
 export const createSaleWorkflow = createWorkflow(
   "create-sale",
   (input: CreateSaleInput) => {
-    const validation = validateSaleStep(input)
+    validateSaleStep(input)
 
-    const { sale, items, fees } = createSaleRecordsStep(input)
+    const { sale, items } = createSaleRecordsStep(input)
 
     const { totalCogs } = allocateFifoStep({
       saleId: sale.id,
       items,
     })
 
-    const totalRevenue = items.reduce(
-      (sum: number, item: any) => sum + Number(item.total),
-      0
-    )
-    const totalFees = fees.reduce(
-      (sum: number, fee: any) => sum + Number(fee.amount),
-      0
-    )
-
-    createFinanceTxsStep({
+    const result = finalizeSaleStep({
       saleId: sale.id,
       userId: input.user_id || null,
-      totalRevenue,
-      totalCogs,
-      fees,
-    })
-
-    updateSaleTotalsStep({
-      saleId: sale.id,
-      totalRevenue,
-      totalFees,
       totalCogs,
     })
 
     return new WorkflowResponse({
       sale_id: sale.id,
-      items_count: items.length,
-      total_revenue: totalRevenue,
-      total_fees: totalFees,
-      total_cogs: totalCogs,
+      total_revenue: result.totalRevenue,
+      total_fees: result.totalFees,
+      total_cogs: result.totalCogs,
+      profit: result.profit,
     })
   }
 )
