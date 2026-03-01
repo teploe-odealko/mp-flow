@@ -20,10 +20,10 @@ jobs:
           node-version: "20"
 
       - name: Install dependencies
-        run: npm ci
+        run: yarn install --frozen-lockfile
 
       - name: Install plugin dependencies
-        run: cd plugins/ozon && npm install
+        run: cd plugins/ozon && yarn install
 
       - name: Build plugin
         run: |
@@ -33,7 +33,7 @@ jobs:
           cp -r .medusa ../node_modules/mpflow-plugin-ozon/
 
       - name: Build medusa
-        run: npm run build || test -d .medusa/server
+        run: yarn build || test -d .medusa/server
 
       - name: Run tests
-        run: npm test
+        run: yarn test
