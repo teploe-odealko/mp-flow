@@ -1,42 +1,36 @@
-import React, { useState, useEffect, Suspense } from "react"
+import React, { useState, useEffect, useMemo } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { apiGet, apiPut } from "../../lib/api"
 import type { MasterCardTabProps } from "./tab-types"
 
-// Discover plugin tabs via Vite glob
+// Discover plugin tabs via Vite glob (eager — small components, need labels immediately)
 const pluginTabModules = import.meta.glob<{
   default: React.ComponentType<MasterCardTabProps>
   tabLabel?: string
   tabOrder?: number
-}>("../../../../plugins/*/src/client/tabs/master-card.tsx", { eager: false })
+}>("../../../../plugins/*/src/client/tabs/master-card.tsx", { eager: true })
 
 interface PluginTab {
+  dirName: string
   label: string
   order: number
-  Component: React.LazyExoticComponent<React.ComponentType<MasterCardTabProps>>
+  Component: React.ComponentType<MasterCardTabProps>
 }
 
-const pluginTabs: PluginTab[] = []
+const allPluginTabs: PluginTab[] = []
 for (const path in pluginTabModules) {
+  const mod = pluginTabModules[path]
   const match = path.match(/\/plugins\/([^/]+)\//)
-  const pluginName = match ? match[1] : "plugin"
-  pluginTabs.push({
-    label: pluginName,
-    order: 10,
-    Component: React.lazy(async () => {
-      const mod = await pluginTabModules[path]()
-      // Update label/order from module exports
-      const idx = pluginTabs.findIndex((t) => t.label === pluginName)
-      if (idx >= 0) {
-        if (mod.tabLabel) pluginTabs[idx].label = mod.tabLabel
-        if (mod.tabOrder != null) pluginTabs[idx].order = mod.tabOrder
-      }
-      return mod
-    }),
+  const dirName = match ? match[1] : "plugin"
+  allPluginTabs.push({
+    dirName,
+    label: mod.tabLabel || dirName,
+    order: mod.tabOrder ?? 10,
+    Component: mod.default,
   })
 }
-pluginTabs.sort((a, b) => a.order - b.order)
+allPluginTabs.sort((a, b) => a.order - b.order)
 
 const CURRENCIES = ["CNY", "RUB", "USD"]
 
@@ -55,6 +49,22 @@ export default function CatalogDetailPage() {
     queryFn: () => apiGet<any>(`/api/catalog/${id}`),
     enabled: !!id,
   })
+
+  const { data: pluginsData } = useQuery({
+    queryKey: ["plugins"],
+    queryFn: () => apiGet<any>("/api/plugins"),
+  })
+
+  // Filter tabs to only show enabled plugins
+  const enabledTabs = useMemo(() => {
+    if (!pluginsData?.plugins) return []
+    const enabledDirs = new Set(
+      pluginsData.plugins
+        .filter((p: any) => p.is_enabled)
+        .map((p: any) => p.name.replace("mpflow-plugin-", ""))
+    )
+    return allPluginTabs.filter((t) => enabledDirs.has(t.dirName))
+  }, [pluginsData])
 
   const product = data?.product
 
@@ -91,7 +101,7 @@ export default function CatalogDetailPage() {
 
   const tabs = [
     { label: "Основное", id: "core" },
-    ...pluginTabs.map((t, i) => ({ label: t.label, id: `plugin-${i}` })),
+    ...enabledTabs.map((t, i) => ({ label: t.label, id: `plugin-${i}` })),
   ]
 
   if (isLoading) {
@@ -247,14 +257,12 @@ export default function CatalogDetailPage() {
       )}
 
       {/* Plugin tabs */}
-      {activeTab > 0 && pluginTabs[activeTab - 1] && (
-        <Suspense fallback={<div className="text-text-secondary text-sm">Загрузка...</div>}>
-          {React.createElement(pluginTabs[activeTab - 1].Component, {
-            productId: id!,
-            product,
-            onRefresh: () => refetch(),
-          })}
-        </Suspense>
+      {activeTab > 0 && enabledTabs[activeTab - 1] && (
+        React.createElement(enabledTabs[activeTab - 1].Component, {
+          productId: id!,
+          product,
+          onRefresh: () => refetch(),
+        })
       )}
     </div>
   )
