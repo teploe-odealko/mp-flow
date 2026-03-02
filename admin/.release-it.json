@@ -1,0 +1,36 @@
+{
+  "git": {
+    "commitMessage": "chore: release v${version}",
+    "tagName": "v${version}",
+    "tagAnnotation": "Release v${version}",
+    "pushRepo": "origin"
+  },
+  "github": {
+    "release": true,
+    "releaseName": "v${version}"
+  },
+  "npm": {
+    "publish": false
+  },
+  "plugins": {
+    "@release-it/conventional-changelog": {
+      "preset": {
+        "name": "conventionalcommits",
+        "types": [
+          { "type": "feat", "section": "Добавлено" },
+          { "type": "fix", "section": "Исправлено" },
+          { "type": "refactor", "section": "Изменено" },
+          { "type": "perf", "section": "Производительность" },
+          { "type": "docs", "section": "Документация" },
+          { "type": "chore", "hidden": true },
+          { "type": "style", "hidden": true },
+          { "type": "test", "hidden": true },
+          { "type": "build", "hidden": true },
+          { "type": "ci", "hidden": true }
+        ]
+      },
+      "infile": "../CHANGELOG.md",
+      "header": "# Changelog\n\nВсе значимые изменения в проекте документируются в этом файле.\n"
+    }
+  }
+}

@@ -46,6 +46,12 @@ admin-ui/dist/
 .claude/plan.md
 .claude/plans/
 
+# TypeScript build info
+*.tsbuildinfo
+
+# NPM config (may contain auth tokens)
+.npmrc
+
 # Misc
 cookies.txt
 directus/uploads/

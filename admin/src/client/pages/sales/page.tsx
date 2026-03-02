@@ -86,9 +86,9 @@ export default function SalesPage() {
   const selectedSale = expandedRow ? sales.find((s: any) => s.id === expandedRow) : null
 
   return (
-    <div className="flex gap-0">
+    <div className={`flex gap-0 ${selectedSale ? "h-full -m-6" : ""}`}>
       {/* Main content — table */}
-      <div className={`min-w-0 transition-all duration-200 ${selectedSale ? "flex-1" : "w-full"}`}>
+      <div className={`min-w-0 transition-all duration-200 ${selectedSale ? "flex-1 overflow-y-auto p-6" : "w-full"}`}>
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-xl font-semibold">Продажи</h1>
           <span className="text-text-secondary text-sm">{totalCount} записей</span>

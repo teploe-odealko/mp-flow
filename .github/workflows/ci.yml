@@ -30,3 +30,6 @@ jobs:
 
       - name: Build plugins
         run: npm run build:plugins
+
+      - name: Run tests
+        run: npm test

@@ -43,6 +43,37 @@ brand/               Логотип, брендбук
 ee/                  Лицензия EE
 ```
 
+## Git Flow
+
+### Branches
+
+- `main` — всегда deployable, автодеплой на прод
+- Feature branches: `feat/xxx`, `fix/xxx` → PR в `main`
+
+### Conventional Commits
+
+Мы используем [Conventional Commits](https://www.conventionalcommits.org/). Это позволяет автоматически генерировать CHANGELOG при релизе.
+
+| Префикс | Когда использовать | Пример |
+|---------|-------------------|--------|
+| `feat:` | Новая функциональность | `feat: добавить страницу аналитики` |
+| `fix:` | Исправление бага | `fix: исправить подсчёт FIFO себестоимости` |
+| `refactor:` | Рефакторинг без изменения поведения | `refactor: convention-based auto-discovery` |
+| `docs:` | Только документация | `docs: обновить README` |
+| `chore:` | Обслуживание (зависимости, CI) | `chore: обновить dependencies` |
+| `test:` | Тесты | `test: добавить тесты для sync workflow` |
+| `perf:` | Оптимизация производительности | `perf: кэшировать запросы к Ozon API` |
+
+### Pull Requests
+
+1. Форкните репо и создайте ветку: `git checkout -b feat/my-feature`
+2. Внесите изменения
+3. Проверьте сборку: `cd admin && npm run build`
+4. Запустите тесты: `npm test`
+5. Откройте PR в `main`
+
+CI запускается автоматически: сборка клиента, сервера, плагинов и тесты.
+
 ## Стиль кода
 
 TypeScript, проверяется через `tsc`:
@@ -62,16 +93,6 @@ npm test
 
 Тесты используют vitest.
 
-## Pull Requests
-
-1. Форкните репо и создайте ветку: `git checkout -b feature/my-feature`
-2. Внесите изменения
-3. Проверьте сборку: `cd admin && npm run build`
-4. Запустите тесты: `npm test`
-5. Откройте PR в `main`
-
-CI запускается автоматически: сборка клиента, сервера и плагинов.
-
 ## Миграции
 
 Два механизма:
@@ -88,11 +109,34 @@ npm run db:migrate
 
 ## Плагины
 
-Плагины расширяют систему: свои entities, API-роуты, middleware, страницы в админке.
+Плагины расширяют систему: свои entities, API-роуты, middleware, страницы в админке. Convention-based auto-discovery — entities, services, routes обнаруживаются по структуре папок.
 
 Смотрите плагин `ozon` как референс: `admin/plugins/ozon/`.
 
 Подробная документация: [docs.mp-flow.ru/docs/developer/plugin-development](https://docs.mp-flow.ru/docs/developer/plugin-development)
+
+## Версионирование и релизы
+
+Проект следует [Semantic Versioning](https://semver.org/):
+
+- **PATCH** (0.1.1): баг-фиксы
+- **MINOR** (0.2.0): новые фичи
+- **MAJOR** (1.0.0): breaking changes
+
+Релизы создаются через `release-it`:
+
+```bash
+cd admin
+npm run release          # Интерактивный релиз
+npm run release -- --dry-run  # Предпросмотр без изменений
+```
+
+Скрипт автоматически:
+1. Определяет тип бампа по conventional commits
+2. Обновляет version в package.json
+3. Генерирует CHANGELOG.md
+4. Создаёт коммит и git tag
+5. Пушит и создаёт GitHub Release
 
 ## EE код
 

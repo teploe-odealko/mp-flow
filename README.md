@@ -1,5 +1,9 @@
 # MPFlow
 
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![CI](https://github.com/teploe-odealko/mp-flow/actions/workflows/ci.yml/badge.svg)](https://github.com/teploe-odealko/mp-flow/actions/workflows/ci.yml)
+[![Docker](https://img.shields.io/badge/Docker-ghcr.io-blue)](https://github.com/teploe-odealko/mp-flow/pkgs/container/mp-flow%2Fadmin)
+
 Open source ERP для продавцов на маркетплейсах. Управление каталогом, закупками, складом (FIFO), ценами и финансами в одном месте.
 
 **[mp-flow.ru](https://mp-flow.ru)** · **[Документация](https://docs.mp-flow.ru)** · **[Облако](https://admin.mp-flow.ru)**
@@ -27,9 +31,10 @@ docker compose up -d
 - **Закупки** — заказы поставщикам с распределением общих затрат (логистика, таможня)
 - **FIFO учёт** — партионный складской учёт с точной себестоимостью каждой единицы
 - **Юнит-экономика** — PnL по товару с реальной себестоимостью FIFO
+- **Продажи** — синхронизация с Ozon (отправления, возвраты, комиссии)
 - **Финансы** — транзакции, ДДС, отчёты
 - **Аналитика** — сводные отчёты по продажам и складу
-- **Плагины** — расширяемая архитектура (Ozon интеграция как плагин)
+- **Плагины** — расширяемая архитектура с convention-based auto-discovery
 
 ## Облако
 
@@ -49,14 +54,18 @@ docker compose up -d
 │   MPFlow Admin (Node.js)          │
 │   - Hono API (:3000)             │
 │   - React SPA (встроена)         │
-│   - Плагины (Ozon и др.)        │
+│   - Плагины (auto-discovery)    │
 ├───────────────────────────────────┤
-│   Модули:                         │
+│   Core-модули:                    │
 │   - master-card (каталог)        │
 │   - supplier-order (закупки)     │
 │   - finance (транзакции)         │
 │   - sale (продажи)               │
-│   - plugin-setting (плагины)     │
+├───────────────────────────────────┤
+│   Плагины (convention-based):    │
+│   - entities → auto-schema       │
+│   - services → DI (awilix)      │
+│   - routes, middleware, nav      │
 └──────────┬────────────────────────┘
            │
 ┌──────────▼──────┐
@@ -119,6 +128,12 @@ docker compose up -d
 ```
 
 Миграции и auto-schema применяются автоматически при старте.
+
+## Версионирование
+
+Проект использует [Semantic Versioning](https://semver.org/). Текущие релизы — pre-1.0 (API может меняться).
+
+Changelog: [CHANGELOG.md](CHANGELOG.md)
 
 ## Лицензия
 
