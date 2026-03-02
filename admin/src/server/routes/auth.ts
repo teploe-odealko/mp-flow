@@ -17,9 +17,11 @@ function generateCodeChallenge(verifier: string): string {
   return createHash("sha256").update(verifier).digest("base64url")
 }
 
-function getOrigin(c: { req: { url: string } }): string {
+function getOrigin(c: { req: any }): string {
   const url = new URL(c.req.url)
-  return `${url.protocol}//${url.host}`
+  const proto = c.req.header?.("x-forwarded-proto") || url.protocol.replace(":", "")
+  const host = c.req.header?.("x-forwarded-host") || url.host
+  return `${proto}://${host}`
 }
 
 // ── Helpers ──
