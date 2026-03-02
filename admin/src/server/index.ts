@@ -5,7 +5,6 @@ import { initORM, closeORM } from "./core/mikro-orm.js"
 import { createAppContainer } from "./core/container.js"
 import { createRequestScope } from "./core/request-scope.js"
 import { collectPluginEntities, loadPlugins, getLoadedPlugins } from "./core/plugin-loader.js"
-import { stopAllJobs, setSchedulerContext } from "./core/scheduler.js"
 import { MasterCard } from "./modules/master-card/entity.js"
 import { SupplierOrder, SupplierOrderItem, Supplier } from "./modules/supplier-order/entities.js"
 import { FinanceTransaction } from "./modules/finance/entity.js"
@@ -130,8 +129,7 @@ async function main() {
     await next()
   })
 
-  // Load plugins (services, routes, middleware, jobs — entities already registered)
-  setSchedulerContext(container, orm)
+  // Load plugins (services, routes, middleware — entities already registered)
   await loadPlugins(pluginPaths, app, container, orm)
 
   // Register core routes
@@ -165,7 +163,6 @@ async function main() {
   // Graceful shutdown
   const shutdown = async () => {
     console.log("[mpflow] Shutting down...")
-    stopAllJobs()
     await closeORM()
     process.exit(0)
   }

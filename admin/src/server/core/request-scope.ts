@@ -10,7 +10,7 @@ import { ProcurementService } from "../modules/procurement/service.js"
 
 /**
  * Create a request-scoped DI container with a fresh EntityManager fork.
- * Each HTTP request / cron job gets its own EM and service instances.
+ * Each HTTP request gets its own EM and service instances.
  */
 export function createRequestScope(container: AwilixContainer, orm: MikroORM) {
   const em = orm.em.fork()

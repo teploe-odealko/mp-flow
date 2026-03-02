@@ -88,7 +88,7 @@ npm run db:migrate
 
 ## Плагины
 
-Плагины расширяют систему: свои entities, API-роуты, middleware, cron jobs, страницы в админке.
+Плагины расширяют систему: свои entities, API-роуты, middleware, страницы в админке.
 
 Смотрите плагин `ozon` как референс: `admin/plugins/ozon/`.
 

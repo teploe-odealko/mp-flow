@@ -1,11 +1,11 @@
 ---
 title: Разработка плагинов
-description: Как создать свой плагин для MPFlow — entities, API, middleware, cron jobs, страница в админке
+description: Как создать свой плагин для MPFlow — entities, API, middleware, страница в админке
 ---
 
 # Разработка плагинов
 
-Плагины MPFlow расширяют систему: свои таблицы в БД, API-роуты, middleware для обогащения данных, фоновые задачи и страницы в админке. Таблицы для плагинов создаются автоматически — не нужно писать миграции.
+Плагины MPFlow расширяют систему: свои таблицы в БД, API-роуты, middleware для обогащения данных и страницы в админке. Таблицы для плагинов создаются автоматически — не нужно писать миграции.
 
 ## Как это работает
 
@@ -14,7 +14,7 @@ description: Как создать свой плагин для MPFlow — entit
 1. Собираются entities из всех плагинов
 2. ORM инициализируется со всеми entities (core + plugins)
 3. `SchemaGenerator.updateSchema({ safe: true })` создаёт недостающие таблицы и колонки
-4. Загружаются services, routes, middleware и cron jobs
+4. Загружаются services, routes и middleware
 
 `safe: true` означает только аддитивные изменения — CREATE TABLE, ADD COLUMN. Без DROP.
 
@@ -251,12 +251,6 @@ interface PluginDefinition {
     handler: (c: any, next: () => Promise<void>) => Promise<any>
   }>
 
-  jobs?: Array<{
-    name: string                    // Уникальное имя задачи
-    schedule: string                // Cron-выражение (например, "*/30 * * * *")
-    handler: (container: any) => Promise<void>
-  }>
-
   adminNav?: Array<{
     path: string                    // Путь в SPA (например, "/my-plugin")
     label: string                   // Название в сайдбаре
@@ -286,25 +280,6 @@ export async function myEnrichment(c: any, next: () => Promise<void>) {
 }
 ```
 
-### Cron jobs (фоновые задачи)
-
-Каждый вызов job получает свой request-scoped контейнер с изолированным EntityManager:
-
-```typescript
-jobs: [
-  {
-    name: "my-sync-job",
-    schedule: "0 */1 * * *", // каждый час
-    handler: async (container) => {
-      const service = container.resolve("myRecordService")
-      await service.doSomething()
-    },
-  },
-]
-```
-
-При отключении плагина через UI — его cron jobs останавливаются, при включении — возобновляются.
-
 ### Страница в админке
 
 Плагин может добавить страницу в клиентский SPA. Создайте React-компонент в `admin/src/client/pages/` и зарегистрируйте роут в `admin/src/client/main.tsx`. Навигация появится автоматически через `adminNav` в определении плагина.
@@ -314,7 +289,6 @@ jobs: [
 Пользователь может включать/выключать плагины через UI (`/plugins`). При отключении:
 
 - API-роуты с указанными `apiPrefixes` возвращают 403
-- Cron jobs останавливаются
 - Навигация в сайдбаре скрывается
 
 ## Что дальше

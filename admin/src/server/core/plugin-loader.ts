@@ -1,7 +1,6 @@
 import type { Hono } from "hono"
 import type { AwilixContainer } from "awilix"
 import type { MikroORM } from "@mikro-orm/core"
-import { scheduleJob, type Job } from "./scheduler.js"
 import type { PluginColumnDocContribution } from "../../shared/column-docs.js"
 
 export interface PluginMiddleware {
@@ -18,7 +17,6 @@ export interface PluginDefinition {
   services?: Record<string, any>
   routes?: (app: Hono, container: AwilixContainer) => void
   middleware?: PluginMiddleware[]
-  jobs?: Job[]
   adminNav?: Array<{ path: string; label: string }>
   apiPrefixes?: string[]
   columnDocs?: PluginColumnDocContribution[]
@@ -50,7 +48,7 @@ async function resolvePluginPath(resolve: string): Promise<string> {
 }
 
 /**
- * Collect entities from plugins WITHOUT loading routes/middleware/jobs.
+ * Collect entities from plugins WITHOUT loading routes/middleware.
  * Used before ORM init so all entities are registered in metadata.
  */
 export async function collectPluginEntities(
@@ -122,13 +120,6 @@ export async function loadPlugins(
               await next()
             })
           }
-        }
-      }
-
-      // Schedule jobs
-      if (plugin.jobs) {
-        for (const job of plugin.jobs) {
-          scheduleJob(job, plugin.name)
         }
       }
 

@@ -67,7 +67,7 @@ docker compose up -d
 
 - **Admin** — Hono API + React SPA в одном Node.js процессе. MikroORM для БД, awilix для DI.
 - **PostgreSQL** — все данные. Миграции + auto-schema применяются при запуске.
-- **Плагины** — свои entities, routes, middleware, cron jobs. Таблицы создаются автоматически.
+- **Плагины** — свои entities, routes, middleware. Таблицы создаются автоматически.
 
 ## Tech Stack
 
@@ -81,7 +81,6 @@ docker compose up -d
 | Frontend | React 19 + Vite 6 + Tailwind CSS 3 |
 | Data fetching | TanStack Query 5 |
 | Router | React Router 7 |
-| Cron | node-cron |
 
 ## Интеграции
 

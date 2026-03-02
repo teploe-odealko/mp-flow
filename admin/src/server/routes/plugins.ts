@@ -2,7 +2,6 @@ import { Hono } from "hono"
 import { getUserId } from "../core/auth.js"
 import { getLoadedPlugins } from "../core/plugin-loader.js"
 import type { PluginSettingService } from "../modules/plugin-setting/service.js"
-import { stopJobsByPlugin, startJobsByPlugin } from "../core/scheduler.js"
 import { execSync } from "child_process"
 
 const plugins = new Hono<{ Variables: Record<string, any> }>()
@@ -45,13 +44,6 @@ plugins.post("/:name/toggle", async (c) => {
 
   const settingService: PluginSettingService = c.get("container").resolve("pluginSettingService")
   const setting = await settingService.upsert(pluginName, userId, is_enabled)
-
-  // Stop/start cron jobs for this plugin
-  if (is_enabled) {
-    startJobsByPlugin(pluginName)
-  } else {
-    stopJobsByPlugin(pluginName)
-  }
 
   return c.json({
     name: pluginName,
