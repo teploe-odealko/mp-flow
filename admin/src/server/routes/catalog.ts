@@ -124,6 +124,23 @@ catalog.put("/:id", async (c) => {
   return c.json({ product: card })
 })
 
+// POST /api/catalog/claim — reassign all master cards to current user (temporary)
+catalog.post("/claim", async (c) => {
+  const userId = getUserId(c)
+  if (!userId) return c.json({ error: "Unauthorized" }, 401)
+
+  const cardService: MasterCardService = c.get("container").resolve("masterCardService")
+  const allCards = await cardService.list({}, { take: 1000 })
+  let claimed = 0
+  for (const card of allCards) {
+    if ((card as any).user_id !== userId) {
+      await cardService.update((card as any).id, { user_id: userId })
+      claimed++
+    }
+  }
+  return c.json({ claimed })
+})
+
 // DELETE /api/catalog/:id
 catalog.delete("/:id", async (c) => {
   const { id } = c.req.param()
