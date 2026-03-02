@@ -106,7 +106,6 @@ function pnlPct(amount: number, totalIncome: number): string {
 
 function PnlReport({ data }: { data: PnlData }) {
   const feeEntries = Object.entries(data.fees_by_type).sort((a, b) => b[1].amount - a[1].amount)
-  const channelEntries = Object.entries(data.by_channel).sort((a, b) => b[1].revenue - a[1].revenue)
   const manualIncomeEntries = Object.entries(data.manual_income_by_type || {}).sort((a, b) => b[1] - a[1])
   const manualExpenseEntries = Object.entries(data.manual_expense_by_type || {}).sort((a, b) => b[1] - a[1])
 
@@ -300,31 +299,6 @@ function PnlReport({ data }: { data: PnlData }) {
           </div>
         </div>
 
-        {/* By channel */}
-        {channelEntries.length > 0 && (
-          <details className="group">
-            <summary className="flex items-center gap-1.5 cursor-pointer select-none px-4 py-3 hover:bg-bg-elevated transition-colors">
-              <ChevronIcon className="group-open:rotate-90" />
-              <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary flex-1">По каналам</span>
-            </summary>
-            <div className="px-4 pb-3 space-y-1">
-              {channelEntries.map(([key, ch]) => (
-                <div key={key} className="flex items-center justify-between py-1 pl-5 border-b border-bg-border last:border-0">
-                  <div>
-                    <span className="font-medium">{ch.label}</span>
-                    <span className="text-text-muted text-xs ml-2">{ch.count} продаж</span>
-                  </div>
-                  <div className="text-right tabular-nums">
-                    <span>{fmt(ch.revenue)} ₽</span>
-                    <span className={`ml-3 font-medium ${ch.profit >= 0 ? "text-inflow" : "text-outflow"}`}>
-                      {fmt(ch.profit)} ₽
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </details>
-        )}
       </div>
     </div>
   )
@@ -508,16 +482,22 @@ export default function AnalyticsPage() {
   const [tab, setTab] = useState<Tab>("pnl")
   const [dateFrom, setDateFrom] = useState(thisMonth)
   const [dateTo, setDateTo] = useState(today)
+  const [channel, setChannel] = useState("")
 
   const { data, isLoading } = useQuery({
-    queryKey: ["analytics", tab, dateFrom, dateTo],
+    queryKey: ["analytics", tab, dateFrom, dateTo, channel],
     queryFn: () => {
-      const params = tab === "stock-valuation"
-        ? `report=${tab}`
-        : `report=${tab}&from=${dateFrom}&to=${dateTo}`
-      return apiGet<{ data: any }>(`/api/analytics?${params}`)
+      const params = new URLSearchParams({ report: tab })
+      if (tab !== "stock-valuation") { params.set("from", dateFrom); params.set("to", dateTo) }
+      if (channel) params.set("channel", channel)
+      return apiGet<{ data: any }>(`/api/analytics?${params.toString()}`)
     },
   })
+
+  // Collect available channels from pnl data for the dropdown
+  const channels = tab === "pnl" && data?.data
+    ? Object.entries((data.data as PnlData).by_channel || {}).map(([key, ch]) => ({ value: key, label: ch.label }))
+    : []
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "pnl", label: "P&L" },
@@ -566,6 +546,18 @@ export default function AnalyticsPage() {
               className="bg-bg-surface border border-bg-border rounded px-2 py-1 text-sm text-text-primary"
             />
           </div>
+        )}
+
+        {/* Channel filter */}
+        {channels.length > 1 && (
+          <select
+            value={channel}
+            onChange={(e) => setChannel(e.target.value)}
+            className="bg-bg-surface border border-bg-border rounded px-2 py-1.5 text-sm text-text-primary"
+          >
+            <option value="">Все каналы</option>
+            {channels.map((ch) => <option key={ch.value} value={ch.value}>{ch.label}</option>)}
+          </select>
         )}
       </div>
 
