@@ -17,8 +17,16 @@ export function isDevMode(): boolean {
   return getAuthMode() === "dev"
 }
 
+// Paths that bypass auth (have their own protection)
+const AUTH_SKIP_PATHS = ["/api/subscription/grant"]
+
 export function authMiddleware(): MiddlewareHandler {
   return async (c: Context, next) => {
+    // Skip auth for paths with their own protection (e.g. admin secret)
+    if (AUTH_SKIP_PATHS.some((p) => c.req.path === p)) {
+      return next()
+    }
+
     const session = getSession(c)
 
     // Dev mode: auto-inject dev user
