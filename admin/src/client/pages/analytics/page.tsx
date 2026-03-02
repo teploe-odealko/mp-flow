@@ -21,6 +21,10 @@ interface PnlData {
   margin: number
   by_channel: Record<string, { label: string; revenue: number; fees: number; cogs: number; profit: number; count: number }>
   total_sales: number
+  account_expenses?: number
+  account_expenses_by_type?: Record<string, number>
+  net_profit?: number
+  net_margin?: number
 }
 
 interface UeItem {
@@ -71,17 +75,28 @@ function marginColor(pct: number): string {
   return "text-outflow"
 }
 
+const accountExpenseLabels: Record<string, string> = {
+  fbo_services: "FBO-услуги",
+  marketing: "Маркетинг",
+  other: "Прочее",
+}
+
 function PnlReport({ data }: { data: PnlData }) {
   const [showFees, setShowFees] = useState(true)
   const [showChannels, setShowChannels] = useState(false)
+  const [showAccountExp, setShowAccountExp] = useState(true)
 
   const feeEntries = Object.entries(data.fees_by_type).sort((a, b) => b[1].amount - a[1].amount)
   const channelEntries = Object.entries(data.by_channel).sort((a, b) => b[1].revenue - a[1].revenue)
+  const accountExpEntries = Object.entries(data.account_expenses_by_type || {})
+    .filter(([, v]) => v < 0)
+    .sort((a, b) => a[1] - b[1])
+  const hasAccountExpenses = (data.account_expenses || 0) > 0
 
   return (
     <div className="space-y-4">
       {/* Summary cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className={`grid grid-cols-2 ${hasAccountExpenses ? "lg:grid-cols-6" : "lg:grid-cols-5"} gap-3`}>
         <div className="bg-bg-surface border border-bg-border rounded-lg p-4">
           <p className="text-text-secondary text-xs mb-1">Продаж</p>
           <p className="text-2xl font-semibold">{data.total_sales}</p>
@@ -98,12 +113,20 @@ function PnlReport({ data }: { data: PnlData }) {
           <p className="text-text-secondary text-xs mb-1">Себестоимость</p>
           <p className="text-2xl font-semibold">{fmt(data.cogs)} <span className="text-sm text-text-secondary">₽</span></p>
         </div>
+        {hasAccountExpenses && (
+          <div className="bg-bg-surface border border-bg-border rounded-lg p-4">
+            <p className="text-text-secondary text-xs mb-1">Расходы аккаунта</p>
+            <p className="text-2xl font-semibold text-outflow">{fmt(data.account_expenses!)} <span className="text-sm">₽</span></p>
+          </div>
+        )}
         <div className="bg-bg-surface border border-bg-border rounded-lg p-4">
-          <p className="text-text-secondary text-xs mb-1">Операционная прибыль</p>
-          <p className={`text-2xl font-semibold ${data.operating_profit >= 0 ? "text-inflow" : "text-outflow"}`}>
-            {fmt(data.operating_profit)} <span className="text-sm">₽</span>
+          <p className="text-text-secondary text-xs mb-1">{hasAccountExpenses ? "Чистая прибыль" : "Операционная прибыль"}</p>
+          <p className={`text-2xl font-semibold ${(hasAccountExpenses ? data.net_profit! : data.operating_profit) >= 0 ? "text-inflow" : "text-outflow"}`}>
+            {fmt(hasAccountExpenses ? data.net_profit! : data.operating_profit)} <span className="text-sm">₽</span>
           </p>
-          <p className={`text-xs mt-0.5 ${marginColor(data.margin)}`}>маржа {fmtDec(data.margin)}%</p>
+          <p className={`text-xs mt-0.5 ${marginColor(hasAccountExpenses ? data.net_margin! : data.margin)}`}>
+            маржа {fmtDec(hasAccountExpenses ? data.net_margin! : data.margin)}%
+          </p>
         </div>
       </div>
 
@@ -160,7 +183,7 @@ function PnlReport({ data }: { data: PnlData }) {
         </div>
 
         {/* Operating Profit */}
-        <div className="px-4 py-3 border-b border-bg-border bg-bg-elevated">
+        <div className={`px-4 py-3 border-b border-bg-border ${hasAccountExpenses ? "" : "bg-bg-elevated"}`}>
           <div className="flex justify-between items-center">
             <span className="font-semibold">Операционная прибыль</span>
             <span className={`font-bold text-lg ${data.operating_profit >= 0 ? "text-inflow" : "text-outflow"}`}>
@@ -172,6 +195,48 @@ function PnlReport({ data }: { data: PnlData }) {
             <span className={`text-sm font-semibold ${marginColor(data.margin)}`}>{fmtDec(data.margin)}%</span>
           </div>
         </div>
+
+        {/* Account expenses */}
+        {hasAccountExpenses && (
+          <>
+            <div className="px-4 py-3 border-b border-bg-border">
+              <button
+                onClick={() => setShowAccountExp(!showAccountExp)}
+                className="w-full flex justify-between items-center cursor-pointer"
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-outflow flex items-center gap-1">
+                  <span className={`text-[10px] transition-transform ${showAccountExp ? "rotate-90" : ""}`}>&#9654;</span>
+                  Расходы аккаунта
+                </span>
+                <span className="font-semibold text-outflow">-{fmt(data.account_expenses!)} ₽</span>
+              </button>
+              {showAccountExp && accountExpEntries.length > 0 && (
+                <div className="mt-2 pl-4 space-y-1">
+                  {accountExpEntries.map(([key, amount]) => (
+                    <div key={key} className="flex justify-between text-sm py-0.5">
+                      <span className="text-text-secondary">{accountExpenseLabels[key] || key}</span>
+                      <span className="tabular-nums">{fmt(Math.abs(amount))} ₽</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Net Profit */}
+            <div className="px-4 py-3 border-b border-bg-border bg-bg-elevated">
+              <div className="flex justify-between items-center">
+                <span className="font-semibold">Чистая прибыль</span>
+                <span className={`font-bold text-lg ${data.net_profit! >= 0 ? "text-inflow" : "text-outflow"}`}>
+                  {fmt(data.net_profit!)} ₽
+                </span>
+              </div>
+              <div className="flex justify-between items-center mt-0.5">
+                <span className="text-text-muted text-xs">Маржа</span>
+                <span className={`text-sm font-semibold ${marginColor(data.net_margin!)}`}>{fmtDec(data.net_margin!)}%</span>
+              </div>
+            </div>
+          </>
+        )}
 
         {/* By channel */}
         {channelEntries.length > 0 && (

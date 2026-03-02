@@ -43,6 +43,7 @@ __decorate([
             "sale_revenue", "sale_commission", "sale_logistics",
             "cogs", "supplier_payment", "shipping_cost",
             "refund", "adjustment", "other",
+            "fbo_services", "marketing",
         ],
     }),
     Index(),

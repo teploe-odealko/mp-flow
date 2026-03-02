@@ -12,6 +12,7 @@ export class FinanceService {
     if (filters.order_id) where.order_id = filters.order_id
     if (filters.supplier_order_id) where.supplier_order_id = filters.supplier_order_id
     if (filters.master_card_id) where.master_card_id = filters.master_card_id
+    if (filters.source) where.source = filters.source
     if (filters.transaction_date) where.transaction_date = filters.transaction_date
     return this.em.find(FinanceTransaction, where, {
       orderBy: { transaction_date: "DESC" },

@@ -27,7 +27,24 @@ analytics.get("/", async (c) => {
                 return c.json({ error: "from and to parameters required" }, 400);
             const saleService = c.get("container").resolve("saleService");
             const data = await saleService.getSalesPnl(new Date(from), new Date(to), filters);
-            return c.json({ report: "pnl", from, to, data });
+            // Add account-level expenses from FinanceTransaction
+            const financeService = c.get("container").resolve("financeService");
+            const financeFilters = {};
+            if (userId)
+                financeFilters.user_id = userId;
+            const financePnl = await financeService.calculatePnl(new Date(from), new Date(to), financeFilters);
+            const accountExpenses = financePnl.expense;
+            const netProfit = data.operating_profit - accountExpenses;
+            return c.json({
+                report: "pnl", from, to,
+                data: {
+                    ...data,
+                    account_expenses: accountExpenses,
+                    account_expenses_by_type: financePnl.by_type,
+                    net_profit: netProfit,
+                    net_margin: data.revenue > 0 ? (netProfit / data.revenue) * 100 : 0,
+                },
+            });
         }
         case "stock-valuation": {
             const cardService = c.get("container").resolve("masterCardService");

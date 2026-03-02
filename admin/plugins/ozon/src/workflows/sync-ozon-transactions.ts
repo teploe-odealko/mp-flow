@@ -162,15 +162,68 @@ export async function syncOzonTransactions(
     }
   }
 
+  // Save unmatched and orphan transactions to FinanceTransaction
+  const financeService: any = container.resolve("financeService")
+  const existingFinance = await financeService.listFinanceTransactions({
+    source: "ozon_api",
+    transaction_date: { $gte: from, $lte: to },
+  })
+  const existingOpIds = new Set(
+    existingFinance.map((f: any) => f.metadata?.operation_id).filter(Boolean),
+  )
+
+  const allUnlinked: Array<{ tx: TransactionSummary; postingNumber?: string }> = []
+  for (const [posting, txs] of Object.entries(unmatchedDetails)) {
+    for (const tx of txs) allUnlinked.push({ tx, postingNumber: posting })
+  }
+  for (const tx of orphanTransactions) allUnlinked.push({ tx })
+
+  let financeCreated = 0
+  for (const { tx, postingNumber } of allUnlinked) {
+    if (existingOpIds.has(tx.operation_id)) continue
+
+    const classified = classifyOzonTransaction(tx)
+    await financeService.createFinanceTransactions({
+      user_id: (account as any).user_id || undefined,
+      type: classified.type,
+      direction: tx.amount < 0 ? "expense" : "income",
+      amount: Math.abs(tx.amount),
+      category: classified.category,
+      description: tx.operation_type_name,
+      transaction_date: new Date(tx.date),
+      source: "ozon_api",
+      metadata: {
+        operation_id: tx.operation_id,
+        ozon_account_id: account.id,
+        posting_number: postingNumber || null,
+        services: tx.services,
+        items: tx.items,
+      },
+    })
+    existingOpIds.add(tx.operation_id)
+    financeCreated++
+  }
+
   return {
     sales_updated: salesUpdated,
     transactions_linked: transactionsLinked,
     total_operations: operations.length,
     postings_not_found: postingsNotFound,
     unmatched_postings: unmatchedPostings,
-    unmatched_details: unmatchedDetails,
-    orphan_transactions: orphanTransactions,
+    orphan_transactions: orphanTransactions.length,
+    finance_created: financeCreated,
   }
+}
+
+function classifyOzonTransaction(tx: TransactionSummary): { type: string; category: string } {
+  const name = tx.operation_type_name.toLowerCase()
+  if (name.includes("кросс-докинг")) return { type: "fbo_services", category: "crossdocking" }
+  if (name.includes("обработка товара в составе грузоместа")) return { type: "fbo_services", category: "cargo_processing" }
+  if (name.includes("обработка сроков годности")) return { type: "fbo_services", category: "expiry_handling" }
+  if (name.includes("бронирование места")) return { type: "fbo_services", category: "supply_booking" }
+  if (name.includes("баллы за отзывы")) return { type: "marketing", category: "review_rewards" }
+  if (name.includes("хранение")) return { type: "fbo_services", category: "storage" }
+  return { type: "other", category: tx.operation_type || "unknown" }
 }
 
 function classifyService(serviceName: string): { key: string; label: string } {

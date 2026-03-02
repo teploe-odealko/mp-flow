@@ -18,6 +18,8 @@ export class FinanceService {
             where.supplier_order_id = filters.supplier_order_id;
         if (filters.master_card_id)
             where.master_card_id = filters.master_card_id;
+        if (filters.source)
+            where.source = filters.source;
         if (filters.transaction_date)
             where.transaction_date = filters.transaction_date;
         return this.em.find(FinanceTransaction, where, {
