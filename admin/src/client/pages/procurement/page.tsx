@@ -21,7 +21,6 @@ interface InTransitOrder {
   order_number?: string
   supplier_name?: string
   status: string
-  expected_at?: string
   qty: number
 }
 
@@ -175,7 +174,6 @@ function DetailCard({ row, settings }: { row: ForecastRow; settings: Settings })
                     <span className="text-text-secondary">{o.supplier_name || "—"}</span>
                     {o.order_number && <span className="font-mono text-text-muted">#{o.order_number}</span>}
                     <span className="font-medium">{o.qty} шт.</span>
-                    {o.expected_at && <span className="text-text-muted">ожид. {fmtDate(o.expected_at)}</span>}
                   </div>
                 ))}
               </div>

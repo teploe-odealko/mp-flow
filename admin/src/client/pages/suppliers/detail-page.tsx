@@ -47,8 +47,6 @@ export default function SupplierDetailPage() {
   const [orderNumber, setOrderNumber] = useState("")
   const [notes, setNotes] = useState("")
   const [orderDate, setOrderDate] = useState("")
-  const [orderedAt, setOrderedAt] = useState("")
-  const [expectedAt, setExpectedAt] = useState("")
   const [status, setStatus] = useState("draft")
   const [items, setItems] = useState<ItemDraft[]>([newItem()])
   const [sharedCosts, setSharedCosts] = useState<SharedCostEntry[]>([])
@@ -68,8 +66,6 @@ export default function SupplierDetailPage() {
     setOrderNumber(o.order_number || "")
     setNotes(o.notes || "")
     setOrderDate(o.order_date ? o.order_date.slice(0, 10) : "")
-    setOrderedAt(o.ordered_at ? o.ordered_at.slice(0, 10) : "")
-    setExpectedAt(o.expected_at ? o.expected_at.slice(0, 10) : "")
     setStatus(o.status || "draft")
     const sc = typeof o.shared_costs === "string" ? JSON.parse(o.shared_costs) : o.shared_costs
     setSharedCosts(Array.isArray(sc) && sc.length > 0 ? sc : [])
@@ -156,8 +152,6 @@ export default function SupplierDetailPage() {
       order_number: orderNumber || undefined,
       notes: notes || undefined,
       order_date: orderDate || undefined,
-      ordered_at: orderedAt || undefined,
-      expected_at: expectedAt || undefined,
       shared_costs: sharedCosts.filter((c) => c.name && c.total_rub > 0),
       items: validItems.map((i) => ({
         master_card_id: i.master_card_id,
@@ -181,7 +175,6 @@ export default function SupplierDetailPage() {
     const payload = {
       ...buildPayload(),
       status: "ordered",
-      ordered_at: orderedAt || new Date().toISOString().slice(0, 10),
     }
     saveMutation.mutate(payload)
   }
@@ -345,26 +338,6 @@ export default function SupplierDetailPage() {
             type="date"
             value={orderDate}
             onChange={(e) => setOrderDate(e.target.value)}
-            disabled={!canEdit}
-            className="w-full px-3 py-2 bg-bg-deep border border-bg-border rounded text-sm text-text-primary disabled:opacity-60"
-          />
-        </div>
-        <div>
-          <label className="text-text-secondary text-xs block mb-1">Дата оплаты</label>
-          <input
-            type="date"
-            value={orderedAt}
-            onChange={(e) => setOrderedAt(e.target.value)}
-            disabled={!canEdit}
-            className="w-full px-3 py-2 bg-bg-deep border border-bg-border rounded text-sm text-text-primary disabled:opacity-60"
-          />
-        </div>
-        <div>
-          <label className="text-text-secondary text-xs block mb-1">Ожидаемая доставка</label>
-          <input
-            type="date"
-            value={expectedAt}
-            onChange={(e) => setExpectedAt(e.target.value)}
             disabled={!canEdit}
             className="w-full px-3 py-2 bg-bg-deep border border-bg-border rounded text-sm text-text-primary disabled:opacity-60"
           />
