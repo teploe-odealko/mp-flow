@@ -23,11 +23,17 @@ export async function fetchAndParse1688Item(url: string): Promise<TmapiItem> {
   const token = process.env.TMAPI_API_TOKEN
   if (!token) throw new Error("TMAPI_API_TOKEN is not configured")
 
-  const res = await fetch(`https://api.tmapi.top/1688/item_detail_by_url?apiToken=${encodeURIComponent(token)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url: url.trim() }),
-  })
+  let res: Response
+  try {
+    res = await fetch(`https://api.tmapi.top/1688/item_detail_by_url?apiToken=${encodeURIComponent(token)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: url.trim() }),
+    })
+  } catch (err: any) {
+    const cause = err.cause ? ` (${err.cause.message || err.cause.code || err.cause})` : ""
+    throw new Error(`TMAPI network error: ${err.message}${cause}`)
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => "")
