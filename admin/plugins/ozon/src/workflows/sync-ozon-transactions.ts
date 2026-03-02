@@ -1,0 +1,167 @@
+import type { AwilixContainer } from "awilix"
+import type { OzonIntegrationService } from "../modules/ozon-integration/service.js"
+
+interface TransactionSummary {
+  operation_id: number
+  type: string
+  operation_type: string
+  operation_type_name: string
+  amount: number
+  accruals_for_sale: number
+  sale_commission: number
+  date: string
+  services: Array<{ name: string; price: number }>
+  items: Array<{ name: string; sku: number }>
+}
+
+export async function syncOzonTransactions(
+  container: AwilixContainer,
+  accountId: string,
+  dateFrom?: string,
+  dateTo?: string,
+) {
+  const ozonService: OzonIntegrationService = container.resolve("ozonService")
+  const saleService: any = container.resolve("saleService")
+
+  const account = await ozonService.retrieveOzonAccount(accountId)
+
+  const now = new Date()
+  const to = dateTo ? new Date(dateTo) : now
+  const from = dateFrom
+    ? new Date(dateFrom)
+    : new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000) // 90 days back
+
+  const operations = await ozonService.fetchOzonFinanceTransactions(
+    { client_id: account.client_id, api_key: account.api_key },
+    from,
+    to,
+  )
+
+  // Group operations by posting_number
+  const byPosting: Record<string, TransactionSummary[]> = {}
+  const orphanTransactions: TransactionSummary[] = []
+
+  for (const op of operations) {
+    const postingNumber = op.posting?.posting_number || ""
+
+    const summary: TransactionSummary = {
+      operation_id: op.operation_id,
+      type: op.type || "",
+      operation_type: op.operation_type || "",
+      operation_type_name: op.operation_type_name || "",
+      amount: op.amount || 0,
+      accruals_for_sale: op.accruals_for_sale || 0,
+      sale_commission: op.sale_commission || 0,
+      date: op.operation_date || "",
+      services: (op.services || []).map((s: any) => ({
+        name: s.name || "",
+        price: s.price || 0,
+      })),
+      items: (op.items || []).map((i: any) => ({
+        name: i.name || "",
+        sku: i.sku || 0,
+      })),
+    }
+
+    if (!postingNumber) {
+      orphanTransactions.push(summary)
+      continue
+    }
+
+    if (!byPosting[postingNumber]) byPosting[postingNumber] = []
+    byPosting[postingNumber].push(summary)
+  }
+
+  let salesUpdated = 0
+  let transactionsLinked = 0
+  let postingsNotFound = 0
+  const unmatchedPostings: string[] = []
+
+  for (const [postingNumber, txs] of Object.entries(byPosting)) {
+    const existingSales = await saleService.listSales({
+      channel: "ozon",
+      channel_order_id: postingNumber,
+    })
+
+    if (existingSales.length === 0) {
+      postingsNotFound++
+      unmatchedPostings.push(postingNumber)
+      continue
+    }
+
+    // Sort transactions by date
+    txs.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+
+    for (const sale of existingSales) {
+      const metadata = sale.metadata || {}
+      const existingTxIds = new Set(
+        (metadata.ozon_transactions || []).map((t: any) => t.operation_id),
+      )
+
+      // Merge new transactions (avoid duplicates)
+      const newTxs = txs.filter((t) => !existingTxIds.has(t.operation_id))
+      if (newTxs.length === 0) continue
+
+      metadata.ozon_transactions = [
+        ...(metadata.ozon_transactions || []),
+        ...newTxs,
+      ].sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
+
+      // Check for return-related fees and add to fee_details if missing
+      const existingFeeKeys = new Set(
+        (sale.fee_details || []).map((f: any) => f.key),
+      )
+      const updatedFees = [...(sale.fee_details || [])]
+
+      for (const tx of newTxs) {
+        if (tx.type !== "returns") continue
+        for (const svc of tx.services) {
+          const classified = classifyService(svc.name)
+          if (!existingFeeKeys.has(classified.key)) {
+            updatedFees.push({
+              key: classified.key,
+              label: classified.label,
+              amount: Math.abs(svc.price),
+            })
+            existingFeeKeys.add(classified.key)
+          }
+        }
+      }
+
+      const updateData: Record<string, any> = { id: sale.id, metadata }
+      if (updatedFees.length > (sale.fee_details || []).length) {
+        updateData.fee_details = updatedFees
+      }
+
+      await saleService.updateSales(updateData)
+      salesUpdated++
+      transactionsLinked += newTxs.length
+    }
+  }
+
+  return {
+    sales_updated: salesUpdated,
+    transactions_linked: transactionsLinked,
+    total_operations: operations.length,
+    postings_not_found: postingsNotFound,
+    unmatched_postings: unmatchedPostings,
+    orphan_transactions: orphanTransactions.length,
+  }
+}
+
+function classifyService(serviceName: string): { key: string; label: string } {
+  const lower = serviceName.toLowerCase()
+  if (lower.includes("returnafterdelivtocustomer") || lower.includes("returnflowt"))
+    return { key: "reverse_logistics", label: "Обратная логистика" }
+  if (lower.includes("returnprocessing") || lower.includes("returnnotdelivtocustomer"))
+    return { key: "return_processing", label: "Обработка возврата" }
+  if (lower.includes("returnpartgoodscustomer"))
+    return { key: "return_processing_partial", label: "Обработка частичного возврата" }
+  if (lower.includes("fulfillment"))
+    return { key: "fulfillment_return", label: "Обработка отправления (возврат)" }
+  if (lower.includes("lastmile") || lower.includes("delivtocustomer"))
+    return { key: "last_mile_return", label: "Последняя миля (возврат)" }
+  if (lower.includes("directflow"))
+    return { key: "direct_flow_return", label: "Приёмка (возврат)" }
+  return { key: `return_fee_${lower.slice(0, 30)}`, label: serviceName }
+}

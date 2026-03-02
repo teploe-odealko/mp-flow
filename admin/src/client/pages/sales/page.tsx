@@ -264,6 +264,64 @@ export default function SalesPage() {
                     </div>
                   </div>
                 )}
+
+                {/* Return info */}
+                {s.status === "returned" && s.metadata?.return_info && (
+                  <div className="mt-3 pt-3 border-t border-bg-border">
+                    <span className="text-text-muted text-xs block mb-1">Возврат</span>
+                    <div className="flex flex-wrap gap-4 text-xs">
+                      {s.metadata.return_info.reason && (
+                        <div>
+                          <span className="text-text-muted">Причина: </span>
+                          <span className="text-outflow">{s.metadata.return_info.reason}</span>
+                        </div>
+                      )}
+                      {s.metadata.return_info.return_date && (
+                        <div>
+                          <span className="text-text-muted">Дата возврата: </span>
+                          <span>{fmtDate(s.metadata.return_info.return_date)}</span>
+                        </div>
+                      )}
+                      {s.metadata.return_info.quantity && (
+                        <div>
+                          <span className="text-text-muted">Кол-во: </span>
+                          <span>{s.metadata.return_info.quantity}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Ozon transaction history */}
+                {s.metadata?.ozon_transactions?.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-bg-border">
+                    <span className="text-text-muted text-xs block mb-1">Транзакции Ozon</span>
+                    <div className="space-y-1.5">
+                      {s.metadata.ozon_transactions.map((tx: any, i: number) => (
+                        <div key={tx.operation_id || i} className="flex items-start gap-2 text-xs">
+                          <span className="text-text-muted whitespace-nowrap shrink-0">
+                            {tx.date ? fmtDate(tx.date) : "—"}
+                          </span>
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] shrink-0 ${
+                            tx.type === "returns" ? "bg-outflow/20 text-outflow"
+                              : tx.type === "orders" ? "bg-inflow/20 text-inflow"
+                              : "bg-bg-elevated text-text-secondary"
+                          }`}>
+                            {tx.type === "returns" ? "Возврат" : tx.type === "orders" ? "Заказ" : tx.type || "—"}
+                          </span>
+                          <span className="text-text-secondary truncate" title={tx.operation_type_name}>
+                            {tx.operation_type_name || tx.operation_type || "—"}
+                          </span>
+                          <span className={`ml-auto tabular-nums whitespace-nowrap font-medium ${
+                            tx.amount >= 0 ? "text-inflow" : "text-outflow"
+                          }`}>
+                            {tx.amount >= 0 ? "+" : ""}{fmt(tx.amount)} ₽
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )
           })()}

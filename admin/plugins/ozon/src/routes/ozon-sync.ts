@@ -4,6 +4,8 @@ import type { OzonIntegrationService } from "../modules/ozon-integration/service
 import { syncOzonProducts } from "../workflows/sync-ozon-products.js"
 import { syncOzonStocks } from "../workflows/sync-ozon-stocks.js"
 import { syncOzonSales } from "../workflows/sync-ozon-sales.js"
+import { syncOzonReturns } from "../workflows/sync-ozon-returns.js"
+import { syncOzonTransactions } from "../workflows/sync-ozon-transactions.js"
 
 const ozonSyncRoutes = new Hono<{ Variables: Record<string, any> }>()
 
@@ -115,6 +117,10 @@ ozonSyncRoutes.post("/", async (c) => {
           accountResult.stocks = await syncOzonStocks(container, account.id)
         } else if (act === "sales") {
           accountResult.sales = await syncOzonSales(container, account.id, date_from, date_to)
+        } else if (act === "returns") {
+          accountResult.returns = await syncOzonReturns(container, account.id, date_from, date_to)
+        } else if (act === "transactions") {
+          accountResult.transactions = await syncOzonTransactions(container, account.id, date_from, date_to)
         }
       }
     } catch (e: any) {

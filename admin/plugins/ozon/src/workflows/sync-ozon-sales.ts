@@ -1,5 +1,7 @@
 import type { AwilixContainer } from "awilix"
 import type { OzonIntegrationService } from "../modules/ozon-integration/service.js"
+import { syncOzonReturns } from "./sync-ozon-returns.js"
+import { syncOzonTransactions } from "./sync-ozon-transactions.js"
 
 async function calculateAvgCost(supplierOrderService: any, masterCardId: string): Promise<number> {
   const items = await supplierOrderService.listSupplierOrderItems({ master_card_id: masterCardId })
@@ -209,11 +211,27 @@ export async function syncOzonSales(
     }
   }
 
+  // Step 2: Sync returns (detect post-delivery returns)
+  let returnsResult: any = null
+  try {
+    returnsResult = await syncOzonReturns(container, accountId, dateFrom, dateTo)
+  } catch (err: any) {
+    console.error(`[sync-ozon-sales] Returns sync failed:`, err.message)
+  }
+
+  // Step 3: Sync finance transactions (attach to sales)
+  let txResult: any = null
+  try {
+    txResult = await syncOzonTransactions(container, accountId, dateFrom, dateTo)
+  } catch (err: any) {
+    console.error(`[sync-ozon-sales] Transactions sync failed:`, err.message)
+  }
+
   // Update account sync timestamp
   await ozonService.updateOzonAccount(account.id, {
     last_sync_at: new Date(),
     last_error: undefined,
   })
 
-  return { created, updated, skipped }
+  return { created, updated, skipped, returns: returnsResult, transactions: txResult }
 }

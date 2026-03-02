@@ -158,24 +158,60 @@ export class OzonIntegrationService {
     return all
   }
 
-  async fetchOzonFinanceTransactions(
+  async fetchOzonReturns(
     account: { client_id: string; api_key: string },
     from: Date,
     to: Date,
   ) {
-    const result: any = await this.ozonApiCall(
-      account,
-      "/v3/finance/transaction/list",
-      {
+    const all: any[] = []
+    let lastId = 0
+    while (true) {
+      const body: Record<string, any> = {
         filter: {
-          date: { from: from.toISOString(), to: to.toISOString() },
-          transaction_type: "all",
+          logistic_return_date: {
+            time_from: from.toISOString(),
+            time_to: to.toISOString(),
+          },
         },
-        page: 1,
-        page_size: 1000,
-      },
-    )
-    return result.result?.operations || []
+        limit: 500,
+      }
+      if (lastId) body.last_id = lastId
+      const result: any = await this.ozonApiCall(account, "/v1/returns/list", body)
+      const batch = result.returns || []
+      all.push(...batch)
+      if (!result.has_next || batch.length === 0) break
+      lastId = batch[batch.length - 1].return_id
+    }
+    return all
+  }
+
+  async fetchOzonFinanceTransactions(
+    account: { client_id: string; api_key: string },
+    from: Date,
+    to: Date,
+    transactionType?: string,
+  ) {
+    const all: any[] = []
+    let page = 1
+    while (true) {
+      const result: any = await this.ozonApiCall(
+        account,
+        "/v3/finance/transaction/list",
+        {
+          filter: {
+            date: { from: from.toISOString(), to: to.toISOString() },
+            transaction_type: transactionType || "all",
+          },
+          page,
+          page_size: 1000,
+        },
+      )
+      const ops = result.result?.operations || []
+      all.push(...ops)
+      if (page >= (result.result?.page_count || 1)) break
+      page++
+    }
+    return all
   }
 
   classifyOzonService(serviceName: string): { key: string; label: string } {

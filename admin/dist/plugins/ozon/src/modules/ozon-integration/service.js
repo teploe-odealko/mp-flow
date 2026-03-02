@@ -130,16 +130,49 @@ export class OzonIntegrationService {
         }
         return all;
     }
-    async fetchOzonFinanceTransactions(account, from, to) {
-        const result = await this.ozonApiCall(account, "/v3/finance/transaction/list", {
-            filter: {
-                date: { from: from.toISOString(), to: to.toISOString() },
-                transaction_type: "all",
-            },
-            page: 1,
-            page_size: 1000,
-        });
-        return result.result?.operations || [];
+    async fetchOzonReturns(account, from, to) {
+        const all = [];
+        let lastId = 0;
+        while (true) {
+            const body = {
+                filter: {
+                    logistic_return_date: {
+                        time_from: from.toISOString(),
+                        time_to: to.toISOString(),
+                    },
+                },
+                limit: 500,
+            };
+            if (lastId)
+                body.last_id = lastId;
+            const result = await this.ozonApiCall(account, "/v1/returns/list", body);
+            const batch = result.returns || [];
+            all.push(...batch);
+            if (!result.has_next || batch.length === 0)
+                break;
+            lastId = batch[batch.length - 1].return_id;
+        }
+        return all;
+    }
+    async fetchOzonFinanceTransactions(account, from, to, transactionType) {
+        const all = [];
+        let page = 1;
+        while (true) {
+            const result = await this.ozonApiCall(account, "/v3/finance/transaction/list", {
+                filter: {
+                    date: { from: from.toISOString(), to: to.toISOString() },
+                    transaction_type: transactionType || "all",
+                },
+                page,
+                page_size: 1000,
+            });
+            const ops = result.result?.operations || [];
+            all.push(...ops);
+            if (page >= (result.result?.page_count || 1))
+                break;
+            page++;
+        }
+        return all;
     }
     classifyOzonService(serviceName) {
         const lower = serviceName.toLowerCase();

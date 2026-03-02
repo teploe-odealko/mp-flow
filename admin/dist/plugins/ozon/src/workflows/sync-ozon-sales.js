@@ -1,3 +1,5 @@
+import { syncOzonReturns } from "./sync-ozon-returns.js";
+import { syncOzonTransactions } from "./sync-ozon-transactions.js";
 async function calculateAvgCost(supplierOrderService, masterCardId) {
     const items = await supplierOrderService.listSupplierOrderItems({ master_card_id: masterCardId });
     let totalValue = 0;
@@ -181,11 +183,27 @@ export async function syncOzonSales(container, accountId, dateFrom, dateTo) {
             }
         }
     }
+    // Step 2: Sync returns (detect post-delivery returns)
+    let returnsResult = null;
+    try {
+        returnsResult = await syncOzonReturns(container, accountId, dateFrom, dateTo);
+    }
+    catch (err) {
+        console.error(`[sync-ozon-sales] Returns sync failed:`, err.message);
+    }
+    // Step 3: Sync finance transactions (attach to sales)
+    let txResult = null;
+    try {
+        txResult = await syncOzonTransactions(container, accountId, dateFrom, dateTo);
+    }
+    catch (err) {
+        console.error(`[sync-ozon-sales] Transactions sync failed:`, err.message);
+    }
     // Update account sync timestamp
     await ozonService.updateOzonAccount(account.id, {
         last_sync_at: new Date(),
         last_error: undefined,
     });
-    return { created, updated, skipped };
+    return { created, updated, skipped, returns: returnsResult, transactions: txResult };
 }
 //# sourceMappingURL=sync-ozon-sales.js.map

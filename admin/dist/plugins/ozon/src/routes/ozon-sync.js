@@ -3,6 +3,8 @@ import { getUserIdOptional } from "../../../../src/server/core/auth.js";
 import { syncOzonProducts } from "../workflows/sync-ozon-products.js";
 import { syncOzonStocks } from "../workflows/sync-ozon-stocks.js";
 import { syncOzonSales } from "../workflows/sync-ozon-sales.js";
+import { syncOzonReturns } from "../workflows/sync-ozon-returns.js";
+import { syncOzonTransactions } from "../workflows/sync-ozon-transactions.js";
 const ozonSyncRoutes = new Hono();
 // GET /api/ozon-sync — sync status with freshness
 ozonSyncRoutes.get("/", async (c) => {
@@ -107,6 +109,12 @@ ozonSyncRoutes.post("/", async (c) => {
                 }
                 else if (act === "sales") {
                     accountResult.sales = await syncOzonSales(container, account.id, date_from, date_to);
+                }
+                else if (act === "returns") {
+                    accountResult.returns = await syncOzonReturns(container, account.id, date_from, date_to);
+                }
+                else if (act === "transactions") {
+                    accountResult.transactions = await syncOzonTransactions(container, account.id, date_from, date_to);
                 }
             }
         }
