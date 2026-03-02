@@ -6,7 +6,7 @@ type FeeDetail = { key: string; label: string; amount: number }
 export class SaleService {
   constructor(private em: EntityManager) {}
 
-  async listSales(filters: Record<string, any> = {}, options?: { order?: any; skip?: number; take?: number }) {
+  private buildWhere(filters: Record<string, any>): Record<string, any> {
     const where: Record<string, any> = { deleted_at: null }
     if (filters.user_id) where.user_id = filters.user_id
     if (filters.channel) where.channel = filters.channel
@@ -15,11 +15,19 @@ export class SaleService {
     if (filters.channel_order_id) where.channel_order_id = filters.channel_order_id
     if (filters.channel_sku) where.channel_sku = filters.channel_sku
     if (filters.sold_at) where.sold_at = filters.sold_at
-    return this.em.find(Sale, where, {
+    return where
+  }
+
+  async listSales(filters: Record<string, any> = {}, options?: { order?: any; skip?: number; take?: number }) {
+    return this.em.find(Sale, this.buildWhere(filters), {
       orderBy: options?.order || { sold_at: "DESC" },
       offset: options?.skip,
       limit: options?.take,
     })
+  }
+
+  async countSales(filters: Record<string, any> = {}): Promise<number> {
+    return this.em.count(Sale, this.buildWhere(filters))
   }
 
   async retrieveSale(id: string) {
