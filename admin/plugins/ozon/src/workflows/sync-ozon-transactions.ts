@@ -124,19 +124,22 @@ export async function syncOzonTransactions(
 
       // Merge new transactions (avoid duplicates)
       const newTxs = txs.filter((t) => !existingTxIds.has(t.operation_id))
-      if (newTxs.length === 0) continue
 
-      metadata.ozon_transactions = [
-        ...(metadata.ozon_transactions || []),
-        ...newTxs,
-      ].sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      if (newTxs.length > 0) {
+        metadata.ozon_transactions = [
+          ...(metadata.ozon_transactions || []),
+          ...newTxs,
+        ].sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
+        transactionsLinked += newTxs.length
+      }
 
-      // Rebuild fee_details from ALL transactions (single source of truth)
-      const feeDetails = buildFeeDetailsFromTransactions(metadata.ozon_transactions)
+      // Always rebuild fee_details from ALL transactions (single source of truth)
+      const feeDetails = buildFeeDetailsFromTransactions(metadata.ozon_transactions || [])
+      const updateData: Record<string, any> = { id: sale.id, fee_details: feeDetails }
+      if (newTxs.length > 0) updateData.metadata = metadata
 
-      await saleService.updateSales({ id: sale.id, metadata, fee_details: feeDetails })
+      await saleService.updateSales(updateData)
       salesUpdated++
-      transactionsLinked += newTxs.length
     }
   }
 
