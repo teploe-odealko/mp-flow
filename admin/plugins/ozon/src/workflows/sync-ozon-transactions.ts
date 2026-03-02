@@ -116,9 +116,6 @@ export async function syncOzonTransactions(
     // Sort transactions by date
     txs.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 
-    // Calculate revenue share for proportional split across sibling sales
-    const totalRevenue = existingSales.reduce((s: number, sale: any) => s + Number(sale.revenue || 0), 0)
-
     for (const sale of existingSales) {
       const metadata = sale.metadata || {}
       const existingTxIds = new Set(
@@ -137,14 +134,16 @@ export async function syncOzonTransactions(
       }
 
       // Rebuild fee_details + net_payout from ALL transactions
-      const { fee_details, net_payout } = buildFromTransactions(metadata.ozon_transactions || [])
+      const { fee_details, net_payout, posting_revenue } = buildFromTransactions(metadata.ozon_transactions || [])
 
-      // Split proportionally when posting has multiple items
-      const revenueShare = totalRevenue > 0 ? Number(sale.revenue || 0) / totalRevenue : 1 / existingSales.length
-      const saleFeeDetails = existingSales.length > 1
+      // Split proportionally by sale revenue / posting revenue
+      const saleRevenue = Number(sale.revenue || 0)
+      const needsSplit = posting_revenue > 0 && saleRevenue < posting_revenue * 0.99
+      const revenueShare = needsSplit ? saleRevenue / posting_revenue : 1
+      const saleFeeDetails = needsSplit
         ? fee_details.map((f) => ({ ...f, amount: Math.round(f.amount * revenueShare * 100) / 100 }))
         : fee_details
-      const saleNetPayout = existingSales.length > 1
+      const saleNetPayout = needsSplit
         ? Math.round(net_payout * revenueShare * 100) / 100
         : net_payout
 
@@ -248,6 +247,7 @@ function labelForOzonService(name: string): string {
 function buildFromTransactions(txs: TransactionSummary[]): {
   fee_details: Array<{ key: string; label: string; amount: number }>
   net_payout: number
+  posting_revenue: number
 } {
   const byKey: Record<string, { label: string; amount: number }> = {}
 
@@ -274,10 +274,13 @@ function buildFromTransactions(txs: TransactionSummary[]): {
   // net_payout = sum of all tx.amount (what marketplace actually pays)
   const net_payout = Math.round(txs.reduce((s, tx) => s + tx.amount, 0) * 100) / 100
 
+  // posting_revenue = sum of accruals_for_sale (total posting revenue from Ozon)
+  const posting_revenue = txs.reduce((s, tx) => s + Math.abs(tx.accruals_for_sale || 0), 0)
+
   const fee_details = Object.entries(byKey)
     .filter(([, v]) => v.amount > 0)
     .map(([key, v]) => ({ key, label: v.label, amount: Math.round(v.amount * 100) / 100 }))
     .sort((a, b) => b.amount - a.amount)
 
-  return { fee_details, net_payout }
+  return { fee_details, net_payout, posting_revenue }
 }
