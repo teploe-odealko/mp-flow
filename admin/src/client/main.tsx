@@ -214,13 +214,41 @@ function LoginScreen() {
   )
 }
 
-function LogtoRedirect() {
+function LogtoLoginScreen() {
+  const wasLoggedOut = sessionStorage.getItem("mpflow_logged_out")
+
   useEffect(() => {
+    // Auto-redirect to Logto only if user hasn't explicitly logged out
+    if (!wasLoggedOut) {
+      window.location.href = "/auth/login"
+    }
+  }, [wasLoggedOut])
+
+  if (!wasLoggedOut) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-bg-deep text-text-secondary">
+        Перенаправление...
+      </div>
+    )
+  }
+
+  function handleLogin() {
+    sessionStorage.removeItem("mpflow_logged_out")
     window.location.href = "/auth/login"
-  }, [])
+  }
+
   return (
-    <div className="flex items-center justify-center h-screen bg-bg-deep text-text-secondary">
-      Перенаправление...
+    <div className="flex items-center justify-center h-screen bg-bg-deep text-text-primary">
+      <div className="text-center">
+        <h1 className="text-2xl font-semibold mb-2">MPFlow</h1>
+        <p className="text-text-secondary text-sm mb-6">Вы вышли из аккаунта</p>
+        <button
+          onClick={handleLogin}
+          className="px-6 py-2.5 bg-accent text-white rounded-lg hover:bg-accent/90 transition-colors font-medium"
+        >
+          Войти
+        </button>
+      </div>
     </div>
   )
 }
@@ -251,9 +279,9 @@ function AppRoutes() {
       return <LoginScreen />
     }
 
-    // Logto: redirect immediately, no intermediate screen
+    // Logto: auto-redirect or show login screen (after explicit logout)
     if (authMode === "logto") {
-      return <LogtoRedirect />
+      return <LogtoLoginScreen />
     }
 
     // Fallback (loading state or unknown mode)
