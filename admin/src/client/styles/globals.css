@@ -36,3 +36,8 @@ body {
 
 details summary::-webkit-details-marker { display: none; }
 details summary { list-style: none; }
+
+/* Hide number input spinners */
+input[type="number"].no-spin::-webkit-outer-spin-button,
+input[type="number"].no-spin::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input[type="number"].no-spin { -moz-appearance: textfield; }

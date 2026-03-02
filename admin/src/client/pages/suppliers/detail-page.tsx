@@ -608,7 +608,7 @@ function NumInput({
       disabled={disabled}
       min={min}
       step={step}
-      className="w-full px-2 py-1 bg-bg-deep border border-bg-border rounded text-sm text-right tabular-nums text-text-primary disabled:opacity-60"
+      className="no-spin w-full px-2 py-1 bg-transparent text-sm text-right tabular-nums text-text-primary rounded border border-transparent hover:border-bg-border focus:border-accent focus:bg-bg-deep focus:outline-none disabled:opacity-60 transition-colors"
     />
   )
 }
