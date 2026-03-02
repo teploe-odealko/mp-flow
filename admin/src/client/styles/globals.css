@@ -33,3 +33,6 @@ body {
   background: var(--bg-deep);
   color: var(--text-primary);
 }
+
+details summary::-webkit-details-marker { display: none; }
+details summary { list-style: none; }

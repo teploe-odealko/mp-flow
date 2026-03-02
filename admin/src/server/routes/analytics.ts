@@ -33,23 +33,33 @@ analytics.get("/", async (c) => {
       const saleService: SaleService = c.get("container").resolve("saleService")
       const data = await saleService.getSalesPnl(new Date(from), new Date(to), filters)
 
-      // Add account-level expenses from FinanceTransaction
+      // Add manual income/expense from FinanceTransaction
       const financeService: FinanceService = c.get("container").resolve("financeService")
       const financeFilters: Record<string, any> = {}
       if (userId) financeFilters.user_id = userId
       const financePnl = await financeService.calculatePnl(new Date(from), new Date(to), financeFilters)
 
-      const accountExpenses = financePnl.expense
-      const netProfit = data.operating_profit - accountExpenses
+      const manualIncomeByType: Record<string, number> = {}
+      const manualExpenseByType: Record<string, number> = {}
+      for (const [type, amount] of Object.entries(financePnl.by_type)) {
+        if (amount > 0) manualIncomeByType[type] = amount
+        else if (amount < 0) manualExpenseByType[type] = Math.abs(amount)
+      }
+
+      const totalIncome = data.revenue + financePnl.income
+      const totalExpense = data.fees + data.cogs + financePnl.expense
+      const netProfit = totalIncome - totalExpense
 
       return c.json({
         report: "pnl", from, to,
         data: {
           ...data,
-          account_expenses: accountExpenses,
-          account_expenses_by_type: financePnl.by_type,
+          manual_income: financePnl.income,
+          manual_income_by_type: manualIncomeByType,
+          manual_expense: financePnl.expense,
+          manual_expense_by_type: manualExpenseByType,
           net_profit: netProfit,
-          net_margin: data.revenue > 0 ? (netProfit / data.revenue) * 100 : 0,
+          net_margin: totalIncome > 0 ? (netProfit / totalIncome) * 100 : 0,
         },
       })
     }

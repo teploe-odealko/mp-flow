@@ -21,10 +21,12 @@ interface PnlData {
   margin: number
   by_channel: Record<string, { label: string; revenue: number; fees: number; cogs: number; profit: number; count: number }>
   total_sales: number
-  account_expenses?: number
-  account_expenses_by_type?: Record<string, number>
-  net_profit?: number
-  net_margin?: number
+  manual_income: number
+  manual_income_by_type: Record<string, number>
+  manual_expense: number
+  manual_expense_by_type: Record<string, number>
+  net_profit: number
+  net_margin: number
 }
 
 interface UeItem {
@@ -75,200 +77,253 @@ function marginColor(pct: number): string {
   return "text-outflow"
 }
 
-const accountExpenseLabels: Record<string, string> = {
+const financeTypeLabels: Record<string, string> = {
   fbo_services: "FBO-услуги",
   marketing: "Маркетинг",
+  sale_revenue: "Выручка продаж",
+  sale_commission: "Комиссия МП",
+  sale_logistics: "Логистика МП",
+  cogs: "Себестоимость",
+  supplier_payment: "Оплата поставщику",
+  shipping_cost: "Доставка",
+  refund: "Возврат",
+  adjustment: "Корректировка",
   other: "Прочее",
 }
 
-function PnlReport({ data }: { data: PnlData }) {
-  const [showFees, setShowFees] = useState(true)
-  const [showChannels, setShowChannels] = useState(false)
-  const [showAccountExp, setShowAccountExp] = useState(true)
+function ChevronIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg className={`w-3.5 h-3.5 text-text-muted transition-transform shrink-0 ${className}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+    </svg>
+  )
+}
 
+function pnlPct(amount: number, totalIncome: number): string {
+  if (!totalIncome || !amount) return ""
+  return `(${fmtDec((Math.abs(amount) / totalIncome) * 100)}%)`
+}
+
+function PnlReport({ data }: { data: PnlData }) {
   const feeEntries = Object.entries(data.fees_by_type).sort((a, b) => b[1].amount - a[1].amount)
   const channelEntries = Object.entries(data.by_channel).sort((a, b) => b[1].revenue - a[1].revenue)
-  const accountExpEntries = Object.entries(data.account_expenses_by_type || {})
-    .filter(([, v]) => v < 0)
-    .sort((a, b) => a[1] - b[1])
-  const hasAccountExpenses = (data.account_expenses || 0) > 0
+  const manualIncomeEntries = Object.entries(data.manual_income_by_type || {}).sort((a, b) => b[1] - a[1])
+  const manualExpenseEntries = Object.entries(data.manual_expense_by_type || {}).sort((a, b) => b[1] - a[1])
+
+  const totalIncome = data.revenue + (data.manual_income || 0)
+  const totalExpense = data.fees + data.cogs + (data.manual_expense || 0)
 
   return (
     <div className="space-y-4">
       {/* Summary cards */}
-      <div className={`grid grid-cols-2 ${hasAccountExpenses ? "lg:grid-cols-6" : "lg:grid-cols-5"} gap-3`}>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="bg-bg-surface border border-bg-border rounded-lg p-4">
           <p className="text-text-secondary text-xs mb-1">Продаж</p>
           <p className="text-2xl font-semibold">{data.total_sales}</p>
         </div>
         <div className="bg-bg-surface border border-bg-border rounded-lg p-4">
-          <p className="text-text-secondary text-xs mb-1">Выручка</p>
-          <p className="text-2xl font-semibold">{fmt(data.revenue)} <span className="text-sm text-text-secondary">₽</span></p>
+          <p className="text-text-secondary text-xs mb-1">Доходы</p>
+          <p className="text-2xl font-semibold text-inflow">{fmt(totalIncome)} <span className="text-sm">₽</span></p>
         </div>
         <div className="bg-bg-surface border border-bg-border rounded-lg p-4">
-          <p className="text-text-secondary text-xs mb-1">Расходы МП</p>
-          <p className="text-2xl font-semibold text-outflow">{fmt(data.fees)} <span className="text-sm">₽</span></p>
+          <p className="text-text-secondary text-xs mb-1">Расходы</p>
+          <p className="text-2xl font-semibold text-outflow">{fmt(totalExpense)} <span className="text-sm">₽</span></p>
         </div>
         <div className="bg-bg-surface border border-bg-border rounded-lg p-4">
-          <p className="text-text-secondary text-xs mb-1">Себестоимость</p>
-          <p className="text-2xl font-semibold">{fmt(data.cogs)} <span className="text-sm text-text-secondary">₽</span></p>
-        </div>
-        {hasAccountExpenses && (
-          <div className="bg-bg-surface border border-bg-border rounded-lg p-4">
-            <p className="text-text-secondary text-xs mb-1">Расходы аккаунта</p>
-            <p className="text-2xl font-semibold text-outflow">{fmt(data.account_expenses!)} <span className="text-sm">₽</span></p>
-          </div>
-        )}
-        <div className="bg-bg-surface border border-bg-border rounded-lg p-4">
-          <p className="text-text-secondary text-xs mb-1">{hasAccountExpenses ? "Чистая прибыль" : "Операционная прибыль"}</p>
-          <p className={`text-2xl font-semibold ${(hasAccountExpenses ? data.net_profit! : data.operating_profit) >= 0 ? "text-inflow" : "text-outflow"}`}>
-            {fmt(hasAccountExpenses ? data.net_profit! : data.operating_profit)} <span className="text-sm">₽</span>
+          <p className="text-text-secondary text-xs mb-1">Чистая прибыль</p>
+          <p className={`text-2xl font-semibold ${data.net_profit >= 0 ? "text-inflow" : "text-outflow"}`}>
+            {fmt(data.net_profit)} <span className="text-sm">₽</span>
           </p>
-          <p className={`text-xs mt-0.5 ${marginColor(hasAccountExpenses ? data.net_margin! : data.margin)}`}>
-            маржа {fmtDec(hasAccountExpenses ? data.net_margin! : data.margin)}%
+          <p className={`text-xs mt-0.5 ${marginColor(data.net_margin)}`}>
+            маржа {fmtDec(data.net_margin)}%
           </p>
         </div>
       </div>
 
-      {/* P&L breakdown */}
-      <div className="bg-bg-surface border border-bg-border rounded-lg overflow-hidden">
-        {/* Income */}
-        <div className="px-4 py-3 border-b border-bg-border">
-          <div className="flex justify-between items-center">
-            <span className="text-xs font-semibold uppercase tracking-wider text-inflow">Доходы</span>
-            <span className="font-semibold text-inflow">{fmt(data.revenue)} ₽</span>
-          </div>
-        </div>
-
-        {/* Expenses */}
-        <div className="px-4 py-3 border-b border-bg-border">
-          <button
-            onClick={() => setShowFees(!showFees)}
-            className="w-full flex justify-between items-center cursor-pointer"
-          >
-            <span className="text-xs font-semibold uppercase tracking-wider text-outflow flex items-center gap-1">
-              <span className={`text-[10px] transition-transform ${showFees ? "rotate-90" : ""}`}>&#9654;</span>
-              Расходы маркетплейса
-            </span>
-            <span className="font-semibold text-outflow">-{fmt(data.fees)} ₽</span>
-          </button>
-          {showFees && feeEntries.length > 0 && (
-            <div className="mt-2 pl-4 space-y-1">
-              {feeEntries.map(([key, fee]) => (
-                <div key={key} className="flex justify-between text-sm py-0.5">
-                  <span className="text-text-secondary">{fee.label}</span>
-                  <span className="tabular-nums">
-                    -{fmt(fee.amount)} ₽
-                    <span className="text-text-muted text-xs ml-1.5">
-                      ({data.revenue > 0 ? fmtDec((fee.amount / data.revenue) * 100) : 0}%)
+      {/* P&L accordion */}
+      <div className="bg-bg-surface border border-bg-border rounded-lg overflow-hidden text-sm">
+        {/* INCOME */}
+        <details open className="group border-b border-bg-border">
+          <summary className="flex items-center gap-1.5 cursor-pointer select-none px-4 py-3 bg-inflow/5 hover:bg-inflow/10 transition-colors">
+            <ChevronIcon className="group-open:rotate-90" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-inflow flex-1">Доходы</span>
+            <span className="font-semibold tabular-nums text-inflow">{fmt(totalIncome)} ₽</span>
+          </summary>
+          <div className="px-4 pb-3 pt-1 space-y-0.5">
+            {/* Revenue from sales */}
+            <div className="flex justify-between py-1 pl-5">
+              <span className="text-text-secondary">Выручка от продаж</span>
+              <span className="font-medium tabular-nums">
+                {fmt(data.revenue)} ₽
+                <span className="text-text-muted text-xs ml-1.5">{pnlPct(data.revenue, totalIncome)}</span>
+              </span>
+            </div>
+            {/* Manual income */}
+            {data.manual_income > 0 && (
+              manualIncomeEntries.length > 1 ? (
+                <details className="group/sub">
+                  <summary className="flex items-center gap-1.5 cursor-pointer select-none py-1 pl-5">
+                    <ChevronIcon className="w-3 h-3 group-open/sub:rotate-90" />
+                    <span className="text-text-secondary flex-1">Прочие доходы</span>
+                    <span className="font-medium tabular-nums">
+                      {fmt(data.manual_income)} ₽
+                      <span className="text-text-muted text-xs ml-1.5">{pnlPct(data.manual_income, totalIncome)}</span>
                     </span>
+                  </summary>
+                  <div className="pl-10 space-y-0.5 text-xs">
+                    {manualIncomeEntries.map(([type, amount]) => (
+                      <div key={type} className="flex justify-between py-0.5">
+                        <span className="text-text-secondary">{financeTypeLabels[type] || type}</span>
+                        <span className="font-medium tabular-nums">{fmt(amount)} ₽</span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ) : (
+                <div className="flex justify-between py-1 pl-5">
+                  <span className="text-text-secondary">
+                    Прочие доходы
+                    {manualIncomeEntries.length === 1 && ` (${financeTypeLabels[manualIncomeEntries[0][0]] || manualIncomeEntries[0][0]})`}
+                  </span>
+                  <span className="font-medium tabular-nums">
+                    {fmt(data.manual_income)} ₽
+                    <span className="text-text-muted text-xs ml-1.5">{pnlPct(data.manual_income, totalIncome)}</span>
                   </span>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* COGS */}
-        <div className="px-4 py-3 border-b border-bg-border">
-          <div className="flex justify-between items-center">
-            <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary">Себестоимость</span>
-            <span className="font-semibold">
-              -{fmt(data.cogs)} ₽
-              {data.revenue > 0 && (
-                <span className="text-text-muted text-xs ml-1.5">({fmtDec((data.cogs / data.revenue) * 100)}%)</span>
-              )}
-            </span>
+              )
+            )}
           </div>
-        </div>
+        </details>
 
-        {/* Operating Profit */}
-        <div className={`px-4 py-3 border-b border-bg-border ${hasAccountExpenses ? "" : "bg-bg-elevated"}`}>
+        {/* EXPENSES */}
+        <details open className="group border-b border-bg-border">
+          <summary className="flex items-center gap-1.5 cursor-pointer select-none px-4 py-3 bg-outflow/5 hover:bg-outflow/10 transition-colors">
+            <ChevronIcon className="group-open:rotate-90" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-outflow flex-1">Расходы</span>
+            <span className="font-semibold tabular-nums text-outflow">-{fmt(totalExpense)} ₽</span>
+          </summary>
+          <div className="px-4 pb-3 pt-1 space-y-0.5">
+            {/* Marketplace fees */}
+            {data.fees > 0 && (
+              feeEntries.length > 0 ? (
+                <details className="group/sub">
+                  <summary className="flex items-center gap-1.5 cursor-pointer select-none py-1 pl-5">
+                    <ChevronIcon className="w-3 h-3 group-open/sub:rotate-90" />
+                    <span className="text-text-secondary flex-1">Расходы маркетплейса</span>
+                    <span className="font-medium tabular-nums text-outflow">
+                      -{fmt(data.fees)} ₽
+                      <span className="text-text-muted text-xs ml-1.5">{pnlPct(data.fees, totalIncome)}</span>
+                    </span>
+                  </summary>
+                  <div className="pl-10 space-y-0.5 text-xs">
+                    {feeEntries.map(([key, fee]) => (
+                      <div key={key} className="flex justify-between py-0.5">
+                        <span className="text-text-secondary">{fee.label}</span>
+                        <span className="font-medium tabular-nums">
+                          -{fmt(fee.amount)} ₽
+                          <span className="text-text-muted ml-1.5">{pnlPct(fee.amount, totalIncome)}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ) : (
+                <div className="flex justify-between py-1 pl-5">
+                  <span className="text-text-secondary">Расходы маркетплейса</span>
+                  <span className="font-medium tabular-nums text-outflow">
+                    -{fmt(data.fees)} ₽
+                    <span className="text-text-muted text-xs ml-1.5">{pnlPct(data.fees, totalIncome)}</span>
+                  </span>
+                </div>
+              )
+            )}
+
+            {/* COGS */}
+            {data.cogs > 0 && (
+              <div className="flex justify-between py-1 pl-5">
+                <span className="text-text-secondary">Себестоимость (FIFO)</span>
+                <span className="font-medium tabular-nums text-outflow">
+                  -{fmt(data.cogs)} ₽
+                  <span className="text-text-muted text-xs ml-1.5">{pnlPct(data.cogs, totalIncome)}</span>
+                </span>
+              </div>
+            )}
+
+            {/* Manual expenses */}
+            {data.manual_expense > 0 && (
+              manualExpenseEntries.length > 1 ? (
+                <details className="group/sub2">
+                  <summary className="flex items-center gap-1.5 cursor-pointer select-none py-1 pl-5">
+                    <ChevronIcon className="w-3 h-3 group-open/sub2:rotate-90" />
+                    <span className="text-text-secondary flex-1">Ручные расходы</span>
+                    <span className="font-medium tabular-nums text-outflow">
+                      -{fmt(data.manual_expense)} ₽
+                      <span className="text-text-muted text-xs ml-1.5">{pnlPct(data.manual_expense, totalIncome)}</span>
+                    </span>
+                  </summary>
+                  <div className="pl-10 space-y-0.5 text-xs">
+                    {manualExpenseEntries.map(([type, amount]) => (
+                      <div key={type} className="flex justify-between py-0.5">
+                        <span className="text-text-secondary">{financeTypeLabels[type] || type}</span>
+                        <span className="font-medium tabular-nums">-{fmt(amount)} ₽</span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ) : (
+                <div className="flex justify-between py-1 pl-5">
+                  <span className="text-text-secondary">
+                    Ручные расходы
+                    {manualExpenseEntries.length === 1 && ` (${financeTypeLabels[manualExpenseEntries[0][0]] || manualExpenseEntries[0][0]})`}
+                  </span>
+                  <span className="font-medium tabular-nums text-outflow">
+                    -{fmt(data.manual_expense)} ₽
+                    <span className="text-text-muted text-xs ml-1.5">{pnlPct(data.manual_expense, totalIncome)}</span>
+                  </span>
+                </div>
+              )
+            )}
+          </div>
+        </details>
+
+        {/* NET PROFIT */}
+        <div className="px-4 py-3 bg-bg-elevated border-b border-bg-border">
           <div className="flex justify-between items-center">
-            <span className="font-semibold">Операционная прибыль</span>
-            <span className={`font-bold text-lg ${data.operating_profit >= 0 ? "text-inflow" : "text-outflow"}`}>
-              {fmt(data.operating_profit)} ₽
+            <span className="font-semibold">Чистая прибыль</span>
+            <span className={`font-bold text-lg tabular-nums ${data.net_profit >= 0 ? "text-inflow" : "text-outflow"}`}>
+              {fmt(data.net_profit)} ₽
             </span>
           </div>
           <div className="flex justify-between items-center mt-0.5">
             <span className="text-text-muted text-xs">Маржа</span>
-            <span className={`text-sm font-semibold ${marginColor(data.margin)}`}>{fmtDec(data.margin)}%</span>
+            <span className={`text-sm font-semibold ${marginColor(data.net_margin)}`}>{fmtDec(data.net_margin)}%</span>
           </div>
         </div>
 
-        {/* Account expenses */}
-        {hasAccountExpenses && (
-          <>
-            <div className="px-4 py-3 border-b border-bg-border">
-              <button
-                onClick={() => setShowAccountExp(!showAccountExp)}
-                className="w-full flex justify-between items-center cursor-pointer"
-              >
-                <span className="text-xs font-semibold uppercase tracking-wider text-outflow flex items-center gap-1">
-                  <span className={`text-[10px] transition-transform ${showAccountExp ? "rotate-90" : ""}`}>&#9654;</span>
-                  Расходы аккаунта
-                </span>
-                <span className="font-semibold text-outflow">-{fmt(data.account_expenses!)} ₽</span>
-              </button>
-              {showAccountExp && accountExpEntries.length > 0 && (
-                <div className="mt-2 pl-4 space-y-1">
-                  {accountExpEntries.map(([key, amount]) => (
-                    <div key={key} className="flex justify-between text-sm py-0.5">
-                      <span className="text-text-secondary">{accountExpenseLabels[key] || key}</span>
-                      <span className="tabular-nums">{fmt(Math.abs(amount))} ₽</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Net Profit */}
-            <div className="px-4 py-3 border-b border-bg-border bg-bg-elevated">
-              <div className="flex justify-between items-center">
-                <span className="font-semibold">Чистая прибыль</span>
-                <span className={`font-bold text-lg ${data.net_profit! >= 0 ? "text-inflow" : "text-outflow"}`}>
-                  {fmt(data.net_profit!)} ₽
-                </span>
-              </div>
-              <div className="flex justify-between items-center mt-0.5">
-                <span className="text-text-muted text-xs">Маржа</span>
-                <span className={`text-sm font-semibold ${marginColor(data.net_margin!)}`}>{fmtDec(data.net_margin!)}%</span>
-              </div>
-            </div>
-          </>
-        )}
-
         {/* By channel */}
         {channelEntries.length > 0 && (
-          <div className="px-4 py-3">
-            <button
-              onClick={() => setShowChannels(!showChannels)}
-              className="w-full flex justify-between items-center cursor-pointer"
-            >
-              <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary flex items-center gap-1">
-                <span className={`text-[10px] transition-transform ${showChannels ? "rotate-90" : ""}`}>&#9654;</span>
-                По каналам
-              </span>
-            </button>
-            {showChannels && (
-              <div className="mt-2 space-y-2">
-                {channelEntries.map(([key, ch]) => (
-                  <div key={key} className="flex items-center justify-between text-sm py-1 border-b border-bg-border last:border-0">
-                    <div>
-                      <span className="font-medium">{ch.label}</span>
-                      <span className="text-text-muted text-xs ml-2">{ch.count} продаж</span>
-                    </div>
-                    <div className="text-right">
-                      <span className="tabular-nums">{fmt(ch.revenue)} ₽</span>
-                      <span className={`ml-3 font-medium tabular-nums ${ch.profit >= 0 ? "text-inflow" : "text-outflow"}`}>
-                        {fmt(ch.profit)} ₽
-                      </span>
-                    </div>
+          <details className="group">
+            <summary className="flex items-center gap-1.5 cursor-pointer select-none px-4 py-3 hover:bg-bg-elevated transition-colors">
+              <ChevronIcon className="group-open:rotate-90" />
+              <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary flex-1">По каналам</span>
+            </summary>
+            <div className="px-4 pb-3 space-y-1">
+              {channelEntries.map(([key, ch]) => (
+                <div key={key} className="flex items-center justify-between py-1 pl-5 border-b border-bg-border last:border-0">
+                  <div>
+                    <span className="font-medium">{ch.label}</span>
+                    <span className="text-text-muted text-xs ml-2">{ch.count} продаж</span>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                  <div className="text-right tabular-nums">
+                    <span>{fmt(ch.revenue)} ₽</span>
+                    <span className={`ml-3 font-medium ${ch.profit >= 0 ? "text-inflow" : "text-outflow"}`}>
+                      {fmt(ch.profit)} ₽
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </details>
         )}
       </div>
     </div>
