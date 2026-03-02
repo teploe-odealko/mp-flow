@@ -365,7 +365,7 @@ export default function SupplierDetailPage() {
       {/* Items table */}
       <div className="mb-6">
         <h2 className="text-sm font-semibold text-text-secondary mb-2">Товары</h2>
-        <div className="overflow-x-auto">
+        <div>
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-bg-surface border-b border-bg-border">

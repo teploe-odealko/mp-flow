@@ -78,7 +78,7 @@ export function ProductSelector({ value, onChange }: Props) {
         className="w-full px-2 py-1 bg-bg-deep border border-bg-border rounded text-sm text-text-primary placeholder:text-text-muted"
       />
       {open && (results.length > 0 || loading) && (
-        <div className="absolute z-20 top-full left-0 right-0 mt-0.5 bg-bg-surface border border-bg-border rounded shadow-lg max-h-48 overflow-y-auto">
+        <div className="absolute z-50 top-full left-0 mt-0.5 bg-bg-surface border border-bg-border rounded shadow-lg max-h-48 overflow-y-auto min-w-[280px]">
           {loading && <div className="px-2 py-1.5 text-text-muted text-xs">Поиск...</div>}
           {results.map((p) => (
             <button
