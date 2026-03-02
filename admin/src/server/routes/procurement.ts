@@ -235,7 +235,7 @@ procurement.post("/", async (c) => {
 
     for (const item of items) {
       await supplierService.createSupplierOrderItems({
-        order,
+        order_id: order.id,
         master_card_id: item.card_id,
         ordered_qty: item.order_qty,
         status: "pending",

@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, Fragment } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
 import { apiGet, apiPut, apiPost } from "../../lib/api"
@@ -563,9 +563,8 @@ export default function ProcurementPage() {
           </thead>
           <tbody>
             {filteredRows.map((r) => (
-              <>
+              <Fragment key={r.card_id}>
                 <tr
-                  key={r.card_id}
                   onClick={() => setExpandedId(expandedId === r.card_id ? null : r.card_id)}
                   className={`border-b border-bg-border hover:bg-bg-elevated cursor-pointer ${r.order_qty > 0 ? "border-l-2 border-l-outflow" : ""}`}
                 >
@@ -609,8 +608,8 @@ export default function ProcurementPage() {
                     {r.order_value > 0 ? `${fmt(r.order_value)} ₽` : "—"}
                   </td>
                 </tr>
-                {expandedId === r.card_id && <DetailCard key={`detail-${r.card_id}`} row={r} settings={settings} />}
-              </>
+                {expandedId === r.card_id && <DetailCard row={r} settings={settings} />}
+              </Fragment>
             ))}
           </tbody>
         </table>
