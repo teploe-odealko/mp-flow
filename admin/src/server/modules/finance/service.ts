@@ -19,9 +19,50 @@ export class FinanceService {
     })
   }
 
+  async listFinanceTransactionsPaginated(
+    filters: Record<string, any> = {},
+    limit = 50,
+    offset = 0,
+  ) {
+    const where: Record<string, any> = { deleted_at: null }
+    if (filters.user_id) where.user_id = filters.user_id
+    if (filters.type) where.type = filters.type
+    if (filters.direction) where.direction = filters.direction
+    if (filters.source) where.source = filters.source
+    if (filters.transaction_date) where.transaction_date = filters.transaction_date
+    if (filters.search) {
+      where.$or = [
+        { description: { $ilike: `%${filters.search}%` } },
+        { category: { $ilike: `%${filters.search}%` } },
+      ]
+    }
+
+    const [items, total] = await this.em.findAndCount(FinanceTransaction, where, {
+      orderBy: { transaction_date: "DESC" },
+      limit,
+      offset,
+    })
+    return { items, total }
+  }
+
   async createFinanceTransactions(data: any) {
     const tx = this.em.create(FinanceTransaction, { ...data, deleted_at: null })
     await this.em.persistAndFlush(tx)
+    return tx
+  }
+
+  async updateFinanceTransaction(id: string, data: Record<string, any>) {
+    const tx = await this.em.findOneOrFail(FinanceTransaction, { id, deleted_at: null })
+    const allowed = [
+      "type", "direction", "amount", "category", "description",
+      "transaction_date", "source", "metadata",
+    ]
+    for (const key of allowed) {
+      if (key in data) {
+        ;(tx as any)[key] = key === "transaction_date" ? new Date(data[key]) : data[key]
+      }
+    }
+    await this.em.flush()
     return tx
   }
 
