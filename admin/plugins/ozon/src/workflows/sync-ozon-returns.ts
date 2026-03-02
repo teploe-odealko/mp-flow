@@ -49,7 +49,7 @@ export async function syncOzonReturns(
     }
 
     for (const sale of existingSales) {
-      if (sale.status === "returned") {
+      if (sale.return_reason) {
         skipped++
         continue
       }
