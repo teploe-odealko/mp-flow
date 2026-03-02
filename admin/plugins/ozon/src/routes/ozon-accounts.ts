@@ -82,6 +82,24 @@ ozonAccountsRoutes.put("/:id", async (c) => {
   return c.json({ account })
 })
 
+// POST /api/ozon-accounts/claim — reassign orphaned accounts to current user (temporary)
+ozonAccountsRoutes.post("/claim", async (c) => {
+  const userId = getUserIdOptional(c)
+  if (!userId) return c.json({ error: "Unauthorized" }, 401)
+
+  const container = c.get("container")
+  const ozonService: OzonIntegrationService = container.resolve("ozonService")
+  const allAccounts = await ozonService.listOzonAccounts({})
+  let claimed = 0
+  for (const acc of allAccounts) {
+    if ((acc as any).user_id !== userId) {
+      await ozonService.updateOzonAccount((acc as any).id, { user_id: userId })
+      claimed++
+    }
+  }
+  return c.json({ claimed })
+})
+
 // DELETE /api/ozon-accounts/:id — delete account
 ozonAccountsRoutes.delete("/:id", async (c) => {
   const { id } = c.req.param()
