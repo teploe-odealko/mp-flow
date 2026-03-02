@@ -159,6 +159,7 @@ export default function SalesPage() {
                     {!selectedSale && <DocTableHeader pageId="sales" columnKey="quantity" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Кол-во</DocTableHeader>}
                     <DocTableHeader pageId="sales" columnKey="price" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Цена</DocTableHeader>
                     <DocTableHeader pageId="sales" columnKey="profit" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Прибыль</DocTableHeader>
+                    <DocTableHeader pageId="sales" columnKey="roi" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">ROI</DocTableHeader>
                     <DocTableHeader pageId="sales" columnKey="date" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Дата</DocTableHeader>
                   </tr>
                 </thead>
@@ -196,14 +197,21 @@ export default function SalesPage() {
                         <td className="px-2 py-1.5 text-right tabular-nums">{fmt(s.price_per_unit)} ₽</td>
                         {(() => {
                           const hasPayoutData = s.net_payout != null
+                          const cogs = Number(s.total_cogs || 0)
                           const profit = hasPayoutData
-                            ? Number(s.net_payout) - Number(s.total_cogs || 0)
-                            : Number(s.revenue || 0) - totalFees - Number(s.total_cogs || 0)
+                            ? Number(s.net_payout) - cogs
+                            : Number(s.revenue || 0) - totalFees - cogs
                           const showProfit = hasPayoutData || totalFees > 0
+                          const roi = showProfit && cogs > 0 ? (profit / cogs * 100) : null
                           return (
-                            <td className={`px-2 py-1.5 text-right tabular-nums font-medium ${showProfit ? (profit >= 0 ? "text-inflow" : "text-outflow") : "text-text-muted"}`}>
-                              {showProfit ? `${fmt(profit)} ₽` : "—"}
-                            </td>
+                            <>
+                              <td className={`px-2 py-1.5 text-right tabular-nums font-medium ${showProfit ? (profit >= 0 ? "text-inflow" : "text-outflow") : "text-text-muted"}`}>
+                                {showProfit ? `${fmt(profit)} ₽` : "—"}
+                              </td>
+                              <td className={`px-2 py-1.5 text-right tabular-nums text-xs ${roi != null ? (roi >= 0 ? "text-inflow" : "text-outflow") : "text-text-muted"}`}>
+                                {roi != null ? `${roi.toFixed(0)}%` : "—"}
+                              </td>
+                            </>
                           )
                         })()}
                         <td className="px-2 py-1.5 text-right text-text-secondary text-xs whitespace-nowrap">{fmtDate(s.sold_at)}</td>
@@ -271,7 +279,7 @@ export default function SalesPage() {
         const cogs = Number(s.total_cogs || 0)
         const hasNetPayout = s.net_payout != null
         const netPayout = hasNetPayout ? Number(s.net_payout) : null
-        const margin = Number(s.revenue) > 0 ? (profit / Number(s.revenue) * 100) : 0
+        const roi = cogs > 0 ? (profit / cogs * 100) : null
 
         return (
           <div className="w-[380px] shrink-0 border-l border-bg-border bg-bg-surface overflow-y-auto -mr-6 -mb-6 p-4 text-sm">
@@ -345,9 +353,9 @@ export default function SalesPage() {
                   <span className={`tabular-nums font-bold ${(hasNetPayout || totalFees > 0) ? (profit >= 0 ? "text-inflow" : "text-outflow") : "text-text-muted"}`}>
                     {(hasNetPayout || totalFees > 0) ? `${fmt(profit)} ₽` : "—"}
                   </span>
-                  {(hasNetPayout || totalFees > 0) && Number(s.revenue) > 0 && (
-                    <span className={`text-[10px] ml-1.5 ${margin >= 0 ? "text-inflow" : "text-outflow"}`}>
-                      {margin.toFixed(1)}%
+                  {roi != null && (
+                    <span className={`text-[10px] ml-1.5 ${roi >= 0 ? "text-inflow" : "text-outflow"}`}>
+                      ROI {roi.toFixed(0)}%
                     </span>
                   )}
                 </div>
