@@ -11,19 +11,15 @@ export interface AllocationRow {
 export interface SharedCostEntry {
   name: string
   total_rub: number
-  method: "equal" | "by_cny_price" | "by_weight" | "by_volume"
+  method: "equal" | "by_price" | "by_weight" | "by_volume"
 }
 
 export interface OrderItem {
   master_card_id: string
   title?: string
   ordered_qty: number
-  cny_price_per_unit: number
-  purchase_price_rub: number
-  packaging_cost_rub: number
-  logistics_cost_rub: number
-  customs_cost_rub: number
-  extra_cost_rub: number
+  purchase_price: number
+  purchase_currency?: string
   weight?: number
   volume?: number
 }
@@ -31,23 +27,17 @@ export interface OrderItem {
 export function computeAllocations(items: OrderItem[], sharedCosts: SharedCostEntry[]): AllocationRow[] {
   if (!items.length) return []
 
-  const totalShared = sharedCosts.reduce((s, c) => s + (Number(c.total_rub) || 0), 0)
-
   // Pre-compute totals for proportional methods
-  const totalCnyValue = items.reduce((s, i) => s + (Number(i.cny_price_per_unit) || 0) * (i.ordered_qty || 0), 0)
+  const totalPriceValue = items.reduce((s, i) => s + (Number(i.purchase_price) || 0) * (i.ordered_qty || 0), 0)
   const totalWeight = items.reduce((s, i) => s + (Number(i.weight) || 0) * (i.ordered_qty || 0), 0)
   const totalVolume = items.reduce((s, i) => s + (Number(i.volume) || 0) * (i.ordered_qty || 0), 0)
 
   return items.map((item) => {
     const qty = item.ordered_qty || 0
+    const purchasePrice = Number(item.purchase_price) || 0
 
-    // Individual costs per item line (total for all qty)
-    const individual =
-      (Number(item.purchase_price_rub) || 0) +
-      (Number(item.packaging_cost_rub) || 0) +
-      (Number(item.logistics_cost_rub) || 0) +
-      (Number(item.customs_cost_rub) || 0) +
-      (Number(item.extra_cost_rub) || 0)
+    // Individual cost = purchase price * qty
+    const individual = purchasePrice * qty
 
     // Shared cost allocation for this item
     let sharedAlloc = 0
@@ -57,9 +47,9 @@ export function computeAllocations(items: OrderItem[], sharedCosts: SharedCostEn
 
       let share = 0
       switch (cost.method) {
-        case "by_cny_price": {
-          const itemValue = (Number(item.cny_price_per_unit) || 0) * qty
-          share = totalCnyValue > 0 ? (itemValue / totalCnyValue) * amount : amount / items.length
+        case "by_price": {
+          const itemValue = purchasePrice * qty
+          share = totalPriceValue > 0 ? (itemValue / totalPriceValue) * amount : amount / items.length
           break
         }
         case "by_weight": {

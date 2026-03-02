@@ -32,13 +32,8 @@ export async function receiveOrder(container: AwilixContainer, input: ReceiveOrd
     const receivedQty = receivedLookup.get(item.id) || 0
     if (receivedQty <= 0) continue
 
-    const purchasePrice = Number(item.purchase_price_rub || item.unit_cost || 0)
-    const packaging = Number(item.packaging_cost_rub || 0)
-    const logistics = Number(item.logistics_cost_rub || 0)
-    const customs = Number(item.customs_cost_rub || 0)
-    const extra = Number(item.extra_cost_rub || 0)
-    const individualCost = packaging + logistics + customs + extra + sharedPerItem
-    const unitCost = receivedQty > 0 ? Math.round(((purchasePrice + individualCost) / receivedQty) * 100) / 100 : 0
+    const purchasePrice = Number(item.purchase_price || item.unit_cost || 0)
+    const unitCost = receivedQty > 0 ? Math.round((purchasePrice + sharedPerItem / receivedQty) * 100) / 100 : 0
     const itemTotalCost = Math.round(unitCost * receivedQty * 100) / 100
 
     await supplierService.updateSupplierOrderItems({

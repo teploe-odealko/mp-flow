@@ -83,13 +83,6 @@ export class SupplierOrder {
   order_date?: Date | null
 
   @Property({ type: "timestamptz", nullable: true })
-  @Index()
-  ordered_at?: Date | null
-
-  @Property({ type: "timestamptz", nullable: true })
-  expected_at?: Date | null
-
-  @Property({ type: "timestamptz", nullable: true })
   received_at?: Date | null
 
   @Property({ type: "text", nullable: true })
@@ -127,22 +120,10 @@ export class SupplierOrderItem {
   received_qty: number = 0
 
   @Property({ type: "numeric", default: 0 })
-  cny_price_per_unit: number = 0
+  purchase_price: number = 0
 
-  @Property({ type: "numeric", default: 0 })
-  purchase_price_rub: number = 0
-
-  @Property({ type: "numeric", default: 0 })
-  packaging_cost_rub: number = 0
-
-  @Property({ type: "numeric", default: 0 })
-  logistics_cost_rub: number = 0
-
-  @Property({ type: "numeric", default: 0 })
-  customs_cost_rub: number = 0
-
-  @Property({ type: "numeric", default: 0 })
-  extra_cost_rub: number = 0
+  @Property({ type: "text", default: "CNY" })
+  purchase_currency: string = "CNY"
 
   @Property({ type: "numeric", default: 0 })
   unit_cost: number = 0

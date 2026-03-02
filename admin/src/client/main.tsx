@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from "./app/auth-provider"
 import { Layout } from "./app/layout"
 import { apiGet } from "./lib/api"
 import CatalogPage from "./pages/catalog/page"
+const CatalogDetailPage = React.lazy(() => import("./pages/catalog/detail-page"))
 import SalesPage from "./pages/sales/page"
 import WarehousePage from "./pages/warehouse/page"
 import FinancePage from "./pages/finance/page"
@@ -285,6 +286,7 @@ function AppRoutes() {
       <Routes>
         <Route path="/" element={<Navigate to="/catalog" replace />} />
         <Route path="/catalog" element={<CatalogPage />} />
+        <Route path="/catalog/:id" element={<Suspense fallback={<div className="text-text-secondary">Загрузка...</div>}><CatalogDetailPage /></Suspense>} />
         <Route path="/warehouse" element={<WarehousePage />} />
         <Route path="/procurement" element={<ProcurementPage />} />
         <Route path="/suppliers" element={<SuppliersPage />} />

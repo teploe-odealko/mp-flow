@@ -41,6 +41,7 @@ export class MasterCardService {
     if (filters.user_id) where.user_id = filters.user_id
     if (filters.status) where.status = filters.status
     if (filters.$or) where.$or = filters.$or
+    if (filters.title) where.title = filters.title
     return where
   }
 }

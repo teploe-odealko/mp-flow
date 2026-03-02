@@ -18,12 +18,8 @@ function newItem(): ItemDraft {
     master_card_id: "",
     title: "",
     ordered_qty: 1,
-    cny_price_per_unit: 0,
-    purchase_price_rub: 0,
-    packaging_cost_rub: 0,
-    logistics_cost_rub: 0,
-    customs_cost_rub: 0,
-    extra_cost_rub: 0,
+    purchase_price: 0,
+    purchase_currency: "CNY",
   }
 }
 
@@ -34,6 +30,8 @@ function newSharedCost(): SharedCostEntry {
 function fmtNumber(n: number): string {
   return Math.round(n).toLocaleString("ru-RU")
 }
+
+const CURRENCIES = ["CNY", "RUB", "USD"]
 
 export default function SupplierDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -77,12 +75,8 @@ export default function SupplierDetailPage() {
           master_card_id: item.master_card_id,
           title: item.title || item.master_card_id,
           ordered_qty: item.ordered_qty || 0,
-          cny_price_per_unit: Number(item.cny_price_per_unit) || 0,
-          purchase_price_rub: Number(item.purchase_price_rub) || 0,
-          packaging_cost_rub: Number(item.packaging_cost_rub) || 0,
-          logistics_cost_rub: Number(item.logistics_cost_rub) || 0,
-          customs_cost_rub: Number(item.customs_cost_rub) || 0,
-          extra_cost_rub: Number(item.extra_cost_rub) || 0,
+          purchase_price: Number(item.purchase_price) || 0,
+          purchase_currency: item.purchase_currency || "CNY",
         })),
       )
     }
@@ -154,12 +148,8 @@ export default function SupplierDetailPage() {
       items: validItems.map((i) => ({
         master_card_id: i.master_card_id,
         ordered_qty: i.ordered_qty,
-        cny_price_per_unit: i.cny_price_per_unit,
-        purchase_price_rub: i.purchase_price_rub,
-        packaging_cost_rub: i.packaging_cost_rub,
-        logistics_cost_rub: i.logistics_cost_rub,
-        customs_cost_rub: i.customs_cost_rub,
-        extra_cost_rub: i.extra_cost_rub,
+        purchase_price: i.purchase_price,
+        purchase_currency: i.purchase_currency,
       })),
     }
   }
@@ -351,21 +341,15 @@ export default function SupplierDetailPage() {
               <tr className="bg-bg-surface border-b border-bg-border">
                 <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary min-w-[200px]">Товар</th>
                 <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary w-16">Кол-во</th>
-                <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary w-20">Цена ¥</th>
-                <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary w-20">Цена ₽</th>
-                <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary w-20">Упак.</th>
-                <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary w-20">Логист.</th>
-                <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary w-20">Тамож.</th>
-                <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary w-20">Доп.</th>
+                <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary w-24">Цена</th>
+                <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary w-20">Валюта</th>
                 <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary w-24">Итого</th>
                 {canEdit && <th className="w-8"></th>}
               </tr>
             </thead>
             <tbody>
               {items.map((item) => {
-                const lineTotal =
-                  (item.purchase_price_rub + item.packaging_cost_rub + item.logistics_cost_rub +
-                    item.customs_cost_rub + item.extra_cost_rub) * item.ordered_qty
+                const lineTotal = item.purchase_price * item.ordered_qty
 
                 return (
                   <tr key={item._key} className="border-b border-bg-border">
@@ -376,6 +360,8 @@ export default function SupplierDetailPage() {
                           onChange={(p) => {
                             updateItem(item._key, "master_card_id", p.master_card_id)
                             updateItem(item._key, "title", p.title)
+                            if (p.purchase_price != null) updateItem(item._key, "purchase_price", Number(p.purchase_price) || 0)
+                            if (p.purchase_currency) updateItem(item._key, "purchase_currency", p.purchase_currency)
                           }}
                           excludeIds={items.filter((i) => i._key !== item._key && i.master_card_id).map((i) => i.master_card_id)}
                         />
@@ -387,22 +373,20 @@ export default function SupplierDetailPage() {
                       <NumInput value={item.ordered_qty} onChange={(v) => updateItem(item._key, "ordered_qty", v)} disabled={!canEdit} min={1} />
                     </td>
                     <td className="px-2 py-1.5">
-                      <NumInput value={item.cny_price_per_unit} onChange={(v) => updateItem(item._key, "cny_price_per_unit", v)} disabled={!canEdit} step={0.01} />
+                      <NumInput value={item.purchase_price} onChange={(v) => updateItem(item._key, "purchase_price", v)} disabled={!canEdit} step={0.01} />
                     </td>
                     <td className="px-2 py-1.5">
-                      <NumInput value={item.purchase_price_rub} onChange={(v) => updateItem(item._key, "purchase_price_rub", v)} disabled={!canEdit} />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <NumInput value={item.packaging_cost_rub} onChange={(v) => updateItem(item._key, "packaging_cost_rub", v)} disabled={!canEdit} />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <NumInput value={item.logistics_cost_rub} onChange={(v) => updateItem(item._key, "logistics_cost_rub", v)} disabled={!canEdit} />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <NumInput value={item.customs_cost_rub} onChange={(v) => updateItem(item._key, "customs_cost_rub", v)} disabled={!canEdit} />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <NumInput value={item.extra_cost_rub} onChange={(v) => updateItem(item._key, "extra_cost_rub", v)} disabled={!canEdit} />
+                      {canEdit ? (
+                        <select
+                          value={item.purchase_currency || "CNY"}
+                          onChange={(e) => updateItem(item._key, "purchase_currency", e.target.value)}
+                          className="bg-transparent text-sm text-text-primary rounded border border-transparent hover:border-bg-border focus:border-accent focus:bg-bg-deep focus:outline-none transition-colors px-1 py-1"
+                        >
+                          {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      ) : (
+                        <span className="text-text-secondary text-xs">{item.purchase_currency || "CNY"}</span>
+                      )}
                     </td>
                     <td className="px-2 py-1.5 text-right tabular-nums font-medium">
                       {lineTotal > 0 ? fmtNumber(lineTotal) : "—"}
@@ -437,7 +421,7 @@ export default function SupplierDetailPage() {
 
       {/* Shared costs */}
       <div className="mb-6">
-        <h2 className="text-sm font-semibold text-text-secondary mb-2">Общие расходы</h2>
+        <h2 className="text-sm font-semibold text-text-secondary mb-2">Накладные расходы</h2>
         {sharedCosts.length > 0 && (
           <table className="w-full text-sm mb-2">
             <thead>
@@ -472,7 +456,7 @@ export default function SupplierDetailPage() {
                       className="w-full px-2 py-1 bg-bg-deep border border-bg-border rounded text-sm text-text-primary disabled:opacity-60"
                     >
                       <option value="equal">Поровну</option>
-                      <option value="by_cny_price">По цене ¥</option>
+                      <option value="by_price">По цене закупки</option>
                       <option value="by_weight">По весу</option>
                       <option value="by_volume">По объёму</option>
                     </select>
@@ -513,8 +497,8 @@ export default function SupplierDetailPage() {
               <tr className="bg-bg-surface border-b border-bg-border">
                 <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Товар</th>
                 <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Кол-во</th>
-                <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Индив.</th>
-                <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Общие</th>
+                <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Закупка</th>
+                <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Накладные</th>
                 <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">За ед.</th>
                 <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Итого</th>
               </tr>

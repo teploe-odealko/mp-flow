@@ -51,19 +51,21 @@ suppliers.post("/", async (c) => {
   })
 
   if (body.items?.length) {
+    const cardService: MasterCardService = c.get("container").resolve("masterCardService")
     for (const item of body.items) {
-      const purchaseRub = Number(item.purchase_price_rub || 0)
-      const packaging = Number(item.packaging_cost_rub || 0)
-      const logistics = Number(item.logistics_cost_rub || 0)
-      const customs = Number(item.customs_cost_rub || 0)
-      const extra = Number(item.extra_cost_rub || 0)
-      const unitCost = purchaseRub + packaging + logistics + customs + extra
+      const purchasePrice = Number(item.purchase_price || 0)
       await service.createSupplierOrderItems({
         order_id: order.id, master_card_id: item.master_card_id, ordered_qty: item.ordered_qty,
-        cny_price_per_unit: item.cny_price_per_unit || 0, purchase_price_rub: purchaseRub,
-        packaging_cost_rub: packaging, logistics_cost_rub: logistics, customs_cost_rub: customs,
-        extra_cost_rub: extra, unit_cost: unitCost, total_cost: unitCost * item.ordered_qty, status: "pending",
+        purchase_price: purchasePrice, purchase_currency: item.purchase_currency || "CNY",
+        unit_cost: purchasePrice, total_cost: purchasePrice * item.ordered_qty, status: "pending",
       })
+      if (item.master_card_id && purchasePrice > 0) {
+        try {
+          await cardService.update(item.master_card_id, {
+            purchase_price: purchasePrice, purchase_currency: item.purchase_currency || "CNY",
+          } as any)
+        } catch {}
+      }
     }
   }
 
@@ -91,7 +93,7 @@ suppliers.get("/:id", async (c) => {
         const card = await cardService.retrieve(item.master_card_id)
         title = card.title || title
       } catch {}
-      return { ...item, title }
+      return { ...item, title, purchase_price: Number(item.purchase_price || 0), purchase_currency: item.purchase_currency || "CNY" }
     }),
   )
   const totalAmount = enrichedItems.reduce((sum: number, item: any) => sum + Number(item.total_cost || 0), 0)
@@ -120,8 +122,6 @@ suppliers.put("/:id", async (c) => {
   if (body.notes !== undefined) updateData.notes = body.notes
   if (body.shared_costs !== undefined) updateData.shared_costs = body.shared_costs
   if (body.status !== undefined) updateData.status = body.status
-  if (body.ordered_at !== undefined) updateData.ordered_at = body.ordered_at ? new Date(body.ordered_at) : null
-  if (body.expected_at !== undefined) updateData.expected_at = body.expected_at ? new Date(body.expected_at) : null
   if (body.shipping_cost !== undefined) updateData.shipping_cost = body.shipping_cost
   if (body.tracking_number !== undefined) updateData.tracking_number = body.tracking_number
 
@@ -130,19 +130,21 @@ suppliers.put("/:id", async (c) => {
   if (body.items) {
     const existingItems = await service.listSupplierOrderItems({ order_id: id })
     for (const existing of existingItems) await service.deleteSupplierOrderItems(existing.id)
+    const cardService: MasterCardService = c.get("container").resolve("masterCardService")
     for (const item of body.items) {
-      const purchaseRub = Number(item.purchase_price_rub || 0)
-      const packaging = Number(item.packaging_cost_rub || 0)
-      const logistics = Number(item.logistics_cost_rub || 0)
-      const customs = Number(item.customs_cost_rub || 0)
-      const extra = Number(item.extra_cost_rub || 0)
-      const unitCost = purchaseRub + packaging + logistics + customs + extra
+      const purchasePrice = Number(item.purchase_price || 0)
       await service.createSupplierOrderItems({
         order_id: id, master_card_id: item.master_card_id, ordered_qty: item.ordered_qty,
-        cny_price_per_unit: item.cny_price_per_unit || 0, purchase_price_rub: purchaseRub,
-        packaging_cost_rub: packaging, logistics_cost_rub: logistics, customs_cost_rub: customs,
-        extra_cost_rub: extra, unit_cost: unitCost, total_cost: unitCost * item.ordered_qty, status: "pending",
+        purchase_price: purchasePrice, purchase_currency: item.purchase_currency || "CNY",
+        unit_cost: purchasePrice, total_cost: purchasePrice * item.ordered_qty, status: "pending",
       })
+      if (item.master_card_id && purchasePrice > 0) {
+        try {
+          await cardService.update(item.master_card_id, {
+            purchase_price: purchasePrice, purchase_currency: item.purchase_currency || "CNY",
+          } as any)
+        } catch {}
+      }
     }
   }
 

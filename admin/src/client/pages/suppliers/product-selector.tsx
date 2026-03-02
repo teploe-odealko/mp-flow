@@ -4,11 +4,20 @@ import { apiGet } from "../../lib/api"
 interface Product {
   id: string
   title: string
+  purchase_price?: number | null
+  purchase_currency?: string | null
+}
+
+interface ProductValue {
+  master_card_id: string
+  title: string
+  purchase_price?: number | null
+  purchase_currency?: string | null
 }
 
 interface Props {
-  value: { master_card_id: string; title: string } | null
-  onChange: (product: { master_card_id: string; title: string }) => void
+  value: ProductValue | null
+  onChange: (product: ProductValue) => void
   excludeIds?: string[]
 }
 
@@ -38,7 +47,12 @@ export function ProductSelector({ value, onChange, excludeIds = [] }: Props) {
       setLoading(true)
       try {
         const data = await apiGet<any>(`/api/catalog?q=${encodeURIComponent(query)}`)
-        const all: Product[] = data.products || []
+        const all: Product[] = (data.products || []).map((p: any) => ({
+          id: p.id,
+          title: p.title,
+          purchase_price: p.purchase_price ?? null,
+          purchase_currency: p.purchase_currency ?? null,
+        }))
         setResults(excludeIds.length > 0 ? all.filter((p) => !excludeIds.includes(p.id)) : all)
       } catch {
         setResults([])
@@ -49,7 +63,7 @@ export function ProductSelector({ value, onChange, excludeIds = [] }: Props) {
     return () => clearTimeout(timerRef.current)
   }, [query])
 
-  if (value) {
+  if (value && value.master_card_id) {
     return (
       <div className="group/sel flex items-center gap-1">
         <span className="text-sm truncate">{value.title}</span>
@@ -88,7 +102,12 @@ export function ProductSelector({ value, onChange, excludeIds = [] }: Props) {
               type="button"
               className="w-full text-left px-2 py-1.5 hover:bg-bg-elevated text-sm"
               onClick={() => {
-                onChange({ master_card_id: p.id, title: p.title })
+                onChange({
+                  master_card_id: p.id,
+                  title: p.title,
+                  purchase_price: p.purchase_price,
+                  purchase_currency: p.purchase_currency,
+                })
                 setQuery("")
                 setOpen(false)
               }}

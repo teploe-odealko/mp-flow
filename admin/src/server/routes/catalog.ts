@@ -117,6 +117,8 @@ catalog.put("/:id", async (c) => {
   if (body.status !== undefined) updateData.status = body.status
   if (body.thumbnail !== undefined) updateData.thumbnail = body.thumbnail
   if (body.metadata !== undefined) updateData.metadata = body.metadata
+  if (body.purchase_price !== undefined) updateData.purchase_price = body.purchase_price
+  if (body.purchase_currency !== undefined) updateData.purchase_currency = body.purchase_currency
 
   const card = await cardService.update(id, updateData)
   return c.json({ product: card })

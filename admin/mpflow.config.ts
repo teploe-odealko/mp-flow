@@ -28,6 +28,7 @@ export default defineConfig({
   },
   plugins: [
     { resolve: "./plugins/ozon" },
+    { resolve: "./plugins/ali1688" },
   ],
   server: {
     port: Number(process.env.PORT) || 3000,
