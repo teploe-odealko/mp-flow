@@ -9,9 +9,10 @@ interface Product {
 interface Props {
   value: { master_card_id: string; title: string } | null
   onChange: (product: { master_card_id: string; title: string }) => void
+  excludeIds?: string[]
 }
 
-export function ProductSelector({ value, onChange }: Props) {
+export function ProductSelector({ value, onChange, excludeIds = [] }: Props) {
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<Product[]>([])
   const [open, setOpen] = useState(false)
@@ -37,7 +38,8 @@ export function ProductSelector({ value, onChange }: Props) {
       setLoading(true)
       try {
         const data = await apiGet<any>(`/api/catalog?q=${encodeURIComponent(query)}`)
-        setResults(data.products || [])
+        const all: Product[] = data.products || []
+        setResults(excludeIds.length > 0 ? all.filter((p) => !excludeIds.includes(p.id)) : all)
       } catch {
         setResults([])
       } finally {
@@ -49,12 +51,13 @@ export function ProductSelector({ value, onChange }: Props) {
 
   if (value) {
     return (
-      <div className="flex items-center gap-1.5">
-        <span className="text-sm truncate max-w-[180px]">{value.title}</span>
+      <div className="group/sel flex items-center gap-1">
+        <span className="text-sm truncate">{value.title}</span>
         <button
           type="button"
           onClick={() => onChange({ master_card_id: "", title: "" })}
-          className="text-text-muted hover:text-outflow text-xs shrink-0"
+          className="text-text-muted hover:text-outflow text-xs shrink-0 opacity-0 group-hover/sel:opacity-100 transition-opacity"
+          title="Убрать"
         >
           ×
         </button>

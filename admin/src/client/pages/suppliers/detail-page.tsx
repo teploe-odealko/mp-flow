@@ -377,6 +377,7 @@ export default function SupplierDetailPage() {
                             updateItem(item._key, "master_card_id", p.master_card_id)
                             updateItem(item._key, "title", p.title)
                           }}
+                          excludeIds={items.filter((i) => i._key !== item._key && i.master_card_id).map((i) => i.master_card_id)}
                         />
                       ) : (
                         <span>{item.title || item.master_card_id}</span>
