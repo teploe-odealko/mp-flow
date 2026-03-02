@@ -89,10 +89,20 @@ export async function syncOzonTransactions(
   const unmatchedPostings: string[] = []
 
   for (const [postingNumber, txs] of Object.entries(byPosting)) {
-    const existingSales = await saleService.listSales({
+    // Try exact match first
+    let existingSales = await saleService.listSales({
       channel: "ozon",
       channel_order_id: postingNumber,
     })
+
+    // Finance API often returns posting numbers without the product suffix (-1, -2, etc.)
+    // Try prefix match: channel_order_id LIKE 'postingNumber-%'
+    if (existingSales.length === 0) {
+      existingSales = await saleService.listSales({
+        channel: "ozon",
+        channel_order_id: { $like: `${postingNumber}-%` },
+      })
+    }
 
     if (existingSales.length === 0) {
       postingsNotFound++
