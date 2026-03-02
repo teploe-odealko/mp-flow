@@ -87,13 +87,11 @@ suppliers.get("/:id", async (c) => {
   const enrichedItems = await Promise.all(
     items.map(async (item: any) => {
       let title = item.master_card_id
-      let sku = ""
       try {
         const card = await cardService.retrieve(item.master_card_id)
         title = card.title || title
-        sku = (card as any).sku || ""
       } catch {}
-      return { ...item, title, sku }
+      return { ...item, title }
     }),
   )
   const totalAmount = enrichedItems.reduce((sum: number, item: any) => sum + Number(item.total_cost || 0), 0)

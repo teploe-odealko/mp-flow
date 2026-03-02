@@ -41,7 +41,7 @@ export const CORE_COLUMN_DOCS: PageColumnDocs[] = [
       {
         key: "product",
         label: "Товар",
-        description: "Название товара из мастер-карточки и его артикул (SKU).",
+        description: "Название товара из мастер-карточки.",
       },
       {
         key: "received_qty",
@@ -90,26 +90,6 @@ export const CORE_COLUMN_DOCS: PageColumnDocs[] = [
         key: "title",
         label: "Название",
         description: "Название товара из мастер-карточки.",
-      },
-      {
-        key: "sku",
-        label: "SKU",
-        description: "Внутренний артикул товара.",
-      },
-      {
-        key: "status",
-        label: "Статус",
-        description: "Статус товара: active (активен), draft (черновик).",
-      },
-      {
-        key: "stock",
-        label: "Склад",
-        description: "Количество товара на складе (из расчёта инвентаризации).",
-      },
-      {
-        key: "avg_cost",
-        label: "Ср. себестоимость",
-        description: "Средняя себестоимость единицы товара в рублях.",
       },
     ],
   },

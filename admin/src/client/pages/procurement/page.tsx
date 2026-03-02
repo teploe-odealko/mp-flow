@@ -27,7 +27,6 @@ interface InTransitOrder {
 interface ForecastRow {
   card_id: string
   product_title: string
-  sku: string
   thumbnail?: string
   stock_total: number
   stock_breakdown: StockEntry[]
@@ -581,7 +580,6 @@ export default function ProcurementPage() {
                       )}
                       <div>
                         <div className="truncate max-w-[200px]">{r.product_title}</div>
-                        {r.sku && <div className="text-text-muted text-xs font-mono">{r.sku}</div>}
                       </div>
                     </div>
                   </td>

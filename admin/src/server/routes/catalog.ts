@@ -20,10 +20,7 @@ catalog.get("/", async (c) => {
   if (userId) filters.user_id = userId
   if (status) filters.status = status
   if (q) {
-    filters.$or = [
-      { title: { $ilike: `%${q}%` } },
-      { sku: { $ilike: `%${q}%` } },
-    ]
+    filters.title = { $ilike: `%${q}%` }
   }
 
   const cards = await cardService.list(filters, {
@@ -54,7 +51,6 @@ catalog.post("/", async (c) => {
 
   const card = await cardService.create({
     title: body.title,
-    sku: body.sku || null,
     description: body.description || null,
     status: body.status || "draft",
     thumbnail: body.thumbnail || null,
@@ -117,7 +113,6 @@ catalog.put("/:id", async (c) => {
   const body = await c.req.json()
   const updateData: Record<string, any> = {}
   if (body.title !== undefined) updateData.title = body.title
-  if (body.sku !== undefined) updateData.sku = body.sku
   if (body.description !== undefined) updateData.description = body.description
   if (body.status !== undefined) updateData.status = body.status
   if (body.thumbnail !== undefined) updateData.thumbnail = body.thumbnail

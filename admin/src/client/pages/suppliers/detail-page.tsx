@@ -10,7 +10,6 @@ import type { OrderItem, SharedCostEntry } from "./utils"
 interface ItemDraft extends OrderItem {
   _key: string
   id?: string
-  sku?: string
 }
 
 function newItem(): ItemDraft {
@@ -77,7 +76,6 @@ export default function SupplierDetailPage() {
           id: item.id,
           master_card_id: item.master_card_id,
           title: item.title || item.master_card_id,
-          sku: item.sku,
           ordered_qty: item.ordered_qty || 0,
           cny_price_per_unit: Number(item.cny_price_per_unit) || 0,
           purchase_price_rub: Number(item.purchase_price_rub) || 0,
@@ -378,7 +376,6 @@ export default function SupplierDetailPage() {
                           onChange={(p) => {
                             updateItem(item._key, "master_card_id", p.master_card_id)
                             updateItem(item._key, "title", p.title)
-                            updateItem(item._key, "sku", p.sku)
                           }}
                         />
                       ) : (

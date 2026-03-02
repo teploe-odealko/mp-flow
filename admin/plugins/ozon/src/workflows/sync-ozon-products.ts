@@ -75,7 +75,6 @@ export async function syncOzonProducts(container: AwilixContainer, accountId: st
       if (!existing[0].master_card_id) {
         const card = await masterCardService.create({
           title: product.name || offerId,
-          sku: offerId,
           status: ozonStatus === "archived" ? "archived" : "active",
           user_id: (account as any).user_id || undefined,
           thumbnail: product.primary_image || undefined,
@@ -88,7 +87,6 @@ export async function syncOzonProducts(container: AwilixContainer, accountId: st
       // Create master card for new product
       const card = await masterCardService.create({
         title: product.name || offerId,
-        sku: offerId,
         status: ozonStatus === "archived" ? "archived" : "active",
         user_id: (account as any).user_id || undefined,
         thumbnail: product.primary_image || undefined,

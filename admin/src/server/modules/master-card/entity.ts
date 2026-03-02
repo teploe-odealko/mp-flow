@@ -14,10 +14,6 @@ export class MasterCard {
   title!: string
 
   @Property({ type: "text", nullable: true })
-  @Index()
-  sku?: string | null
-
-  @Property({ type: "text", nullable: true })
   description?: string | null
 
   @Enum({ items: ["active", "draft", "archived"], default: "draft" })

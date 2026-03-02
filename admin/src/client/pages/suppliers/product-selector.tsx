@@ -4,12 +4,11 @@ import { apiGet } from "../../lib/api"
 interface Product {
   id: string
   title: string
-  sku?: string
 }
 
 interface Props {
   value: { master_card_id: string; title: string } | null
-  onChange: (product: { master_card_id: string; title: string; sku?: string }) => void
+  onChange: (product: { master_card_id: string; title: string }) => void
 }
 
 export function ProductSelector({ value, onChange }: Props) {
@@ -86,13 +85,12 @@ export function ProductSelector({ value, onChange }: Props) {
               type="button"
               className="w-full text-left px-2 py-1.5 hover:bg-bg-elevated text-sm"
               onClick={() => {
-                onChange({ master_card_id: p.id, title: p.title, sku: p.sku })
+                onChange({ master_card_id: p.id, title: p.title })
                 setQuery("")
                 setOpen(false)
               }}
             >
               <div className="truncate">{p.title}</div>
-              {p.sku && <div className="text-text-muted text-xs font-mono">{p.sku}</div>}
             </button>
           ))}
         </div>

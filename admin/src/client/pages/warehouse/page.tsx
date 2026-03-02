@@ -12,7 +12,6 @@ interface BreakdownEntry {
 interface InventoryRow {
   card_id: string
   product_title: string
-  sku: string
   thumbnail?: string
   received_qty: number
   stock_total: number
@@ -272,7 +271,6 @@ export default function WarehousePage() {
                     )}
                     <div>
                       <div className="truncate max-w-[200px]">{r.product_title}</div>
-                      {r.sku && <div className="text-text-muted text-xs font-mono">{r.sku}</div>}
                     </div>
                   </div>
                 </td>

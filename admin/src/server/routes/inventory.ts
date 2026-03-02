@@ -20,7 +20,7 @@ inventory.get("/", async (c) => {
 
   const filters: Record<string, any> = {}
   if (userId) filters.user_id = userId
-  if (q) { filters.$or = [{ title: { $ilike: `%${q}%` } }, { sku: { $ilike: `%${q}%` } }] }
+  if (q) { filters.title = { $ilike: `%${q}%` } }
 
   const cards = await cardService.list(filters, {
     order: { title: "ASC" }, skip: Number(offset), take: Number(limit),
@@ -80,7 +80,6 @@ inventory.get("/", async (c) => {
     rows.push({
       card_id: card.id,
       product_title: card.title,
-      sku: card.sku,
       thumbnail: (card as any).thumbnail || undefined,
       received_qty: receivedQty,
       stock_total: stockTotal,
@@ -136,7 +135,7 @@ inventory.get("/sku/:cardId", async (c) => {
   const avgCost = await calculateAvgCost(supplierService, cardId)
 
   return c.json({
-    card: { id: card.id, title: card.title, sku: card.sku },
+    card: { id: card.id, title: card.title },
     summary: { warehouse_stock: warehouseStock, avg_cost: avgCost, stock_value: Math.round(warehouseStock * avgCost * 100) / 100 },
     supplier_orders: supplierItemsEnriched,
     sales: saleList.map((s: any) => ({

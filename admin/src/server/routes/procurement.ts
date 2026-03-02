@@ -55,7 +55,7 @@ procurement.get("/", async (c) => {
   // Load all master cards
   const cardFilters: Record<string, any> = {}
   if (userId) cardFilters.user_id = userId
-  if (q) { cardFilters.$or = [{ title: { $ilike: `%${q}%` } }, { sku: { $ilike: `%${q}%` } }] }
+  if (q) { cardFilters.title = { $ilike: `%${q}%` } }
 
   const cards = await cardService.list(cardFilters, {
     order: { title: "ASC" },
@@ -162,7 +162,6 @@ procurement.get("/", async (c) => {
     rows.push({
       card_id: card.id,
       product_title: card.title,
-      sku: card.sku,
       thumbnail: (card as any).thumbnail || undefined,
 
       // Stock
