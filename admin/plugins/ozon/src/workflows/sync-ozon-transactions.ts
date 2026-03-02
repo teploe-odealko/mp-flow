@@ -274,8 +274,11 @@ function buildFromTransactions(txs: TransactionSummary[]): {
   // net_payout = sum of all tx.amount (what marketplace actually pays)
   const net_payout = Math.round(txs.reduce((s, tx) => s + tx.amount, 0) * 100) / 100
 
-  // posting_revenue = sum of accruals_for_sale (total posting revenue from Ozon)
-  const posting_revenue = txs.reduce((s, tx) => s + Math.abs(tx.accruals_for_sale || 0), 0)
+  // posting_revenue = sum of positive accruals_for_sale (original sale revenue, excludes refunds)
+  const posting_revenue = txs.reduce((s, tx) => {
+    const a = tx.accruals_for_sale || 0
+    return a > 0 ? s + a : s
+  }, 0)
 
   const fee_details = Object.entries(byKey)
     .filter(([, v]) => v.amount > 0)
