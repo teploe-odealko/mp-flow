@@ -14,10 +14,8 @@ function Logo() {
 export default function Layout({ children }: { children: ReactNode }) {
   return (
     <HomeLayout
-      githubUrl="https://github.com/teploe-odealko/mp-flow"
       nav={{
         title: <Logo />,
-        children: <GitHubStars />,
       }}
       links={[
         { text: "Документация", url: "/docs" },
@@ -25,6 +23,10 @@ export default function Layout({ children }: { children: ReactNode }) {
           text: "API",
           url: "https://proxy.mp-flow.ru/docs",
           external: true,
+        },
+        {
+          type: "custom",
+          children: <GitHubStars />,
         },
       ]}
     >

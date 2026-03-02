@@ -16,16 +16,18 @@ export default function Layout({ children }: { children: ReactNode }) {
   return (
     <DocsLayout
       tree={source.getPageTree()}
-      githubUrl="https://github.com/teploe-odealko/mp-flow"
       nav={{
         title: <Logo />,
-        children: <GitHubStars />,
       }}
       links={[
         {
           text: "API Playground",
           url: "https://proxy.mp-flow.ru/docs",
           external: true,
+        },
+        {
+          type: "custom",
+          children: <GitHubStars />,
         },
       ]}
     >
