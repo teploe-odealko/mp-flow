@@ -1,5 +1,6 @@
 import type { Context, Next } from "hono"
 import type { OzonIntegrationService } from "../modules/ozon-integration/service.js"
+import { isOzonEnabled } from "./plugin-check.js"
 
 /**
  * Filter snapshots to only the latest sync (by max synced_at).
@@ -23,6 +24,7 @@ export async function ozonInventoryEnrichment(c: Context, next: Next) {
   await next()
 
   if (c.req.method !== "GET") return
+  if (!(await isOzonEnabled(c))) return
 
   try {
     const body: any = await c.res.json()

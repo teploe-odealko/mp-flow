@@ -1,5 +1,6 @@
 import type { Context, Next } from "hono"
 import type { OzonIntegrationService } from "../modules/ozon-integration/service.js"
+import { isOzonEnabled } from "./plugin-check.js"
 
 /**
  * Hono middleware that enriches catalog responses with Ozon data.
@@ -8,8 +9,8 @@ import type { OzonIntegrationService } from "../modules/ozon-integration/service
 export async function ozonCatalogEnrichment(c: Context, next: Next) {
   await next()
 
-  // Only enrich GET responses with JSON
   if (c.req.method !== "GET") return
+  if (!(await isOzonEnabled(c))) return
 
   try {
     const body: any = await c.res.json()
