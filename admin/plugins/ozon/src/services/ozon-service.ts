@@ -73,9 +73,9 @@ export class OzonIntegrationService {
       warehouse_name: data.warehouse_name,
     })
     if (snap) {
-      this.em.assign(snap, data)
+      this.em.assign(snap, { ...data, synced_at: new Date() })
     } else {
-      snap = this.em.create(OzonStockSnapshot, data as any)
+      snap = this.em.create(OzonStockSnapshot, { ...data, synced_at: new Date() } as any)
     }
     await this.em.persistAndFlush(snap)
     return snap

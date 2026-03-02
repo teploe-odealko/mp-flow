@@ -157,6 +157,9 @@ export class OzonStockSnapshot {
   warehouse_name: string = "unknown"
 
   @Property({ defaultRaw: "now()" })
+  synced_at: Date = new Date()
+
+  @Property({ defaultRaw: "now()" })
   created_at: Date = new Date()
 
   @Property({ defaultRaw: "now()", onUpdate: () => new Date() })
