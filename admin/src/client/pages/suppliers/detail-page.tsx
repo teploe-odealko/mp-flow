@@ -220,7 +220,7 @@ export default function SupplierDetailPage() {
   }
 
   return (
-    <div className="max-w-5xl">
+    <div>
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <button
@@ -289,6 +289,15 @@ export default function SupplierDetailPage() {
 
       {saveMutation.isError && (
         <p className="text-outflow text-sm mb-4">Ошибка: {(saveMutation.error as Error).message}</p>
+      )}
+      {unreceiveMutation.isError && (
+        <p className="text-outflow text-sm mb-4">Ошибка отмены приёмки: {(unreceiveMutation.error as Error).message}</p>
+      )}
+      {receiveMutation.isError && (
+        <p className="text-outflow text-sm mb-4">Ошибка приёмки: {(receiveMutation.error as Error).message}</p>
+      )}
+      {deleteMutation.isError && (
+        <p className="text-outflow text-sm mb-4">Ошибка удаления: {(deleteMutation.error as Error).message}</p>
       )}
 
       {/* Basic fields */}

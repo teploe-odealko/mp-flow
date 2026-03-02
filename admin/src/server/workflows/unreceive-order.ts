@@ -1,15 +1,17 @@
 import type { AwilixContainer } from "awilix"
 import type { SupplierOrderService } from "../modules/supplier-order/service.js"
+import type { MasterCardService } from "../modules/master-card/service.js"
 import type { FinanceService } from "../modules/finance/service.js"
 import type { SaleService } from "../modules/sale/service.js"
 
 export async function unreceiveOrder(container: AwilixContainer, input: { supplier_order_id: string }) {
   const supplierService: SupplierOrderService = container.resolve("supplierOrderService")
+  const cardService: MasterCardService = container.resolve("masterCardService")
   const financeService: FinanceService = container.resolve("financeService")
   const saleService: SaleService = container.resolve("saleService")
 
   const order = await supplierService.retrieveSupplierOrder(input.supplier_order_id)
-  if (order.status !== "received") throw new Error("Can only unreceive orders with status 'received'")
+  if (order.status !== "received") throw new Error("Можно отменить приёмку только для принятых заказов")
 
   const items = await supplierService.listSupplierOrderItems({ order_id: input.supplier_order_id })
 
@@ -18,7 +20,9 @@ export async function unreceiveOrder(container: AwilixContainer, input: { suppli
     if (!item.received_qty || item.received_qty <= 0) continue
     const sales = await saleService.listSales({ master_card_id: item.master_card_id, status: { $in: ["active", "delivered"] } })
     if (sales.length > 0) {
-      throw new Error(`Cannot unreceive: product ${item.master_card_id} has ${sales.length} active/delivered sale(s). Return or cancel sales first.`)
+      let title = item.master_card_id
+      try { title = (await cardService.retrieve(item.master_card_id)).title || title } catch {}
+      throw new Error(`Нельзя отменить приёмку: товар «${title}» участвует в ${sales.length} продаже(ях). Сначала верните или отмените продажи.`)
     }
   }
 

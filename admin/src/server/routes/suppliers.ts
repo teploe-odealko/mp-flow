@@ -173,13 +173,17 @@ suppliers.post("/:id", async (c) => {
   const container = c.get("container")
   const body = await c.req.json()
 
-  if (body.action === "receive") {
-    if (!body.items?.length) return c.json({ error: "Items with received quantities required" }, 400)
-    const result = await receiveOrder(container, { supplier_order_id: id, items: body.items })
-    return c.json({ success: true, result })
-  } else if (body.action === "unreceive") {
-    const result = await unreceiveOrder(container, { supplier_order_id: id })
-    return c.json({ success: true, result })
+  try {
+    if (body.action === "receive") {
+      if (!body.items?.length) return c.json({ error: "Items with received quantities required" }, 400)
+      const result = await receiveOrder(container, { supplier_order_id: id, items: body.items })
+      return c.json({ success: true, result })
+    } else if (body.action === "unreceive") {
+      const result = await unreceiveOrder(container, { supplier_order_id: id })
+      return c.json({ success: true, result })
+    }
+  } catch (err: any) {
+    return c.json({ error: err.message }, 400)
   }
   return c.json({ error: `Unknown action: ${body.action}` }, 400)
 })
