@@ -8,6 +8,35 @@ interface ColumnDocPopoverProps {
   getAnchorRect: () => DOMRect | null
 }
 
+/** Render text with markdown-style [label](url) links as clickable <a> elements */
+function RichText({ text, className }: { text: string; className?: string }) {
+  const parts: React.ReactNode[] = []
+  const re = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index))
+    }
+    parts.push(
+      <a
+        key={match.index}
+        href={match[2]}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-accent hover:underline"
+      >
+        {match[1]}
+      </a>,
+    )
+    lastIndex = re.lastIndex
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex))
+  }
+  return <p className={className}>{parts}</p>
+}
+
 export function ColumnDocPopover({ doc, onClose, getAnchorRect }: ColumnDocPopoverProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [style, setStyle] = useState<React.CSSProperties>({ position: "fixed", opacity: 0 })
@@ -58,7 +87,7 @@ export function ColumnDocPopover({ doc, onClose, getAnchorRect }: ColumnDocPopov
       className="bg-bg-surface border border-bg-border rounded-lg shadow-lg p-4 text-left"
     >
       <p className="text-sm font-semibold text-text-primary mb-2">{doc.label}</p>
-      <p className="text-sm text-text-secondary">{doc.description}</p>
+      <RichText text={doc.description} className="text-sm text-text-secondary" />
 
       {doc.pluginContributions && doc.pluginContributions.length > 0 && (
         <div className="mt-3 pt-3 border-t border-bg-border space-y-2">
@@ -67,22 +96,7 @@ export function ColumnDocPopover({ doc, onClose, getAnchorRect }: ColumnDocPopov
               <span className="inline-block px-1.5 py-0.5 bg-accent/15 text-accent text-[10px] font-semibold uppercase rounded mb-1">
                 {pc.pluginLabel}
               </span>
-              <p className="text-xs text-text-secondary">{pc.description}</p>
-              {pc.links && pc.links.length > 0 && (
-                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                  {pc.links.map((link, j) => (
-                    <a
-                      key={j}
-                      href={link.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-accent hover:underline"
-                    >
-                      {link.label} &rarr;
-                    </a>
-                  ))}
-                </div>
-              )}
+              <RichText text={pc.description} className="text-xs text-text-secondary" />
             </div>
           ))}
         </div>
