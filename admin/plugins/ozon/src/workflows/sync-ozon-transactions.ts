@@ -116,6 +116,9 @@ export async function syncOzonTransactions(
     // Sort transactions by date
     txs.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 
+    // Calculate revenue share for proportional split across sibling sales
+    const totalRevenue = existingSales.reduce((s: number, sale: any) => s + Number(sale.revenue || 0), 0)
+
     for (const sale of existingSales) {
       const metadata = sale.metadata || {}
       const existingTxIds = new Set(
@@ -133,9 +136,19 @@ export async function syncOzonTransactions(
         transactionsLinked += newTxs.length
       }
 
-      // Always rebuild fee_details + net_payout from ALL transactions
+      // Rebuild fee_details + net_payout from ALL transactions
       const { fee_details, net_payout } = buildFromTransactions(metadata.ozon_transactions || [])
-      const updateData: Record<string, any> = { id: sale.id, fee_details, net_payout: String(net_payout) }
+
+      // Split proportionally when posting has multiple items
+      const revenueShare = totalRevenue > 0 ? Number(sale.revenue || 0) / totalRevenue : 1 / existingSales.length
+      const saleFeeDetails = existingSales.length > 1
+        ? fee_details.map((f) => ({ ...f, amount: Math.round(f.amount * revenueShare * 100) / 100 }))
+        : fee_details
+      const saleNetPayout = existingSales.length > 1
+        ? Math.round(net_payout * revenueShare * 100) / 100
+        : net_payout
+
+      const updateData: Record<string, any> = { id: sale.id, fee_details: saleFeeDetails, net_payout: String(saleNetPayout) }
       if (newTxs.length > 0) updateData.metadata = metadata
 
       await saleService.updateSales(updateData)
