@@ -1,6 +1,7 @@
 import { source } from "@/lib/source";
 import { DocsLayout } from "fumadocs-ui/layouts/docs";
 import type { ReactNode } from "react";
+import { GitHubStars } from "@/components/github-stars";
 
 function Logo() {
   return (
@@ -15,8 +16,10 @@ export default function Layout({ children }: { children: ReactNode }) {
   return (
     <DocsLayout
       tree={source.getPageTree()}
+      githubUrl="https://github.com/teploe-odealko/mp-flow"
       nav={{
         title: <Logo />,
+        children: <GitHubStars />,
       }}
       links={[
         {

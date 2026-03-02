@@ -1,5 +1,6 @@
 import { HomeLayout } from "fumadocs-ui/layouts/home";
 import type { ReactNode } from "react";
+import { GitHubStars } from "@/components/github-stars";
 
 function Logo() {
   return (
@@ -13,19 +14,16 @@ function Logo() {
 export default function Layout({ children }: { children: ReactNode }) {
   return (
     <HomeLayout
+      githubUrl="https://github.com/teploe-odealko/mp-flow"
       nav={{
         title: <Logo />,
+        children: <GitHubStars />,
       }}
       links={[
         { text: "Документация", url: "/docs" },
         {
           text: "API",
           url: "https://proxy.mp-flow.ru/docs",
-          external: true,
-        },
-        {
-          text: "GitHub",
-          url: "https://github.com/teploe-odealko/mp-flow",
           external: true,
         },
       ]}
