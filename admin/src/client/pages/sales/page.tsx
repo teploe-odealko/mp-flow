@@ -33,14 +33,6 @@ function fmtDateTime(d: string): string {
   })
 }
 
-function fmtPrecise(n: number | undefined): string {
-  if (n == null) return "—"
-  const abs = Math.abs(n)
-  const formatted = abs === Math.floor(abs)
-    ? abs.toLocaleString("ru-RU")
-    : abs.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  return n < 0 ? `-${formatted}` : formatted
-}
 
 
 export default function SalesPage() {
@@ -353,82 +345,22 @@ export default function SalesPage() {
             )}
 
             {/* Return info */}
-            {s.status === "returned" && s.metadata?.return_info && (
+            {s.status === "returned" && (s.return_reason || s.return_date) && (
               <div className="mb-4 pt-3 border-t border-bg-border">
                 <span className="text-text-muted text-xs block mb-1.5">Возврат</span>
                 <div className="space-y-1 text-xs">
-                  {s.metadata.return_info.reason && (
+                  {s.return_reason && (
                     <div className="flex justify-between">
                       <span className="text-text-muted">Причина</span>
-                      <span className="text-outflow">{s.metadata.return_info.reason}</span>
+                      <span className="text-outflow">{s.return_reason}</span>
                     </div>
                   )}
-                  {s.metadata.return_info.return_date && (
+                  {s.return_date && (
                     <div className="flex justify-between">
                       <span className="text-text-muted">Дата возврата</span>
-                      <span>{fmtDate(s.metadata.return_info.return_date)}</span>
+                      <span>{fmtDate(s.return_date)}</span>
                     </div>
                   )}
-                  {s.metadata.return_info.quantity > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-text-muted">Кол-во</span>
-                      <span>{s.metadata.return_info.quantity}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Ozon transactions */}
-            {s.metadata?.ozon_transactions?.length > 0 && (
-              <div className="pt-3 border-t border-bg-border">
-                <span className="text-text-muted text-xs block mb-1.5">Транзакции Ozon</span>
-                <div className="space-y-3">
-                  {s.metadata.ozon_transactions.map((tx: any, i: number) => {
-                    const services: Array<{ name: string; price: number }> = tx.services || []
-                    const nonZeroServices = services.filter((svc: any) => svc.price !== 0)
-
-                    return (
-                      <div key={tx.operation_id || i} className="text-xs">
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                          <span className="text-text-muted whitespace-nowrap">
-                            {tx.date ? fmtDate(tx.date) : "—"}
-                          </span>
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-                            tx.type === "returns" ? "bg-outflow/20 text-outflow"
-                              : tx.type === "orders" ? "bg-inflow/20 text-inflow"
-                              : "bg-bg-elevated text-text-secondary"
-                          }`}>
-                            {tx.type === "returns" ? "Возврат" : tx.type === "orders" ? "Заказ" : tx.type || "—"}
-                          </span>
-                          <span className={`ml-auto tabular-nums whitespace-nowrap font-medium ${
-                            tx.amount >= 0 ? "text-inflow" : "text-outflow"
-                          }`}>
-                            {tx.amount >= 0 ? "+" : ""}{fmtPrecise(tx.amount)} ₽
-                          </span>
-                        </div>
-                        <span className="text-text-secondary" title={tx.operation_type_name}>
-                          {tx.operation_type_name || tx.operation_type || "—"}
-                        </span>
-                        {nonZeroServices.length > 0 && (
-                          <div className="mt-1 ml-3 space-y-0.5 border-l border-bg-border pl-2">
-                            {nonZeroServices.map((svc: any, j: number) => (
-                              <div key={j} className="flex justify-between text-[11px]">
-                                <span className="text-text-muted truncate mr-2" title={svc.name}>
-                                  {svc.label || svc.name}
-                                </span>
-                                <span className={`tabular-nums whitespace-nowrap ${
-                                  svc.price >= 0 ? "text-inflow" : "text-outflow"
-                                }`}>
-                                  {fmtPrecise(svc.price)} ₽
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
                 </div>
               </div>
             )}

@@ -131,33 +131,10 @@ export async function syncOzonTransactions(
         ...newTxs,
       ].sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
 
-      // Check for return-related fees and add to fee_details if missing
-      const existingFeeKeys = new Set(
-        (sale.fee_details || []).map((f: any) => f.key),
-      )
-      const updatedFees = [...(sale.fee_details || [])]
+      // Rebuild fee_details from ALL transactions (single source of truth)
+      const feeDetails = buildFeeDetailsFromTransactions(metadata.ozon_transactions)
 
-      for (const tx of newTxs) {
-        if (tx.type !== "returns") continue
-        for (const svc of tx.services) {
-          const classified = classifyService(svc.name)
-          if (!existingFeeKeys.has(classified.key)) {
-            updatedFees.push({
-              key: classified.key,
-              label: classified.label,
-              amount: Math.abs(svc.price),
-            })
-            existingFeeKeys.add(classified.key)
-          }
-        }
-      }
-
-      const updateData: Record<string, any> = { id: sale.id, metadata }
-      if (updatedFees.length > (sale.fee_details || []).length) {
-        updateData.fee_details = updatedFees
-      }
-
-      await saleService.updateSales(updateData)
+      await saleService.updateSales({ id: sale.id, metadata, fee_details: feeDetails })
       salesUpdated++
       transactionsLinked += newTxs.length
     }
@@ -227,45 +204,57 @@ function classifyOzonTransaction(tx: TransactionSummary): { type: string; catego
   return { type: "other", category: tx.operation_type || "unknown" }
 }
 
-const OZON_SERVICE_LABELS: Record<string, string> = {
-  MarketplaceServiceItemFulfillment: "Обработка отправления",
-  MarketplaceServiceItemDirectFlowTrans: "Магистральная логистика",
-  MarketplaceServiceItemDirectFlowLogistic: "Магистральная логистика",
-  MarketplaceServiceItemReturnFlowTrans: "Обратная логистика",
-  MarketplaceServiceItemReturnFlowLogistic: "Логистика возврата",
-  MarketplaceServiceItemDelivToCustomer: "Последняя миля",
-  MarketplaceServiceItemRedistributionLastMileCourier: "Последняя миля (курьер)",
-  MarketplaceServiceItemReturnNotDelivToCustomer: "Обработка возврата",
-  MarketplaceServiceItemReturnAfterDelivToCustomer: "Возврат после доставки",
-  MarketplaceServiceItemReturnPartGoodsCustomer: "Частичный возврат",
-  MarketplaceServiceItemRedistributionReturnsPVZ: "Перераспределение возвратов (ПВЗ)",
-  MarketplaceServiceItemDropoffSC: "Приёмка SC",
-  MarketplaceServiceItemDropoffFF: "Приёмка FF",
-  MarketplaceServiceItemDropoffPVZ: "Приёмка ПВЗ",
-  MarketplaceRedistributionOfAcquiringOperation: "Эквайринг",
+// Unified mapping: Ozon service name → fee_details key + label
+const OZON_SERVICE_FEE_MAP: Record<string, { key: string; label: string }> = {
+  MarketplaceServiceItemFulfillment: { key: "fulfillment", label: "Обработка отправления" },
+  MarketplaceServiceItemDirectFlowTrans: { key: "logistics", label: "Магистральная логистика" },
+  MarketplaceServiceItemDirectFlowLogistic: { key: "logistics", label: "Магистральная логистика" },
+  MarketplaceServiceItemDelivToCustomer: { key: "last_mile", label: "Последняя миля" },
+  MarketplaceServiceItemRedistributionLastMileCourier: { key: "last_mile_courier", label: "Последняя миля (курьер)" },
+  MarketplaceServiceItemReturnFlowTrans: { key: "reverse_logistics", label: "Обратная логистика" },
+  MarketplaceServiceItemReturnFlowLogistic: { key: "return_flow_logistics", label: "Логистика возврата" },
+  MarketplaceServiceItemReturnNotDelivToCustomer: { key: "return_processing", label: "Обработка возврата" },
+  MarketplaceServiceItemReturnAfterDelivToCustomer: { key: "return_after_delivery", label: "Возврат после доставки" },
+  MarketplaceServiceItemReturnPartGoodsCustomer: { key: "return_partial", label: "Частичный возврат" },
+  MarketplaceServiceItemRedistributionReturnsPVZ: { key: "redistribution_returns", label: "Перераспределение возвратов (ПВЗ)" },
+  MarketplaceServiceItemDropoffSC: { key: "direct_flow_sc", label: "Приёмка SC" },
+  MarketplaceServiceItemDropoffFF: { key: "direct_flow_ff", label: "Приёмка FF" },
+  MarketplaceServiceItemDropoffPVZ: { key: "direct_flow_pvz", label: "Приёмка ПВЗ" },
+  MarketplaceRedistributionOfAcquiringOperation: { key: "acquiring", label: "Эквайринг" },
 }
 
 function labelForOzonService(name: string): string {
-  return OZON_SERVICE_LABELS[name] || name
+  return OZON_SERVICE_FEE_MAP[name]?.label || name
 }
 
-function classifyService(serviceName: string): { key: string; label: string } {
-  const lower = serviceName.toLowerCase()
-  if (lower.includes("returnafterdelivtocustomer") || lower.includes("returnflowtrans"))
-    return { key: "reverse_logistics", label: "Обратная логистика" }
-  if (lower.includes("returnflowlogistic"))
-    return { key: "return_flow_logistics", label: "Логистика возврата" }
-  if (lower.includes("returnprocessing") || lower.includes("returnnotdelivtocustomer"))
-    return { key: "return_processing", label: "Обработка возврата" }
-  if (lower.includes("returnpartgoodscustomer"))
-    return { key: "return_processing_partial", label: "Обработка частичного возврата" }
-  if (lower.includes("redistributionreturns"))
-    return { key: "redistribution_returns", label: "Перераспределение возвратов" }
-  if (lower.includes("fulfillment"))
-    return { key: "fulfillment_return", label: "Обработка отправления (возврат)" }
-  if (lower.includes("lastmile") || lower.includes("delivtocustomer"))
-    return { key: "last_mile_return", label: "Последняя миля (возврат)" }
-  if (lower.includes("directflow"))
-    return { key: "direct_flow_return", label: "Приёмка (возврат)" }
-  return { key: `return_fee_${lower.slice(0, 30)}`, label: serviceName }
+/** Build fee_details from ALL transactions of a posting */
+function buildFeeDetailsFromTransactions(
+  txs: TransactionSummary[],
+): Array<{ key: string; label: string; amount: number }> {
+  const byKey: Record<string, { label: string; amount: number }> = {}
+
+  // Commission from sale_commission fields
+  for (const tx of txs) {
+    if (tx.sale_commission) {
+      if (!byKey.commission) byKey.commission = { label: "Комиссия", amount: 0 }
+      byKey.commission.amount += Math.abs(tx.sale_commission)
+    }
+  }
+
+  // All services from all transactions
+  for (const tx of txs) {
+    for (const svc of tx.services) {
+      if (svc.price === 0) continue
+      const mapped = OZON_SERVICE_FEE_MAP[svc.name]
+      const key = mapped?.key || svc.name
+      const label = mapped?.label || svc.name
+      if (!byKey[key]) byKey[key] = { label, amount: 0 }
+      byKey[key].amount += Math.abs(svc.price)
+    }
+  }
+
+  return Object.entries(byKey)
+    .filter(([, v]) => v.amount > 0)
+    .map(([key, v]) => ({ key, label: v.label, amount: Math.round(v.amount * 100) / 100 }))
+    .sort((a, b) => b.amount - a.amount)
 }

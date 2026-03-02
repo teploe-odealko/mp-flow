@@ -54,19 +54,11 @@ export async function syncOzonReturns(
         continue
       }
 
-      const metadata = sale.metadata || {}
-      metadata.return_info = {
-        return_id: ret.return_id,
-        reason: ret.return_reason_name || "",
-        return_date: ret.logistic_return_date || null,
-        quantity: ret.quantity || 0,
-        status: ret.status || "",
-      }
-
       await saleService.updateSales({
         id: sale.id,
         status: "returned",
-        metadata,
+        return_reason: ret.return_reason_name || null,
+        return_date: ret.logistic_return_date ? new Date(ret.logistic_return_date) : null,
       })
       updated++
     }

@@ -120,35 +120,7 @@ export async function syncOzonSales(
         } catch { /* skip */ }
       }
 
-      // Build fee_details from financial data
-      const feeDetails: Array<{ key: string; label: string; amount: number }> = []
-      const finData = finByProductId[sku] || finByProductId[product.product_id] || {}
-
-      const commissionAmount = Math.abs(Number(finData.commission_amount || 0))
-      if (commissionAmount > 0) {
-        feeDetails.push({ key: "commission", label: "Комиссия", amount: commissionAmount * qty })
-      }
-
-      const itemServices = finData.item_services || {}
-      const serviceMapping: Record<string, { key: string; label: string }> = {
-        marketplace_service_item_fulfillment: { key: "fulfillment", label: "Обработка отправления" },
-        marketplace_service_item_direct_flow_trans: { key: "logistics", label: "Магистральная логистика" },
-        marketplace_service_item_return_flow_trans: { key: "reverse_logistics", label: "Обратная логистика" },
-        marketplace_service_item_deliv_to_customer: { key: "last_mile", label: "Последняя миля" },
-        marketplace_service_item_return_not_deliv_to_customer: { key: "return_processing", label: "Обработка возврата" },
-        marketplace_service_item_return_part_goods_customer: { key: "return_processing_partial", label: "Обработка частичного возврата" },
-        marketplace_service_item_dropoff_sc: { key: "direct_flow_sc", label: "Приёмка SC" },
-        marketplace_service_item_dropoff_ff: { key: "direct_flow_ff", label: "Приёмка FF" },
-        marketplace_service_item_dropoff_pvz: { key: "direct_flow_pvz", label: "Приёмка ПВЗ" },
-      }
-
-      for (const [serviceKey, feeInfo] of Object.entries(serviceMapping)) {
-        const amount = Math.abs(Number(itemServices[serviceKey] || 0))
-        if (amount > 0) {
-          feeDetails.push({ key: feeInfo.key, label: feeInfo.label, amount: amount * qty })
-        }
-      }
-
+      // fee_details will be filled by syncOzonTransactions from Finance API
       const status = mapOzonStatus(posting.status)
 
       if (existingSales.length > 0) {
@@ -161,11 +133,6 @@ export async function syncOzonSales(
           updateData.unit_cogs = unitCogs
           updateData.total_cogs = qty * unitCogs
         }
-        const existingFees = existing.fee_details || []
-        if (feeDetails.length > 0 && existingFees.length === 0) {
-          updateData.fee_details = feeDetails
-        }
-
         if (Object.keys(updateData).length > 0) {
           await saleService.updateSales({ id: existing.id, ...updateData })
           updated++
@@ -189,7 +156,7 @@ export async function syncOzonSales(
           revenue,
           unit_cogs: unitCogs,
           total_cogs: qty * unitCogs,
-          fee_details: feeDetails,
+          fee_details: [],
           status,
           sold_at: new Date(posting.in_process_at || posting.created_at || new Date()),
           currency_code: "RUB",

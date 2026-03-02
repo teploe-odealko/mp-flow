@@ -63,6 +63,12 @@ export class Sale {
   @Property({ type: "text", nullable: true })
   notes?: string | null
 
+  @Property({ type: "text", nullable: true })
+  return_reason?: string | null
+
+  @Property({ type: "timestamptz", nullable: true })
+  return_date?: Date | null
+
   @Property({ type: "json", nullable: true })
   metadata?: any
 
