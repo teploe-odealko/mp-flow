@@ -277,7 +277,7 @@ auth.get("/callback", async (c) => {
       userId = v4()
       userName = userinfo.name || null
       await conn.execute(
-        `INSERT INTO mpflow_user (id, email, name, created_at, updated_at) VALUES (?, ?, ?, NOW(), NOW())`,
+        `INSERT INTO mpflow_user (id, email, name, active_until, created_at, updated_at) VALUES (?, ?, ?, NOW() + INTERVAL '14 days', NOW(), NOW())`,
         [userId, userinfo.email, userName],
       )
     }
@@ -312,13 +312,40 @@ auth.get("/me", async (c) => {
   if (!session.userId) {
     return c.json({ user: null })
   }
-  return c.json({
+
+  const response: Record<string, any> = {
     user: {
       id: session.userId,
       email: session.email,
       name: session.name,
     },
-  })
+  }
+
+  // Include subscription status in logto (cloud) mode
+  if (getAuthMode() === "logto") {
+    try {
+      const orm = c.get("orm")
+      const em = orm.em.fork()
+      const conn = em.getConnection()
+      const result = await conn.execute(
+        `SELECT active_until FROM mpflow_user WHERE id = ? AND deleted_at IS NULL LIMIT 1`,
+        [session.userId],
+      )
+      if (result.length > 0 && result[0].active_until) {
+        const activeUntil = new Date(result[0].active_until)
+        response.subscription = {
+          active: activeUntil > new Date(),
+          activeUntil: result[0].active_until,
+        }
+      } else {
+        response.subscription = { active: false, activeUntil: null }
+      }
+    } catch {
+      response.subscription = { active: false, activeUntil: null }
+    }
+  }
+
+  return c.json(response)
 })
 
 export default auth

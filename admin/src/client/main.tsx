@@ -15,6 +15,7 @@ import ProcurementPage from "./pages/procurement/page"
 import SuppliersPage from "./pages/suppliers/page"
 const SupplierDetailPage = React.lazy(() => import("./pages/suppliers/detail-page"))
 import PluginsPage from "./pages/plugins/page"
+import { Paywall } from "./components/paywall"
 import "./styles/globals.css"
 
 const queryClient = new QueryClient({
@@ -225,7 +226,7 @@ function LogtoRedirect() {
 }
 
 function AppRoutes() {
-  const { user, loading, authMode, needsSetup } = useAuth()
+  const { user, loading, authMode, needsSetup, subscription } = useAuth()
 
   // Fetch enabled plugins to create dynamic routes (deduped with Layout's query)
   const { data: pluginsData } = useQuery({
@@ -257,6 +258,11 @@ function AppRoutes() {
 
     // Fallback (loading state or unknown mode)
     return <LoginScreen />
+  }
+
+  // Subscription check: show paywall if expired (only in logto/cloud mode)
+  if (subscription && !subscription.active) {
+    return <Paywall />
   }
 
   // Build dynamic plugin routes from adminNav + glob-discovered pages

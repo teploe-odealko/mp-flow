@@ -12,6 +12,10 @@ export async function api<T = any>(path: string, options?: RequestInit): Promise
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }))
+    if (res.status === 403 && body.code === "SUBSCRIPTION_EXPIRED") {
+      window.location.reload()
+      throw new Error("SUBSCRIPTION_EXPIRED")
+    }
     throw new Error(body.error || body.message || `HTTP ${res.status}`)
   }
 

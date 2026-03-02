@@ -22,6 +22,8 @@ import authRoutes from "./routes/auth.js"
 import procurementRoutes from "./routes/procurement.js"
 import pluginsRoutes from "./routes/plugins.js"
 import columnDocsRoutes from "./routes/column-docs.js"
+import subscriptionRoutes from "./routes/subscription.js"
+import { subscriptionMiddleware } from "./core/subscription.js"
 import { getSession } from "./core/session.js"
 import type { PluginSettingService } from "./modules/plugin-setting/service.js"
 
@@ -38,7 +40,7 @@ async function main() {
 
   // Collect ALL entities (core + plugins) before ORM init
   const coreEntities = [MasterCard, SupplierOrder, SupplierOrderItem, Supplier, FinanceTransaction, Sale, PluginSetting, ProcurementSetting]
-  const pluginPaths = [{ resolve: "./plugins/ozon" }]
+  const pluginPaths = [{ resolve: "./plugins/ozon" }, { resolve: "./plugins/ali1688" }]
   const pluginEntities = await collectPluginEntities(pluginPaths)
   const allEntities = [...coreEntities, ...pluginEntities]
   if (pluginEntities.length > 0) {
@@ -89,7 +91,7 @@ async function main() {
   const container = createAppContainer(orm, {
     database: { url: DATABASE_URL },
     auth: { cookieSecret: COOKIE_SECRET },
-    plugins: [{ resolve: "./plugins/ozon" }],
+    plugins: pluginPaths,
   })
 
   // Create Hono app
@@ -107,6 +109,9 @@ async function main() {
     c.set("orm", orm)
     await next()
   })
+
+  // Subscription check (only in logto/cloud mode)
+  app.use("/api/*", subscriptionMiddleware())
 
   // Middleware: block API requests to disabled plugins
   app.use("/api/*", async (c, next) => {
@@ -143,6 +148,7 @@ async function main() {
   app.route("/api/analytics", analyticsRoutes)
   app.route("/api/plugins", pluginsRoutes)
   app.route("/api/column-docs", columnDocsRoutes)
+  app.route("/api/subscription", subscriptionRoutes)
   app.route("/auth", authRoutes)
 
   // Health check

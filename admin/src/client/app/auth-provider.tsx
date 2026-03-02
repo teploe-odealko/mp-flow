@@ -8,11 +8,17 @@ interface User {
 
 type AuthMode = "logto" | "selfhosted" | "dev"
 
+interface SubscriptionInfo {
+  active: boolean
+  activeUntil: string | null
+}
+
 interface AuthContextType {
   user: User | null
   loading: boolean
   authMode: AuthMode | null
   needsSetup: boolean
+  subscription: SubscriptionInfo | null
   login: () => void
   logout: () => void
   setUser: (user: User) => void
@@ -23,6 +29,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   authMode: null,
   needsSetup: false,
+  subscription: null,
   login: () => {},
   logout: () => {},
   setUser: () => {},
@@ -33,6 +40,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [authMode, setAuthMode] = useState<AuthMode | null>(null)
   const [needsSetup, setNeedsSetup] = useState(false)
+  const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null)
 
   useEffect(() => {
     Promise.all([
@@ -43,6 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(meData.user || null)
         setAuthMode(modeData.mode || "selfhosted")
         setNeedsSetup(modeData.needsSetup || false)
+        setSubscription(meData.subscription || null)
         setLoading(false)
       })
       .catch(() => setLoading(false))
@@ -66,7 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, authMode, needsSetup, login, logout, setUser }}>
+    <AuthContext.Provider value={{ user, loading, authMode, needsSetup, subscription, login, logout, setUser }}>
       {children}
     </AuthContext.Provider>
   )
