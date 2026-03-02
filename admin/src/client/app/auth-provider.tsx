@@ -67,14 +67,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .then((r) => r.json())
       .then((data) => {
         setUser(null)
-        // Mark as explicitly logged out so we don't auto-redirect to Logto
-        sessionStorage.setItem("mpflow_logged_out", "1")
-        // Try to clear Logto OIDC session, fallback to home
+        // Clear Logto OIDC session, then Logto redirects back → auto-login flow
         window.location.href = data.logoutUrl || "/"
       })
       .catch(() => {
         setUser(null)
-        sessionStorage.setItem("mpflow_logged_out", "1")
         window.location.href = "/"
       })
   }
