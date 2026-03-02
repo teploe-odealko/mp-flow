@@ -10,7 +10,7 @@ interface TransactionSummary {
   accruals_for_sale: number
   sale_commission: number
   date: string
-  services: Array<{ name: string; price: number }>
+  services: Array<{ name: string; label: string; price: number }>
   items: Array<{ name: string; sku: number }>
 }
 
@@ -66,6 +66,7 @@ export async function syncOzonTransactions(
       date: op.operation_date || "",
       services: (op.services || []).map((s: any) => ({
         name: s.name || "",
+        label: labelForOzonService(s.name || ""),
         price: s.price || 0,
       })),
       items: (op.items || []).map((i: any) => ({
@@ -224,6 +225,28 @@ function classifyOzonTransaction(tx: TransactionSummary): { type: string; catego
   if (name.includes("баллы за отзывы")) return { type: "marketing", category: "review_rewards" }
   if (name.includes("хранение")) return { type: "fbo_services", category: "storage" }
   return { type: "other", category: tx.operation_type || "unknown" }
+}
+
+const OZON_SERVICE_LABELS: Record<string, string> = {
+  MarketplaceServiceItemFulfillment: "Обработка отправления",
+  MarketplaceServiceItemDirectFlowTrans: "Магистральная логистика",
+  MarketplaceServiceItemDirectFlowLogistic: "Магистральная логистика",
+  MarketplaceServiceItemReturnFlowTrans: "Обратная логистика",
+  MarketplaceServiceItemReturnFlowLogistic: "Логистика возврата",
+  MarketplaceServiceItemDelivToCustomer: "Последняя миля",
+  MarketplaceServiceItemRedistributionLastMileCourier: "Последняя миля (курьер)",
+  MarketplaceServiceItemReturnNotDelivToCustomer: "Обработка возврата",
+  MarketplaceServiceItemReturnAfterDelivToCustomer: "Возврат после доставки",
+  MarketplaceServiceItemReturnPartGoodsCustomer: "Частичный возврат",
+  MarketplaceServiceItemRedistributionReturnsPVZ: "Перераспределение возвратов (ПВЗ)",
+  MarketplaceServiceItemDropoffSC: "Приёмка SC",
+  MarketplaceServiceItemDropoffFF: "Приёмка FF",
+  MarketplaceServiceItemDropoffPVZ: "Приёмка ПВЗ",
+  MarketplaceRedistributionOfAcquiringOperation: "Эквайринг",
+}
+
+function labelForOzonService(name: string): string {
+  return OZON_SERVICE_LABELS[name] || name
 }
 
 function classifyService(serviceName: string): { key: string; label: string } {
