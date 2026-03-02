@@ -68,6 +68,21 @@ export function ColumnDocPopover({ doc, onClose, getAnchorRect }: ColumnDocPopov
                 {pc.pluginLabel}
               </span>
               <p className="text-xs text-text-secondary">{pc.description}</p>
+              {pc.links && pc.links.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                  {pc.links.map((link, j) => (
+                    <a
+                      key={j}
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-accent hover:underline"
+                    >
+                      {link.label} &rarr;
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>

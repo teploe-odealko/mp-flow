@@ -5,6 +5,7 @@ import ozonAccountsRoutes from "./src/routes/ozon-accounts.js"
 import ozonSyncRoutes from "./src/routes/ozon-sync.js"
 import { ozonCatalogEnrichment } from "./src/middleware/catalog-enrichment.js"
 import { ozonInventoryEnrichment } from "./src/middleware/inventory-enrichment.js"
+import { ozonProcurementEnrichment } from "./src/middleware/procurement-enrichment.js"
 import { asClass, Lifetime, InjectionMode } from "awilix"
 
 export default definePlugin({
@@ -31,24 +32,38 @@ export default definePlugin({
       columnKey: "stock_total",
       pluginLabel: "Ozon",
       description: "Остатки со складов Ozon FBO (present), без учёта зарезервированных. Данные берутся из раздела «Товары» личного кабинета Ozon.",
+      links: [
+        { label: "Товары", url: "https://seller.ozon.ru/app/products" },
+        { label: "Остатки на складах", url: "https://seller.ozon.ru/app/analytics/stock-on-warehouses" },
+      ],
     },
     {
       pageId: "warehouse",
       columnKey: "sold_total",
       pluginLabel: "Ozon",
       description: "Доставленные заказы из FBO-отправлений минус возвраты после успешной доставки. Отправления: «Обработанные» FBO, возвраты: раздел «Возвраты» со статусом возврата после доставки.",
+      links: [
+        { label: "FBO-отправления", url: "https://seller.ozon.ru/app/postings/fbo" },
+        { label: "Возвраты", url: "https://seller.ozon.ru/app/returns-fbo" },
+      ],
     },
     {
       pageId: "warehouse",
       columnKey: "delivering_total",
       pluginLabel: "Ozon",
       description: "Сумма FBO-отправлений в статусах «Ожидает сборки», «Готов к отгрузке» и «Доставляется». Данные из раздела FBO-отправлений.",
+      links: [
+        { label: "FBO-отправления", url: "https://seller.ozon.ru/app/postings/fbo" },
+      ],
     },
     {
       pageId: "catalog",
       columnKey: "stock",
       pluginLabel: "Ozon",
       description: "Для привязанных товаров отображается остаток FBO на складах Ozon.",
+      links: [
+        { label: "Товары", url: "https://seller.ozon.ru/app/products" },
+      ],
     },
   ],
 
@@ -57,6 +72,7 @@ export default definePlugin({
     { path: "/api/catalog/*", method: "GET", handler: ozonCatalogEnrichment },
     { path: "/api/inventory", method: "GET", handler: ozonInventoryEnrichment },
     { path: "/api/inventory/*", method: "GET", handler: ozonInventoryEnrichment },
+    { path: "/api/procurement", method: "GET", handler: ozonProcurementEnrichment },
   ],
 
   jobs: [

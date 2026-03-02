@@ -10,6 +10,7 @@ import SalesPage from "./pages/sales/page"
 import WarehousePage from "./pages/warehouse/page"
 import FinancePage from "./pages/finance/page"
 import AnalyticsPage from "./pages/analytics/page"
+import ProcurementPage from "./pages/procurement/page"
 import SuppliersPage from "./pages/suppliers/page"
 const SupplierDetailPage = React.lazy(() => import("./pages/suppliers/detail-page"))
 import PluginsPage from "./pages/plugins/page"
@@ -285,6 +286,7 @@ function AppRoutes() {
         <Route path="/" element={<Navigate to="/catalog" replace />} />
         <Route path="/catalog" element={<CatalogPage />} />
         <Route path="/warehouse" element={<WarehousePage />} />
+        <Route path="/procurement" element={<ProcurementPage />} />
         <Route path="/suppliers" element={<SuppliersPage />} />
         <Route path="/suppliers/new" element={<Suspense fallback={<div className="text-text-secondary">Загрузка...</div>}><SupplierDetailPage /></Suspense>} />
         <Route path="/suppliers/:id" element={<Suspense fallback={<div className="text-text-secondary">Загрузка...</div>}><SupplierDetailPage /></Suspense>} />

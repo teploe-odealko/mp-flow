@@ -11,6 +11,7 @@ import { SupplierOrder, SupplierOrderItem, Supplier } from "./modules/supplier-o
 import { FinanceTransaction } from "./modules/finance/entity.js"
 import { Sale } from "./modules/sale/entity.js"
 import { PluginSetting } from "./modules/plugin-setting/entity.js"
+import { ProcurementSetting } from "./modules/procurement/entity.js"
 import catalogRoutes from "./routes/catalog.js"
 import suppliersRoutes from "./routes/suppliers.js"
 import suppliersRegistryRoutes from "./routes/suppliers-registry.js"
@@ -19,6 +20,7 @@ import financeRoutes from "./routes/finance.js"
 import inventoryRoutes from "./routes/inventory.js"
 import analyticsRoutes from "./routes/analytics.js"
 import authRoutes from "./routes/auth.js"
+import procurementRoutes from "./routes/procurement.js"
 import pluginsRoutes from "./routes/plugins.js"
 import columnDocsRoutes from "./routes/column-docs.js"
 import { getSession } from "./core/session.js"
@@ -36,7 +38,7 @@ async function main() {
   console.log("[mpflow] Starting admin server...")
 
   // Collect ALL entities (core + plugins) before ORM init
-  const coreEntities = [MasterCard, SupplierOrder, SupplierOrderItem, Supplier, FinanceTransaction, Sale, PluginSetting]
+  const coreEntities = [MasterCard, SupplierOrder, SupplierOrderItem, Supplier, FinanceTransaction, Sale, PluginSetting, ProcurementSetting]
   const pluginPaths = [{ resolve: "./plugins/ozon" }]
   const pluginEntities = await collectPluginEntities(pluginPaths)
   const allEntities = [...coreEntities, ...pluginEntities]
@@ -138,6 +140,7 @@ async function main() {
   app.route("/api/suppliers-registry", suppliersRegistryRoutes)
   app.route("/api/sales", salesRoutes)
   app.route("/api/finance", financeRoutes)
+  app.route("/api/procurement", procurementRoutes)
   app.route("/api/inventory", inventoryRoutes)
   app.route("/api/analytics", analyticsRoutes)
   app.route("/api/plugins", pluginsRoutes)

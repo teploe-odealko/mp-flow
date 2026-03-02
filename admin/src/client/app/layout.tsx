@@ -7,6 +7,7 @@ import { ColumnDocsProvider } from "../components/column-docs-provider"
 import {
   Package,
   Warehouse,
+  Calculator,
   Truck,
   ShoppingCart,
   Wallet,
@@ -22,6 +23,7 @@ import {
 const coreNavItems: { path: string; label: string; icon: LucideIcon }[] = [
   { path: "/catalog", label: "Каталог", icon: Package },
   { path: "/warehouse", label: "Склад", icon: Warehouse },
+  { path: "/procurement", label: "Закупки", icon: Calculator },
   { path: "/suppliers", label: "Поступления", icon: Truck },
   { path: "/sales", label: "Продажи", icon: ShoppingCart },
   { path: "/finance", label: "Финансы", icon: Wallet },

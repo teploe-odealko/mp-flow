@@ -38,6 +38,7 @@ columnDocs.get("/", async (c) => {
         col.pluginContributions.push({
           pluginLabel: contrib.pluginLabel,
           description: contrib.description,
+          links: contrib.links,
         })
       }
     }

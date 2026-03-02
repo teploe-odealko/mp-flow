@@ -12,16 +12,22 @@ export interface PageColumnDocs {
   columns: ColumnDocEntry[]
 }
 
+export interface ColumnDocLink {
+  label: string
+  url: string
+}
+
 export interface PluginColumnDocContribution {
   pageId: string
   columnKey: string
   pluginLabel: string
   description: string
+  links?: ColumnDocLink[]
 }
 
 // Extended entry returned from API (with merged plugin contributions)
 export interface ColumnDocWithPlugins extends ColumnDocEntry {
-  pluginContributions?: Array<{ pluginLabel: string; description: string }>
+  pluginContributions?: Array<{ pluginLabel: string; description: string; links?: ColumnDocLink[] }>
 }
 
 export interface PageColumnDocsWithPlugins {
