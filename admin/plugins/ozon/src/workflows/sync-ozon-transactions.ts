@@ -224,6 +224,7 @@ const OZON_SERVICE_FEE_MAP: Record<string, { key: string; label: string }> = {
   MarketplaceServiceItemDropoffFF: { key: "direct_flow_ff", label: "Приёмка FF" },
   MarketplaceServiceItemDropoffPVZ: { key: "direct_flow_pvz", label: "Приёмка ПВЗ" },
   MarketplaceRedistributionOfAcquiringOperation: { key: "acquiring", label: "Эквайринг" },
+  MarketplaceServiceItemInstallment: { key: "installment", label: "Рассрочка" },
 }
 
 function labelForOzonService(name: string): string {
