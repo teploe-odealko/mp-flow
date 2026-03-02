@@ -157,8 +157,10 @@ export default function SalesPage() {
                     {!selectedSale && <DocTableHeader pageId="sales" columnKey="channel" className="text-left px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Канал</DocTableHeader>}
                     <DocTableHeader pageId="sales" columnKey="status" className="text-left px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Статус</DocTableHeader>
                     {!selectedSale && <DocTableHeader pageId="sales" columnKey="quantity" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Кол-во</DocTableHeader>}
+                    <DocTableHeader pageId="sales" columnKey="price" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Цена</DocTableHeader>
                     <DocTableHeader pageId="sales" columnKey="revenue" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Выручка</DocTableHeader>
                     <DocTableHeader pageId="sales" columnKey="expenses" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Расходы</DocTableHeader>
+                    <DocTableHeader pageId="sales" columnKey="profit" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Прибыль</DocTableHeader>
                     <DocTableHeader pageId="sales" columnKey="date" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Дата</DocTableHeader>
                   </tr>
                 </thead>
@@ -193,10 +195,19 @@ export default function SalesPage() {
                         {!selectedSale && (
                           <td className="px-2 py-1.5 text-right tabular-nums">{s.quantity}</td>
                         )}
-                        <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt(s.revenue)} ₽</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{fmt(s.price_per_unit)} ₽</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{fmt(s.revenue)} ₽</td>
                         <td className="px-2 py-1.5 text-right tabular-nums text-outflow">
                           {totalFees > 0 ? `${fmt(totalFees)} ₽` : "—"}
                         </td>
+                        {(() => {
+                          const profit = Number(s.revenue || 0) - totalFees - Number(s.total_cogs || 0)
+                          return (
+                            <td className={`px-2 py-1.5 text-right tabular-nums font-medium ${totalFees > 0 ? (profit >= 0 ? "text-inflow" : "text-outflow") : "text-text-muted"}`}>
+                              {totalFees > 0 ? `${fmt(profit)} ₽` : "—"}
+                            </td>
+                          )
+                        })()}
                         <td className="px-2 py-1.5 text-right text-text-secondary text-xs whitespace-nowrap">{fmtDate(s.sold_at)}</td>
                       </tr>
                     )
