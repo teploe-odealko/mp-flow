@@ -1,10 +1,11 @@
 import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { logger } from "hono/logger"
+import type { MikroORM } from "@mikro-orm/core"
 import { sessionMiddleware } from "./core/session.js"
 import { authMiddleware } from "./core/auth.js"
 
-export function createApp(cookieSecret: string) {
+export function createApp(cookieSecret: string, orm?: MikroORM) {
   const app = new Hono<{ Variables: Record<string, any> }>()
 
   // Global middleware
@@ -26,13 +27,13 @@ export function createApp(cookieSecret: string) {
   app.use("/api/*", sessionMiddleware(cookieSecret))
   app.use("/auth/*", sessionMiddleware(cookieSecret))
 
-  // Auth middleware for /api/* routes (except health)
+  // Auth middleware for /api/* routes (except public endpoints)
+  const AUTH_SKIP = ["/api/health", "/api/docs", "/api/openapi.json"]
   app.use("/api/*", async (c, next) => {
-    // Skip auth for health check
-    if (c.req.path === "/api/health") {
+    if (AUTH_SKIP.includes(c.req.path)) {
       return next()
     }
-    return authMiddleware()(c, next)
+    return authMiddleware(orm)(c, next)
   })
 
   // Global error handler — return error details (not just "Internal Server Error")

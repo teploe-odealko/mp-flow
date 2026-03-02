@@ -13,6 +13,7 @@ import {
   Wallet,
   BarChart3,
   Puzzle,
+  Settings,
   PanelLeftClose,
   PanelLeftOpen,
   BookOpen,
@@ -148,6 +149,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           )}
           <div className="border-t border-bg-border my-2" />
           <NavLink path="/plugins" label="Плагины" icon={Puzzle} active={pathname.startsWith("/plugins")} collapsed={collapsed} />
+          <NavLink path="/settings" label="Настройки" icon={Settings} active={pathname.startsWith("/settings")} collapsed={collapsed} />
         </nav>
 
         {/* Bottom: Docs + User */}

@@ -11,6 +11,7 @@ import { FinanceTransaction } from "./modules/finance/entity.js"
 import { Sale } from "./modules/sale/entity.js"
 import { PluginSetting } from "./modules/plugin-setting/entity.js"
 import { ProcurementSetting } from "./modules/procurement/entity.js"
+import { ApiKey } from "./modules/api-key/entity.js"
 import catalogRoutes from "./routes/catalog.js"
 import suppliersRoutes from "./routes/suppliers.js"
 import suppliersRegistryRoutes from "./routes/suppliers-registry.js"
@@ -23,6 +24,11 @@ import procurementRoutes from "./routes/procurement.js"
 import pluginsRoutes from "./routes/plugins.js"
 import columnDocsRoutes from "./routes/column-docs.js"
 import subscriptionRoutes from "./routes/subscription.js"
+import apiKeysRoutes from "./routes/api-keys.js"
+import { createMcpHandler } from "./mcp/server.js"
+import { CORE_TOOLS } from "./mcp/tools.js"
+import { generateOpenApiSpec } from "./mcp/openapi.js"
+import { Scalar } from "@scalar/hono-api-reference"
 import { subscriptionMiddleware } from "./core/subscription.js"
 import { getSession } from "./core/session.js"
 import type { PluginSettingService } from "./modules/plugin-setting/service.js"
@@ -39,7 +45,7 @@ async function main() {
   console.log("[mpflow] Starting admin server...")
 
   // Collect ALL entities (core + plugins) before ORM init
-  const coreEntities = [MasterCard, SupplierOrder, SupplierOrderItem, Supplier, FinanceTransaction, Sale, PluginSetting, ProcurementSetting]
+  const coreEntities = [MasterCard, SupplierOrder, SupplierOrderItem, Supplier, FinanceTransaction, Sale, PluginSetting, ProcurementSetting, ApiKey]
   const pluginPaths = [{ resolve: "./plugins/ozon" }, { resolve: "./plugins/ali1688" }]
   const pluginEntities = await collectPluginEntities(pluginPaths)
   const allEntities = [...coreEntities, ...pluginEntities]
@@ -95,7 +101,7 @@ async function main() {
   })
 
   // Create Hono app
-  const app = createApp(COOKIE_SECRET)
+  const app = createApp(COOKIE_SECRET, orm)
 
   // Request-scoped middleware: each request gets fresh EM + services
   app.use("/api/*", async (c, next) => {
@@ -149,7 +155,21 @@ async function main() {
   app.route("/api/plugins", pluginsRoutes)
   app.route("/api/column-docs", columnDocsRoutes)
   app.route("/api/subscription", subscriptionRoutes)
+  app.route("/api/api-keys", apiKeysRoutes)
   app.route("/auth", authRoutes)
+
+  // MCP endpoint (Streamable HTTP)
+  const mcpHandler = createMcpHandler(app.fetch.bind(app))
+  app.all("/mcp", mcpHandler)
+
+  // OpenAPI spec + Scalar playground
+  app.get("/api/openapi.json", (c) => {
+    const proto = c.req.header("x-forwarded-proto") || "http"
+    const host = c.req.header("x-forwarded-host") || c.req.header("host") || "localhost:3000"
+    const baseUrl = `${proto}://${host}`
+    return c.json(generateOpenApiSpec(CORE_TOOLS, baseUrl))
+  })
+  app.get("/api/docs", Scalar({ url: "/api/openapi.json" }))
 
   // Health check
   app.get("/api/health", (c) => c.json({ status: "ok", time: new Date().toISOString() }))

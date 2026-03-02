@@ -15,6 +15,7 @@ import ProcurementPage from "./pages/procurement/page"
 import SuppliersPage from "./pages/suppliers/page"
 const SupplierDetailPage = React.lazy(() => import("./pages/suppliers/detail-page"))
 import PluginsPage from "./pages/plugins/page"
+import SettingsPage from "./pages/settings/page"
 import { Paywall } from "./components/paywall"
 import "./styles/globals.css"
 
@@ -303,6 +304,7 @@ function AppRoutes() {
         <Route path="/finance" element={<FinancePage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/plugins" element={<PluginsPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
         {dynamicRoutes}
         {pluginsData && <Route path="*" element={<Navigate to="/catalog" replace />} />}
       </Routes>

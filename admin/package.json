@@ -28,6 +28,8 @@
     "@mikro-orm/core": "^6.4.0",
     "@mikro-orm/migrations": "^6.4.0",
     "@mikro-orm/postgresql": "^6.4.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@scalar/hono-api-reference": "^0.9.47",
     "awilix": "^11.0.0",
     "hono": "^4.6.0",
     "iron-session": "^8.0.0",
