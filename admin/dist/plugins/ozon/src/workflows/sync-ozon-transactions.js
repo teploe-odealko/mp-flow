@@ -54,6 +54,7 @@ export async function syncOzonTransactions(container, accountId, dateFrom, dateT
     let transactionsLinked = 0;
     let postingsNotFound = 0;
     const unmatchedPostings = [];
+    const unmatchedDetails = {};
     for (const [postingNumber, txs] of Object.entries(byPosting)) {
         // Try exact match first
         let existingSales = await saleService.listSales({
@@ -71,6 +72,7 @@ export async function syncOzonTransactions(container, accountId, dateFrom, dateT
         if (existingSales.length === 0) {
             postingsNotFound++;
             unmatchedPostings.push(postingNumber);
+            unmatchedDetails[postingNumber] = txs;
             continue;
         }
         // Sort transactions by date
@@ -119,7 +121,8 @@ export async function syncOzonTransactions(container, accountId, dateFrom, dateT
         total_operations: operations.length,
         postings_not_found: postingsNotFound,
         unmatched_postings: unmatchedPostings,
-        orphan_transactions: orphanTransactions.length,
+        unmatched_details: unmatchedDetails,
+        orphan_transactions: orphanTransactions,
     };
 }
 function classifyService(serviceName) {

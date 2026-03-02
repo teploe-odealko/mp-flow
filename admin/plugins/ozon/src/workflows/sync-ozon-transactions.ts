@@ -87,6 +87,7 @@ export async function syncOzonTransactions(
   let transactionsLinked = 0
   let postingsNotFound = 0
   const unmatchedPostings: string[] = []
+  const unmatchedDetails: Record<string, TransactionSummary[]> = {}
 
   for (const [postingNumber, txs] of Object.entries(byPosting)) {
     // Try exact match first
@@ -107,6 +108,7 @@ export async function syncOzonTransactions(
     if (existingSales.length === 0) {
       postingsNotFound++
       unmatchedPostings.push(postingNumber)
+      unmatchedDetails[postingNumber] = txs
       continue
     }
 
@@ -166,7 +168,8 @@ export async function syncOzonTransactions(
     total_operations: operations.length,
     postings_not_found: postingsNotFound,
     unmatched_postings: unmatchedPostings,
-    orphan_transactions: orphanTransactions.length,
+    unmatched_details: unmatchedDetails,
+    orphan_transactions: orphanTransactions,
   }
 }
 
