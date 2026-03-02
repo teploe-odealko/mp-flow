@@ -1,3 +1,4 @@
+import { isOzonEnabled } from "./plugin-check.js";
 /**
  * Filter snapshots to only the latest sync (by max synced_at).
  * Each sync creates one snapshot per warehouse — we want only the latest set.
@@ -20,6 +21,8 @@ function getLatestSnapshots(snapshots) {
 export async function ozonInventoryEnrichment(c, next) {
     await next();
     if (c.req.method !== "GET")
+        return;
+    if (!(await isOzonEnabled(c)))
         return;
     try {
         const body = await c.res.json();
@@ -63,6 +66,11 @@ export async function ozonInventoryEnrichment(c, next) {
                         if (fboReserved > 0) {
                             row.stock_breakdown.push({ source: "ozon_reserved", label: "Ozon резерв", qty: fboReserved });
                         }
+                        // Recalculate stock_total as sum of all breakdown entries
+                        row.stock_total = row.stock_breakdown.reduce((s, e) => s + (e.qty || 0), 0);
+                        // Recalculate discrepancy after enrichment
+                        row.discrepancy = Math.max(0, (row.sold_total || 0) + (row.delivering_total || 0) +
+                            (row.written_off_qty || 0) + row.stock_total - (row.received_qty || 0));
                     }
                 }
                 catch { /* skip */ }

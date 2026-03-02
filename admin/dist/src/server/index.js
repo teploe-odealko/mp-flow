@@ -20,6 +20,7 @@ import inventoryRoutes from "./routes/inventory.js";
 import analyticsRoutes from "./routes/analytics.js";
 import authRoutes from "./routes/auth.js";
 import pluginsRoutes from "./routes/plugins.js";
+import columnDocsRoutes from "./routes/column-docs.js";
 import { getSession } from "./core/session.js";
 const DATABASE_URL = process.env.DATABASE_URL || "postgresql://mpflow:mpflow@localhost:5432/mpflow";
 const PORT = Number(process.env.PORT) || 3000;
@@ -128,6 +129,7 @@ async function main() {
     app.route("/api/inventory", inventoryRoutes);
     app.route("/api/analytics", analyticsRoutes);
     app.route("/api/plugins", pluginsRoutes);
+    app.route("/api/column-docs", columnDocsRoutes);
     app.route("/auth", authRoutes);
     // Health check
     app.get("/api/health", (c) => c.json({ status: "ok", time: new Date().toISOString() }));

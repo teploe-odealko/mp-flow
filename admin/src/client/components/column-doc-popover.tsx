@@ -32,7 +32,10 @@ export function ColumnDocPopover({ doc, onClose, getAnchorRect }: ColumnDocPopov
   }, [getAnchorRect])
 
   useEffect(() => {
+    const mountTime = Date.now()
     function handleClick(e: MouseEvent) {
+      // Ignore clicks within 100ms of mount to avoid the opening click
+      if (Date.now() - mountTime < 100) return
       if (ref.current && !ref.current.contains(e.target as Node)) {
         onClose()
       }
@@ -40,13 +43,9 @@ export function ColumnDocPopover({ doc, onClose, getAnchorRect }: ColumnDocPopov
     function handleKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose()
     }
-    // Delay listener to avoid catching the same click that opened the popover
-    const id = requestAnimationFrame(() => {
-      document.addEventListener("mousedown", handleClick)
-      document.addEventListener("keydown", handleKey)
-    })
+    document.addEventListener("mousedown", handleClick)
+    document.addEventListener("keydown", handleKey)
     return () => {
-      cancelAnimationFrame(id)
       document.removeEventListener("mousedown", handleClick)
       document.removeEventListener("keydown", handleKey)
     }
@@ -59,19 +58,7 @@ export function ColumnDocPopover({ doc, onClose, getAnchorRect }: ColumnDocPopov
       className="bg-bg-surface border border-bg-border rounded-lg shadow-lg p-4 text-left"
     >
       <p className="text-sm font-semibold text-text-primary mb-2">{doc.label}</p>
-      <p className="text-sm text-text-secondary mb-3">{doc.description}</p>
-
-      {doc.formula && (
-        <div className="bg-bg-deep rounded px-2.5 py-1.5 mb-3">
-          <span className="text-[10px] uppercase tracking-wider text-text-muted block mb-0.5">Формула</span>
-          <code className="text-xs font-mono text-text-primary">{doc.formula}</code>
-        </div>
-      )}
-
-      <div className="mb-1">
-        <span className="text-[10px] uppercase tracking-wider text-text-muted">Источник данных</span>
-        <p className="text-xs text-text-secondary mt-0.5">{doc.source}</p>
-      </div>
+      <p className="text-sm text-text-secondary">{doc.description}</p>
 
       {doc.pluginContributions && doc.pluginContributions.length > 0 && (
         <div className="mt-3 pt-3 border-t border-bg-border space-y-2">

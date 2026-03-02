@@ -30,19 +30,19 @@ export default definePlugin({
       pageId: "warehouse",
       columnKey: "stock_total",
       pluginLabel: "Ozon",
-      description: "Добавляет остатки со складов Ozon FBO (present + reserved). Локальный остаток уменьшается на количество товара, находящегося на складах Ozon.",
+      description: "Остатки со складов Ozon FBO (present), без учёта зарезервированных. Данные берутся из раздела «Товары» личного кабинета Ozon.",
     },
     {
       pageId: "warehouse",
       columnKey: "sold_total",
       pluginLabel: "Ozon",
-      description: "Продажи со статусом «delivered» из канала Ozon учитываются в общем количестве проданных товаров.",
+      description: "Доставленные заказы из FBO-отправлений минус возвраты после успешной доставки. Отправления: «Обработанные» FBO, возвраты: раздел «Возвраты» со статусом возврата после доставки.",
     },
     {
       pageId: "warehouse",
       columnKey: "delivering_total",
       pluginLabel: "Ozon",
-      description: "Заказы Ozon в статусе «active» (в доставке) добавляются в разбивку товаров в доставке.",
+      description: "Сумма FBO-отправлений в статусах «Ожидает сборки», «Готов к отгрузке» и «Доставляется». Данные из раздела FBO-отправлений.",
     },
     {
       pageId: "catalog",

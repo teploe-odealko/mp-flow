@@ -1,11 +1,13 @@
+import { isOzonEnabled } from "./plugin-check.js";
 /**
  * Hono middleware that enriches catalog responses with Ozon data.
  * Applied as post-processing: runs after the route handler.
  */
 export async function ozonCatalogEnrichment(c, next) {
     await next();
-    // Only enrich GET responses with JSON
     if (c.req.method !== "GET")
+        return;
+    if (!(await isOzonEnabled(c)))
         return;
     try {
         const body = await c.res.json();

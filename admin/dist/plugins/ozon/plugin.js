@@ -20,6 +20,32 @@ export default definePlugin({
         app.route("/api/ozon-accounts", ozonAccountsRoutes);
         app.route("/api/ozon-sync", ozonSyncRoutes);
     },
+    columnDocs: [
+        {
+            pageId: "warehouse",
+            columnKey: "stock_total",
+            pluginLabel: "Ozon",
+            description: "Остатки со складов Ozon FBO (present), без учёта зарезервированных. Данные берутся из раздела «Товары» личного кабинета Ozon.",
+        },
+        {
+            pageId: "warehouse",
+            columnKey: "sold_total",
+            pluginLabel: "Ozon",
+            description: "Доставленные заказы из FBO-отправлений минус возвраты после успешной доставки. Отправления: «Обработанные» FBO, возвраты: раздел «Возвраты» со статусом возврата после доставки.",
+        },
+        {
+            pageId: "warehouse",
+            columnKey: "delivering_total",
+            pluginLabel: "Ozon",
+            description: "Сумма FBO-отправлений в статусах «Ожидает сборки», «Готов к отгрузке» и «Доставляется». Данные из раздела FBO-отправлений.",
+        },
+        {
+            pageId: "catalog",
+            columnKey: "stock",
+            pluginLabel: "Ozon",
+            description: "Для привязанных товаров отображается остаток FBO на складах Ozon.",
+        },
+    ],
     middleware: [
         { path: "/api/catalog", method: "GET", handler: ozonCatalogEnrichment },
         { path: "/api/catalog/*", method: "GET", handler: ozonCatalogEnrichment },

@@ -308,22 +308,18 @@ export default function WarehousePage() {
                   )}
                 </td>
                 <td className="p-2 text-right whitespace-nowrap">
-                  {!r.has_cost && (
-                    <button
-                      onClick={() => setAssignRow(r)}
-                      className="text-accent hover:text-accent-dark text-xs mr-2"
-                    >
-                      Оприходовать
-                    </button>
-                  )}
-                  {r.discrepancy > 0 && (
-                    <button
-                      onClick={() => setWriteOffRow(r)}
-                      className="text-text-muted hover:text-outflow text-xs"
-                    >
-                      Списать
-                    </button>
-                  )}
+                  <button
+                    onClick={() => setAssignRow(r)}
+                    className="text-accent hover:text-accent-dark text-xs mr-2"
+                  >
+                    Оприходовать
+                  </button>
+                  <button
+                    onClick={() => setWriteOffRow(r)}
+                    className="text-text-muted hover:text-outflow text-xs"
+                  >
+                    Списать
+                  </button>
                 </td>
               </tr>
             ))}

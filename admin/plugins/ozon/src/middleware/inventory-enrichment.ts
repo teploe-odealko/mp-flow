@@ -81,6 +81,12 @@ export async function ozonInventoryEnrichment(c: Context, next: Next) {
             row.stock_total = row.stock_breakdown.reduce(
               (s: number, e: any) => s + (e.qty || 0), 0,
             )
+
+            // Recalculate discrepancy after enrichment
+            row.discrepancy = Math.max(0,
+              (row.sold_total || 0) + (row.delivering_total || 0) +
+              (row.written_off_qty || 0) + row.stock_total - (row.received_qty || 0),
+            )
           }
         } catch { /* skip */ }
       }

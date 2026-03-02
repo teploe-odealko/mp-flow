@@ -1,20 +1,10 @@
 export async function unreceiveOrder(container, input) {
     const supplierService = container.resolve("supplierOrderService");
     const financeService = container.resolve("financeService");
-    const saleService = container.resolve("saleService");
     const order = await supplierService.retrieveSupplierOrder(input.supplier_order_id);
     if (order.status !== "received")
-        throw new Error("Can only unreceive orders with status 'received'");
+        throw new Error("Можно отменить приёмку только для принятых заказов");
     const items = await supplierService.listSupplierOrderItems({ order_id: input.supplier_order_id });
-    // Validate no active sales reference these items
-    for (const item of items) {
-        if (!item.received_qty || item.received_qty <= 0)
-            continue;
-        const sales = await saleService.listSales({ master_card_id: item.master_card_id, status: { $in: ["active", "delivered"] } });
-        if (sales.length > 0) {
-            throw new Error(`Cannot unreceive: product ${item.master_card_id} has ${sales.length} active/delivered sale(s). Return or cancel sales first.`);
-        }
-    }
     // Reset items
     for (const item of items) {
         await supplierService.updateSupplierOrderItems({ id: item.id, received_qty: 0, status: "pending" });
