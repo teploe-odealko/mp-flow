@@ -135,7 +135,7 @@ export async function syncOzonTransactions(
 
       // Always rebuild fee_details + net_payout from ALL transactions
       const { fee_details, net_payout } = buildFromTransactions(metadata.ozon_transactions || [])
-      const updateData: Record<string, any> = { id: sale.id, fee_details, net_payout }
+      const updateData: Record<string, any> = { id: sale.id, fee_details, net_payout: String(net_payout) }
       if (newTxs.length > 0) updateData.metadata = metadata
 
       await saleService.updateSales(updateData)
