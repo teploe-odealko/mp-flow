@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 import { getUserIdOptional } from "../../../../src/server/core/auth.js"
-import type { OzonIntegrationService } from "../modules/ozon-integration/service.js"
+import type { OzonIntegrationService } from "../services/ozon-service.js"
 
 const ozonAccountsRoutes = new Hono<{ Variables: Record<string, any> }>()
 

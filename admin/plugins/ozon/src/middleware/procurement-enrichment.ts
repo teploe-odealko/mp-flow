@@ -1,12 +1,14 @@
 import type { Context, Next } from "hono"
-import type { OzonIntegrationService } from "../modules/ozon-integration/service.js"
+import type { OzonIntegrationService } from "../services/ozon-service.js"
 import { isOzonEnabled } from "./plugin-check.js"
 
-/**
- * Hono middleware that enriches procurement forecast with Ozon FBO stock data.
- * Adjusts stock_breakdown and recalculates order_qty based on actual marketplace stock.
- */
-export async function ozonProcurementEnrichment(c: Context, next: Next) {
+export const config = {
+  paths: [
+    { path: "/api/procurement", method: "GET" },
+  ],
+}
+
+export default async function ozonProcurementEnrichment(c: Context, next: Next) {
   await next()
 
   if (c.req.method !== "GET") return

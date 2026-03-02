@@ -2,6 +2,9 @@ import type { Hono } from "hono"
 import type { AwilixContainer } from "awilix"
 import type { MikroORM } from "@mikro-orm/core"
 import type { PluginColumnDocContribution } from "../../shared/column-docs.js"
+import { asClass, Lifetime, InjectionMode } from "awilix"
+import { readdirSync, existsSync } from "node:fs"
+import { join, basename } from "node:path"
 
 export interface PluginMiddleware {
   path: string
@@ -32,20 +35,156 @@ export function definePlugin(def: PluginDefinition): PluginDefinition {
   return def
 }
 
-async function resolvePluginPath(resolve: string): Promise<string> {
+// ── Helpers ──
+
+function kebabToCamel(str: string): string {
+  return str.replace(/-([a-z])/g, (_, c) => c.toUpperCase())
+}
+
+interface ResolvedPlugin {
+  pluginPath: string
+  pluginDir: string
+}
+
+function resolvePlugin(resolve: string): ResolvedPlugin {
   if (resolve.startsWith(".")) {
     const pluginName = resolve.replace(/^\.\/plugins\//, "")
-    const distPath = `${process.cwd()}/dist/plugins/${pluginName}/plugin.js`
-    const srcPath = `${process.cwd()}/plugins/${pluginName}/plugin.ts`
-    try {
-      await import(distPath)
-      return distPath
-    } catch {
-      return srcPath
+    const distDir = join(process.cwd(), "dist", "plugins", pluginName)
+    const srcDir = join(process.cwd(), "plugins", pluginName)
+    if (existsSync(join(distDir, "plugin.js"))) {
+      return { pluginPath: join(distDir, "plugin.js"), pluginDir: distDir }
+    }
+    return { pluginPath: join(srcDir, "plugin.ts"), pluginDir: srcDir }
+  }
+  return { pluginPath: resolve, pluginDir: "" }
+}
+
+function scanDir(dir: string): string[] {
+  if (!existsSync(dir)) return []
+  return readdirSync(dir)
+    .filter((f) => (f.endsWith(".js") || f.endsWith(".ts")) && !f.endsWith(".d.ts"))
+    .map((f) => join(dir, f))
+}
+
+async function resolveFile(basePath: string): Promise<string | null> {
+  for (const ext of [".js", ".ts"]) {
+    const p = basePath + ext
+    if (existsSync(p)) return p
+  }
+  return null
+}
+
+function fileExt(file: string): string {
+  return file.endsWith(".ts") ? ".ts" : ".js"
+}
+
+// ── Discovery ──
+
+async function discoverEntities(pluginDir: string): Promise<any[]> {
+  const files = scanDir(join(pluginDir, "src", "entities"))
+  const entities: any[] = []
+  for (const file of files) {
+    const mod = await import(file)
+    for (const val of Object.values(mod)) {
+      if (typeof val === "function" && val.prototype) entities.push(val)
     }
   }
-  return resolve
+  return entities
 }
+
+async function discoverServices(pluginDir: string): Promise<Record<string, any>> {
+  const files = scanDir(join(pluginDir, "src", "services"))
+  const services: Record<string, any> = {}
+  for (const file of files) {
+    const mod = await import(file)
+    const diKey = kebabToCamel(basename(file, fileExt(file)))
+    const Cls =
+      mod.default ||
+      Object.values(mod).find((v) => typeof v === "function" && v.prototype)
+    if (Cls) {
+      services[diKey] = asClass(Cls as any, {
+        lifetime: Lifetime.SCOPED,
+        injectionMode: InjectionMode.CLASSIC,
+      })
+    }
+  }
+  return services
+}
+
+async function discoverRoutes(pluginDir: string): Promise<{
+  register: (app: Hono<any>) => void
+  apiPrefixes: string[]
+}> {
+  const files = scanDir(join(pluginDir, "src", "routes"))
+  const entries: Array<{ prefix: string; handler: any }> = []
+  for (const file of files) {
+    const mod = await import(file)
+    if (!mod.default) continue
+    const prefix = `/api/${basename(file, fileExt(file))}`
+    entries.push({ prefix, handler: mod.default })
+  }
+  return {
+    register: (app) => {
+      for (const { prefix, handler } of entries) app.route(prefix, handler)
+    },
+    apiPrefixes: entries.map((e) => e.prefix),
+  }
+}
+
+async function discoverMiddleware(pluginDir: string): Promise<PluginMiddleware[]> {
+  const files = scanDir(join(pluginDir, "src", "middleware"))
+  const middleware: PluginMiddleware[] = []
+  for (const file of files) {
+    const mod = await import(file)
+    if (!mod.config || !mod.default) continue
+    for (const p of mod.config.paths || []) {
+      middleware.push({
+        path: p.path,
+        method: p.method || "ALL",
+        handler: mod.default,
+      })
+    }
+  }
+  return middleware
+}
+
+async function discoverNav(
+  pluginDir: string,
+): Promise<Array<{ path: string; label: string }> | undefined> {
+  const file = await resolveFile(join(pluginDir, "src", "nav"))
+  if (!file) return undefined
+  const mod = await import(file)
+  return mod.default
+}
+
+async function discoverColumnDocs(
+  pluginDir: string,
+): Promise<PluginColumnDocContribution[] | undefined> {
+  const file = await resolveFile(join(pluginDir, "src", "column-docs"))
+  if (!file) return undefined
+  const mod = await import(file)
+  return mod.default
+}
+
+// ── Registration helper ──
+
+function registerMiddleware(app: Hono<any>, middleware: PluginMiddleware[]) {
+  for (const mw of middleware) {
+    const method = mw.method.toLowerCase() as any
+    if (method === "all") {
+      app.use(mw.path, mw.handler)
+    } else {
+      app.use(mw.path, async (c, next) => {
+        if (c.req.method === mw.method) {
+          return mw.handler(c, next)
+        }
+        await next()
+      })
+    }
+  }
+}
+
+// ── Public API ──
 
 /**
  * Collect entities from plugins WITHOUT loading routes/middleware.
@@ -57,10 +196,15 @@ export async function collectPluginEntities(
   const allEntities: any[] = []
   for (const pluginRef of pluginPaths) {
     try {
-      const pluginPath = await resolvePluginPath(pluginRef.resolve)
+      const { pluginPath, pluginDir } = resolvePlugin(pluginRef.resolve)
       const mod = await import(pluginPath)
       const plugin: PluginDefinition = mod.default || mod
-      if (plugin.entities) allEntities.push(...plugin.entities)
+
+      if (plugin.entities) {
+        allEntities.push(...plugin.entities)
+      } else if (pluginDir) {
+        allEntities.push(...(await discoverEntities(pluginDir)))
+      }
     } catch (err) {
       console.error(`[plugin] Failed to collect entities from ${pluginRef.resolve}:`, err)
     }
@@ -78,51 +222,65 @@ export async function loadPlugins(
 
   for (const pluginRef of pluginPaths) {
     try {
-      const pluginPath = await resolvePluginPath(pluginRef.resolve)
+      const { pluginPath, pluginDir } = resolvePlugin(pluginRef.resolve)
       const mod = await import(pluginPath)
       const plugin: PluginDefinition = mod.default || mod
 
       console.log(`[plugin] Loading: ${plugin.name}`)
 
-      // Register in plugin registry
-      loadedPlugins.set(plugin.name, plugin)
-
-      // Collect entities
+      // ── Entities ──
       if (plugin.entities) {
         allEntities.push(...plugin.entities)
+      } else if (pluginDir) {
+        const entities = await discoverEntities(pluginDir)
+        allEntities.push(...entities)
       }
 
-      // Register services in container (accepts awilix resolvers or raw values)
+      // ── Services ──
       if (plugin.services) {
-        const registrations: Record<string, any> = {}
-        for (const [name, svc] of Object.entries(plugin.services)) {
-          registrations[name] = svc
-        }
-        container.register(registrations)
+        container.register(plugin.services)
+      } else if (pluginDir) {
+        const services = await discoverServices(pluginDir)
+        if (Object.keys(services).length) container.register(services)
       }
 
-      // Register routes
+      // ── Routes ──
+      let discoveredApiPrefixes: string[] | undefined
       if (plugin.routes) {
         plugin.routes(app, container)
+      } else if (pluginDir) {
+        const discovered = await discoverRoutes(pluginDir)
+        discovered.register(app)
+        discoveredApiPrefixes = discovered.apiPrefixes
       }
 
-      // Register middleware
+      // ── Middleware ──
       if (plugin.middleware) {
-        for (const mw of plugin.middleware) {
-          const method = mw.method.toLowerCase() as any
-          if (method === "all") {
-            app.use(mw.path, mw.handler)
-          } else {
-            app.use(mw.path, async (c, next) => {
-              if (c.req.method === mw.method) {
-                return mw.handler(c, next)
-              }
-              await next()
-            })
-          }
+        registerMiddleware(app, plugin.middleware)
+      } else if (pluginDir) {
+        const middleware = await discoverMiddleware(pluginDir)
+        if (middleware.length) {
+          plugin.middleware = middleware
+          registerMiddleware(app, middleware)
         }
       }
 
+      // ── Admin Nav ──
+      if (!plugin.adminNav && pluginDir) {
+        plugin.adminNav = await discoverNav(pluginDir)
+      }
+
+      // ── Column Docs ──
+      if (!plugin.columnDocs && pluginDir) {
+        plugin.columnDocs = await discoverColumnDocs(pluginDir)
+      }
+
+      // ── API Prefixes ──
+      if (!plugin.apiPrefixes) {
+        plugin.apiPrefixes = discoveredApiPrefixes
+      }
+
+      loadedPlugins.set(plugin.name, plugin)
       console.log(`[plugin] Loaded: ${plugin.name}`)
     } catch (err) {
       console.error(`[plugin] Failed to load ${pluginRef.resolve}:`, err)

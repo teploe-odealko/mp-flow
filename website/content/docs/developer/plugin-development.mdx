@@ -11,42 +11,78 @@ description: Как создать свой плагин для MPFlow — entit
 
 При старте сервера:
 
-1. Собираются entities из всех плагинов
+1. Собираются entities из всех плагинов (автоматически из `src/entities/`)
 2. ORM инициализируется со всеми entities (core + plugins)
 3. `SchemaGenerator.updateSchema({ safe: true })` создаёт недостающие таблицы и колонки
-4. Загружаются services, routes и middleware
+4. Загружаются services, routes, middleware, nav и columnDocs
 
 `safe: true` означает только аддитивные изменения — CREATE TABLE, ADD COLUMN. Без DROP.
+
+## Convention-based auto-discovery
+
+MPFlow использует конвенцию папок — плагин автоматически обнаруживает компоненты по структуре директорий. `plugin.ts` содержит только метаданные:
+
+```typescript
+import { definePlugin } from "../../src/server/core/plugin-loader.js"
+
+export default definePlugin({
+  name: "my-plugin",
+  label: "My Plugin",
+  description: "Описание вашего плагина",
+})
+```
+
+Всё остальное подхватывается из конвенциональной структуры папок.
 
 ## Структура плагина
 
 ```
 admin/plugins/my-plugin/
-├── plugin.ts                     # Определение плагина (точка входа)
+├── plugin.ts                       # Метаданные (name, label, description)
 └── src/
-    ├── modules/
-    │   └── my-module/
-    │       ├── entities.ts       # MikroORM entities
-    │       └── service.ts        # Бизнес-логика
+    ├── entities/
+    │   └── my-record.ts            # MikroORM entities (все экспорты — entity-классы)
+    ├── services/
+    │   └── my-record-service.ts    # Сервис (имя файла → DI-ключ: myRecordService)
     ├── routes/
-    │   └── my-routes.ts          # Hono API-роуты
+    │   └── my-records.ts           # Hono роуты (default export, prefix: /api/my-records)
     ├── middleware/
-    │   └── my-enrichment.ts      # Middleware для обогащения данных
-    └── workflows/
-        └── my-sync.ts            # Логика фоновых задач
+    │   └── my-enrichment.ts        # Middleware (export config + export default handler)
+    ├── workflows/
+    │   └── my-sync.ts              # Логика фоновых задач
+    ├── client/
+    │   └── page.tsx                # React-страница в админке
+    ├── nav.ts                      # Навигация (export default [{path, label}])
+    └── column-docs.ts              # Документация колонок (export default [...])
 ```
+
+### Конвенции именования
+
+**Имя файла → DI-ключ** (kebab-case → camelCase):
+
+| Файл | DI-ключ |
+|------|---------|
+| `my-record-service.ts` | `myRecordService` |
+| `ozon-service.ts` | `ozonService` |
+
+**Имя файла → API-префикс** (для routes):
+
+| Файл | Префикс |
+|------|---------|
+| `my-records.ts` | `/api/my-records` |
+| `ozon-sync.ts` | `/api/ozon-sync` |
 
 ## Пошагово: создаём плагин
 
 ### 1. Создать директорию
 
 ```bash
-mkdir -p admin/plugins/my-plugin/src/modules/my-module
+mkdir -p admin/plugins/my-plugin/src/{entities,services,routes}
 ```
 
 ### 2. Определить entity
 
-Создайте `src/modules/my-module/entities.ts`. Используйте декораторы MikroORM:
+Создайте `src/entities/my-record.ts`. Используйте декораторы MikroORM:
 
 ```typescript
 import { Entity, PrimaryKey, Property, Index } from "@mikro-orm/core"
@@ -83,11 +119,11 @@ export class MyRecord {
 
 ### 3. Создать сервис
 
-Создайте `src/modules/my-module/service.ts`:
+Создайте `src/services/my-record-service.ts`:
 
 ```typescript
 import type { EntityManager } from "@mikro-orm/core"
-import { MyRecord } from "./entities.js"
+import { MyRecord } from "../entities/my-record.js"
 
 export class MyRecordService {
   constructor(private em: EntityManager) {}
@@ -120,16 +156,16 @@ export class MyRecordService {
 }
 ```
 
-Сервис получает `EntityManager` — request-scoped, безопасен для параллельных запросов.
+Имя файла `my-record-service` автоматически станет DI-ключом `myRecordService`. Сервис получает `EntityManager` — request-scoped, безопасен для параллельных запросов.
 
 ### 4. Создать API-роуты
 
-Создайте `src/routes/my-routes.ts`:
+Создайте `src/routes/my-records.ts`:
 
 ```typescript
 import { Hono } from "hono"
-import { getUserId } from "../../../src/server/core/auth.js"
-import { MyRecordService } from "../modules/my-module/service.js"
+import { getUserId } from "../../../../src/server/core/auth.js"
+import type { MyRecordService } from "../services/my-record-service.js"
 
 const routes = new Hono<{ Variables: Record<string, any> }>()
 
@@ -151,7 +187,7 @@ routes.post("/", async (c) => {
 export default routes
 ```
 
-Сервисы достаются из DI-контейнера через `c.get("container").resolve("serviceName")`.
+Имя файла `my-records` → API-префикс `/api/my-records`. Роуты регистрируются автоматически.
 
 ### 5. Написать plugin.ts
 
@@ -159,38 +195,15 @@ export default routes
 
 ```typescript
 import { definePlugin } from "../../src/server/core/plugin-loader.js"
-import { MyRecord } from "./src/modules/my-module/entities.js"
-import { MyRecordService } from "./src/modules/my-module/service.js"
-import myRoutes from "./src/routes/my-routes.js"
-import { asClass, Lifetime } from "awilix"
 
 export default definePlugin({
   name: "my-plugin",
   label: "My Plugin",
   description: "Описание вашего плагина",
-
-  // Префиксы API — для контроля доступа (отключение плагина блокирует эти роуты)
-  apiPrefixes: ["/api/my-records"],
-
-  // MikroORM entities — таблицы создадутся автоматически
-  entities: [MyRecord],
-
-  // Сервисы в DI-контейнере (SCOPED = новый экземпляр на каждый запрос)
-  services: {
-    myRecordService: asClass(MyRecordService, { lifetime: Lifetime.SCOPED }),
-  },
-
-  // Hono роуты
-  routes: (app, _container) => {
-    app.route("/api/my-records", myRoutes)
-  },
-
-  // Пункты навигации в админке
-  adminNav: [
-    { path: "/my-plugin", label: "My Plugin" },
-  ],
 })
 ```
+
+Всё. Entities, services, routes, middleware, nav и columnDocs обнаруживаются автоматически.
 
 ### 6. Зарегистрировать плагин
 
@@ -204,15 +217,6 @@ export default defineConfig({
     { resolve: "./plugins/my-plugin" },  // ← ваш плагин
   ],
 })
-```
-
-И в `admin/src/server/index.ts` в массив `pluginPaths`:
-
-```typescript
-const pluginPaths = [
-  { resolve: "./plugins/ozon" },
-  { resolve: "./plugins/my-plugin" },
-]
 ```
 
 ### 7. Запустить
@@ -231,47 +235,28 @@ npm run dev
 [plugin] Loaded: my-plugin
 ```
 
-## PluginDefinition — полный API
-
-```typescript
-interface PluginDefinition {
-  name: string        // Уникальное имя (например, "my-plugin")
-  label: string       // Отображаемое название в UI
-  description?: string
-
-  entities?: any[]    // MikroORM entity-классы (таблицы создаются автоматически)
-
-  services?: Record<string, any>  // Awilix-регистрации для DI-контейнера
-
-  routes?: (app: Hono, container: AwilixContainer) => void  // Hono роуты
-
-  middleware?: Array<{
-    path: string                    // URL-паттерн (например, "/api/catalog")
-    method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "ALL"
-    handler: (c: any, next: () => Promise<void>) => Promise<any>
-  }>
-
-  adminNav?: Array<{
-    path: string                    // Путь в SPA (например, "/my-plugin")
-    label: string                   // Название в сайдбаре
-  }>
-
-  apiPrefixes?: string[]  // Для контроля доступа (при отключении плагина блокируются)
-}
-```
-
 ## Дополнительные возможности
 
 ### Middleware (обогащение данных)
 
-Middleware позволяет обогащать ответы core API. Например, Ozon-плагин добавляет данные об остатках к ответу `/api/catalog`:
+Middleware позволяет обогащать ответы core API. Создайте файл в `src/middleware/` с экспортом `config` и `default`:
 
 ```typescript
-export async function myEnrichment(c: any, next: () => Promise<void>) {
+import type { Context, Next } from "hono"
+
+// Конфигурация — к каким путям применяется middleware
+export const config = {
+  paths: [
+    { path: "/api/catalog", method: "GET" },
+    { path: "/api/catalog/*", method: "GET" },
+  ],
+}
+
+// Обработчик — post-processing после основного хендлера
+export default async function myEnrichment(c: Context, next: Next) {
   await next() // Сначала выполняется основной обработчик
 
-  // Обогащаем ответ
-  const body = await c.res.json()
+  const body: any = await c.res.json()
   body.extra_data = "enriched"
   c.res = new Response(JSON.stringify(body), {
     status: c.res.status,
@@ -280,15 +265,56 @@ export async function myEnrichment(c: any, next: () => Promise<void>) {
 }
 ```
 
+Файлы без `export config` или без `export default` пропускаются (утилиты вроде `plugin-check.ts`).
+
+### Навигация (nav.ts)
+
+Для добавления пункта в сайдбар создайте `src/nav.ts`:
+
+```typescript
+export default [
+  { path: "/my-plugin", label: "My Plugin" },
+]
+```
+
+### Документация колонок (column-docs.ts)
+
+Для добавления подсказок к колонкам таблиц создайте `src/column-docs.ts`:
+
+```typescript
+export default [
+  {
+    pageId: "warehouse",
+    columnKey: "stock_total",
+    pluginLabel: "My Plugin",
+    description: "Описание того, что добавляет плагин в эту колонку.",
+  },
+]
+```
+
 ### Страница в админке
 
-Плагин может добавить страницу в клиентский SPA. Создайте React-компонент в `admin/src/client/pages/` и зарегистрируйте роут в `admin/src/client/main.tsx`. Навигация появится автоматически через `adminNav` в определении плагина.
+Плагин может добавить страницу в клиентский SPA. Создайте React-компонент в `src/client/page.tsx` — он подхватывается через Vite glob автоматически.
+
+### Явное определение (override)
+
+Если конвенции не подходят, можно задать любое поле явно — оно имеет приоритет над auto-discovery:
+
+```typescript
+export default definePlugin({
+  name: "my-plugin",
+  label: "My Plugin",
+  entities: [MyRecord],           // Явно вместо auto-discovery из src/entities/
+  services: { customKey: ... },   // Явно вместо auto-discovery из src/services/
+  routes: (app) => { ... },       // Явно вместо auto-discovery из src/routes/
+})
+```
 
 ## Контроль доступа
 
 Пользователь может включать/выключать плагины через UI (`/plugins`). При отключении:
 
-- API-роуты с указанными `apiPrefixes` возвращают 403
+- API-роуты с обнаруженными `apiPrefixes` возвращают 403
 - Навигация в сайдбаре скрывается
 
 ## Что дальше

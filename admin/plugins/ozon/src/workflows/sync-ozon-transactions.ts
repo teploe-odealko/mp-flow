@@ -1,5 +1,5 @@
 import type { AwilixContainer } from "awilix"
-import type { OzonIntegrationService } from "../modules/ozon-integration/service.js"
+import type { OzonIntegrationService } from "../services/ozon-service.js"
 
 interface TransactionSummary {
   operation_id: number

@@ -1,5 +1,5 @@
 import type { AwilixContainer } from "awilix"
-import type { OzonIntegrationService } from "../modules/ozon-integration/service.js"
+import type { OzonIntegrationService } from "../services/ozon-service.js"
 import { syncOzonReturns } from "./sync-ozon-returns.js"
 import { syncOzonTransactions } from "./sync-ozon-transactions.js"
 

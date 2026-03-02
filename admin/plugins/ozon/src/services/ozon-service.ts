@@ -1,5 +1,5 @@
 import type { EntityManager } from "@mikro-orm/postgresql"
-import { OzonAccount, OzonProductLink, OzonStockSnapshot } from "./entities.js"
+import { OzonAccount, OzonProductLink, OzonStockSnapshot } from "../entities/ozon-integration.js"
 
 export class OzonIntegrationService {
   constructor(private em: EntityManager) {}

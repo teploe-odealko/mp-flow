@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 import { getUserIdOptional } from "../../../../src/server/core/auth.js"
-import type { OzonIntegrationService } from "../modules/ozon-integration/service.js"
+import type { OzonIntegrationService } from "../services/ozon-service.js"
 import { syncOzonProducts } from "../workflows/sync-ozon-products.js"
 import { syncOzonStocks } from "../workflows/sync-ozon-stocks.js"
 import { syncOzonSales } from "../workflows/sync-ozon-sales.js"

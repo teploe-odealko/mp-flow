@@ -1,12 +1,15 @@
 import type { Context, Next } from "hono"
-import type { OzonIntegrationService } from "../modules/ozon-integration/service.js"
+import type { OzonIntegrationService } from "../services/ozon-service.js"
 import { isOzonEnabled } from "./plugin-check.js"
 
-/**
- * Hono middleware that enriches catalog responses with Ozon data.
- * Applied as post-processing: runs after the route handler.
- */
-export async function ozonCatalogEnrichment(c: Context, next: Next) {
+export const config = {
+  paths: [
+    { path: "/api/catalog", method: "GET" },
+    { path: "/api/catalog/*", method: "GET" },
+  ],
+}
+
+export default async function ozonCatalogEnrichment(c: Context, next: Next) {
   await next()
 
   if (c.req.method !== "GET") return
