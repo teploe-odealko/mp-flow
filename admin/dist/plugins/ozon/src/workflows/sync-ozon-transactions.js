@@ -124,12 +124,16 @@ export async function syncOzonTransactions(container, accountId, dateFrom, dateT
 }
 function classifyService(serviceName) {
     const lower = serviceName.toLowerCase();
-    if (lower.includes("returnafterdelivtocustomer") || lower.includes("returnflowt"))
+    if (lower.includes("returnafterdelivtocustomer") || lower.includes("returnflowtrans"))
         return { key: "reverse_logistics", label: "Обратная логистика" };
+    if (lower.includes("returnflowlogistic"))
+        return { key: "return_flow_logistics", label: "Логистика возврата" };
     if (lower.includes("returnprocessing") || lower.includes("returnnotdelivtocustomer"))
         return { key: "return_processing", label: "Обработка возврата" };
     if (lower.includes("returnpartgoodscustomer"))
         return { key: "return_processing_partial", label: "Обработка частичного возврата" };
+    if (lower.includes("redistributionreturns"))
+        return { key: "redistribution_returns", label: "Перераспределение возвратов" };
     if (lower.includes("fulfillment"))
         return { key: "fulfillment_return", label: "Обработка отправления (возврат)" };
     if (lower.includes("lastmile") || lower.includes("delivtocustomer"))

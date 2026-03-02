@@ -255,7 +255,7 @@ export default function SalesPage() {
                   <div>
                     <span className="text-text-muted text-xs block mb-1">Расходы маркетплейса</span>
                     <div className="space-y-0.5">
-                      {fees.map((f, i) => (
+                      {fees.filter((f) => Number(f.amount) > 0).map((f, i) => (
                         <div key={i} className="flex justify-between py-0.5">
                           <span className="text-text-secondary">{f.label || f.key}</span>
                           <span className="tabular-nums">{fmt(f.amount)} ₽</span>
@@ -282,7 +282,7 @@ export default function SalesPage() {
                           <span>{fmtDate(s.metadata.return_info.return_date)}</span>
                         </div>
                       )}
-                      {s.metadata.return_info.quantity && (
+                      {s.metadata.return_info.quantity > 0 && (
                         <div>
                           <span className="text-text-muted">Кол-во: </span>
                           <span>{s.metadata.return_info.quantity}</span>
