@@ -158,8 +158,6 @@ export default function SalesPage() {
                     <DocTableHeader pageId="sales" columnKey="status" className="text-left px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Статус</DocTableHeader>
                     {!selectedSale && <DocTableHeader pageId="sales" columnKey="quantity" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Кол-во</DocTableHeader>}
                     <DocTableHeader pageId="sales" columnKey="price" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Цена</DocTableHeader>
-                    <DocTableHeader pageId="sales" columnKey="revenue" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Выручка</DocTableHeader>
-                    <DocTableHeader pageId="sales" columnKey="expenses" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Расходы</DocTableHeader>
                     <DocTableHeader pageId="sales" columnKey="profit" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Прибыль</DocTableHeader>
                     <DocTableHeader pageId="sales" columnKey="date" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Дата</DocTableHeader>
                   </tr>
@@ -196,10 +194,6 @@ export default function SalesPage() {
                           <td className="px-2 py-1.5 text-right tabular-nums">{s.quantity}</td>
                         )}
                         <td className="px-2 py-1.5 text-right tabular-nums">{fmt(s.price_per_unit)} ₽</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums">{fmt(s.revenue)} ₽</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums text-outflow">
-                          {totalFees > 0 ? `${fmt(totalFees)} ₽` : "—"}
-                        </td>
                         {(() => {
                           const hasPayoutData = s.net_payout != null
                           const profit = hasPayoutData
