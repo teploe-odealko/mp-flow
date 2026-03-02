@@ -7,7 +7,7 @@ import { apiGet } from "../lib/api"
 const coreNavItems = [
   { path: "/catalog", label: "Каталог" },
   { path: "/warehouse", label: "Склад" },
-  { path: "/suppliers", label: "Закупки" },
+  { path: "/suppliers", label: "Поступления" },
   { path: "/sales", label: "Продажи" },
   { path: "/finance", label: "Финансы" },
   { path: "/analytics", label: "Аналитика" },

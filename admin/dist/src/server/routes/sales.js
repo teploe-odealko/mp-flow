@@ -7,7 +7,7 @@ const sales = new Hono();
 sales.get("/", async (c) => {
     const saleService = c.get("container").resolve("saleService");
     const userId = getUserId(c);
-    const { channel, status, from, to, limit = "50", offset = "0" } = c.req.query();
+    const { channel, status, from, to, limit = "50", offset = "0", q } = c.req.query();
     const filters = {};
     if (userId)
         filters.user_id = userId;
@@ -20,15 +20,29 @@ sales.get("/", async (c) => {
         if (from)
             filters.sold_at.$gte = new Date(from);
         if (to)
-            filters.sold_at.$lte = new Date(to);
+            filters.sold_at.$lte = new Date(to + "T23:59:59");
     }
-    const saleList = await saleService.listSales(filters, {
-        order: { sold_at: "DESC" }, skip: Number(offset), take: Number(limit),
+    const [saleList, totalCount] = await Promise.all([
+        saleService.listSales(filters, {
+            order: { sold_at: "DESC" }, skip: Number(offset), take: Number(limit),
+        }),
+        saleService.countSales(filters),
+    ]);
+    let pageRevenue = 0, pageFees = 0;
+    for (const sale of saleList) {
+        const s = sale;
+        pageRevenue += Number(s.revenue || 0);
+        const fees = Array.isArray(s.fee_details) ? s.fee_details : [];
+        for (const f of fees)
+            pageFees += Number(f.amount || 0);
+    }
+    return c.json({
+        sales: saleList,
+        total_count: totalCount,
+        offset: Number(offset),
+        limit: Number(limit),
+        stats: { count: totalCount, page_revenue: pageRevenue, page_fees: pageFees },
     });
-    let totalRevenue = 0;
-    for (const sale of saleList)
-        totalRevenue += Number(sale.revenue || 0);
-    return c.json({ sales: saleList, stats: { count: saleList.length, total_revenue: totalRevenue } });
 });
 // POST /api/sales
 sales.post("/", async (c) => {

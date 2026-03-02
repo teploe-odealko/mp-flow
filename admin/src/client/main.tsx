@@ -1,4 +1,4 @@
-import React, { Suspense } from "react"
+import React, { Suspense, useState, useEffect } from "react"
 import { createRoot } from "react-dom/client"
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query"
@@ -11,6 +11,7 @@ import WarehousePage from "./pages/warehouse/page"
 import FinancePage from "./pages/finance/page"
 import AnalyticsPage from "./pages/analytics/page"
 import SuppliersPage from "./pages/suppliers/page"
+const SupplierDetailPage = React.lazy(() => import("./pages/suppliers/detail-page"))
 import PluginsPage from "./pages/plugins/page"
 import "./styles/globals.css"
 
@@ -32,29 +33,200 @@ for (const path in pluginPageModules) {
   }
 }
 
-function LoginScreen() {
-  const { login } = useAuth()
+function SetupScreen() {
+  const { setUser } = useAuth()
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [name, setName] = useState("")
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError("")
+
+    if (!email || !password) {
+      setError("Заполните email и пароль")
+      return
+    }
+    if (password.length < 6) {
+      setError("Пароль должен быть минимум 6 символов")
+      return
+    }
+
+    setLoading(true)
+    try {
+      const res = await fetch("/auth/setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email, password, name: name || undefined }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error || "Ошибка создания пользователя")
+        return
+      }
+      setUser(data.user)
+    } catch {
+      setError("Ошибка сети")
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="flex items-center justify-center h-screen bg-bg-deep text-text-primary">
-      <div className="text-center">
-        <h1 className="text-2xl font-semibold mb-4">MPFlow</h1>
-        <p className="text-text-secondary mb-4">Войдите через Logto для доступа</p>
+      <form onSubmit={handleSubmit} className="w-80">
+        <h1 className="text-2xl font-semibold mb-2 text-center">MPFlow</h1>
+        <p className="text-text-secondary text-sm mb-6 text-center">Создайте администратора</p>
+
+        <div className="space-y-3 mb-4">
+          <div>
+            <label className="text-text-secondary text-xs block mb-1">Имя</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Администратор"
+              className="w-full px-3 py-2 bg-bg-surface border border-bg-border rounded text-sm text-text-primary"
+            />
+          </div>
+          <div>
+            <label className="text-text-secondary text-xs block mb-1">Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="admin@example.com"
+              className="w-full px-3 py-2 bg-bg-surface border border-bg-border rounded text-sm text-text-primary"
+              required
+            />
+          </div>
+          <div>
+            <label className="text-text-secondary text-xs block mb-1">Пароль</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Минимум 6 символов"
+              className="w-full px-3 py-2 bg-bg-surface border border-bg-border rounded text-sm text-text-primary"
+              required
+            />
+          </div>
+        </div>
+
+        {error && <p className="text-outflow text-sm mb-3">{error}</p>}
+
         <button
-          onClick={login}
-          className="px-6 py-2 bg-accent text-white rounded-lg hover:bg-accent-dark"
+          type="submit"
+          disabled={loading}
+          className="w-full px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-dark disabled:opacity-50"
         >
-          Войти
+          {loading ? "Создаю..." : "Создать администратора"}
         </button>
-      </div>
+      </form>
+    </div>
+  )
+}
+
+function LoginScreen() {
+  const { setUser } = useAuth()
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError("")
+
+    if (!email || !password) {
+      setError("Заполните email и пароль")
+      return
+    }
+
+    setLoading(true)
+    try {
+      const res = await fetch("/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email, password }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error || "Ошибка авторизации")
+        return
+      }
+      setUser(data.user)
+    } catch {
+      setError("Ошибка сети")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-center h-screen bg-bg-deep text-text-primary">
+      <form onSubmit={handleSubmit} className="w-80">
+        <h1 className="text-2xl font-semibold mb-2 text-center">MPFlow</h1>
+        <p className="text-text-secondary text-sm mb-6 text-center">Войдите в систему</p>
+
+        <div className="space-y-3 mb-4">
+          <div>
+            <label className="text-text-secondary text-xs block mb-1">Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="admin@example.com"
+              className="w-full px-3 py-2 bg-bg-surface border border-bg-border rounded text-sm text-text-primary"
+              required
+            />
+          </div>
+          <div>
+            <label className="text-text-secondary text-xs block mb-1">Пароль</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-3 py-2 bg-bg-surface border border-bg-border rounded text-sm text-text-primary"
+              required
+            />
+          </div>
+        </div>
+
+        {error && <p className="text-outflow text-sm mb-3">{error}</p>}
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-dark disabled:opacity-50"
+        >
+          {loading ? "Вхожу..." : "Войти"}
+        </button>
+      </form>
+    </div>
+  )
+}
+
+function LogtoRedirect() {
+  useEffect(() => {
+    window.location.href = "/auth/login"
+  }, [])
+  return (
+    <div className="flex items-center justify-center h-screen bg-bg-deep text-text-secondary">
+      Перенаправление...
     </div>
   )
 }
 
 function AppRoutes() {
-  const { user, loading } = useAuth()
+  const { user, loading, authMode, needsSetup } = useAuth()
 
   // Fetch enabled plugins to create dynamic routes (deduped with Layout's query)
-  const { data: pluginsData, isLoading: pluginsLoading } = useQuery({
+  const { data: pluginsData } = useQuery({
     queryKey: ["plugins"],
     queryFn: () => apiGet<{ plugins: Array<{ is_enabled: boolean; adminNav?: Array<{ path: string; label: string }> }> }>("/api/plugins"),
     enabled: !!user,
@@ -66,6 +238,22 @@ function AppRoutes() {
   }
 
   if (!user) {
+    // Setup wizard: first-time admin creation
+    if (needsSetup && authMode === "selfhosted") {
+      return <SetupScreen />
+    }
+
+    // Selfhosted: email+password login form
+    if (authMode === "selfhosted") {
+      return <LoginScreen />
+    }
+
+    // Logto: redirect immediately, no intermediate screen
+    if (authMode === "logto") {
+      return <LogtoRedirect />
+    }
+
+    // Fallback (loading state or unknown mode)
     return <LoginScreen />
   }
 
@@ -98,6 +286,8 @@ function AppRoutes() {
         <Route path="/catalog" element={<CatalogPage />} />
         <Route path="/warehouse" element={<WarehousePage />} />
         <Route path="/suppliers" element={<SuppliersPage />} />
+        <Route path="/suppliers/new" element={<Suspense fallback={<div className="text-text-secondary">Загрузка...</div>}><SupplierDetailPage /></Suspense>} />
+        <Route path="/suppliers/:id" element={<Suspense fallback={<div className="text-text-secondary">Загрузка...</div>}><SupplierDetailPage /></Suspense>} />
         <Route path="/sales" element={<SalesPage />} />
         <Route path="/finance" element={<FinancePage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />

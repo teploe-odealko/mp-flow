@@ -9,7 +9,7 @@ analytics.get("/", async (c) => {
     if (!report) {
         return c.json({ error: "report parameter is required (unit-economics, pnl, stock-valuation)" }, 400);
     }
-    const filters = {};
+    const filters = { hasFees: true };
     if (userId)
         filters.user_id = userId;
     if (channel)

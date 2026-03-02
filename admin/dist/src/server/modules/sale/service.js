@@ -4,7 +4,7 @@ export class SaleService {
     constructor(em) {
         this.em = em;
     }
-    async listSales(filters = {}, options) {
+    buildWhere(filters) {
         const where = { deleted_at: null };
         if (filters.user_id)
             where.user_id = filters.user_id;
@@ -20,11 +20,17 @@ export class SaleService {
             where.channel_sku = filters.channel_sku;
         if (filters.sold_at)
             where.sold_at = filters.sold_at;
-        return this.em.find(Sale, where, {
+        return where;
+    }
+    async listSales(filters = {}, options) {
+        return this.em.find(Sale, this.buildWhere(filters), {
             orderBy: options?.order || { sold_at: "DESC" },
             offset: options?.skip,
             limit: options?.take,
         });
+    }
+    async countSales(filters = {}) {
+        return this.em.count(Sale, this.buildWhere(filters));
     }
     async retrieveSale(id) {
         return this.em.findOneOrFail(Sale, { id, deleted_at: null });
@@ -64,6 +70,9 @@ export class SaleService {
         const byProduct = {};
         for (const sale of sales) {
             const s = sale;
+            const fees = s.fee_details || [];
+            if (filters?.hasFees && fees.length === 0)
+                continue;
             const key = s.master_card_id || s.channel_sku || s.id;
             if (!byProduct[key]) {
                 byProduct[key] = {
@@ -71,24 +80,47 @@ export class SaleService {
                     product_name: s.product_name || "",
                     channel_sku: s.channel_sku || "",
                     quantity: 0, revenue: 0, fees_by_type: {},
-                    total_fees: 0, cogs: 0, profit: 0, margin: 0,
+                    total_fees: 0, cogs: 0, profit: 0, margin: 0, roi: 0,
                 };
             }
             byProduct[key].quantity += s.quantity;
             byProduct[key].revenue += Number(s.revenue || 0);
             byProduct[key].cogs += Number(s.total_cogs || 0);
-            const fees = s.fee_details || [];
             for (const fee of fees) {
                 const amount = Number(fee.amount || 0);
-                byProduct[key].fees_by_type[fee.key] = (byProduct[key].fees_by_type[fee.key] || 0) + amount;
+                if (!byProduct[key].fees_by_type[fee.key]) {
+                    byProduct[key].fees_by_type[fee.key] = { label: fee.label || fee.key, amount: 0 };
+                }
+                byProduct[key].fees_by_type[fee.key].amount += amount;
                 byProduct[key].total_fees += amount;
             }
         }
         for (const p of Object.values(byProduct)) {
             p.profit = p.revenue - p.total_fees - p.cogs;
-            p.margin = p.revenue > 0 ? (p.profit / p.revenue) * 100 : 0;
+            p.margin = p.revenue > 0 ? Math.round((p.profit / p.revenue) * 1000) / 10 : 0;
+            p.roi = p.cogs > 0 ? Math.round((p.profit / p.cogs) * 1000) / 10 : 0;
         }
-        return Object.values(byProduct);
+        const items = Object.values(byProduct);
+        // Compute totals
+        const totals = {
+            quantity: 0, revenue: 0, total_fees: 0, cogs: 0, profit: 0, margin: 0, roi: 0,
+            fees_by_type: {},
+        };
+        for (const p of items) {
+            totals.quantity += p.quantity;
+            totals.revenue += p.revenue;
+            totals.total_fees += p.total_fees;
+            totals.cogs += p.cogs;
+            totals.profit += p.profit;
+            for (const [key, fee] of Object.entries(p.fees_by_type)) {
+                if (!totals.fees_by_type[key])
+                    totals.fees_by_type[key] = { label: fee.label, amount: 0 };
+                totals.fees_by_type[key].amount += fee.amount;
+            }
+        }
+        totals.margin = totals.revenue > 0 ? Math.round((totals.profit / totals.revenue) * 1000) / 10 : 0;
+        totals.roi = totals.cogs > 0 ? Math.round((totals.profit / totals.cogs) * 1000) / 10 : 0;
+        return { items, totals };
     }
     async getSalesPnl(from, to, filters) {
         const saleFilters = {
@@ -100,26 +132,34 @@ export class SaleService {
         if (filters?.channel)
             saleFilters.channel = filters.channel;
         const sales = await this.listSales(saleFilters);
-        let totalRevenue = 0, totalCogs = 0, totalFees = 0;
+        let totalRevenue = 0, totalCogs = 0, totalFees = 0, salesCount = 0;
         const feesByType = {};
         const byChannel = {};
         for (const sale of sales) {
             const s = sale;
+            const feeItems = s.fee_details || [];
+            if (filters?.hasFees && feeItems.length === 0)
+                continue;
+            salesCount++;
             const revenue = Number(s.revenue || 0);
             const cogs = Number(s.total_cogs || 0);
-            const fees = this.sumFees(s.fee_details || []);
+            const fees = this.sumFees(feeItems);
             totalRevenue += revenue;
             totalCogs += cogs;
             totalFees += fees;
-            for (const fee of (s.fee_details || [])) {
-                feesByType[fee.key] = (feesByType[fee.key] || 0) + Number(fee.amount || 0);
+            for (const fee of feeItems) {
+                const amount = Number(fee.amount || 0);
+                if (!feesByType[fee.key])
+                    feesByType[fee.key] = { label: fee.label || fee.key, amount: 0 };
+                feesByType[fee.key].amount += amount;
             }
-            const ch = s.channel;
+            const ch = s.channel || "unknown";
             if (!byChannel[ch])
-                byChannel[ch] = { revenue: 0, fees: 0, cogs: 0, profit: 0 };
+                byChannel[ch] = { label: ch.charAt(0).toUpperCase() + ch.slice(1), revenue: 0, fees: 0, cogs: 0, profit: 0, count: 0 };
             byChannel[ch].revenue += revenue;
             byChannel[ch].fees += fees;
             byChannel[ch].cogs += cogs;
+            byChannel[ch].count++;
         }
         for (const ch of Object.values(byChannel))
             ch.profit = ch.revenue - ch.fees - ch.cogs;
@@ -128,8 +168,8 @@ export class SaleService {
         return {
             revenue: totalRevenue, cogs: totalCogs, gross_profit: grossProfit,
             fees: totalFees, fees_by_type: feesByType, operating_profit: operatingProfit,
-            margin: totalRevenue > 0 ? (operatingProfit / totalRevenue) * 100 : 0,
-            by_channel: byChannel, total_sales: sales.length,
+            margin: totalRevenue > 0 ? Math.round((operatingProfit / totalRevenue) * 1000) / 10 : 0,
+            by_channel: byChannel, total_sales: salesCount,
         };
     }
 }

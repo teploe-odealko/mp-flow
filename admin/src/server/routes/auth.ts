@@ -1,6 +1,8 @@
 import { Hono } from "hono"
 import { randomBytes, createHash } from "crypto"
 import { getSession } from "../core/session.js"
+import { getAuthMode } from "../core/auth.js"
+import { hashPassword, verifyPassword } from "../core/password.js"
 
 const auth = new Hono<{ Variables: Record<string, any> }>()
 
@@ -20,8 +22,142 @@ function getOrigin(c: { req: { url: string } }): string {
   return `${url.protocol}//${url.host}`
 }
 
-// GET /auth/login — redirect to Logto with PKCE
+// ── Helpers ──
+
+async function countUsers(c: any): Promise<number> {
+  const orm = c.get("orm")
+  const em = orm.em.fork()
+  const conn = em.getConnection()
+  const result = await conn.execute(
+    `SELECT COUNT(*)::int AS cnt FROM mpflow_user WHERE deleted_at IS NULL`,
+  )
+  return result[0]?.cnt || 0
+}
+
+async function findUserByEmail(c: any, email: string): Promise<any | null> {
+  const orm = c.get("orm")
+  const em = orm.em.fork()
+  const conn = em.getConnection()
+  const result = await conn.execute(
+    `SELECT id, email, name, password_hash FROM mpflow_user WHERE email = ? AND deleted_at IS NULL LIMIT 1`,
+    [email],
+  )
+  return result.length > 0 ? result[0] : null
+}
+
+// ── GET /auth/mode ──
+
+auth.get("/mode", async (c) => {
+  const mode = getAuthMode()
+  let needsSetup = false
+
+  if (mode === "selfhosted") {
+    try {
+      needsSetup = (await countUsers(c)) === 0
+    } catch {
+      needsSetup = true
+    }
+  }
+
+  return c.json({ mode, needsSetup })
+})
+
+// ── POST /auth/setup — create first admin (selfhosted only) ──
+
+auth.post("/setup", async (c) => {
+  if (getAuthMode() !== "selfhosted") {
+    return c.json({ error: "Setup only available in selfhosted mode" }, 400)
+  }
+
+  const userCount = await countUsers(c)
+  if (userCount > 0) {
+    return c.json({ error: "Admin user already exists" }, 400)
+  }
+
+  const { email, password, name } = await c.req.json()
+  if (!email || !password) {
+    return c.json({ error: "Email and password are required" }, 400)
+  }
+  if (password.length < 6) {
+    return c.json({ error: "Password must be at least 6 characters" }, 400)
+  }
+
+  const orm = c.get("orm")
+  const em = orm.em.fork()
+  const conn = em.getConnection()
+
+  const { v4 } = await import("uuid")
+  const userId = v4()
+  const passwordHash = await hashPassword(password)
+
+  await conn.execute(
+    `INSERT INTO mpflow_user (id, email, name, password_hash, created_at, updated_at)
+     VALUES (?, ?, ?, ?, NOW(), NOW())`,
+    [userId, email, name || null, passwordHash],
+  )
+
+  // Set session
+  const session = getSession(c)
+  session.userId = userId
+  session.email = email
+  session.name = name || undefined
+  await session.save()
+
+  return c.json({ user: { id: userId, email, name: name || null } })
+})
+
+// ── POST /auth/login — email+password login (selfhosted) ──
+
+auth.post("/login", async (c) => {
+  if (getAuthMode() !== "selfhosted") {
+    return c.json({ error: "Password login only available in selfhosted mode" }, 400)
+  }
+
+  const { email, password } = await c.req.json()
+  if (!email || !password) {
+    return c.json({ error: "Email and password are required" }, 400)
+  }
+
+  const user = await findUserByEmail(c, email)
+  if (!user || !user.password_hash) {
+    return c.json({ error: "Неверный email или пароль" }, 401)
+  }
+
+  const valid = await verifyPassword(password, user.password_hash)
+  if (!valid) {
+    return c.json({ error: "Неверный email или пароль" }, 401)
+  }
+
+  const session = getSession(c)
+  session.userId = user.id
+  session.email = user.email
+  session.name = user.name || undefined
+  await session.save()
+
+  return c.json({ user: { id: user.id, email: user.email, name: user.name } })
+})
+
+// ── GET /auth/login — Logto OIDC flow or redirect ──
+
 auth.get("/login", async (c) => {
+  const mode = getAuthMode()
+
+  // Dev mode: auto-login
+  if (mode === "dev") {
+    const session = getSession(c)
+    session.userId = "dev-admin-local"
+    session.email = "admin@localhost"
+    session.name = "Dev Admin"
+    await session.save()
+    return c.redirect("/")
+  }
+
+  // Selfhosted: client handles login form, just redirect
+  if (mode === "selfhosted") {
+    return c.redirect("/")
+  }
+
+  // Logto OIDC
   if (!LOGTO_ENDPOINT || !LOGTO_APP_ID) {
     return c.json({ error: "LOGTO_ENDPOINT or LOGTO_SPA_APP_ID not configured" }, 500)
   }
@@ -32,7 +168,6 @@ auth.get("/login", async (c) => {
   const origin = getOrigin(c)
   const redirectUri = `${origin}/auth/callback`
 
-  // Save PKCE state in session
   const session = getSession(c)
   session.codeVerifier = codeVerifier
   session.oauthState = state
@@ -51,7 +186,8 @@ auth.get("/login", async (c) => {
   return c.redirect(`${LOGTO_ENDPOINT}/oidc/auth?${params.toString()}`)
 })
 
-// GET /auth/callback — exchange code for tokens, create session
+// ── GET /auth/callback — Logto OIDC callback ──
+
 auth.get("/callback", async (c) => {
   const code = c.req.query("code")
   const state = c.req.query("state")
@@ -62,7 +198,6 @@ auth.get("/callback", async (c) => {
 
   const session = getSession(c)
 
-  // Verify state
   if (state !== session.oauthState) {
     return c.json({ error: "Invalid state parameter" }, 400)
   }
@@ -75,7 +210,6 @@ auth.get("/callback", async (c) => {
   const origin = getOrigin(c)
   const redirectUri = `${origin}/auth/callback`
 
-  // Exchange code for tokens
   let accessToken: string
   try {
     const tokenRes = await fetch(`${LOGTO_ENDPOINT}/oidc/token`, {
@@ -103,7 +237,6 @@ auth.get("/callback", async (c) => {
     return c.json({ error: "Token exchange error" }, 500)
   }
 
-  // Get user info from Logto
   let userinfo: { sub: string; email?: string; name?: string }
   try {
     const userinfoRes = await fetch(`${LOGTO_ENDPOINT}/oidc/me`, {
@@ -123,7 +256,6 @@ auth.get("/callback", async (c) => {
     return c.json({ error: "Logto user has no email" }, 400)
   }
 
-  // Find or create user in DB
   const orm = c.get("orm")
   const em = orm.em.fork()
   const conn = em.getConnection()
@@ -132,18 +264,6 @@ auth.get("/callback", async (c) => {
   let userName: string | null = null
 
   try {
-    await conn.execute(`
-      CREATE TABLE IF NOT EXISTS "mpflow_user" (
-        "id" text NOT NULL,
-        "email" text NOT NULL UNIQUE,
-        "name" text,
-        "created_at" timestamptz NOT NULL DEFAULT now(),
-        "updated_at" timestamptz NOT NULL DEFAULT now(),
-        "deleted_at" timestamptz,
-        CONSTRAINT "mpflow_user_pkey" PRIMARY KEY ("id")
-      )
-    `)
-
     const result = await conn.execute(
       `SELECT id, email, name FROM mpflow_user WHERE email = ? AND deleted_at IS NULL LIMIT 1`,
       [userinfo.email],
@@ -166,11 +286,9 @@ auth.get("/callback", async (c) => {
     return c.json({ error: "Database error: " + (err.message || "unknown") }, 500)
   }
 
-  // Set session
   session.userId = userId
   session.email = userinfo.email
   session.name = userName || undefined
-  // Clean up PKCE fields
   delete session.codeVerifier
   delete session.oauthState
   await session.save()
@@ -178,14 +296,17 @@ auth.get("/callback", async (c) => {
   return c.redirect("/")
 })
 
-// POST /auth/logout — destroy session
+// ── POST /auth/logout ──
+
 auth.post("/logout", async (c) => {
   const session = getSession(c)
   session.destroy()
+  await session.save()
   return c.json({ success: true })
 })
 
-// GET /auth/me — current user
+// ── GET /auth/me ──
+
 auth.get("/me", async (c) => {
   const session = getSession(c)
   if (!session.userId) {
