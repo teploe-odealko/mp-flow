@@ -110,8 +110,8 @@ async function main() {
     await next()
   })
 
-  // Subscription check (only in logto/cloud mode)
-  app.use("/api/*", subscriptionMiddleware())
+  // TODO: Subscription check — disabled until billing is ready
+  // app.use("/api/*", subscriptionMiddleware())
 
   // Middleware: block API requests to disabled plugins
   app.use("/api/*", async (c, next) => {
