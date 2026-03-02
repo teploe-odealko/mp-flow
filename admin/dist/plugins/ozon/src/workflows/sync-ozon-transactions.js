@@ -7,7 +7,18 @@ export async function syncOzonTransactions(container, accountId, dateFrom, dateT
     const from = dateFrom
         ? new Date(dateFrom)
         : new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000); // 90 days back
-    const operations = await ozonService.fetchOzonFinanceTransactions({ client_id: account.client_id, api_key: account.api_key }, from, to);
+    // Ozon Finance API allows max 1 month per request — split into monthly chunks
+    const operations = [];
+    let chunkStart = new Date(from);
+    while (chunkStart < to) {
+        const chunkEnd = new Date(chunkStart);
+        chunkEnd.setMonth(chunkEnd.getMonth() + 1);
+        if (chunkEnd > to)
+            chunkEnd.setTime(to.getTime());
+        const chunk = await ozonService.fetchOzonFinanceTransactions({ client_id: account.client_id, api_key: account.api_key }, chunkStart, chunkEnd);
+        operations.push(...chunk);
+        chunkStart = new Date(chunkEnd);
+    }
     // Group operations by posting_number
     const byPosting = {};
     const orphanTransactions = [];
