@@ -9,7 +9,7 @@ const pluginTabModules = import.meta.glob<{
   default: React.ComponentType<MasterCardTabProps>
   tabLabel?: string
   tabOrder?: number
-}>("../../../plugins/*/src/client/tabs/master-card.tsx", { eager: false })
+}>("../../../../plugins/*/src/client/tabs/master-card.tsx", { eager: false })
 
 interface PluginTab {
   label: string
