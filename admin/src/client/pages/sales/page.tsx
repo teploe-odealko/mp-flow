@@ -201,10 +201,14 @@ export default function SalesPage() {
                           {totalFees > 0 ? `${fmt(totalFees)} ₽` : "—"}
                         </td>
                         {(() => {
-                          const profit = Number(s.revenue || 0) - totalFees - Number(s.total_cogs || 0)
+                          const hasPayoutData = s.net_payout != null
+                          const profit = hasPayoutData
+                            ? Number(s.net_payout) - Number(s.total_cogs || 0)
+                            : Number(s.revenue || 0) - totalFees - Number(s.total_cogs || 0)
+                          const showProfit = hasPayoutData || totalFees > 0
                           return (
-                            <td className={`px-2 py-1.5 text-right tabular-nums font-medium ${totalFees > 0 ? (profit >= 0 ? "text-inflow" : "text-outflow") : "text-text-muted"}`}>
-                              {totalFees > 0 ? `${fmt(profit)} ₽` : "—"}
+                            <td className={`px-2 py-1.5 text-right tabular-nums font-medium ${showProfit ? (profit >= 0 ? "text-inflow" : "text-outflow") : "text-text-muted"}`}>
+                              {showProfit ? `${fmt(profit)} ₽` : "—"}
                             </td>
                           )
                         })()}
@@ -266,7 +270,9 @@ export default function SalesPage() {
         const s = selectedSale
         const fees: Array<{ key: string; label: string; amount: number }> = s.fee_details || []
         const totalFees = fees.reduce((sum: number, f: any) => sum + Number(f.amount || 0), 0)
-        const profit = Number(s.revenue || 0) - totalFees - Number(s.total_cogs || 0)
+        const profit = s.net_payout != null
+          ? Number(s.net_payout) - Number(s.total_cogs || 0)
+          : Number(s.revenue || 0) - totalFees - Number(s.total_cogs || 0)
 
         return (
           <div className="w-[380px] shrink-0 border-l border-bg-border bg-bg-surface overflow-y-auto -mr-6 -mb-6 p-4 text-sm">

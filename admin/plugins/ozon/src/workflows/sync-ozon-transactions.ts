@@ -133,9 +133,9 @@ export async function syncOzonTransactions(
         transactionsLinked += newTxs.length
       }
 
-      // Always rebuild fee_details from ALL transactions (single source of truth)
-      const feeDetails = buildFeeDetailsFromTransactions(metadata.ozon_transactions || [])
-      const updateData: Record<string, any> = { id: sale.id, fee_details: feeDetails }
+      // Always rebuild fee_details + net_payout from ALL transactions
+      const { fee_details, net_payout } = buildFromTransactions(metadata.ozon_transactions || [])
+      const updateData: Record<string, any> = { id: sale.id, fee_details, net_payout }
       if (newTxs.length > 0) updateData.metadata = metadata
 
       await saleService.updateSales(updateData)
@@ -231,10 +231,11 @@ function labelForOzonService(name: string): string {
   return OZON_SERVICE_FEE_MAP[name]?.label || name
 }
 
-/** Build fee_details from ALL transactions of a posting */
-function buildFeeDetailsFromTransactions(
-  txs: TransactionSummary[],
-): Array<{ key: string; label: string; amount: number }> {
+/** Build fee_details + net_payout from ALL transactions of a posting */
+function buildFromTransactions(txs: TransactionSummary[]): {
+  fee_details: Array<{ key: string; label: string; amount: number }>
+  net_payout: number
+} {
   const byKey: Record<string, { label: string; amount: number }> = {}
 
   // Commission from sale_commission fields
@@ -257,8 +258,13 @@ function buildFeeDetailsFromTransactions(
     }
   }
 
-  return Object.entries(byKey)
+  // net_payout = sum of all tx.amount (what marketplace actually pays)
+  const net_payout = Math.round(txs.reduce((s, tx) => s + tx.amount, 0) * 100) / 100
+
+  const fee_details = Object.entries(byKey)
     .filter(([, v]) => v.amount > 0)
     .map(([key, v]) => ({ key, label: v.label, amount: Math.round(v.amount * 100) / 100 }))
     .sort((a, b) => b.amount - a.amount)
+
+  return { fee_details, net_payout }
 }

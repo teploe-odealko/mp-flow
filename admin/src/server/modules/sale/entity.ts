@@ -46,6 +46,9 @@ export class Sale {
   @Property({ type: "numeric", default: 0 })
   total_cogs: number = 0
 
+  @Property({ type: "numeric", nullable: true })
+  net_payout?: number | null
+
   @Property({ type: "json", nullable: true })
   fee_details?: any
 

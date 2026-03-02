@@ -164,7 +164,8 @@ export class SaleService {
       const revenue = Number(s.revenue || 0)
       const cogs = Number(s.total_cogs || 0)
       const fees = this.sumFees(feeItems)
-      totalRevenue += revenue; totalCogs += cogs; totalFees += fees
+      const netPayout = s.net_payout != null ? Number(s.net_payout) : null
+      totalRevenue += revenue; totalCogs += cogs; totalFees += netPayout != null ? (revenue - netPayout) : fees
 
       for (const fee of feeItems) {
         const amount = Number(fee.amount || 0)
