@@ -25,7 +25,7 @@ export async function fetchAndParse1688Item(url: string): Promise<TmapiItem> {
 
   let res: Response
   try {
-    res = await fetch(`https://api.tmapi.top/1688/item_detail_by_url?apiToken=${encodeURIComponent(token)}`, {
+    res = await fetch(`http://api.tmapi.top/1688/item_detail_by_url?apiToken=${encodeURIComponent(token)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url: url.trim() }),
