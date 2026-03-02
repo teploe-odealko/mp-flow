@@ -15,6 +15,7 @@ services:
       LOGTO_ENDPOINT: ${LOGTO_ENDPOINT:-}
       LOGTO_SPA_APP_ID: ${LOGTO_SPA_APP_ID:-}
       ADMIN_SECRET: ${ADMIN_SECRET:-}
+      TMAPI_API_TOKEN: ${TMAPI_API_TOKEN:-}
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
       interval: 15s
