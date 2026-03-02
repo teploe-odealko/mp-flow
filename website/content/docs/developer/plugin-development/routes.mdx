@@ -1,0 +1,164 @@
+---
+title: Routes — API эндпоинты
+description: Как добавить HTTP API для фронтенда и внешних систем
+---
+
+# Routes — API эндпоинты
+
+## Зачем
+
+Роуты дают фронтенду и внешним системам доступ к данным плагина через HTTP API. Без роутов данные плагина существуют только в БД и недоступны пользователю.
+
+Например, Ozon-плагин предоставляет `/api/ozon-accounts` для управления аккаунтами и `/api/ozon-sync` для запуска синхронизации.
+
+## Как работает
+
+1. Сервер сканирует `src/routes/` плагина
+2. Из каждого файла берётся `default export` — экземпляр Hono
+3. Роуты монтируются с префиксом `/api/{имя-файла}`
+
+### Конвенция именования
+
+Имя файла определяет API-префикс:
+
+| Файл | Префикс |
+|------|---------|
+| `my-records.ts` | `/api/my-records` |
+| `ozon-accounts.ts` | `/api/ozon-accounts` |
+| `ozon-sync.ts` | `/api/ozon-sync` |
+
+## Создание роутов
+
+```typescript
+// src/routes/my-records.ts
+import { Hono } from "hono"
+import { getUserId } from "../../../../src/server/core/auth.js"
+import type { MyRecordService } from "../services/my-record-service.js"
+
+const routes = new Hono<{ Variables: Record<string, any> }>()
+
+// GET /api/my-records
+routes.get("/", async (c) => {
+  const userId = getUserId(c)
+  const service: MyRecordService = c.get("container").resolve("myRecordService")
+  const items = await service.list({ user_id: userId })
+  return c.json({ items })
+})
+
+// GET /api/my-records/:id
+routes.get("/:id", async (c) => {
+  const service: MyRecordService = c.get("container").resolve("myRecordService")
+  const item = await service.get(c.req.param("id"))
+  return c.json({ item })
+})
+
+// POST /api/my-records
+routes.post("/", async (c) => {
+  const userId = getUserId(c)
+  const body = await c.req.json()
+  const service: MyRecordService = c.get("container").resolve("myRecordService")
+  const item = await service.create({ ...body, user_id: userId })
+  return c.json({ item }, 201)
+})
+
+// PUT /api/my-records/:id
+routes.put("/:id", async (c) => {
+  const body = await c.req.json()
+  const service: MyRecordService = c.get("container").resolve("myRecordService")
+  const item = await service.update(c.req.param("id"), body)
+  return c.json({ item })
+})
+
+// DELETE /api/my-records/:id
+routes.delete("/:id", async (c) => {
+  const service: MyRecordService = c.get("container").resolve("myRecordService")
+  await service.delete(c.req.param("id"))
+  return c.json({ ok: true })
+})
+
+export default routes
+```
+
+## Доступ к DI-контейнеру
+
+Каждый запрос получает request-scoped DI-контейнер через `c.get("container")`:
+
+```typescript
+const service = c.get("container").resolve("myRecordService")
+```
+
+Этот контейнер содержит:
+- Все зарегистрированные сервисы (core + plugins)
+- Request-scoped `EntityManager`
+
+## Аутентификация
+
+Все роуты плагинов защищены сессией (middleware ядра). `getUserId(c)` возвращает ID текущего пользователя:
+
+```typescript
+import { getUserId } from "../../../../src/server/core/auth.js"
+
+const userId = getUserId(c) // string — ID пользователя
+```
+
+## Паттерны
+
+### Action-based endpoint
+
+Один эндпоинт с разными действиями через `action` в теле запроса:
+
+```typescript
+routes.post("/", async (c) => {
+  const body = await c.req.json()
+  const { action } = body
+
+  switch (action) {
+    case "sync-products":
+      await syncProducts(container, body.account_id)
+      return c.json({ ok: true })
+    case "sync-stocks":
+      await syncStocks(container, body.account_id)
+      return c.json({ ok: true })
+    default:
+      return c.json({ error: "Unknown action" }, 400)
+  }
+})
+```
+
+### Обработка ошибок
+
+```typescript
+routes.get("/:id", async (c) => {
+  try {
+    const service = c.get("container").resolve("myRecordService")
+    const item = await service.get(c.req.param("id"))
+    return c.json({ item })
+  } catch (err: any) {
+    if (err.message?.includes("not found")) {
+      return c.json({ error: "Not found" }, 404)
+    }
+    throw err
+  }
+})
+```
+
+## Типизация Hono
+
+Используйте generic для `c.get()`:
+
+```typescript
+const routes = new Hono<{ Variables: Record<string, any> }>()
+```
+
+Без этого TypeScript не разрешит `c.get("container")`.
+
+## Пример из Ozon-плагина
+
+- `ozon-accounts.ts` — CRUD для аккаунтов + `/verify` для проверки API-ключей
+- `ozon-sync.ts` — `GET /` (статус) + `POST /` с `action` (sync-products, sync-stocks, sync-sales)
+
+## Ссылки
+
+- [Hono — Routing](https://hono.dev/docs/api/routing) — роутинг, параметры, группы
+- [Hono — Context](https://hono.dev/docs/api/context) — объект c, request, response
+- [Hono — Request](https://hono.dev/docs/api/request) — json(), param(), query()

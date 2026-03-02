@@ -1,0 +1,13 @@
+{
+  "title": "Разработка плагинов",
+  "pages": [
+    "index",
+    "entities",
+    "services",
+    "routes",
+    "middleware",
+    "workflows",
+    "navigation",
+    "column-docs"
+  ]
+}

@@ -1,0 +1,130 @@
+---
+title: Middleware — обогащение данных ядра
+description: Как обогатить ответы core API данными плагина без изменения кода ядра
+---
+
+# Middleware — обогащение данных ядра
+
+## Зачем
+
+Middleware позволяет плагину **добавлять свои данные в ответы core API** без изменения кода ядра. Это ключевая архитектурная идея MPFlow — ядро отвечает за базовую функциональность, а плагины обогащают данные.
+
+Например, core API `/api/catalog` возвращает карточки товаров. Ozon-плагин через middleware добавляет к каждой карточке Ozon SKU, ссылку и статус — всё это невидимо для кода ядра.
+
+Другой пример: `/api/inventory` возвращает складские остатки. Ozon-плагин добавляет остатки по складам Ozon, объём продаж и количество в доставке.
+
+## Как работает
+
+Middleware работает как **post-processing** — сначала выполняется основной обработчик ядра, затем middleware модифицирует ответ:
+
+```
+Запрос → [Core handler] → JSON-ответ → [Plugin middleware] → Обогащённый ответ
+```
+
+1. Сервер сканирует `src/middleware/` плагина
+2. Из каждого файла берутся `export const config` и `export default`
+3. Middleware регистрируется на пути из `config`
+4. При запросе: сначала core handler, потом middleware добавляет данные
+
+## Создание middleware
+
+Файл должен экспортировать `config` (к каким путям применяется) и `default` (обработчик):
+
+```typescript
+// src/middleware/catalog-enrichment.ts
+import type { Context, Next } from "hono"
+
+// К каким эндпоинтам применяется
+export const config = {
+  paths: [
+    { path: "/api/catalog", method: "GET" },
+    { path: "/api/catalog/*", method: "GET" },
+  ],
+}
+
+// Post-processing — обогащение ответа
+export default async function catalogEnrichment(c: Context, next: Next) {
+  await next() // Сначала выполняется core handler
+
+  // Получаем оригинальный ответ
+  const body: any = await c.res.json()
+
+  // Получаем сервис плагина
+  const service = c.get("container").resolve("myRecordService")
+
+  // Обогащаем данные
+  if (body.items) {
+    const extraData = await service.getEnrichmentData()
+    for (const item of body.items) {
+      item.plugin_data = extraData[item.id] || null
+    }
+  }
+
+  // Формируем новый ответ
+  c.res = new Response(JSON.stringify(body), {
+    status: c.res.status,
+    headers: c.res.headers,
+  })
+}
+```
+
+## Конфигурация путей
+
+`config.paths` — массив объектов `{ path, method }`:
+
+```typescript
+export const config = {
+  paths: [
+    { path: "/api/catalog", method: "GET" },      // Точное совпадение
+    { path: "/api/catalog/*", method: "GET" },     // Wildcard
+    { path: "/api/inventory", method: "GET" },
+  ],
+}
+```
+
+- `path` — URL-паттерн. `*` для wildcard-совпадения
+- `method` — HTTP-метод (GET, POST, PUT, DELETE)
+
+## Утилитарные файлы
+
+Файлы без `export const config` или без `export default` автоматически пропускаются. Это позволяет держать хелперы рядом с middleware:
+
+```
+src/middleware/
+  plugin-check.ts           # Хелпер — нет config/default, пропускается
+  catalog-enrichment.ts     # Middleware — есть config + default
+  inventory-enrichment.ts   # Middleware — есть config + default
+```
+
+## Graceful degradation
+
+Middleware не должен ломать core API. Оборачивайте логику в try-catch:
+
+```typescript
+export default async function myEnrichment(c: Context, next: Next) {
+  await next()
+
+  try {
+    const body: any = await c.res.json()
+    // ... обогащение ...
+    c.res = new Response(JSON.stringify(body), {
+      status: c.res.status,
+      headers: c.res.headers,
+    })
+  } catch {
+    // Если что-то пошло не так — оставляем оригинальный ответ
+  }
+}
+```
+
+## Пример из Ozon-плагина
+
+Три middleware файла:
+
+- **catalog-enrichment.ts** — добавляет Ozon SKU, product_id и ссылку к карточкам каталога
+- **inventory-enrichment.ts** — добавляет остатки по складам Ozon, продажи и доставку к складским записям
+- **procurement-enrichment.ts** — добавляет каналы продаж Ozon к данным закупок
+
+## Ссылки
+
+- [Hono — Middleware](https://hono.dev/docs/guides/middleware) — как работает middleware в Hono

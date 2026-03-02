@@ -1,0 +1,162 @@
+---
+title: Services — бизнес-логика
+description: Как добавить сервис с бизнес-логикой и работой с данными
+---
+
+# Services — бизнес-логика
+
+## Зачем
+
+Сервис инкапсулирует работу с данными и бизнес-логику плагина. Роуты и workflows не обращаются к БД напрямую — они используют сервис. Это разделяет ответственность: роуты занимаются HTTP, сервис — логикой.
+
+Сервисы автоматически регистрируются в [awilix](https://github.com/jeffijoe/awilix) DI-контейнере и доступны по ключу, сгенерированному из имени файла.
+
+## Как работает
+
+1. Сервер сканирует `src/services/` плагина
+2. Из каждого файла берётся первый экспортированный класс
+3. Класс регистрируется в DI-контейнере с ключом по конвенции (kebab-case → camelCase)
+4. Lifetime: `SCOPED` — новый экземпляр на каждый HTTP-запрос
+
+### Конвенция именования
+
+Имя файла определяет DI-ключ:
+
+| Файл | DI-ключ |
+|------|---------|
+| `my-record-service.ts` | `myRecordService` |
+| `ozon-service.ts` | `ozonService` |
+| `sync-helper.ts` | `syncHelper` |
+
+## Создание сервиса
+
+```typescript
+// src/services/my-record-service.ts
+import type { EntityManager } from "@mikro-orm/core"
+import { MyRecord } from "../entities/my-record.js"
+
+export class MyRecordService {
+  constructor(private em: EntityManager) {}
+
+  async list(filters: Record<string, any> = {}) {
+    return this.em.find(MyRecord, filters)
+  }
+
+  async get(id: string) {
+    return this.em.findOneOrFail(MyRecord, { id })
+  }
+
+  async create(data: Partial<MyRecord>) {
+    const record = this.em.create(MyRecord, data as any)
+    await this.em.persistAndFlush(record)
+    return record
+  }
+
+  async update(id: string, data: Partial<MyRecord>) {
+    const record = await this.em.findOneOrFail(MyRecord, { id })
+    this.em.assign(record, data)
+    await this.em.flush()
+    return record
+  }
+
+  async delete(id: string) {
+    const record = await this.em.findOneOrFail(MyRecord, { id })
+    await this.em.removeAndFlush(record)
+  }
+}
+```
+
+## Constructor injection
+
+Сервис получает зависимости через конструктор. Доступные зависимости:
+
+| Параметр | Тип | Описание |
+|----------|-----|----------|
+| `em` | `EntityManager` | Request-scoped ORM менеджер |
+| Другие сервисы | По DI-ключу | Ваши или core-сервисы |
+
+`EntityManager` создаётся заново для каждого запроса (через `em.fork()`), поэтому безопасно использовать параллельные запросы.
+
+### Инъекция других сервисов
+
+Сервис может зависеть от других сервисов — как своих, так и core:
+
+```typescript
+export class OzonSyncService {
+  constructor(
+    private em: EntityManager,
+    private ozonService: OzonIntegrationService,  // другой сервис плагина
+    private masterCardService: MasterCardService,  // core-сервис
+  ) {}
+}
+```
+
+awilix автоматически разрешает зависимости по именам параметров конструктора.
+
+## Использование из роутов
+
+В роутах сервис получают через DI-контейнер:
+
+```typescript
+routes.get("/", async (c) => {
+  const service: MyRecordService = c.get("container").resolve("myRecordService")
+  const items = await service.list()
+  return c.json({ items })
+})
+```
+
+## Использование из workflows
+
+В workflows сервис получают через контейнер напрямую:
+
+```typescript
+export async function syncData(container: AwilixContainer) {
+  const scope = container.createScope()
+  const service: MyRecordService = scope.resolve("myRecordService")
+  // ...
+}
+```
+
+## Паттерны
+
+### Upsert (создать или обновить)
+
+```typescript
+async upsert(externalId: string, data: Partial<MyRecord>) {
+  let record = await this.em.findOne(MyRecord, { external_id: externalId })
+  if (record) {
+    this.em.assign(record, data)
+  } else {
+    record = this.em.create(MyRecord, { external_id: externalId, ...data } as any)
+    this.em.persist(record)
+  }
+  await this.em.flush()
+  return record
+}
+```
+
+### Batch-операции (без flush на каждую запись)
+
+```typescript
+async importBatch(items: any[]) {
+  for (const item of items) {
+    const record = this.em.create(MyRecord, item as any)
+    this.em.persist(record)
+  }
+  await this.em.flush()  // один flush на всю пачку
+}
+```
+
+## Пример из Ozon-плагина
+
+`plugins/ozon/src/services/ozon-service.ts` — 250+ строк:
+
+- CRUD для аккаунтов, связей товаров, снимков остатков
+- Методы `fetchProducts()`, `fetchStocks()` — запросы к Ozon Seller API
+- Upsert-паттерн для синхронизации данных
+
+## Ссылки
+
+- [MikroORM — Entity Manager](https://mikro-orm.io/docs/entity-manager) — find, persist, flush, remove
+- [MikroORM — Query Conditions](https://mikro-orm.io/docs/query-conditions) — фильтры в find()
+- [awilix — Documentation](https://github.com/jeffijoe/awilix) — DI-контейнер

@@ -1,0 +1,128 @@
+---
+title: Workflows — фоновые задачи
+description: Как добавить синхронизацию с внешними API, импорт данных и другие фоновые задачи
+---
+
+# Workflows — фоновые задачи
+
+## Зачем
+
+Плагину часто нужно выполнять задачи, которые не укладываются в один HTTP-запрос: синхронизация данных с внешним API, пакетный импорт, обработка очередей. Workflows — это async-функции, которые вызываются из роутов или по расписанию.
+
+Например, Ozon-плагин синхронизирует товары, остатки, продажи, возвраты и финансовые транзакции — каждая синхронизация это отдельный workflow.
+
+## Как работает
+
+Workflows — это обычные TypeScript-файлы в `src/workflows/`. Они **не обнаруживаются автоматически** как entities или routes. Вместо этого их явно импортируют и вызывают из роутов.
+
+## Создание workflow
+
+```typescript
+// src/workflows/sync-data.ts
+import type { AwilixContainer } from "awilix"
+import type { MyRecordService } from "../services/my-record-service.js"
+
+export async function syncData(container: AwilixContainer, accountId: string) {
+  const scope = container.createScope()
+  const service: MyRecordService = scope.resolve("myRecordService")
+
+  // 1. Загрузить данные из внешнего API
+  const externalData = await fetchFromExternalAPI(accountId)
+
+  // 2. Обработать и сохранить
+  let created = 0
+  let updated = 0
+  for (const item of externalData) {
+    const existing = await service.findByExternalId(item.id)
+    if (existing) {
+      await service.update(existing.id, item)
+      updated++
+    } else {
+      await service.create({ ...item, account_id: accountId })
+      created++
+    }
+  }
+
+  // 3. Вернуть результат
+  return { created, updated, total: externalData.length }
+}
+```
+
+## Вызов из роутов
+
+```typescript
+// src/routes/my-sync.ts
+import { Hono } from "hono"
+import { syncData } from "../workflows/sync-data.js"
+
+const routes = new Hono<{ Variables: Record<string, any> }>()
+
+routes.post("/", async (c) => {
+  const body = await c.req.json()
+  const container = c.get("container")
+
+  const result = await syncData(container, body.account_id)
+  return c.json({ result })
+})
+
+export default routes
+```
+
+## Scope
+
+Каждый workflow должен создавать свой scope контейнера, чтобы получить чистый `EntityManager`:
+
+```typescript
+const scope = container.createScope()
+const service = scope.resolve("myRecordService")
+```
+
+Если workflow вызывается из route handler, можно использовать контейнер запроса напрямую — но для длинных операций лучше создать отдельный scope.
+
+## Композиция workflows
+
+Один workflow может вызывать другие:
+
+```typescript
+// src/workflows/sync-all.ts
+import { syncProducts } from "./sync-products.js"
+import { syncStocks } from "./sync-stocks.js"
+import { syncSales } from "./sync-sales.js"
+
+export async function syncAll(container: AwilixContainer, accountId: string) {
+  const products = await syncProducts(container, accountId)
+  const stocks = await syncStocks(container, accountId)
+  const sales = await syncSales(container, accountId)
+
+  return { products, stocks, sales }
+}
+```
+
+## Обработка ошибок
+
+Ловите ошибки и возвращайте понятные результаты:
+
+```typescript
+export async function syncProducts(container: AwilixContainer, accountId: string) {
+  try {
+    // ... синхронизация ...
+    return { ok: true, synced: count }
+  } catch (err: any) {
+    return { ok: false, error: err.message }
+  }
+}
+```
+
+## Пример из Ozon-плагина
+
+Пять workflow файлов:
+
+| Файл | Что делает |
+|------|------------|
+| `sync-ozon-products.ts` | Загружает товары из Ozon, связывает с карточками MPFlow |
+| `sync-ozon-stocks.ts` | Обновляет снимки остатков по складам Ozon |
+| `sync-ozon-sales.ts` | Импортирует отправления и создаёт продажи в MPFlow |
+| `sync-ozon-returns.ts` | Обрабатывает возвраты Ozon |
+| `sync-ozon-transactions.ts` | Импортирует финансовые транзакции (комиссии, логистика) |
+
+Все вызываются через `/api/ozon-sync` с параметром `action`.

@@ -1,0 +1,136 @@
+---
+title: Обзор плагинов
+description: Что такое плагины MPFlow, зачем они нужны и как создать свой
+---
+
+# Разработка плагинов
+
+Плагины — способ расширить MPFlow без изменения ядра. Плагин может добавить свои таблицы в БД, API-эндпоинты, обогатить данные ядра через middleware и показать страницу в админке.
+
+## Зачем нужны плагины
+
+Ядро MPFlow — каталог, закупки, склад, финансы — покрывает базовые потребности. Но каждый маркетплейс (Ozon, Wildberries, Яндекс.Маркет) требует свою интеграцию: синхронизацию товаров, остатков, продаж, комиссий. Плагины позволяют подключать интеграции модульно.
+
+Встроенный плагин **Ozon** (`admin/plugins/ozon/`) — полный пример, на который можно ориентироваться.
+
+## Что может плагин
+
+| Возможность | Зачем | Страница |
+|-------------|-------|----------|
+| [Entities](/docs/developer/plugin-development/entities) | Хранить данные плагина в БД | `src/entities/` |
+| [Services](/docs/developer/plugin-development/services) | Бизнес-логика и работа с данными | `src/services/` |
+| [Routes](/docs/developer/plugin-development/routes) | HTTP API для фронтенда и внешних систем | `src/routes/` |
+| [Middleware](/docs/developer/plugin-development/middleware) | Обогатить ответы core API данными плагина | `src/middleware/` |
+| [Workflows](/docs/developer/plugin-development/workflows) | Фоновые задачи: синхронизация, импорт | `src/workflows/` |
+| [Навигация](/docs/developer/plugin-development/navigation) | Страница плагина в админке | `src/nav.ts` + `src/client/` |
+| [Column Docs](/docs/developer/plugin-development/column-docs) | Подсказки к колонкам таблиц | `src/column-docs.ts` |
+
+## Convention-based auto-discovery
+
+MPFlow использует конвенцию папок. Достаточно положить файлы в правильные директории — система подхватит их автоматически. Файл `plugin.ts` содержит только метаданные:
+
+```typescript
+import { definePlugin } from "../../src/server/core/plugin-loader.js"
+
+export default definePlugin({
+  name: "my-plugin",
+  label: "My Plugin",
+  description: "Описание вашего плагина",
+})
+```
+
+## Структура плагина
+
+```
+admin/plugins/my-plugin/
+├── plugin.ts                       # Метаданные (name, label, description)
+└── src/
+    ├── entities/
+    │   └── my-record.ts            # MikroORM entities → таблицы в БД
+    ├── services/
+    │   └── my-record-service.ts    # Сервис → DI-ключ: myRecordService
+    ├── routes/
+    │   └── my-records.ts           # Hono роуты → /api/my-records
+    ├── middleware/
+    │   └── catalog-enrichment.ts   # Post-processing для core API
+    ├── workflows/
+    │   └── sync-data.ts            # Фоновая логика
+    ├── client/
+    │   └── page.tsx                # React-страница
+    ├── nav.ts                      # Пункт в сайдбаре
+    └── column-docs.ts              # Описания колонок
+```
+
+## Быстрый старт
+
+### 1. Создать директорию
+
+```bash
+mkdir -p admin/plugins/my-plugin/src/{entities,services,routes}
+```
+
+### 2. Написать plugin.ts
+
+```typescript
+import { definePlugin } from "../../src/server/core/plugin-loader.js"
+
+export default definePlugin({
+  name: "my-plugin",
+  label: "My Plugin",
+  description: "Описание вашего плагина",
+})
+```
+
+### 3. Зарегистрировать в конфиге
+
+```typescript
+// admin/mpflow.config.ts
+export default defineConfig({
+  // ...
+  plugins: [
+    { resolve: "./plugins/ozon" },
+    { resolve: "./plugins/my-plugin" },  // ваш плагин
+  ],
+})
+```
+
+### 4. Добавить компоненты
+
+Дальше добавляйте возможности по мере необходимости — [entities](/docs/developer/plugin-development/entities), [services](/docs/developer/plugin-development/services), [routes](/docs/developer/plugin-development/routes) и т.д. Каждая описана на отдельной странице.
+
+### 5. Запустить
+
+```bash
+cd admin
+npm run dev
+```
+
+При старте в логах:
+
+```
+[mpflow] Collected N plugin entities
+[mpflow] Applying auto-schema updates for plugin entities...
+[plugin] Loading: my-plugin
+[plugin] Loaded: my-plugin
+```
+
+## Явное определение (override)
+
+Если конвенции не подходят, можно задать поля явно в `plugin.ts` — они имеют приоритет над auto-discovery:
+
+```typescript
+export default definePlugin({
+  name: "my-plugin",
+  label: "My Plugin",
+  entities: [MyRecord],           // Явно вместо src/entities/
+  services: { customKey: ... },   // Явно вместо src/services/
+  routes: (app) => { ... },       // Явно вместо src/routes/
+})
+```
+
+## Контроль доступа
+
+Пользователь может включать и выключать плагины через UI (страница `/plugins`). При отключении:
+
+- API-роуты плагина возвращают 403
+- Навигация в сайдбаре скрывается

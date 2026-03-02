@@ -1,0 +1,139 @@
+---
+title: Entities — таблицы в БД
+description: Как добавить свои таблицы в базу данных через MikroORM entities
+---
+
+# Entities — таблицы в БД
+
+## Зачем
+
+Плагину нужно хранить свои данные. Например, Ozon-плагин хранит аккаунты продавцов, связи товаров с карточками Ozon и снимки остатков по складам. Всё это — отдельные таблицы в PostgreSQL.
+
+В MPFlow таблицы плагинов создаются **автоматически** при старте сервера. Не нужно писать SQL-миграции — достаточно описать entity-класс с декораторами [MikroORM](https://mikro-orm.io/docs/defining-entities).
+
+## Как работает
+
+1. При старте сервер сканирует `src/entities/` каждого плагина
+2. Все экспортированные классы с декоратором `@Entity()` собираются
+3. `SchemaGenerator.updateSchema({ safe: true })` создаёт недостающие таблицы и колонки
+
+`safe: true` — только аддитивные изменения: `CREATE TABLE`, `ADD COLUMN`. Без `DROP TABLE` или `DROP COLUMN`.
+
+## Создание entity
+
+Создайте файл в `src/entities/`. Каждый экспортированный класс с `@Entity()` будет обнаружен автоматически.
+
+```typescript
+// src/entities/my-record.ts
+import { Entity, PrimaryKey, Property, Index } from "@mikro-orm/core"
+import { v4 } from "uuid"
+
+@Entity({ tableName: "my_record" })
+export class MyRecord {
+  @PrimaryKey()
+  id: string = v4()
+
+  @Property()
+  name!: string
+
+  @Property({ nullable: true })
+  description?: string
+
+  @Property({ default: true })
+  is_active: boolean = true
+
+  @Property({ type: "jsonb", nullable: true })
+  metadata?: Record<string, unknown>
+
+  @Property({ defaultRaw: "now()" })
+  created_at: Date = new Date()
+
+  @Property({ defaultRaw: "now()", onUpdate: () => new Date() })
+  updated_at: Date = new Date()
+}
+```
+
+При старте сервера автоматически будет создана таблица `my_record` с нужными колонками.
+
+## Типы полей
+
+| TypeScript тип | PostgreSQL тип | Декоратор |
+|----------------|----------------|-----------|
+| `string` | `varchar(255)` | `@Property()` |
+| `string` | `text` | `@Property({ type: "text" })` |
+| `number` | `integer` | `@Property()` |
+| `number` | `numeric` | `@Property({ type: "numeric" })` |
+| `boolean` | `boolean` | `@Property()` |
+| `Date` | `timestamptz` | `@Property()` |
+| `object` | `jsonb` | `@Property({ type: "jsonb" })` |
+
+## Модификаторы
+
+```typescript
+@Property({ nullable: true })          // NULL допустим
+@Property({ default: 0 })              // Значение по умолчанию (JS)
+@Property({ defaultRaw: "now()" })     // Значение по умолчанию (SQL)
+@Property({ unique: true })            // UNIQUE constraint
+@Index()                               // CREATE INDEX
+@Unique({ properties: ["a", "b"] })    // Составной UNIQUE (на уровне класса)
+```
+
+## Soft delete
+
+Рекомендуемый паттерн — мягкое удаление через `deleted_at`:
+
+```typescript
+@Property({ nullable: true })
+deleted_at?: Date
+```
+
+В сервисе фильтруйте по `deleted_at: null` для активных записей:
+
+```typescript
+async list() {
+  return this.em.find(MyRecord, { deleted_at: null })
+}
+
+async delete(id: string) {
+  const record = await this.em.findOneOrFail(MyRecord, { id })
+  record.deleted_at = new Date()
+  await this.em.flush()
+}
+```
+
+## Несколько entity в одном файле
+
+Один файл может содержать несколько entity — все экспортированные классы с `@Entity()` будут обнаружены:
+
+```typescript
+// src/entities/ozon-integration.ts
+@Entity({ tableName: "ozon_account" })
+export class OzonAccount { ... }
+
+@Entity({ tableName: "ozon_product_link" })
+export class OzonProductLink { ... }
+
+@Entity({ tableName: "ozon_stock_snapshot" })
+export class OzonStockSnapshot { ... }
+```
+
+## Пример из Ozon-плагина
+
+Файл `plugins/ozon/src/entities/ozon-integration.ts` содержит три entity:
+
+- **OzonAccount** — аккаунт продавца (client_id, api_key, название)
+- **OzonProductLink** — связь товара MPFlow с товаром Ozon (ozon_product_id, sku)
+- **OzonStockSnapshot** — остатки по складам Ozon (warehouse_id, stock, updated_at)
+
+## Важно
+
+- Имя таблицы (`tableName`) задаётся явно — используйте `snake_case`
+- Первичный ключ — UUID (`@PrimaryKey()` + `v4()`)
+- Не забудьте `created_at` и `updated_at` — удобно для отладки
+- Auto-schema не удаляет колонки и таблицы. Если переименовали поле — старая колонка останется
+
+## Ссылки
+
+- [MikroORM — Defining Entities](https://mikro-orm.io/docs/defining-entities) — полная документация по декораторам
+- [MikroORM — Property Types](https://mikro-orm.io/docs/property-validation) — типы и валидация
+- [MikroORM — Schema Generator](https://mikro-orm.io/docs/schema-generator) — как работает auto-schema

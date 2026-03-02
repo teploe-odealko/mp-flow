@@ -1,0 +1,67 @@
+---
+title: Column Docs — описания колонок
+description: Как добавить подсказки к колонкам таблиц, которые обогащает плагин
+---
+
+# Column Docs — описания колонок
+
+## Зачем
+
+Когда плагин обогащает данные через [middleware](/docs/developer/plugin-development/middleware), в таблицах админки появляются новые колонки или данные в существующих колонках. Пользователю нужно понимать, откуда эти данные и что они означают.
+
+Column Docs добавляют всплывающие подсказки к заголовкам колонок в таблицах админки.
+
+## Создание column-docs
+
+Создайте `src/column-docs.ts` с массивом описаний:
+
+```typescript
+// src/column-docs.ts
+export default [
+  {
+    pageId: "warehouse",
+    columnKey: "stock_total",
+    pluginLabel: "My Plugin",
+    description: "Данные синхронизируются из внешнего API каждые 6 часов.",
+  },
+  {
+    pageId: "catalog",
+    columnKey: "external_sku",
+    pluginLabel: "My Plugin",
+    description: "SKU из внешней системы, привязанный к карточке товара.",
+  },
+]
+```
+
+## Поля
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `pageId` | `string` | ID страницы (`"catalog"`, `"warehouse"`, `"procurement"`, `"sales"`) |
+| `columnKey` | `string` | Ключ колонки в таблице |
+| `pluginLabel` | `string` | Название плагина (показывается в подсказке) |
+| `description` | `string` | Текст подсказки (поддерживает Markdown-ссылки) |
+
+## Markdown в описаниях
+
+Поле `description` поддерживает ссылки:
+
+```typescript
+{
+  pageId: "warehouse",
+  columnKey: "stock_total",
+  pluginLabel: "Ozon",
+  description: "Сумма остатков по всем [складам Ozon](https://seller.ozon.ru/app/fbo-stocks).",
+}
+```
+
+## Пример из Ozon-плагина
+
+`plugins/ozon/src/column-docs.ts` добавляет подсказки к пяти колонкам:
+
+| Страница | Колонка | Описание |
+|----------|---------|----------|
+| warehouse | stock_total | Сумма остатков по складам Ozon FBO |
+| warehouse | sold_total | Проданные товары за период (FBO отправления) |
+| warehouse | delivering_total | Товары в доставке покупателям |
+| catalog | stock | Текущий остаток на складах Ozon FBO |

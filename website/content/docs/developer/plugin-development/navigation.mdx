@@ -1,0 +1,109 @@
+---
+title: Навигация и страница в админке
+description: Как добавить пункт в сайдбар и React-страницу для плагина
+---
+
+# Навигация и страница в админке
+
+## Зачем
+
+Если у плагина есть собственный UI — настройки, дашборд, управление аккаунтами — ему нужна страница в админке и пункт в сайдбаре для навигации.
+
+Например, Ozon-плагин добавляет страницу `/ozon` с управлением аккаунтами, синхронизацией и статусами.
+
+## Навигация (nav.ts)
+
+Для добавления пункта в сайдбар создайте `src/nav.ts`:
+
+```typescript
+// src/nav.ts
+export default [
+  { path: "/my-plugin", label: "My Plugin" },
+]
+```
+
+- `path` — URL-путь страницы (без `/api`)
+- `label` — текст в сайдбаре
+
+Можно добавить несколько пунктов:
+
+```typescript
+export default [
+  { path: "/my-plugin", label: "Дашборд" },
+  { path: "/my-plugin/settings", label: "Настройки" },
+]
+```
+
+При отключении плагина пользователем пункты навигации автоматически скрываются.
+
+## Страница (client/page.tsx)
+
+React-компонент страницы плагина. Создайте `src/client/page.tsx`:
+
+```tsx
+// src/client/page.tsx
+import { useState } from "react"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+
+export default function MyPluginPage() {
+  const queryClient = useQueryClient()
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["my-plugin"],
+    queryFn: () => fetch("/api/my-records").then((r) => r.json()),
+  })
+
+  if (isLoading) return <p>Загрузка...</p>
+
+  return (
+    <div>
+      <h1 className="text-xl font-semibold mb-4">My Plugin</h1>
+      <div className="space-y-2">
+        {data?.items?.map((item: any) => (
+          <div key={item.id} className="bg-bg-surface border border-bg-border rounded p-3">
+            {item.name}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+```
+
+Страница подхватывается через Vite glob автоматически — импорт не нужен.
+
+## Доступные библиотеки
+
+Фронтенд MPFlow использует:
+
+| Библиотека | Для чего |
+|------------|----------|
+| [React 19](https://react.dev/) | UI-компоненты |
+| [TanStack Query 5](https://tanstack.com/query) | Запросы к API (useQuery, useMutation) |
+| [React Router 7](https://reactrouter.com/) | Навигация |
+| [Tailwind CSS 3](https://tailwindcss.com/) | Стили |
+| [Radix UI](https://www.radix-ui.com/) | Dialog, Select, Tabs |
+| [Lucide React](https://lucide.dev/) | Иконки |
+
+Все они уже в зависимостях — дополнительно устанавливать не нужно.
+
+## CSS-переменные
+
+MPFlow использует дизайн-токены через CSS-переменные. Используйте семантические классы:
+
+| Класс | Назначение |
+|-------|------------|
+| `bg-bg-surface` | Фон карточки |
+| `bg-bg-deep` | Глубокий фон (инпуты) |
+| `border-bg-border` | Граница |
+| `text-text-primary` | Основной текст |
+| `text-text-secondary` | Вторичный текст |
+| `text-text-muted` | Приглушённый текст |
+| `text-accent` | Акцентный цвет |
+| `text-inflow` | Зелёный (приход) |
+| `text-outflow` | Красный (расход) |
+
+## Пример из Ozon-плагина
+
+- `nav.ts` — один пункт: `[{ path: "/ozon", label: "Ozon" }]`
+- `client/page.tsx` — страница с управлением аккаунтами, кнопками синхронизации и статусами последних операций
