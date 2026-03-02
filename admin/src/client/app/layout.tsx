@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { useAuth } from "./auth-provider"
 import { apiGet } from "../lib/api"
+import { ColumnDocsProvider } from "../components/column-docs-provider"
 
 const coreNavItems = [
   { path: "/catalog", label: "Каталог" },
@@ -77,7 +78,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
       {/* Main content */}
       <main className="flex-1 overflow-auto p-6">
-        {children}
+        <ColumnDocsProvider>
+          {children}
+        </ColumnDocsProvider>
       </main>
     </div>
   )

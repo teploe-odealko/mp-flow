@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { useState } from "react"
 import { apiGet } from "../../lib/api"
+import { DocTableHeader } from "../../components/doc-table-header"
 
 const PAGE_SIZE = 50
 
@@ -145,15 +146,15 @@ export default function SalesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-bg-surface border-b border-bg-border">
-                  <th className="text-left px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Товар</th>
-                  <th className="text-left px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Заказ</th>
-                  <th className="text-left px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Канал</th>
-                  <th className="text-left px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Статус</th>
-                  <th className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Кол-во</th>
-                  <th className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Цена</th>
-                  <th className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Выручка</th>
-                  <th className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Расходы</th>
-                  <th className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Дата</th>
+                  <DocTableHeader pageId="sales" columnKey="product" className="text-left px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Товар</DocTableHeader>
+                  <DocTableHeader pageId="sales" columnKey="order_number" className="text-left px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Заказ</DocTableHeader>
+                  <DocTableHeader pageId="sales" columnKey="channel" className="text-left px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Канал</DocTableHeader>
+                  <DocTableHeader pageId="sales" columnKey="status" className="text-left px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Статус</DocTableHeader>
+                  <DocTableHeader pageId="sales" columnKey="quantity" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Кол-во</DocTableHeader>
+                  <DocTableHeader pageId="sales" columnKey="price" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Цена</DocTableHeader>
+                  <DocTableHeader pageId="sales" columnKey="revenue" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Выручка</DocTableHeader>
+                  <DocTableHeader pageId="sales" columnKey="expenses" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Расходы</DocTableHeader>
+                  <DocTableHeader pageId="sales" columnKey="date" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Дата</DocTableHeader>
                 </tr>
               </thead>
               <tbody>

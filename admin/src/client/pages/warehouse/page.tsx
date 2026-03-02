@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { apiGet, apiPost } from "../../lib/api"
+import { DocTableHeader } from "../../components/doc-table-header"
 
 interface BreakdownEntry {
   source: string
@@ -247,14 +248,14 @@ export default function WarehousePage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-bg-border text-text-secondary text-left">
-              <th className="p-2">Товар</th>
-              <th className="p-2 text-right">Получено</th>
-              <th className="p-2 text-right">На складах</th>
-              <th className="p-2 text-right">Продано</th>
-              <th className="p-2 text-right">В доставке</th>
-              <th className="p-2 text-right">Списано</th>
-              <th className="p-2 text-right">Расхожд.</th>
-              <th className="p-2 text-right">С/с</th>
+              <DocTableHeader pageId="warehouse" columnKey="product" className="p-2">Товар</DocTableHeader>
+              <DocTableHeader pageId="warehouse" columnKey="received_qty" className="p-2 text-right">Получено</DocTableHeader>
+              <DocTableHeader pageId="warehouse" columnKey="stock_total" className="p-2 text-right">На складах</DocTableHeader>
+              <DocTableHeader pageId="warehouse" columnKey="sold_total" className="p-2 text-right">Продано</DocTableHeader>
+              <DocTableHeader pageId="warehouse" columnKey="delivering_total" className="p-2 text-right">В доставке</DocTableHeader>
+              <DocTableHeader pageId="warehouse" columnKey="written_off_qty" className="p-2 text-right">Списано</DocTableHeader>
+              <DocTableHeader pageId="warehouse" columnKey="discrepancy" className="p-2 text-right">Расхожд.</DocTableHeader>
+              <DocTableHeader pageId="warehouse" columnKey="avg_cost" className="p-2 text-right">С/с</DocTableHeader>
               <th className="p-2"></th>
             </tr>
           </thead>

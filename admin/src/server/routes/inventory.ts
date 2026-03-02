@@ -57,7 +57,11 @@ inventory.get("/", async (c) => {
       }
     } catch {}
 
-    const stockTotal = receivedQty - soldTotal - deliveringTotal - writtenOffQty
+    const rawStock = receivedQty - soldTotal - deliveringTotal - writtenOffQty
+    const localQty = Math.max(0, rawStock)
+    const discrepancy = rawStock < 0 ? Math.abs(rawStock) : 0
+    const stockTotal = localQty // will be recalculated after plugin enrichment adds marketplace entries
+
     const avgCost = await calculateAvgCost(supplierService, card.id)
     const hasCost = avgCost > 0
     if (!hasCost) noCostCount++
@@ -80,13 +84,13 @@ inventory.get("/", async (c) => {
       thumbnail: (card as any).thumbnail || undefined,
       received_qty: receivedQty,
       stock_total: stockTotal,
-      stock_breakdown: [{ source: "local", label: "Наш склад", qty: stockTotal }],
+      stock_breakdown: [{ source: "local", label: "Наш склад", qty: localQty }],
       sold_total: soldTotal,
       sold_breakdown: soldBreakdown,
       delivering_total: deliveringTotal,
       delivering_breakdown: deliveringBreakdown,
       written_off_qty: writtenOffQty,
-      discrepancy: 0,
+      discrepancy,
       avg_cost: avgCost,
       has_cost: hasCost,
     })

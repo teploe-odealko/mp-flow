@@ -20,6 +20,7 @@ import inventoryRoutes from "./routes/inventory.js"
 import analyticsRoutes from "./routes/analytics.js"
 import authRoutes from "./routes/auth.js"
 import pluginsRoutes from "./routes/plugins.js"
+import columnDocsRoutes from "./routes/column-docs.js"
 import { getSession } from "./core/session.js"
 import type { PluginSettingService } from "./modules/plugin-setting/service.js"
 
@@ -140,6 +141,7 @@ async function main() {
   app.route("/api/inventory", inventoryRoutes)
   app.route("/api/analytics", analyticsRoutes)
   app.route("/api/plugins", pluginsRoutes)
+  app.route("/api/column-docs", columnDocsRoutes)
   app.route("/auth", authRoutes)
 
   // Health check

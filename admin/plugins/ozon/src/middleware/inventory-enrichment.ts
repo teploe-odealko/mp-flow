@@ -76,6 +76,11 @@ export async function ozonInventoryEnrichment(c: Context, next: Next) {
             if (fboReserved > 0) {
               row.stock_breakdown.push({ source: "ozon_reserved", label: "Ozon резерв", qty: fboReserved })
             }
+
+            // Recalculate stock_total as sum of all breakdown entries
+            row.stock_total = row.stock_breakdown.reduce(
+              (s: number, e: any) => s + (e.qty || 0), 0,
+            )
           }
         } catch { /* skip */ }
       }

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { useState } from "react"
 import { apiGet } from "../../lib/api"
+import { DocTableHeader } from "../../components/doc-table-header"
 
 const now = new Date()
 const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`
@@ -235,9 +236,9 @@ function UnitEconomicsReport({ data }: { data: UeData }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-bg-surface border-b border-bg-border">
-            <th className="text-left px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Товар</th>
-            <th className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Кол-во</th>
-            <th className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Выручка</th>
+            <DocTableHeader pageId="analytics-ue" columnKey="product" className="text-left px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Товар</DocTableHeader>
+            <DocTableHeader pageId="analytics-ue" columnKey="quantity" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Кол-во</DocTableHeader>
+            <DocTableHeader pageId="analytics-ue" columnKey="revenue" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Выручка</DocTableHeader>
             {expandedFees ? (
               <>
                 {feeKeys.map(([key, label]) => (
@@ -252,16 +253,14 @@ function UnitEconomicsReport({ data }: { data: UeData }) {
                 >&#9664;</th>
               </>
             ) : (
-              <th
-                className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary cursor-pointer select-none hover:text-accent"
-                onClick={() => setExpandedFees(true)}
-                title="Развернуть расходы"
-              >Расх. МП &#9654;</th>
+              <DocTableHeader pageId="analytics-ue" columnKey="mp_fees" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary cursor-pointer select-none hover:text-accent">
+                <span onClick={() => setExpandedFees(true)} title="Развернуть расходы">Расх. МП &#9654;</span>
+              </DocTableHeader>
             )}
-            <th className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">С/с</th>
-            <th className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Прибыль</th>
-            <th className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Маржа</th>
-            <th className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">ROI</th>
+            <DocTableHeader pageId="analytics-ue" columnKey="cogs" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">С/с</DocTableHeader>
+            <DocTableHeader pageId="analytics-ue" columnKey="profit" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Прибыль</DocTableHeader>
+            <DocTableHeader pageId="analytics-ue" columnKey="margin" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Маржа</DocTableHeader>
+            <DocTableHeader pageId="analytics-ue" columnKey="roi" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">ROI</DocTableHeader>
           </tr>
         </thead>
         <tbody>
@@ -355,10 +354,10 @@ function StockValuationReport({ data }: { data: StockData }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-bg-surface border-b border-bg-border">
-              <th className="text-left px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Товар</th>
-              <th className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Остаток</th>
-              <th className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Ср. с/с</th>
-              <th className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Стоимость</th>
+              <DocTableHeader pageId="analytics-sv" columnKey="product" className="text-left px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Товар</DocTableHeader>
+              <DocTableHeader pageId="analytics-sv" columnKey="quantity" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Остаток</DocTableHeader>
+              <DocTableHeader pageId="analytics-sv" columnKey="avg_cost" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Ср. с/с</DocTableHeader>
+              <DocTableHeader pageId="analytics-sv" columnKey="total_cost" className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Стоимость</DocTableHeader>
             </tr>
           </thead>
           <tbody>

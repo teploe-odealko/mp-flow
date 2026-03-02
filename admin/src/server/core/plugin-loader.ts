@@ -2,6 +2,7 @@ import type { Hono } from "hono"
 import type { AwilixContainer } from "awilix"
 import type { MikroORM } from "@mikro-orm/core"
 import { scheduleJob, type Job } from "./scheduler.js"
+import type { PluginColumnDocContribution } from "../../shared/column-docs.js"
 
 export interface PluginMiddleware {
   path: string
@@ -20,6 +21,7 @@ export interface PluginDefinition {
   jobs?: Job[]
   adminNav?: Array<{ path: string; label: string }>
   apiPrefixes?: string[]
+  columnDocs?: PluginColumnDocContribution[]
 }
 
 const loadedPlugins = new Map<string, PluginDefinition>()

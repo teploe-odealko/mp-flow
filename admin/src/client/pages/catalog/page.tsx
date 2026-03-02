@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { apiGet } from "../../lib/api"
+import { DocTableHeader } from "../../components/doc-table-header"
 
 export default function CatalogPage() {
   const { data, isLoading } = useQuery({
@@ -17,11 +18,11 @@ export default function CatalogPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-bg-border text-text-secondary text-left">
-                <th className="p-2">Название</th>
-                <th className="p-2">SKU</th>
-                <th className="p-2">Статус</th>
-                <th className="p-2 text-right">Склад</th>
-                <th className="p-2 text-right">Ср. себестоимость</th>
+                <DocTableHeader pageId="catalog" columnKey="title" className="p-2">Название</DocTableHeader>
+                <DocTableHeader pageId="catalog" columnKey="sku" className="p-2">SKU</DocTableHeader>
+                <DocTableHeader pageId="catalog" columnKey="status" className="p-2">Статус</DocTableHeader>
+                <DocTableHeader pageId="catalog" columnKey="stock" className="p-2 text-right">Склад</DocTableHeader>
+                <DocTableHeader pageId="catalog" columnKey="avg_cost" className="p-2 text-right">Ср. себестоимость</DocTableHeader>
               </tr>
             </thead>
             <tbody>
