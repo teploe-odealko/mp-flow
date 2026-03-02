@@ -1,15 +1,79 @@
 ---
 title: Для разработчиков
-description: Self-hosting, разработка плагинов и архитектура MPFlow
+description: Self-hosting, архитектура и разработка плагинов MPFlow
 ---
 
 # Для разработчиков
 
+MPFlow — открытая система на TypeScript. Один Node.js процесс: Hono API + React SPA + MikroORM + плагины.
+
+## Архитектура
+
+```
+┌─────────────────────────────────┐
+│   Браузер                       │
+│   http://localhost:3000         │
+└────────────┬────────────────────┘
+             │
+┌────────────▼────────────────────┐
+│   MPFlow Admin (Node.js)       │
+│   - Hono API (:3000)          │
+│   - React SPA (встроена)      │
+│   - Плагины (Ozon и др.)     │
+├─────────────────────────────────┤
+│   Core-модули:                  │
+│   - master-card (каталог)      │
+│   - supplier-order (закупки)   │
+│   - finance (транзакции)       │
+│   - sale (продажи)             │
+├─────────────────────────────────┤
+│   Плагины (convention-based):  │
+│   - entities → auto-schema     │
+│   - services → DI (awilix)    │
+│   - routes → Hono API         │
+│   - middleware → enrichment    │
+└──────┬──────────────────────────┘
+       │
+┌──────▼──────┐
+│ PostgreSQL  │
+│ :5432       │
+└─────────────┘
+```
+
+**Ключевые принципы:**
+- **Один процесс** — API и SPA в одном Node.js, без микросервисов
+- **Convention over configuration** — плагины обнаруживаются по структуре папок
+- **Auto-schema** — таблицы плагинов создаются автоматически (`safe: true`, без DROP)
+- **Request-scoped DI** — каждый HTTP-запрос получает свой EntityManager
+
+## Разделы
+
 <Cards>
   <Card title="Self-hosting" href="/docs/developer/self-hosting">
-    Развернуть MPFlow локально или на своём сервере за 10 минут.
+    Развернуть MPFlow локально или на своём сервере за 10 минут. Docker Compose, переменные окружения, troubleshooting.
   </Card>
   <Card title="Разработка плагинов" href="/docs/developer/plugin-development">
-    Создать свой плагин — модуль данных, API-роуты, страница в админке.
+    Convention-based auto-discovery: entities, services, routes, middleware — обнаруживаются автоматически по структуре папок. plugin.ts — только метаданные.
   </Card>
 </Cards>
+
+## Быстрый старт для разработки
+
+```bash
+git clone https://github.com/teploe-odealko/mp-flow.git
+cd mp-flow/admin
+npm install
+
+# Запустить PostgreSQL
+docker run -d --name mpflow-pg \
+  -e POSTGRES_USER=mpflow \
+  -e POSTGRES_PASSWORD=mpflow \
+  -e POSTGRES_DB=mpflow \
+  -p 5432:5432 \
+  postgres:17-alpine
+
+# Dev-сервер
+npm run dev
+```
+
+Админка: `http://localhost:5173` (клиент) с прокси на API `http://localhost:3000`.

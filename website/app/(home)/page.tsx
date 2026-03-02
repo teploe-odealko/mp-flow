@@ -11,8 +11,8 @@ export default function HomePage() {
         MPFlow
       </h1>
       <p className="mt-4 max-w-2xl text-lg text-fd-muted-foreground">
-        FIFO складской учёт, юнит-экономика, управление ценами и акциями на
-        Ozon. AI-агент с 54+ MCP инструментами.
+        FIFO складской учёт, юнит-экономика, закупки, продажи и интеграция с
+        Ozon. Расширяемая архитектура на плагинах.
       </p>
       <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
         <Link
@@ -31,34 +31,34 @@ export default function HomePage() {
 
       <div className="mt-16 grid max-w-5xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         <Card
-          title="Возможности"
-          description="FIFO учёт, юнит-экономика, ценообразование, акции, PnL, логистика"
-          href="/docs/features/fifo-accounting"
+          title="Каталог и склад"
+          description="FIFO учёт, партионная себестоимость, закупки с распределением затрат"
+          href="/docs"
         />
         <Card
-          title="AI-агент"
-          description="54+ MCP инструмента для Claude, ChatGPT и других AI-клиентов"
-          href="/docs/ai-agents/overview"
+          title="Интеграция с Ozon"
+          description="Синхронизация товаров, остатков, продаж, возвратов и финансовых транзакций"
+          href="/docs"
+        />
+        <Card
+          title="Юнит-экономика"
+          description="PnL по товару с FIFO себестоимостью, комиссиями и логистикой Ozon"
+          href="/docs"
         />
         <Card
           title="Облако mp-flow.ru"
           description="Начните за 2 минуты — без установки, автообновления, бэкапы"
-          href="/docs/getting-started/cloud"
-        />
-        <Card
-          title="Интеграция с Ozon"
-          description="Подключение Ozon Seller API, синхронизация товаров и продаж"
-          href="/docs/getting-started/ozon-integration"
+          href="https://admin.mp-flow.ru"
         />
         <Card
           title="Self-hosting"
           description="Docker Compose, переменные окружения, обновления"
-          href="/docs/self-hosting/docker-compose"
+          href="/docs/developer/self-hosting"
         />
         <Card
           title="Плагины"
-          description="Расширяйте систему: frontend, backend, MCP, приватные схемы"
-          href="/docs/plugins/overview"
+          description="Convention-based auto-discovery: entities, services, routes, middleware"
+          href="/docs/developer/plugin-development"
         />
       </div>
     </main>

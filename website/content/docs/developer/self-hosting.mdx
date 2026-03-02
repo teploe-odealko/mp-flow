@@ -147,13 +147,17 @@ npm run dev
 │   MPFlow Admin (Node.js)       │
 │   - Hono API (:3000)          │
 │   - React SPA (встроена)      │
-│   - Плагины (Ozon)            │
+│   - Плагины (Ozon и др.)     │
 ├─────────────────────────────────┤
-│   Модули:                       │
+│   Core-модули:                  │
 │   - master-card (каталог)      │
 │   - supplier-order (закупки)   │
 │   - finance (транзакции)       │
 │   - sale (продажи)             │
+├─────────────────────────────────┤
+│   Плагины (auto-discovery):    │
+│   - entities, services, routes │
+│   - middleware, nav, columnDocs │
 └──────┬──────────────────────────┘
        │
 ┌──────▼──────┐
@@ -161,6 +165,8 @@ npm run dev
 │ :5432       │
 └─────────────┘
 ```
+
+Плагины подключаются в `mpflow.config.ts`. Таблицы для плагинов создаются автоматически при старте. Подробнее — [Разработка плагинов](/docs/developer/plugin-development).
 
 ## Troubleshooting
 
