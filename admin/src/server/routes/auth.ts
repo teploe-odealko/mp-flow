@@ -302,6 +302,17 @@ auth.post("/logout", async (c) => {
   const session = getSession(c)
   session.destroy()
   await session.save()
+
+  // In Logto mode, return the end-session URL so the client can clear the Logto session too
+  if (getAuthMode() === "logto" && LOGTO_ENDPOINT && LOGTO_APP_ID) {
+    const origin = getOrigin(c)
+    const params = new URLSearchParams({
+      client_id: LOGTO_APP_ID,
+      post_logout_redirect_uri: origin,
+    })
+    return c.json({ success: true, logoutUrl: `${LOGTO_ENDPOINT}/oidc/session/end?${params}` })
+  }
+
   return c.json({ success: true })
 })
 

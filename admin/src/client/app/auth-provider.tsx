@@ -64,9 +64,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   function logout() {
     fetch("/auth/logout", { method: "POST", credentials: "include" })
-      .then(() => {
+      .then((r) => r.json())
+      .then((data) => {
         setUser(null)
-        window.location.href = "/"
+        // Logto mode: redirect to Logto end-session to clear OIDC session
+        window.location.href = data.logoutUrl || "/"
       })
       .catch(() => {
         setUser(null)
