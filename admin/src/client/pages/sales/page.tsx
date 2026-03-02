@@ -268,10 +268,15 @@ export default function SalesPage() {
           ? Number(s.net_payout) - Number(s.total_cogs || 0)
           : Number(s.revenue || 0) - totalFees - Number(s.total_cogs || 0)
 
+        const cogs = Number(s.total_cogs || 0)
+        const hasNetPayout = s.net_payout != null
+        const netPayout = hasNetPayout ? Number(s.net_payout) : null
+        const margin = Number(s.revenue) > 0 ? (profit / Number(s.revenue) * 100) : 0
+
         return (
           <div className="w-[380px] shrink-0 border-l border-bg-border bg-bg-surface overflow-y-auto -mr-6 -mb-6 p-4 text-sm">
             {/* Header */}
-            <div className="flex items-start justify-between mb-4">
+            <div className="flex items-start justify-between mb-3">
               <div className="min-w-0">
                 <h2 className="font-semibold text-base truncate" title={s.product_name || s.channel_sku}>
                   {s.product_name || s.channel_sku || "—"}
@@ -286,7 +291,7 @@ export default function SalesPage() {
               </button>
             </div>
 
-            {/* Status + date */}
+            {/* Status + date + return */}
             <div className="flex items-center gap-2 mb-4">
               <span className={`px-2 py-0.5 rounded text-xs ${STATUS_COLORS[s.status] || "bg-bg-elevated text-text-secondary"}`}>
                 {STATUS_LABELS[s.status] || s.status}
@@ -294,85 +299,66 @@ export default function SalesPage() {
               <span className="text-text-muted text-xs">{fmtDateTime(s.sold_at)}</span>
             </div>
 
-            {/* Info grid */}
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <div>
-                <span className="text-text-muted text-xs block">Канал</span>
-                <span className="text-sm">{s.channel || "—"}</span>
-              </div>
-              <div>
-                <span className="text-text-muted text-xs block">SKU</span>
-                <span className="font-mono text-xs">{s.channel_sku || "—"}</span>
-              </div>
-              <div>
-                <span className="text-text-muted text-xs block">Кол-во</span>
-                <span>{s.quantity}</span>
-              </div>
-              <div>
-                <span className="text-text-muted text-xs block">Цена за ед.</span>
-                <span>{fmt(s.price_per_unit)} ₽</span>
-              </div>
+            {/* Info line */}
+            <div className="flex items-center gap-4 text-xs text-text-secondary mb-4">
+              <span>{s.channel}</span>
+              <span className="font-mono">{s.channel_sku || "—"}</span>
+              <span>{s.quantity} шт. × {fmt(s.price_per_unit)} ₽</span>
             </div>
 
-            {/* Financial summary */}
-            <div className="space-y-2 mb-4">
-              <div className="flex justify-between bg-bg-deep rounded p-2">
-                <span className="text-text-muted text-xs">Выручка</span>
-                <span className="font-semibold">{fmt(s.revenue)} ₽</span>
+            {/* P&L waterfall */}
+            <div className="bg-bg-deep rounded-lg overflow-hidden mb-4">
+              {/* Revenue */}
+              <div className="flex justify-between px-3 py-2 border-b border-bg-border">
+                <span className="text-text-secondary text-xs">Выручка</span>
+                <span className="tabular-nums font-medium">{fmt(s.revenue)} ₽</span>
               </div>
-              <div className="flex justify-between bg-bg-deep rounded p-2">
-                <span className="text-text-muted text-xs">Расходы МП</span>
-                <span className="font-semibold text-outflow">{totalFees > 0 ? `${fmt(totalFees)} ₽` : "—"}</span>
-              </div>
-              <div className="flex justify-between bg-bg-deep rounded p-2">
-                <span className="text-text-muted text-xs">Себестоимость</span>
-                <span className="font-semibold">{Number(s.total_cogs) > 0 ? `${fmt(s.total_cogs)} ₽` : "—"}</span>
-              </div>
-              <div className="flex justify-between bg-bg-deep rounded p-2">
-                <span className="text-text-muted text-xs">Прибыль</span>
-                <span className={`font-semibold ${profit >= 0 ? "text-inflow" : "text-outflow"}`}>{fmt(profit)} ₽</span>
-              </div>
-              <div className="flex justify-between bg-bg-deep rounded p-2">
-                <span className="text-text-muted text-xs">Маржа</span>
-                <span className={`font-semibold ${profit >= 0 ? "text-inflow" : "text-outflow"}`}>
-                  {Number(s.revenue) > 0 ? `${(profit / Number(s.revenue) * 100).toFixed(1)}%` : "—"}
-                </span>
-              </div>
-            </div>
 
-            {/* Fee details */}
-            {fees.length > 0 && (
-              <div className="mb-4">
-                <span className="text-text-muted text-xs block mb-1.5">Расходы маркетплейса</span>
-                <div className="space-y-0.5">
-                  {fees.filter((f) => Number(f.amount) > 0).map((f, i) => (
-                    <div key={i} className="flex justify-between py-0.5">
-                      <span className="text-text-secondary text-xs">{f.label || f.key}</span>
-                      <span className="tabular-nums text-xs">{fmt(f.amount)} ₽</span>
-                    </div>
-                  ))}
+              {/* Fee breakdown */}
+              {fees.filter((f) => Number(f.amount) > 0).map((f, i) => (
+                <div key={i} className="flex justify-between px-3 py-1.5 border-b border-bg-border/50">
+                  <span className="text-text-muted text-xs">{f.label || f.key}</span>
+                  <span className="tabular-nums text-xs text-outflow">-{fmt(f.amount)} ₽</span>
+                </div>
+              ))}
+
+              {/* Net payout */}
+              {hasNetPayout && (
+                <div className="flex justify-between px-3 py-2 border-b border-bg-border bg-bg-surface/50">
+                  <span className="text-text-secondary text-xs font-medium">Выплата МП</span>
+                  <span className={`tabular-nums font-medium ${netPayout! >= 0 ? "" : "text-outflow"}`}>{fmt(netPayout!)} ₽</span>
+                </div>
+              )}
+
+              {/* COGS */}
+              {cogs > 0 && (
+                <div className="flex justify-between px-3 py-1.5 border-b border-bg-border/50">
+                  <span className="text-text-muted text-xs">Себестоимость</span>
+                  <span className="tabular-nums text-xs">-{fmt(cogs)} ₽</span>
+                </div>
+              )}
+
+              {/* Profit */}
+              <div className="flex justify-between px-3 py-2.5 bg-bg-surface/30">
+                <span className="font-semibold text-xs">Прибыль</span>
+                <div className="text-right">
+                  <span className={`tabular-nums font-bold ${(hasNetPayout || totalFees > 0) ? (profit >= 0 ? "text-inflow" : "text-outflow") : "text-text-muted"}`}>
+                    {(hasNetPayout || totalFees > 0) ? `${fmt(profit)} ₽` : "—"}
+                  </span>
+                  {(hasNetPayout || totalFees > 0) && Number(s.revenue) > 0 && (
+                    <span className={`text-[10px] ml-1.5 ${margin >= 0 ? "text-inflow" : "text-outflow"}`}>
+                      {margin.toFixed(1)}%
+                    </span>
+                  )}
                 </div>
               </div>
-            )}
+            </div>
 
             {/* Return info */}
-            {s.status === "returned" && (s.return_reason || s.return_date) && (
-              <div className="mb-4 pt-3 border-t border-bg-border">
-                <span className="text-text-muted text-xs block mb-1.5">Возврат</span>
-                <div className="space-y-1 text-xs">
-                  {s.return_reason && (
-                    <div className="flex justify-between">
-                      <span className="text-text-muted">Причина</span>
-                      <span className="text-outflow">{s.return_reason}</span>
-                    </div>
-                  )}
-                  {s.return_date && (
-                    <div className="flex justify-between">
-                      <span className="text-text-muted">Дата возврата</span>
-                      <span>{fmtDate(s.return_date)}</span>
-                    </div>
-                  )}
-                </div>
+            {s.status === "returned" && s.return_reason && (
+              <div className="text-xs text-outflow bg-outflow/10 rounded px-3 py-2">
+                Возврат: {s.return_reason}
+                {s.return_date && <span className="text-text-muted ml-2">({fmtDate(s.return_date)})</span>}
               </div>
             )}
           </div>
