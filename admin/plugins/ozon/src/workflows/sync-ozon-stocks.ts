@@ -23,7 +23,7 @@ export async function syncOzonStocks(container: AwilixContainer, accountId: stri
       offer_id: offerId,
     })
 
-    await ozonService.createOzonStockSnapshot({
+    await ozonService.upsertOzonStockSnapshot({
       ozon_account_id: account.id,
       master_card_id: links[0]?.master_card_id || undefined,
       offer_id: offerId,
@@ -32,8 +32,7 @@ export async function syncOzonStocks(container: AwilixContainer, accountId: stri
       fbo_reserved: row.reserved_amount || row.reserved || 0,
       fbs_present: 0,
       fbs_reserved: 0,
-      warehouse_name: row.warehouse_name || undefined,
-      synced_at: now,
+      warehouse_name: row.warehouse_name || "unknown",
     })
     saved++
   }

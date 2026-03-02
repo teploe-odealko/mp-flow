@@ -75,7 +75,7 @@ export async function ozonCatalogEnrichment(c: Context, next: Next) {
             body.product.ozon_stock = {
               fbo_present: snapshots.reduce((s: number, snap: any) => s + (snap.fbo_present || 0), 0),
               fbo_reserved: snapshots.reduce((s: number, snap: any) => s + (snap.fbo_reserved || 0), 0),
-              last_synced: snapshots[0]?.synced_at || null,
+              last_synced: snapshots[0]?.updated_at || null,
             }
           } catch { /* skip */ }
 

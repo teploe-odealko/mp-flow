@@ -56,10 +56,29 @@ export class OzonIntegrationService {
     return this.em.find(OzonStockSnapshot, filters)
   }
 
-  async createOzonStockSnapshot(data: Partial<OzonStockSnapshot>) {
-    const snapshot = this.em.create(OzonStockSnapshot, data as any)
-    await this.em.persistAndFlush(snapshot)
-    return snapshot
+  async upsertOzonStockSnapshot(data: {
+    ozon_account_id: string
+    offer_id: string
+    warehouse_name: string
+    master_card_id?: string
+    ozon_sku?: string
+    fbo_present: number
+    fbo_reserved: number
+    fbs_present: number
+    fbs_reserved: number
+  }) {
+    let snap = await this.em.findOne(OzonStockSnapshot, {
+      ozon_account_id: data.ozon_account_id,
+      offer_id: data.offer_id,
+      warehouse_name: data.warehouse_name,
+    })
+    if (snap) {
+      this.em.assign(snap, data)
+    } else {
+      snap = this.em.create(OzonStockSnapshot, data as any)
+    }
+    await this.em.persistAndFlush(snap)
+    return snap
   }
 
   // ── Ozon API client ──

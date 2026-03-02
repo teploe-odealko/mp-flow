@@ -3,19 +3,6 @@ import type { OzonIntegrationService } from "../modules/ozon-integration/service
 import { isOzonEnabled } from "./plugin-check.js"
 
 /**
- * Filter snapshots to only the latest sync (by max synced_at).
- */
-function getLatestSnapshots(snapshots: any[]): any[] {
-  if (snapshots.length === 0) return []
-  let maxTime = 0
-  for (const s of snapshots) {
-    const t = new Date(s.synced_at).getTime()
-    if (t > maxTime) maxTime = t
-  }
-  return snapshots.filter((s) => new Date(s.synced_at).getTime() === maxTime)
-}
-
-/**
  * Hono middleware that enriches procurement forecast with Ozon FBO stock data.
  * Adjusts stock_breakdown and recalculates order_qty based on actual marketplace stock.
  */
@@ -43,10 +30,9 @@ export async function ozonProcurementEnrichment(c: Context, next: Next) {
             row.stock_breakdown.some((e: any) => e.source === "ozon_fbo")) continue
 
           const offerId = links[0].offer_id
-          const allSnapshots = await ozonService.listOzonStockSnapshots({
+          const snapshots = await ozonService.listOzonStockSnapshots({
             offer_id: offerId,
           })
-          const snapshots = getLatestSnapshots(allSnapshots)
 
           const fboPresent = snapshots.reduce(
             (s: number, snap: any) => s + (snap.fbo_present || 0), 0,

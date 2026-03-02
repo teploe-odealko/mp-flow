@@ -121,6 +121,7 @@ export class OzonProductLink {
 }
 
 @Entity({ tableName: "ozon_stock_snapshot" })
+@Unique({ properties: ["ozon_account_id", "offer_id", "warehouse_name"] })
 export class OzonStockSnapshot {
   @PrimaryKey()
   id: string = v4()
@@ -152,12 +153,12 @@ export class OzonStockSnapshot {
   @Property({ default: 0 })
   fbs_reserved: number = 0
 
-  @Property({ nullable: true })
-  warehouse_name?: string
-
-  @Property()
-  synced_at!: Date
+  @Property({ default: "unknown" })
+  warehouse_name: string = "unknown"
 
   @Property({ defaultRaw: "now()" })
   created_at: Date = new Date()
+
+  @Property({ defaultRaw: "now()", onUpdate: () => new Date() })
+  updated_at: Date = new Date()
 }
