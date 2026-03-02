@@ -138,4 +138,22 @@ catalog.delete("/:id", async (c) => {
   return c.json({ id, deleted: true })
 })
 
+// POST /api/catalog/migrate-user — one-time fix: reassign all data to current user
+catalog.post("/migrate-user", async (c) => {
+  const userId = getUserId(c)
+  if (!userId) return c.json({ error: "Unauthorized" }, 401)
+  const orm = c.get("container").resolve("orm") || c.get("orm")
+  const em = orm.em.fork()
+  const conn = em.getConnection()
+  const tables = ["master_card", "supplier_order", "supplier_order_item", "sale", "finance_transaction"]
+  const results: Record<string, number> = {}
+  for (const table of tables) {
+    try {
+      const res = await conn.execute(`UPDATE ${table} SET user_id = ? WHERE user_id IS NOT NULL AND user_id != ?`, [userId, userId])
+      results[table] = typeof res === "number" ? res : (res as any)?.rowCount ?? 0
+    } catch { results[table] = -1 }
+  }
+  return c.json({ migrated: results })
+})
+
 export default catalog
