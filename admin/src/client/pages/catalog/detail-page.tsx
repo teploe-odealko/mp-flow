@@ -191,6 +191,22 @@ export default function CatalogDetailPage() {
                 <option value="archived">Архив</option>
               </select>
             </div>
+            {product.purchase_price_tiers?.length > 0 && (
+              <div className="col-span-2">
+                <label className="text-text-secondary text-xs block mb-1">Таблица цен 1688 (только для чтения)</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {product.purchase_price_tiers.map((tier: { min_qty: number; price: number }) => (
+                    <span
+                      key={tier.min_qty}
+                      className="inline-flex items-center gap-1 text-xs bg-bg-deep border border-bg-border rounded px-2 py-1"
+                    >
+                      <span className="text-text-secondary">≥{tier.min_qty} шт.</span>
+                      <span className="text-accent font-medium">{tier.price.toFixed(2)} {product.purchase_currency || "CNY"}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex gap-2 mb-6">
