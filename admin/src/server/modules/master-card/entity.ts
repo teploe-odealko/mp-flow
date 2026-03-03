@@ -30,6 +30,9 @@ export class MasterCard {
   purchase_currency?: string | null
 
   @Property({ type: "json", nullable: true })
+  purchase_price_tiers?: Array<{ min_qty: number; price: number }> | null
+
+  @Property({ type: "json", nullable: true })
   metadata?: any
 
   @Property({ type: "timestamptz", defaultRaw: "now()" })

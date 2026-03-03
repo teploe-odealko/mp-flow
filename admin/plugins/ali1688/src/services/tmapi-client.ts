@@ -7,6 +7,11 @@ export interface TmapiSku {
   props: string[]
 }
 
+export interface TmapiPriceTier {
+  min_qty: number
+  price: number
+}
+
 export interface TmapiItem {
   item_id: string | null
   title: string | null
@@ -15,6 +20,8 @@ export interface TmapiItem {
   images: string[]
   price_min: string | null
   price_max: string | null
+  price_tiers: TmapiPriceTier[] | null
+  currency: string | null
   skus: TmapiSku[]
   raw: any
 }
@@ -53,7 +60,7 @@ export async function fetchAndParse1688Item(url: string): Promise<TmapiItem> {
 
 function parseTmapiResponse(payload: any): TmapiItem {
   if (!payload || typeof payload !== "object") {
-    return { item_id: null, title: null, url: null, supplier_name: null, images: [], price_min: null, price_max: null, skus: [], raw: payload }
+    return { item_id: null, title: null, url: null, supplier_name: null, images: [], price_min: null, price_max: null, price_tiers: null, currency: null, skus: [], raw: payload }
   }
 
   const data = payload.data
@@ -111,6 +118,20 @@ function parseTmapiResponse(payload: any): TmapiItem {
     }
   }
 
+  // Tiered pricing (e.g. tiered_price_info.prices: [{price, beginAmount}])
+  let price_tiers: TmapiPriceTier[] | null = null
+  const tieredInfo = root.tiered_price_info || item.tiered_price_info
+  if (tieredInfo && Array.isArray(tieredInfo.prices) && tieredInfo.prices.length > 0) {
+    const parsed = tieredInfo.prices
+      .map((p: any) => ({ min_qty: Number(p.beginAmount ?? 1), price: Number(p.price) }))
+      .filter((t: TmapiPriceTier) => !isNaN(t.min_qty) && !isNaN(t.price) && t.price > 0)
+      .sort((a: TmapiPriceTier, b: TmapiPriceTier) => a.min_qty - b.min_qty)
+    if (parsed.length > 0) price_tiers = parsed
+  }
+
+  // Currency
+  const currency = String(root.currency || item.currency || "").trim() || null
+
   // SKU parsing
   const skus = parseSkus(item)
 
@@ -122,6 +143,8 @@ function parseTmapiResponse(payload: any): TmapiItem {
     images,
     price_min: prices.length > 0 ? String(Math.min(...prices)) : null,
     price_max: prices.length > 0 ? String(Math.max(...prices)) : null,
+    price_tiers,
+    currency,
     skus,
     raw: payload,
   }

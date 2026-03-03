@@ -154,7 +154,17 @@ procurement.get("/", async (c) => {
       stockoutDate = now.toISOString().slice(0, 10) // already out
     }
 
-    const avgCost = await calculateAvgCost(supplierService, card.id)
+    let avgCost = await calculateAvgCost(supplierService, card.id)
+    // Fallback: use master card purchase_price if no purchase history
+    if (avgCost === 0 && card.purchase_price != null) {
+      avgCost = Number(card.purchase_price)
+    }
+    // Fallback: use min-qty tier price from 1688 tiers
+    if (avgCost === 0 && (card as any).purchase_price_tiers?.length) {
+      const tiers: Array<{ min_qty: number; price: number }> = (card as any).purchase_price_tiers
+      const baseTier = tiers.find((t) => t.min_qty === 1) || tiers[0]
+      if (baseTier) avgCost = baseTier.price
+    }
 
     totalOrderQty += orderQty
     totalOrderValue += orderQty * avgCost

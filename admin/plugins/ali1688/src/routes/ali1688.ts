@@ -82,15 +82,15 @@ ali1688.post("/link", async (c) => {
     raw_data: body.raw_data || null,
   })
 
-  // Update master card purchase price
-  if (body.sku_price != null) {
+  // Save price tiers to master card (purchase_price stays user-managed)
+  if (body.price_tiers != null || body.currency != null) {
     try {
-      await cardService.update(body.master_card_id, {
-        purchase_price: Number(body.sku_price),
-        purchase_currency: "CNY",
-      } as any)
+      const update: Record<string, any> = {}
+      if (body.price_tiers != null) update.purchase_price_tiers = body.price_tiers
+      if (body.currency) update.purchase_currency = body.currency
+      await cardService.update(body.master_card_id, update as any)
     } catch (err) {
-      console.error("[ali1688] Failed to update purchase_price:", err)
+      console.error("[ali1688] Failed to update purchase_price_tiers:", err)
     }
   }
 

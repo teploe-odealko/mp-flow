@@ -14,6 +14,11 @@ interface Sku {
   stock: number | null
 }
 
+interface PriceTier {
+  min_qty: number
+  price: number
+}
+
 interface PreviewData {
   item_id: string | null
   title: string | null
@@ -22,6 +27,8 @@ interface PreviewData {
   images: string[]
   price_min: string | null
   price_max: string | null
+  price_tiers: PriceTier[] | null
+  currency: string | null
   skus: Sku[]
 }
 
@@ -96,6 +103,8 @@ export default function Ali1688Tab({ productId, onRefresh }: MasterCardTabProps)
       supplier_name: preview.supplier_name,
       title: preview.title,
       images: preview.images,
+      price_tiers: preview.price_tiers,
+      currency: preview.currency || "CNY",
       raw_data: preview,
     })
   }
@@ -194,13 +203,27 @@ export default function Ali1688Tab({ productId, onRefresh }: MasterCardTabProps)
             {preview.supplier_name && (
               <div className="text-text-secondary text-xs">Поставщик: {preview.supplier_name}</div>
             )}
-            {preview.price_min && (
+            {preview.price_tiers && preview.price_tiers.length > 0 ? (
+              <div className="mt-2">
+                <div className="text-text-secondary text-[10px] mb-1">Таблица цен ({preview.currency || "CNY"})</div>
+                <div className="flex flex-wrap gap-1">
+                  {preview.price_tiers.map((tier) => (
+                    <span
+                      key={tier.min_qty}
+                      className="text-xs bg-bg-deep border border-bg-border rounded px-2 py-0.5"
+                    >
+                      ≥{tier.min_qty} шт. → <span className="text-accent font-medium">{tier.price.toFixed(2)}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : preview.price_min ? (
               <div className="text-accent text-sm mt-1">
                 {preview.price_min === preview.price_max
-                  ? `${preview.price_min} CNY`
-                  : `${preview.price_min} — ${preview.price_max} CNY`}
+                  ? `${preview.price_min} ${preview.currency || "CNY"}`
+                  : `${preview.price_min} — ${preview.price_max} ${preview.currency || "CNY"}`}
               </div>
-            )}
+            ) : null}
           </div>
 
           {/* SKU grid */}
