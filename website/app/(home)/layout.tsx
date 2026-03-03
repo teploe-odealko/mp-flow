@@ -21,7 +21,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         { text: "Документация", url: "/docs" },
         {
           text: "API",
-          url: "https://proxy.mp-flow.ru/docs",
+          url: "https://admin.mp-flow.ru/api/docs",
           external: true,
         },
         {
