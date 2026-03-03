@@ -183,7 +183,7 @@ function McpSection() {
   const claudeConfig = JSON.stringify({
     mcpServers: {
       mpflow: {
-        type: "streamable-http",
+        type: "http",
         url: `${baseUrl}/mcp`,
         headers: {
           Authorization: "Bearer YOUR_API_KEY",
