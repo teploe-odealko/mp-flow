@@ -19,6 +19,7 @@ plugins.get("/", async (c) => {
     name: p.name,
     label: p.label,
     description: p.description || "",
+    docsUrl: p.docsUrl || null,
     is_enabled: settingsMap.get(p.name) ?? true,
     adminNav: p.adminNav || [],
     apiPrefixes: p.apiPrefixes || [],

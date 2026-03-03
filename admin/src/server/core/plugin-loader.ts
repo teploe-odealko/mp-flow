@@ -28,6 +28,7 @@ export interface PluginDefinition {
   name: string
   label: string
   description?: string
+  docsUrl?: string
   entities?: any[]
   services?: Record<string, any>
   routes?: (app: Hono, container: AwilixContainer) => void

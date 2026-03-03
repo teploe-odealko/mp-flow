@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
 import { apiGet, apiPost } from "../../lib/api"
-import { X, Coins, ChevronRight } from "lucide-react"
+import { X, Coins, ChevronRight, ExternalLink } from "lucide-react"
 
 interface BillableOp {
   name: string
@@ -17,6 +17,7 @@ interface PluginInfo {
   name: string
   label: string
   description: string
+  docsUrl: string | null
   is_enabled: boolean
   adminNav: Array<{ path: string; label: string }>
   apiPrefixes: string[]
@@ -64,6 +65,19 @@ function PluginDetail({ plugin, onClose }: { plugin: PluginInfo; onClose: () => 
               <p className="text-xs text-text-muted mb-1">Описание</p>
               <p className="text-sm text-text-secondary">{plugin.description}</p>
             </div>
+          )}
+
+          {/* Docs link */}
+          {plugin.docsUrl && (
+            <a
+              href={plugin.docsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm text-accent hover:underline"
+            >
+              <ExternalLink size={14} />
+              Документация
+            </a>
           )}
 
           {/* Status */}
