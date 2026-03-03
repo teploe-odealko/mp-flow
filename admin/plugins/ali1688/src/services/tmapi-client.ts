@@ -37,7 +37,14 @@ export async function fetchAndParse1688Item(url: string): Promise<TmapiItem> {
 
   if (!res.ok) {
     const text = await res.text().catch(() => "")
-    throw new Error(`TMAPI error ${res.status}: ${text.slice(0, 200)}`)
+    // User-friendly messages for known errors
+    if (res.status === 439 || text.includes("Insufficient")) {
+      throw new Error("Недостаточно средств на балансе TMAPI. Пополните на tmapi.top")
+    }
+    if (res.status === 401) {
+      throw new Error("Неверный TMAPI_API_TOKEN. Проверьте токен в настройках")
+    }
+    throw new Error(`Ошибка TMAPI (${res.status}): ${text.slice(0, 200)}`)
   }
 
   const payload = await res.json()
