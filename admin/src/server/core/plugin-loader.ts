@@ -14,6 +14,16 @@ export interface PluginMiddleware {
   handler: (c: any, next: () => Promise<void>) => Promise<any>
 }
 
+export interface BillableOperation {
+  name: string
+  description: string
+  creditCost: number
+}
+
+export interface PluginBilling {
+  operations: BillableOperation[]
+}
+
 export interface PluginDefinition {
   name: string
   label: string
@@ -27,6 +37,7 @@ export interface PluginDefinition {
   columnDocs?: PluginColumnDocContribution[]
   mcpTools?: ApiTool[]
   mcpResources?: McpResourceDef[]
+  billing?: PluginBilling
 }
 
 const loadedPlugins = new Map<string, PluginDefinition>()
@@ -310,6 +321,22 @@ export async function loadPlugins(
           plugin.mcpResources = mcp.mcpResources
           if (mcp.mcpTools) console.log(`[plugin] ${plugin.name}: ${mcp.mcpTools.length} MCP tools`)
           if (mcp.mcpResources) console.log(`[plugin] ${plugin.name}: ${mcp.mcpResources.length} MCP resources`)
+        }
+      }
+
+      // ── Billing ──
+      if (!plugin.billing && pluginDir) {
+        const billingFile = await resolveFile(join(pluginDir, "src", "billing"))
+        if (billingFile) {
+          try {
+            const billingMod = await import(billingFile)
+            plugin.billing = billingMod.billing || billingMod.default
+            if (plugin.billing) {
+              console.log(`[plugin] ${plugin.name}: ${plugin.billing.operations.length} billable operations`)
+            }
+          } catch (err) {
+            console.error(`[plugin] ${plugin.name}: failed to load billing:`, err)
+          }
         }
       }
 

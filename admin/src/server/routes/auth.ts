@@ -341,7 +341,7 @@ auth.get("/me", async (c) => {
       const em = orm.em.fork()
       const conn = em.getConnection()
       const result = await conn.execute(
-        `SELECT active_until FROM mpflow_user WHERE id = ? AND deleted_at IS NULL LIMIT 1`,
+        `SELECT active_until, tier, credit_balance FROM mpflow_user WHERE id = ? AND deleted_at IS NULL LIMIT 1`,
         [session.userId],
       )
       if (result.length > 0 && result[0].active_until) {
@@ -349,12 +349,19 @@ auth.get("/me", async (c) => {
         response.subscription = {
           active: activeUntil > new Date(),
           activeUntil: result[0].active_until,
+          tier: result[0].tier || null,
+          creditBalance: result[0].credit_balance ?? 0,
         }
       } else {
-        response.subscription = { active: false, activeUntil: null }
+        response.subscription = {
+          active: false,
+          activeUntil: null,
+          tier: result.length > 0 ? (result[0].tier || null) : null,
+          creditBalance: result.length > 0 ? (result[0].credit_balance ?? 0) : 0,
+        }
       }
     } catch {
-      response.subscription = { active: false, activeUntil: null }
+      response.subscription = { active: false, activeUntil: null, tier: null, creditBalance: 0 }
     }
   }
 

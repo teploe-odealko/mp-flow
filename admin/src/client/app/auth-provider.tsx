@@ -11,6 +11,8 @@ type AuthMode = "logto" | "selfhosted" | "dev"
 interface SubscriptionInfo {
   active: boolean
   activeUntil: string | null
+  tier: string | null
+  creditBalance: number
 }
 
 interface AuthContextType {

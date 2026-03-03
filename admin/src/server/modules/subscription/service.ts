@@ -4,6 +4,8 @@ export interface SubscriptionStatus {
   active: boolean
   activeUntil: string | null
   trialDays: number | null
+  tier: string | null
+  creditBalance: number
 }
 
 export class SubscriptionService {
@@ -12,15 +14,15 @@ export class SubscriptionService {
   async getStatus(userId: string): Promise<SubscriptionStatus> {
     const conn = this.em.getConnection()
     const result = await conn.execute(
-      `SELECT active_until, created_at FROM mpflow_user WHERE id = ? AND deleted_at IS NULL LIMIT 1`,
+      `SELECT active_until, created_at, tier, credit_balance FROM mpflow_user WHERE id = ? AND deleted_at IS NULL LIMIT 1`,
       [userId],
     )
     if (result.length === 0) {
-      return { active: false, activeUntil: null, trialDays: null }
+      return { active: false, activeUntil: null, trialDays: null, tier: null, creditBalance: 0 }
     }
-    const { active_until, created_at } = result[0]
+    const { active_until, created_at, tier, credit_balance } = result[0]
     if (!active_until) {
-      return { active: false, activeUntil: null, trialDays: null }
+      return { active: false, activeUntil: null, trialDays: null, tier: tier || null, creditBalance: credit_balance ?? 0 }
     }
     const now = new Date()
     const until = new Date(active_until)
@@ -34,7 +36,7 @@ export class SubscriptionService {
       ? Math.ceil((until.getTime() - now.getTime()) / (24 * 60 * 60 * 1000))
       : null
 
-    return { active, activeUntil: active_until, trialDays }
+    return { active, activeUntil: active_until, trialDays, tier: tier || null, creditBalance: credit_balance ?? 0 }
   }
 
   async isActive(userId: string): Promise<boolean> {

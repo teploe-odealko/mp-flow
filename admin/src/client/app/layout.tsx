@@ -13,6 +13,7 @@ import {
   Wallet,
   BarChart3,
   Puzzle,
+  CreditCard,
   Settings,
   PanelLeftClose,
   PanelLeftOpen,
@@ -64,7 +65,7 @@ const SIDEBAR_KEY = "mpflow-sidebar-collapsed"
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation()
-  const { user, logout } = useAuth()
+  const { user, logout, authMode, subscription } = useAuth()
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem(SIDEBAR_KEY) === "1" } catch { return false }
   })
@@ -149,11 +150,28 @@ export function Layout({ children }: { children: React.ReactNode }) {
           )}
           <div className="border-t border-bg-border my-2" />
           <NavLink path="/plugins" label="Плагины" icon={Puzzle} active={pathname.startsWith("/plugins")} collapsed={collapsed} />
+          <NavLink path="/billing" label="Биллинг" icon={CreditCard} active={pathname.startsWith("/billing")} collapsed={collapsed} />
           <NavLink path="/settings" label="Настройки" icon={Settings} active={pathname.startsWith("/settings")} collapsed={collapsed} />
         </nav>
 
-        {/* Bottom: Docs + User */}
+        {/* Bottom: Credits + Docs + User */}
         <div className="border-t border-bg-border">
+          {/* Credit balance (cloud mode only) */}
+          {authMode === "logto" && subscription && (
+            <Link
+              to="/billing"
+              title={collapsed ? `${subscription.creditBalance ?? 0} кредитов` : undefined}
+              className={`flex items-center gap-3 px-3 py-2.5 text-sm text-text-muted hover:text-text-secondary transition-colors ${
+                collapsed ? "justify-center" : ""
+              }`}
+            >
+              <CreditCard size={18} strokeWidth={1.8} className="shrink-0" />
+              {!collapsed && (
+                <span>{subscription.creditBalance ?? 0} кр.</span>
+              )}
+            </Link>
+          )}
+
           {/* Docs link */}
           <a
             href="https://docs.mp-flow.ru"

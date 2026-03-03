@@ -20,7 +20,7 @@ export function isDevMode(): boolean {
 }
 
 // Paths that bypass auth (have their own protection)
-const AUTH_SKIP_PATHS = ["/api/subscription/grant"]
+const AUTH_SKIP_PATHS = ["/api/subscription/grant", "/api/billing/credits/topup"]
 
 export function authMiddleware(orm?: MikroORM): MiddlewareHandler {
   return async (c: Context, next) => {

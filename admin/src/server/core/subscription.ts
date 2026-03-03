@@ -3,7 +3,7 @@ import { getAuthMode } from "./auth.js"
 import { getSession } from "./session.js"
 import type { SubscriptionService } from "../modules/subscription/service.js"
 
-const SKIP_PREFIXES = ["/auth/", "/api/health", "/api/subscription"]
+const SKIP_PREFIXES = ["/auth/", "/api/health", "/api/subscription", "/api/billing", "/api/api-keys"]
 
 export function subscriptionMiddleware(): MiddlewareHandler {
   return async (c, next) => {

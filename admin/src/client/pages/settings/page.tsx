@@ -1,7 +1,6 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { apiGet, apiPost, apiDelete } from "../../lib/api"
-import { useAuth } from "../../app/auth-provider"
 import { Key, Plus, Trash2, Copy, Check, ExternalLink } from "lucide-react"
 
 interface ApiKeyItem {
@@ -288,50 +287,6 @@ function PlaygroundSection() {
   )
 }
 
-// ── Subscription Section ──
-
-function SubscriptionSection() {
-  const { subscription, authMode } = useAuth()
-
-  // Only show subscription info in cloud (logto) mode
-  if (authMode !== "logto") return null
-
-  return (
-    <section>
-      <h2 className="text-lg font-semibold text-text-primary mb-1">Подписка</h2>
-      {subscription ? (
-        <div className="p-4 bg-bg-surface border border-bg-border rounded-lg">
-          <div className="flex items-center gap-3">
-            <span
-              className={`inline-block w-2.5 h-2.5 rounded-full ${
-                subscription.active ? "bg-inflow" : "bg-outflow"
-              }`}
-            />
-            <span className="text-sm text-text-primary">
-              {subscription.active ? "Активна" : "Не активна"}
-            </span>
-          </div>
-          {subscription.activeUntil && (
-            <p className="text-sm text-text-muted mt-2">
-              Действует до: {fmtDate(subscription.activeUntil)}
-            </p>
-          )}
-          {!subscription.active && (
-            <p className="text-sm text-text-muted mt-2">
-              Для продления подписки обратитесь в{" "}
-              <a href="https://t.me/teploe_odealko" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
-                Telegram
-              </a>
-            </p>
-          )}
-        </div>
-      ) : (
-        <p className="text-sm text-text-muted">Информация о подписке недоступна</p>
-      )}
-    </section>
-  )
-}
-
 // ── Settings Page ──
 
 export default function SettingsPage() {
@@ -345,7 +300,6 @@ export default function SettingsPage() {
         <McpSection />
         <div className="border-t border-bg-border" />
         <PlaygroundSection />
-        <SubscriptionSection />
       </div>
     </div>
   )

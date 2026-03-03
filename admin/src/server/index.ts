@@ -25,6 +25,7 @@ import pluginsRoutes from "./routes/plugins.js"
 import columnDocsRoutes from "./routes/column-docs.js"
 import subscriptionRoutes from "./routes/subscription.js"
 import apiKeysRoutes from "./routes/api-keys.js"
+import billingRoutes from "./routes/billing.js"
 import { createMcpHandler } from "./mcp/server.js"
 import { CORE_TOOLS } from "./mcp/tools.js"
 import { generateOpenApiSpec } from "./mcp/openapi.js"
@@ -116,8 +117,8 @@ async function main() {
     await next()
   })
 
-  // TODO: Subscription check — disabled until billing is ready
-  // app.use("/api/*", subscriptionMiddleware())
+  // Subscription check (only enforced in logto/cloud mode)
+  app.use("/api/*", subscriptionMiddleware())
 
   // Middleware: block API requests to disabled plugins
   app.use("/api/*", async (c, next) => {
@@ -156,6 +157,7 @@ async function main() {
   app.route("/api/column-docs", columnDocsRoutes)
   app.route("/api/subscription", subscriptionRoutes)
   app.route("/api/api-keys", apiKeysRoutes)
+  app.route("/api/billing", billingRoutes)
   app.route("/auth", authRoutes)
 
   // Collect MCP tools & resources from plugins

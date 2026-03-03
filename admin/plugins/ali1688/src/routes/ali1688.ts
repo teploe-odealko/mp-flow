@@ -1,7 +1,8 @@
 import { Hono } from "hono"
-import { getUserId } from "../../../../src/server/core/auth.js"
+import { getUserId, getAuthMode } from "../../../../src/server/core/auth.js"
 import type { Ali1688Service } from "../services/ali1688-service.js"
 import type { MasterCardService } from "../../../../src/server/modules/master-card/service.js"
+import type { CreditService } from "../../../../src/server/modules/credit/service.js"
 import { fetchAndParse1688Item } from "../services/tmapi-client.js"
 
 const ali1688 = new Hono<{ Variables: Record<string, any> }>()
@@ -11,10 +12,34 @@ ali1688.post("/preview", async (c) => {
   const { url } = await c.req.json()
   if (!url) return c.json({ error: "URL is required" }, 400)
 
+  // Cloud mode: deduct credits before expensive API call
+  let creditService: CreditService | null = null
+  let userId: string | null = null
+  if (getAuthMode() === "logto") {
+    userId = getUserId(c)
+    creditService = c.get("container").resolve("creditService") as CreditService
+    const result = await creditService!.deduct(
+      userId,
+      1,
+      "mpflow-plugin-ali1688",
+      "tmapi_item_detail",
+      "Поиск товара на 1688",
+    )
+    if (!result.success) {
+      return c.json({ error: "Недостаточно кредитов", balance: result.balance }, 402)
+    }
+  }
+
   try {
     const item = await fetchAndParse1688Item(url)
     return c.json({ item })
   } catch (err: any) {
+    // Refund credits on server error
+    if (creditService && userId) {
+      try {
+        await creditService.topUp(userId, 1, "refund", `Ошибка TMAPI: ${err.message.slice(0, 100)}`)
+      } catch {}
+    }
     return c.json({ error: err.message }, 500)
   }
 })

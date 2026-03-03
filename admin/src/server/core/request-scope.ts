@@ -8,6 +8,7 @@ import { SaleService } from "../modules/sale/service.js"
 import { PluginSettingService } from "../modules/plugin-setting/service.js"
 import { ProcurementService } from "../modules/procurement/service.js"
 import { SubscriptionService } from "../modules/subscription/service.js"
+import { CreditService } from "../modules/credit/service.js"
 
 /**
  * Create a request-scoped DI container with a fresh EntityManager fork.
@@ -25,6 +26,7 @@ export function createRequestScope(container: AwilixContainer, orm: MikroORM) {
     pluginSettingService: asValue(new PluginSettingService(em)),
     procurementService: asValue(new ProcurementService(em)),
     subscriptionService: asValue(new SubscriptionService(em)),
+    creditService: asValue(new CreditService(em)),
   })
   return { scope, em }
 }
