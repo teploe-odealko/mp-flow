@@ -38,6 +38,7 @@ export default function Ali1688Tab({ productId, onRefresh }: MasterCardTabProps)
   const [preview, setPreview] = useState<PreviewData | null>(null)
   const [selectedSku, setSelectedSku] = useState<Sku | null>(null)
   const [previewError, setPreviewError] = useState("")
+  const [isAutoRefreshing, setIsAutoRefreshing] = useState(false)
 
   // Load existing link
   const { data: linkData, isLoading } = useQuery({
@@ -60,6 +61,7 @@ export default function Ali1688Tab({ productId, onRefresh }: MasterCardTabProps)
     onError: (err: Error) => {
       setPreviewError(err.message)
       setPreview(null)
+      setIsAutoRefreshing(false)
     },
   })
 
@@ -71,8 +73,10 @@ export default function Ali1688Tab({ productId, onRefresh }: MasterCardTabProps)
       setPreview(null)
       setUrl("")
       setSelectedSku(null)
+      setIsAutoRefreshing(false)
       onRefresh()
     },
+    onError: () => setIsAutoRefreshing(false),
   })
 
   // Unlink mutation
@@ -84,6 +88,26 @@ export default function Ali1688Tab({ productId, onRefresh }: MasterCardTabProps)
     },
   })
 
+  /** Shared pipeline: build link body from fresh preview + selected SKU */
+  function buildLinkBody(freshPreview: PreviewData, sku: Sku | null) {
+    const skuPrice = sku?.price ?? (freshPreview.price_min ? Number(freshPreview.price_min) : null)
+    return {
+      master_card_id: productId,
+      url: freshPreview.url || url.trim(),
+      item_id: freshPreview.item_id || "",
+      sku_id: sku?.sku_id || null,
+      sku_name: sku?.name || null,
+      sku_image: sku?.image || (freshPreview.images[0] || null),
+      sku_price: skuPrice,
+      supplier_name: freshPreview.supplier_name,
+      title: freshPreview.title,
+      images: freshPreview.images,
+      price_tiers: freshPreview.price_tiers,
+      currency: freshPreview.currency || "CNY",
+      raw_data: freshPreview,
+    }
+  }
+
   function handlePreview() {
     if (!url.trim()) return
     previewMutation.mutate(url.trim())
@@ -91,35 +115,26 @@ export default function Ali1688Tab({ productId, onRefresh }: MasterCardTabProps)
 
   function handleLink() {
     if (!preview) return
-    const skuPrice = selectedSku?.price ?? (preview.price_min ? Number(preview.price_min) : null)
-    linkMutation.mutate({
-      master_card_id: productId,
-      url: preview.url || url.trim(),
-      item_id: preview.item_id || "",
-      sku_id: selectedSku?.sku_id || null,
-      sku_name: selectedSku?.name || null,
-      sku_image: selectedSku?.image || (preview.images[0] || null),
-      sku_price: skuPrice,
-      supplier_name: preview.supplier_name,
-      title: preview.title,
-      images: preview.images,
-      price_tiers: preview.price_tiers,
-      currency: preview.currency || "CNY",
-      raw_data: preview,
-    })
+    linkMutation.mutate(buildLinkBody(preview, selectedSku))
   }
 
-  // Refresh: re-fetch preview from saved link URL, then show SKU picker to re-link
+  /** Auto-refresh: fetch fresh data and immediately re-save with same SKU */
   function handleRefresh() {
     if (!link?.url) return
-    setUrl(link.url)
-    previewMutation.mutate(link.url)
+    setIsAutoRefreshing(true)
+    previewMutation.mutate(link.url, {
+      onSuccess: (data) => {
+        const freshPreview: PreviewData = data.item
+        const matchedSku = freshPreview.skus.find((s: Sku) => s.sku_id === link.sku_id) || null
+        linkMutation.mutate(buildLinkBody(freshPreview, matchedSku))
+      },
+    })
   }
 
   if (isLoading) return <p className="text-text-secondary text-sm">Загрузка...</p>
 
-  // Linked state (no active preview — show linked info + refresh/unlink buttons)
-  if (link && !preview) {
+  // Linked state: no active preview, or auto-refresh in progress (suppress picker)
+  if (link && (!preview || isAutoRefreshing)) {
     return (
       <div>
         <div className="bg-bg-surface rounded border border-bg-border p-4">
@@ -155,10 +170,10 @@ export default function Ali1688Tab({ productId, onRefresh }: MasterCardTabProps)
           <div className="flex gap-3 mt-3">
             <button
               onClick={handleRefresh}
-              disabled={previewMutation.isPending}
-              className="text-sm text-accent hover:text-accent-dark"
+              disabled={isAutoRefreshing}
+              className="text-sm text-accent hover:text-accent-dark disabled:opacity-50"
             >
-              {previewMutation.isPending ? "Загрузка..." : "Обновить"}
+              {previewMutation.isPending ? "Загружаю..." : linkMutation.isPending && isAutoRefreshing ? "Сохраняю..." : "Обновить цены"}
             </button>
             <button
               onClick={() => unlinkMutation.mutate(link.id)}
