@@ -22,6 +22,7 @@ plugins.get("/", async (c) => {
     is_enabled: settingsMap.get(p.name) ?? true,
     adminNav: p.adminNav || [],
     apiPrefixes: p.apiPrefixes || [],
+    billing: p.billing || null,
   }))
 
   const mode = process.env.MPFLOW_CLOUD === "true" ? "cloud" : "selfhosted"

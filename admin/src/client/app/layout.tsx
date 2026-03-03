@@ -160,14 +160,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
           {authMode === "logto" && subscription && (
             <Link
               to="/billing"
-              title={collapsed ? `${subscription.creditBalance ?? 0} кредитов` : undefined}
+              title={collapsed ? `${subscription.creditBalance ?? 0} токенов` : undefined}
               className={`flex items-center gap-3 px-3 py-2.5 text-sm text-text-muted hover:text-text-secondary transition-colors ${
                 collapsed ? "justify-center" : ""
               }`}
             >
               <CreditCard size={18} strokeWidth={1.8} className="shrink-0" />
               {!collapsed && (
-                <span>{subscription.creditBalance ?? 0} кр.</span>
+                <span>{subscription.creditBalance ?? 0} тк.</span>
               )}
             </Link>
           )}

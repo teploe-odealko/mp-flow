@@ -1,6 +1,17 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
 import { apiGet, apiPost } from "../../lib/api"
+import { X, Coins, ChevronRight } from "lucide-react"
+
+interface BillableOp {
+  name: string
+  description: string
+  creditCost: number
+}
+
+interface PluginBilling {
+  operations: BillableOp[]
+}
 
 interface PluginInfo {
   name: string
@@ -9,6 +20,7 @@ interface PluginInfo {
   is_enabled: boolean
   adminNav: Array<{ path: string; label: string }>
   apiPrefixes: string[]
+  billing: PluginBilling | null
 }
 
 interface PluginsResponse {
@@ -16,9 +28,137 @@ interface PluginsResponse {
   mode: "cloud" | "selfhosted"
 }
 
+// ── Plugin Detail Sidebar ──
+
+function PluginDetail({ plugin, onClose }: { plugin: PluginInfo; onClose: () => void }) {
+  const ops = plugin.billing?.operations ?? []
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+
+      {/* Sidebar */}
+      <div className="relative w-full max-w-md bg-bg-deep border-l border-bg-border overflow-y-auto">
+        {/* Header */}
+        <div className="sticky top-0 bg-bg-deep border-b border-bg-border px-6 py-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-text-primary">{plugin.label}</h2>
+          <button
+            onClick={onClose}
+            className="p-1 text-text-muted hover:text-text-secondary rounded transition-colors"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-6">
+          {/* Plugin ID */}
+          <div>
+            <p className="text-xs text-text-muted mb-1">ID плагина</p>
+            <code className="text-sm text-accent">{plugin.name}</code>
+          </div>
+
+          {/* Description */}
+          {plugin.description && (
+            <div>
+              <p className="text-xs text-text-muted mb-1">Описание</p>
+              <p className="text-sm text-text-secondary">{plugin.description}</p>
+            </div>
+          )}
+
+          {/* Status */}
+          <div>
+            <p className="text-xs text-text-muted mb-1">Статус</p>
+            <span
+              className={`inline-flex items-center text-sm px-2.5 py-1 rounded ${
+                plugin.is_enabled
+                  ? "bg-green-500/10 text-green-400"
+                  : "bg-red-500/10 text-red-400"
+              }`}
+            >
+              {plugin.is_enabled ? "Включён" : "Отключён"}
+            </span>
+          </div>
+
+          {/* API endpoints */}
+          {plugin.apiPrefixes.length > 0 && (
+            <div>
+              <p className="text-xs text-text-muted mb-2">API эндпоинты</p>
+              <div className="space-y-1">
+                {plugin.apiPrefixes.map((prefix) => (
+                  <code key={prefix} className="block text-xs text-text-secondary bg-bg-surface px-2 py-1 rounded">
+                    {prefix}
+                  </code>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Navigation */}
+          {plugin.adminNav.length > 0 && (
+            <div>
+              <p className="text-xs text-text-muted mb-2">Страницы</p>
+              <div className="space-y-1">
+                {plugin.adminNav.map((nav) => (
+                  <div key={nav.path} className="text-sm text-text-secondary">
+                    {nav.label} <span className="text-text-muted text-xs">({nav.path})</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Billing / Tariffs */}
+          {ops.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Coins size={16} className="text-accent" />
+                <p className="text-sm font-medium text-text-primary">Тарифы</p>
+              </div>
+              <div className="bg-bg-surface border border-bg-border rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-bg-border text-text-muted text-left">
+                      <th className="px-3 py-2 font-medium">Операция</th>
+                      <th className="px-3 py-2 font-medium text-right">Токенов</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ops.map((op) => (
+                      <tr key={op.name} className="border-b border-bg-border last:border-0">
+                        <td className="px-3 py-2">
+                          <span className="text-text-primary">{op.description}</span>
+                          <span className="block text-[10px] text-text-muted mt-0.5">{op.name}</span>
+                        </td>
+                        <td className="px-3 py-2 text-right font-medium text-accent">{op.creditCost}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-[10px] text-text-muted mt-2">
+                Токены списываются только в облачной версии. В self-hosted используются ваши API ключи.
+              </p>
+            </div>
+          )}
+
+          {ops.length === 0 && (
+            <div className="text-sm text-text-muted bg-bg-surface border border-bg-border rounded-lg px-3 py-2">
+              Бесплатный плагин — токены не расходуются.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Plugins Page ──
+
 export default function PluginsPage() {
   const queryClient = useQueryClient()
   const [installPkg, setInstallPkg] = useState("")
+  const [selectedPlugin, setSelectedPlugin] = useState<PluginInfo | null>(null)
 
   const { data, isLoading } = useQuery<PluginsResponse>({
     queryKey: ["plugins"],
@@ -57,16 +197,28 @@ export default function PluginsPage() {
           {plugins.map((plugin) => (
             <div
               key={plugin.name}
-              className="flex items-center justify-between bg-bg-surface border border-bg-border rounded-lg p-4"
+              className="flex items-center justify-between bg-bg-surface border border-bg-border rounded-lg p-4 cursor-pointer hover:bg-bg-elevated/50 transition-colors"
+              onClick={() => setSelectedPlugin(plugin)}
             >
-              <div>
-                <h3 className="font-medium">{plugin.label}</h3>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-medium">{plugin.label}</h3>
+                  {plugin.billing?.operations?.length ? (
+                    <span className="text-[10px] text-accent bg-accent/10 px-1.5 py-0.5 rounded">
+                      {plugin.billing.operations.length} платн. операц.
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-text-muted bg-bg-elevated px-1.5 py-0.5 rounded">
+                      бесплатный
+                    </span>
+                  )}
+                </div>
                 {plugin.description && (
                   <p className="text-sm text-text-secondary mt-0.5">{plugin.description}</p>
                 )}
                 <p className="text-xs text-text-muted mt-1">{plugin.name}</p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 ml-4">
                 <span
                   className={`text-xs px-2 py-0.5 rounded ${
                     plugin.is_enabled
@@ -77,12 +229,13 @@ export default function PluginsPage() {
                   {plugin.is_enabled ? "Включён" : "Отключён"}
                 </span>
                 <button
-                  onClick={() =>
+                  onClick={(e) => {
+                    e.stopPropagation()
                     toggleMutation.mutate({
                       name: plugin.name,
                       is_enabled: !plugin.is_enabled,
                     })
-                  }
+                  }}
                   disabled={toggleMutation.isPending}
                   className={`relative w-11 h-6 rounded-full transition-colors ${
                     plugin.is_enabled ? "bg-accent" : "bg-bg-elevated"
@@ -94,6 +247,7 @@ export default function PluginsPage() {
                     }`}
                   />
                 </button>
+                <ChevronRight size={16} className="text-text-muted" />
               </div>
             </div>
           ))}
@@ -130,6 +284,14 @@ export default function PluginsPage() {
             </p>
           )}
         </div>
+      )}
+
+      {/* Detail Sidebar */}
+      {selectedPlugin && (
+        <PluginDetail
+          plugin={selectedPlugin}
+          onClose={() => setSelectedPlugin(null)}
+        />
       )}
     </div>
   )

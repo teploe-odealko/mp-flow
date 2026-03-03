@@ -57,14 +57,14 @@ function fmtDateTime(iso: string | null) {
   })
 }
 
-const TIER_LABELS: Record<string, string> = {
-  core: "Core",
-  plus: "Plus",
-}
-
 function tierLabel(tier: string | null): string {
   if (!tier) return "Trial"
-  return TIER_LABELS[tier] || tier
+  if (tier === "core" || tier === "plus") return "Core"
+  return tier
+}
+
+function pricePerToken(pkg: CreditPackage): string {
+  return (pkg.price_rub / pkg.credits).toFixed(2)
 }
 
 // ── Subscription Section ──
@@ -74,7 +74,7 @@ function SubscriptionSection() {
 
   return (
     <section>
-      <h2 className="text-lg font-semibold text-text-primary mb-3">Тариф</h2>
+      <h2 className="text-lg font-semibold text-text-primary mb-3">Подписка</h2>
       <div className="p-4 bg-bg-surface border border-bg-border rounded-lg">
         <div className="flex items-center gap-3 mb-3">
           <span
@@ -86,6 +86,9 @@ function SubscriptionSection() {
             {tierLabel(subscription?.tier ?? null)}
           </span>
           <span className="text-sm text-text-muted">
+            — 300 ₽/мес
+          </span>
+          <span className={`text-xs px-2 py-0.5 rounded ${subscription?.active ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"}`}>
             {subscription?.active ? "Активна" : "Не активна"}
           </span>
         </div>
@@ -94,8 +97,12 @@ function SubscriptionSection() {
             Действует до: {fmtDate(subscription.activeUntil)}
           </p>
         )}
+        <p className="text-xs text-text-muted mt-3">
+          Включает все функции ядра: каталог, склад, поставки, продажи, финансы, аналитику.
+          Токены для плагинов приобретаются отдельно.
+        </p>
         <p className="text-sm text-text-muted mt-2">
-          Для изменения тарифа обратитесь в{" "}
+          Для изменения подписки обратитесь в{" "}
           <a
             href="https://t.me/teploe_odealko"
             target="_blank"
@@ -133,12 +140,12 @@ function CreditBalanceSection() {
 
   return (
     <section>
-      <h2 className="text-lg font-semibold text-text-primary mb-3">Кредиты</h2>
+      <h2 className="text-lg font-semibold text-text-primary mb-3">Токены</h2>
       <div className="p-4 bg-bg-surface border border-bg-border rounded-lg">
         <div className="flex items-center gap-3 mb-3">
           <CreditCard size={24} className="text-accent shrink-0" />
           <span className="text-2xl font-bold text-text-primary">{balance}</span>
-          <span className="text-sm text-text-muted">кредитов</span>
+          <span className="text-sm text-text-muted">токенов</span>
         </div>
 
         {usedThisMonth > 0 && (
@@ -150,22 +157,24 @@ function CreditBalanceSection() {
         {packages.length > 0 && (
           <div>
             <p className="text-sm text-text-muted mb-2">Пополнить баланс:</p>
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-3 flex-wrap">
               {packages.map((pkg) => (
                 <a
                   key={pkg.id}
                   href="https://t.me/teploe_odealko"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-2 text-sm bg-bg-elevated border border-bg-border rounded-lg hover:border-accent hover:text-accent transition-colors"
+                  className="flex flex-col items-center px-4 py-3 text-sm bg-bg-elevated border border-bg-border rounded-lg hover:border-accent transition-colors min-w-[120px]"
                 >
-                  <span className="font-medium">{pkg.credits}</span>
-                  <span className="text-text-muted">за {pkg.price_rub} ₽</span>
+                  <span className="text-lg font-bold text-text-primary">{pkg.credits}</span>
+                  <span className="text-text-muted text-xs mb-1">токенов</span>
+                  <span className="font-medium text-accent">{pkg.price_rub} ₽</span>
+                  <span className="text-text-muted text-[10px] mt-0.5">{pricePerToken(pkg)} ₽/токен</span>
                 </a>
               ))}
             </div>
             <p className="text-xs text-text-muted mt-2">
-              Чем больше пакет, тем выгоднее цена за кредит
+              Чем больше пакет, тем выгоднее цена за токен
             </p>
           </div>
         )}
@@ -204,7 +213,7 @@ function UsageStatsSection() {
               <tr className="border-b border-bg-border text-text-muted text-left">
                 <th className="px-4 py-2 font-medium">Операция</th>
                 <th className="px-4 py-2 font-medium text-right">Вызовов</th>
-                <th className="px-4 py-2 font-medium text-right">Кредитов</th>
+                <th className="px-4 py-2 font-medium text-right">Токенов</th>
               </tr>
             </thead>
             <tbody>
@@ -264,7 +273,7 @@ function HistorySection() {
             <tr className="border-b border-bg-border text-text-muted text-left">
               <th className="px-4 py-2 font-medium">Дата</th>
               <th className="px-4 py-2 font-medium">Операция</th>
-              <th className="px-4 py-2 font-medium text-right">Кредиты</th>
+              <th className="px-4 py-2 font-medium text-right">Токены</th>
               <th className="px-4 py-2 font-medium text-right">Баланс</th>
             </tr>
           </thead>
@@ -324,7 +333,7 @@ function OperationsSection() {
             <tr className="border-b border-bg-border text-text-muted text-left">
               <th className="px-4 py-2 font-medium">Плагин</th>
               <th className="px-4 py-2 font-medium">Операция</th>
-              <th className="px-4 py-2 font-medium text-right">Кредитов</th>
+              <th className="px-4 py-2 font-medium text-right">Токенов</th>
             </tr>
           </thead>
           <tbody>
