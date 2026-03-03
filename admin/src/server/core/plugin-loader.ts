@@ -2,6 +2,8 @@ import type { Hono } from "hono"
 import type { AwilixContainer } from "awilix"
 import type { MikroORM } from "@mikro-orm/core"
 import type { PluginColumnDocContribution } from "../../shared/column-docs.js"
+import type { ApiTool } from "../mcp/tools.js"
+import type { McpResourceDef } from "../mcp/server.js"
 import { asClass, Lifetime, InjectionMode } from "awilix"
 import { readdirSync, existsSync } from "node:fs"
 import { join, basename } from "node:path"
@@ -23,6 +25,8 @@ export interface PluginDefinition {
   adminNav?: Array<{ path: string; label: string }>
   apiPrefixes?: string[]
   columnDocs?: PluginColumnDocContribution[]
+  mcpTools?: ApiTool[]
+  mcpResources?: McpResourceDef[]
 }
 
 const loadedPlugins = new Map<string, PluginDefinition>()
@@ -166,6 +170,29 @@ async function discoverColumnDocs(
   return mod.default
 }
 
+async function discoverMcp(
+  pluginDir: string,
+): Promise<{ mcpTools?: ApiTool[]; mcpResources?: McpResourceDef[] } | undefined> {
+  // Look for src/mcp/*-mcp.ts or src/mcp/index.ts
+  const mcpDir = join(pluginDir, "src", "mcp")
+  if (!existsSync(mcpDir)) return undefined
+  const files = scanDir(mcpDir).filter((f) => !f.includes("api-reference"))
+  let tools: ApiTool[] = []
+  let resources: McpResourceDef[] = []
+  for (const file of files) {
+    const mod = await import(file)
+    if (mod.OZON_MCP_TOOLS || mod.mcpTools) tools.push(...(mod.OZON_MCP_TOOLS || mod.mcpTools || []))
+    if (mod.getOzonMcpResources) resources.push(...mod.getOzonMcpResources())
+    if (mod.getMcpResources) resources.push(...mod.getMcpResources())
+    if (mod.mcpResources) resources.push(...mod.mcpResources)
+  }
+  if (tools.length === 0 && resources.length === 0) return undefined
+  return {
+    mcpTools: tools.length > 0 ? tools : undefined,
+    mcpResources: resources.length > 0 ? resources : undefined,
+  }
+}
+
 // ── Registration helper ──
 
 function registerMiddleware(app: Hono<any>, middleware: PluginMiddleware[]) {
@@ -273,6 +300,17 @@ export async function loadPlugins(
       // ── Column Docs ──
       if (!plugin.columnDocs && pluginDir) {
         plugin.columnDocs = await discoverColumnDocs(pluginDir)
+      }
+
+      // ── MCP Tools & Resources ──
+      if (!plugin.mcpTools && !plugin.mcpResources && pluginDir) {
+        const mcp = await discoverMcp(pluginDir)
+        if (mcp) {
+          plugin.mcpTools = mcp.mcpTools
+          plugin.mcpResources = mcp.mcpResources
+          if (mcp.mcpTools) console.log(`[plugin] ${plugin.name}: ${mcp.mcpTools.length} MCP tools`)
+          if (mcp.mcpResources) console.log(`[plugin] ${plugin.name}: ${mcp.mcpResources.length} MCP resources`)
+        }
       }
 
       // ── API Prefixes ──

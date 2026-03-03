@@ -158,8 +158,14 @@ async function main() {
   app.route("/api/api-keys", apiKeysRoutes)
   app.route("/auth", authRoutes)
 
+  // Collect MCP tools & resources from plugins
+  const pluginMcpTools = getLoadedPlugins().flatMap((p) => p.mcpTools || [])
+  const pluginMcpResources = getLoadedPlugins().flatMap((p) => p.mcpResources || [])
+  if (pluginMcpTools.length > 0) console.log(`[mpflow] ${pluginMcpTools.length} plugin MCP tools`)
+  if (pluginMcpResources.length > 0) console.log(`[mpflow] ${pluginMcpResources.length} plugin MCP resources`)
+
   // MCP endpoint (Streamable HTTP)
-  const mcpHandler = createMcpHandler(app.fetch.bind(app))
+  const mcpHandler = createMcpHandler(app.fetch.bind(app), pluginMcpTools, pluginMcpResources)
   app.all("/mcp", mcpHandler)
 
   // OpenAPI spec + Scalar playground

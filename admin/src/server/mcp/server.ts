@@ -1,4 +1,4 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
 import { z } from "zod"
 import { randomUUID } from "node:crypto"
@@ -6,6 +6,14 @@ import type { Context } from "hono"
 import { CORE_TOOLS, type ApiTool, type ApiToolParam } from "./tools.js"
 
 type AppFetch = (request: Request) => Response | Promise<Response>
+
+export interface McpResourceDef {
+  uri: string
+  name: string
+  description: string
+  mimeType: string
+  text: string
+}
 
 /**
  * Build Zod shape from ApiTool params descriptor
@@ -115,6 +123,22 @@ function registerTools(server: McpServer, tools: ApiTool[], appFetch: AppFetch) 
   }
 }
 
+/**
+ * Register static resources on the MCP server
+ */
+function registerResources(server: McpServer, resources: McpResourceDef[]) {
+  for (const res of resources) {
+    server.resource(
+      res.name,
+      res.uri,
+      { description: res.description, mimeType: res.mimeType },
+      async () => ({
+        contents: [{ uri: res.uri, mimeType: res.mimeType, text: res.text }],
+      }),
+    )
+  }
+}
+
 // Session management for stateful MCP connections
 const sessions = new Map<string, WebStandardStreamableHTTPServerTransport>()
 
@@ -129,8 +153,18 @@ function extractToken(req: Request): string | undefined {
 /**
  * Create a Hono handler for the /mcp endpoint (Streamable HTTP transport)
  */
-export function createMcpHandler(appFetch: AppFetch, extraTools?: ApiTool[]) {
+export function createMcpHandler(
+  appFetch: AppFetch,
+  extraTools?: ApiTool[],
+  resources?: McpResourceDef[],
+) {
   const allTools = [...CORE_TOOLS, ...(extraTools || [])]
+  const allResources = resources || []
+
+  const capabilities: Record<string, Record<string, unknown>> = { tools: {} }
+  if (allResources.length > 0) {
+    capabilities.resources = {}
+  }
 
   return async (c: Context): Promise<Response> => {
     const sessionId = c.req.header("mcp-session-id")
@@ -156,10 +190,13 @@ export function createMcpHandler(appFetch: AppFetch, extraTools?: ApiTool[]) {
 
     const server = new McpServer(
       { name: "mpflow", version: "1.0.0" },
-      { capabilities: { tools: {} } },
+      { capabilities },
     )
 
     registerTools(server, allTools, appFetch)
+    if (allResources.length > 0) {
+      registerResources(server, allResources)
+    }
     await server.connect(transport)
 
     const token = extractToken(c.req.raw)
