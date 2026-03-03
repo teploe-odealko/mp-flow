@@ -93,8 +93,8 @@ export default function Ali1688Tab({ productId, onRefresh }: MasterCardTabProps)
     const skuPrice = sku?.price ?? (freshPreview.price_min ? Number(freshPreview.price_min) : null)
     return {
       master_card_id: productId,
-      url: freshPreview.url || url.trim(),
-      item_id: freshPreview.item_id || "",
+      url: freshPreview.url || url.trim() || link?.url || "",
+      item_id: freshPreview.item_id || link?.item_id || "",
       sku_id: sku?.sku_id || null,
       sku_name: sku?.name || null,
       sku_image: sku?.image || (freshPreview.images[0] || null),
