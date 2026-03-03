@@ -177,6 +177,19 @@ export default function Ali1688Tab({ productId, onRefresh }: MasterCardTabProps)
         <div>
           {/* Item info */}
           <div className="mb-4 bg-bg-surface rounded border border-bg-border p-3">
+            {/* Images gallery */}
+            {preview.images.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto mb-3 pb-1">
+                {preview.images.slice(0, 6).map((img, i) => (
+                  <img
+                    key={i}
+                    src={img}
+                    alt=""
+                    className="w-20 h-20 object-cover rounded border border-bg-border shrink-0"
+                  />
+                ))}
+              </div>
+            )}
             <div className="text-sm font-medium mb-1">{preview.title || "—"}</div>
             {preview.supplier_name && (
               <div className="text-text-secondary text-xs">Поставщик: {preview.supplier_name}</div>
@@ -197,44 +210,40 @@ export default function Ali1688Tab({ productId, onRefresh }: MasterCardTabProps)
                 Выберите вариант ({preview.skus.length} шт.)
               </div>
               <div className="grid grid-cols-3 gap-2 max-h-[400px] overflow-y-auto">
-                {preview.skus.map((sku) => (
-                  <button
-                    key={sku.sku_id}
-                    type="button"
-                    onClick={() => setSelectedSku(sku)}
-                    className={`text-left p-2 rounded border transition-colors ${
-                      selectedSku?.sku_id === sku.sku_id
-                        ? "border-accent bg-accent/10"
-                        : "border-bg-border bg-bg-surface hover:border-text-muted"
-                    }`}
-                  >
-                    {sku.image && (
-                      <img
-                        src={sku.image}
-                        alt=""
-                        className="w-full aspect-square object-cover rounded mb-1.5"
-                      />
-                    )}
-                    <div className="text-xs truncate">{sku.name}</div>
-                    {sku.price != null && (
-                      <div className="text-accent text-xs font-medium">{sku.price.toFixed(2)} CNY</div>
-                    )}
-                    {sku.stock != null && (
-                      <div className="text-text-muted text-[10px]">Остаток: {sku.stock}</div>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* No SKUs — show images */}
-          {preview.skus.length === 0 && preview.images.length > 0 && (
-            <div className="mb-4">
-              <div className="flex gap-2 overflow-x-auto">
-                {preview.images.slice(0, 5).map((img, i) => (
-                  <img key={i} src={img} alt="" className="w-20 h-20 object-cover rounded border border-bg-border shrink-0" />
-                ))}
+                {preview.skus.map((sku) => {
+                  const imgSrc = sku.image || preview.images[0] || null
+                  return (
+                    <button
+                      key={sku.sku_id}
+                      type="button"
+                      onClick={() => setSelectedSku(sku)}
+                      className={`text-left p-2 rounded border transition-colors ${
+                        selectedSku?.sku_id === sku.sku_id
+                          ? "border-accent bg-accent/10"
+                          : "border-bg-border bg-bg-surface hover:border-text-muted"
+                      }`}
+                    >
+                      {imgSrc ? (
+                        <img
+                          src={imgSrc}
+                          alt=""
+                          className="w-full aspect-square object-cover rounded mb-1.5"
+                        />
+                      ) : (
+                        <div className="w-full aspect-square rounded mb-1.5 bg-bg-deep flex items-center justify-center">
+                          <span className="text-text-muted text-[10px]">нет фото</span>
+                        </div>
+                      )}
+                      <div className="text-xs truncate">{sku.name}</div>
+                      {sku.price != null && (
+                        <div className="text-accent text-xs font-medium">{sku.price.toFixed(2)} CNY</div>
+                      )}
+                      {sku.stock != null && (
+                        <div className="text-text-muted text-[10px]">Остаток: {sku.stock}</div>
+                      )}
+                    </button>
+                  )
+                })}
               </div>
             </div>
           )}
