@@ -148,7 +148,7 @@ export default function CatalogDetailPage() {
       {activeTab === 0 && (
         <div>
           {/* Edit form */}
-          <div className="grid grid-cols-2 gap-4 mb-6">
+          <div className="grid grid-cols-2 gap-4 mb-4">
             <div className="col-span-2">
               <label className="text-text-secondary text-xs block mb-1">Название</label>
               <input
@@ -157,27 +157,6 @@ export default function CatalogDetailPage() {
                 onChange={(e) => setTitle(e.target.value)}
                 className="w-full px-3 py-2 bg-bg-deep border border-bg-border rounded text-sm text-text-primary"
               />
-            </div>
-            <div>
-              <label className="text-text-secondary text-xs block mb-1">Закупочная цена</label>
-              <input
-                type="number"
-                value={purchasePrice}
-                onChange={(e) => setPurchasePrice(e.target.value)}
-                placeholder="0"
-                step="0.01"
-                className="no-spin w-full px-3 py-2 bg-bg-deep border border-bg-border rounded text-sm text-text-primary"
-              />
-            </div>
-            <div>
-              <label className="text-text-secondary text-xs block mb-1">Валюта</label>
-              <select
-                value={purchaseCurrency}
-                onChange={(e) => setPurchaseCurrency(e.target.value)}
-                className="w-full px-3 py-2 bg-bg-deep border border-bg-border rounded text-sm text-text-primary"
-              >
-                {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
             </div>
             <div>
               <label className="text-text-secondary text-xs block mb-1">Статус</label>
@@ -191,22 +170,57 @@ export default function CatalogDetailPage() {
                 <option value="archived">Архив</option>
               </select>
             </div>
-            {product.purchase_price_tiers?.length > 0 && (
-              <div className="col-span-2">
-                <label className="text-text-secondary text-xs block mb-1">Таблица цен 1688 (только для чтения)</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {product.purchase_price_tiers.map((tier: { min_qty: number; price: number }) => (
-                    <span
-                      key={tier.min_qty}
-                      className="inline-flex items-center gap-1 text-xs bg-bg-deep border border-bg-border rounded px-2 py-1"
-                    >
-                      <span className="text-text-secondary">≥{tier.min_qty} шт.</span>
-                      <span className="text-accent font-medium">{tier.price.toFixed(2)} {product.purchase_currency || "CNY"}</span>
-                    </span>
-                  ))}
-                </div>
+          </div>
+
+          {/* Pricing block */}
+          <div className="mb-6 border border-bg-border rounded p-4">
+            <div className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-3">Цена закупки</div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-text-secondary text-xs block mb-1">Цена</label>
+                <input
+                  type="number"
+                  value={purchasePrice}
+                  onChange={(e) => setPurchasePrice(e.target.value)}
+                  placeholder="—"
+                  step="0.01"
+                  className="no-spin w-full px-3 py-2 bg-bg-deep border border-bg-border rounded text-sm text-text-primary"
+                />
               </div>
-            )}
+              <div>
+                <label className="text-text-secondary text-xs block mb-1">Валюта</label>
+                <select
+                  value={purchaseCurrency}
+                  onChange={(e) => setPurchaseCurrency(e.target.value)}
+                  className="w-full px-3 py-2 bg-bg-deep border border-bg-border rounded text-sm text-text-primary"
+                >
+                  {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              {product.purchase_price_tiers?.length > 0 && (
+                <div className="col-span-2">
+                  <label className="text-text-secondary text-xs block mb-2">Таблица закупочных цен</label>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-bg-border">
+                        <th className="text-left pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Количество от</th>
+                        <th className="text-right pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Цена за ед.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {product.purchase_price_tiers.map((tier: { min_qty: number; price: number }) => (
+                        <tr key={tier.min_qty} className="border-b border-bg-border last:border-0">
+                          <td className="py-1.5 text-text-secondary">{tier.min_qty} шт.</td>
+                          <td className="py-1.5 text-right tabular-nums font-medium">
+                            {tier.price.toFixed(2)} {product.purchase_currency || "CNY"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="flex gap-2 mb-6">
