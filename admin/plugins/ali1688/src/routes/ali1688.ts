@@ -64,7 +64,9 @@ ali1688.post("/link", async (c) => {
         purchase_price: Number(body.sku_price),
         purchase_currency: "CNY",
       } as any)
-    } catch {}
+    } catch (err) {
+      console.error("[ali1688] Failed to update purchase_price:", err)
+    }
   }
 
   return c.json({ link }, 201)

@@ -25,6 +25,8 @@ export class MasterCardService {
 
   async update(id: string, data: Partial<MasterCard>) {
     const card = await this.retrieve(id)
+    // MikroORM "numeric" columns are stored as strings internally — coerce to avoid ValidationError
+    if (data.purchase_price != null) (data as any).purchase_price = String(data.purchase_price)
     this.em.assign(card, data)
     await this.em.flush()
     return card
