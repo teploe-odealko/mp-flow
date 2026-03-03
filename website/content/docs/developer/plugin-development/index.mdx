@@ -24,6 +24,7 @@ description: Что такое плагины MPFlow, зачем они нужн
 | [Workflows](/docs/developer/plugin-development/workflows) | Фоновые задачи: синхронизация, импорт | `src/workflows/` |
 | [Навигация](/docs/developer/plugin-development/navigation) | Страница плагина в админке | `src/nav.ts` + `src/client/` |
 | [Column Docs](/docs/developer/plugin-development/column-docs) | Подсказки к колонкам таблиц | `src/column-docs.ts` |
+| [MCP](/docs/developer/plugin-development/mcp) | Инструменты и ресурсы для AI-агентов | `src/mcp/` |
 
 ## Convention-based auto-discovery
 
@@ -57,6 +58,8 @@ admin/plugins/my-plugin/
     │   └── sync-data.ts            # Фоновая логика
     ├── client/
     │   └── page.tsx                # React-страница
+    ├── mcp/
+    │   └── my-tools.ts              # MCP инструменты и ресурсы
     ├── nav.ts                      # Пункт в сайдбаре
     └── column-docs.ts              # Описания колонок
 ```

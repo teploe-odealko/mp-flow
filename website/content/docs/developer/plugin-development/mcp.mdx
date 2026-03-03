@@ -1,0 +1,133 @@
+---
+title: MCP — инструменты и ресурсы
+description: Как расширить MCP-сервер MPFlow инструментами и ресурсами из плагина
+---
+
+# MCP — инструменты и ресурсы
+
+## Зачем
+
+MPFlow работает как MCP-сервер (Model Context Protocol). AI-агенты подключаются к нему и получают набор инструментов для работы с системой. Плагин может добавить свои инструменты и ресурсы — они автоматически становятся доступны всем подключённым агентам.
+
+Например, плагин Ozon добавляет инструмент `ozon_api` (прокси ко всему Ozon Seller API) и 52 ресурса (справочник API по категориям).
+
+## Структура
+
+```
+plugins/my-plugin/
+  src/
+    mcp/
+      my-tools.ts       # Инструменты и ресурсы
+```
+
+Файлы в `src/mcp/` обнаруживаются автоматически. Система ищет экспорты с определёнными именами.
+
+## Инструменты (Tools)
+
+Инструмент — это действие, которое агент может вызвать. Описывается в формате `ApiTool`:
+
+```typescript
+import type { ApiTool } from "../../../../src/server/mcp/tools.js"
+
+export const mcpTools: ApiTool[] = [
+  {
+    name: "my_plugin_action",
+    description: "Описание что делает инструмент",
+    method: "POST",
+    path: "/api/my-plugin/action",
+    params: {
+      query: {
+        type: "string",
+        description: "Поисковый запрос",
+        required: true,
+        in: "body",
+      },
+      limit: {
+        type: "number",
+        description: "Лимит результатов",
+        in: "query",
+      },
+    },
+  },
+]
+```
+
+Каждый инструмент — это обёртка над HTTP-эндпоинтом вашего плагина. MCP-сервер вызывает его через `app.fetch()` (in-process HTTP), поэтому все middleware работают.
+
+### Параметры ApiTool
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `name` | string | Уникальное имя инструмента |
+| `description` | string | Описание для AI-агента — что делает инструмент |
+| `method` | string | HTTP метод: GET, POST, PUT, DELETE |
+| `path` | string | Путь к эндпоинту (может содержать `:param`) |
+| `params` | object | Параметры инструмента |
+
+### Параметры (params)
+
+Каждый параметр описывает аргумент инструмента:
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `type` | string | `"string"`, `"number"`, `"boolean"`, `"object"` |
+| `description` | string | Описание параметра для AI-агента |
+| `required` | boolean | Обязательный параметр |
+| `enum` | string[] | Допустимые значения |
+| `in` | string | Где передаётся: `"query"`, `"path"`, `"body"` |
+
+## Ресурсы (Resources)
+
+Ресурсы — это справочная информация, которую агент может запросить по URI. В отличие от инструментов, ресурсы не выполняют действий — они предоставляют контекст.
+
+```typescript
+import type { McpResourceDef } from "../../../../src/server/mcp/server.js"
+
+export function getMcpResources(): McpResourceDef[] {
+  return [
+    {
+      uri: "my-plugin://reference",
+      name: "Справочник My Plugin",
+      description: "Полный список доступных операций",
+      mimeType: "text/plain",
+      text: "Содержимое справочника...",
+    },
+  ]
+}
+```
+
+### Поля McpResourceDef
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `uri` | string | URI ресурса (произвольная схема) |
+| `name` | string | Название для отображения |
+| `description` | string | Описание содержимого |
+| `mimeType` | string | MIME-тип (`text/plain`, `application/json`) |
+| `text` | string | Содержимое ресурса |
+
+## Auto-discovery
+
+Система автоматически сканирует `src/mcp/` и ищет следующие экспорты:
+
+**Инструменты** (любое из):
+- `export const mcpTools: ApiTool[]`
+- Именованный экспорт с суффиксом `_MCP_TOOLS` (например, `OZON_MCP_TOOLS`)
+
+**Ресурсы** (любое из):
+- `export function getMcpResources(): McpResourceDef[]`
+- Именованный экспорт `mcpResources`
+- Функция с суффиксом `McpResources` (например, `getOzonMcpResources`)
+
+<Callout type="info">
+Файлы с `api-reference` в имени исключаются из сканирования — используйте их для хранения больших справочных данных, которые импортируются в основной файл.
+</Callout>
+
+## Пример: плагин Ozon
+
+Плагин Ozon — реальный пример MCP-интеграции:
+
+- **Инструмент** `ozon_api` — универсальный прокси к Ozon Seller API. Принимает `path`, `body`, `method` и вызывает `/api/ozon-proxy`
+- **52 ресурса** — справочник всех 400+ эндпоинтов Ozon API, разбитый по категориям (`ozon://categories`, `ozon://category/ProductAPI`, ...)
+
+Исходники: `admin/plugins/ozon/src/mcp/`

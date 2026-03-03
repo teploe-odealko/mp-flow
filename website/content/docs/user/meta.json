@@ -1,6 +1,8 @@
 {
   "title": "Для пользователя",
   "pages": [
-    "index"
+    "index",
+    "plugins",
+    "ai-agents"
   ]
 }
