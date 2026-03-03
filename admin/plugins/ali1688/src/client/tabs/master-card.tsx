@@ -109,10 +109,17 @@ export default function Ali1688Tab({ productId, onRefresh }: MasterCardTabProps)
     })
   }
 
+  // Refresh: re-fetch preview from saved link URL, then show SKU picker to re-link
+  function handleRefresh() {
+    if (!link?.url) return
+    setUrl(link.url)
+    previewMutation.mutate(link.url)
+  }
+
   if (isLoading) return <p className="text-text-secondary text-sm">Загрузка...</p>
 
-  // Linked state
-  if (link) {
+  // Linked state (no active preview — show linked info + refresh/unlink buttons)
+  if (link && !preview) {
     return (
       <div>
         <div className="bg-bg-surface rounded border border-bg-border p-4">
@@ -145,13 +152,23 @@ export default function Ali1688Tab({ productId, onRefresh }: MasterCardTabProps)
               </a>
             </div>
           </div>
-          <button
-            onClick={() => unlinkMutation.mutate(link.id)}
-            disabled={unlinkMutation.isPending}
-            className="mt-3 text-text-muted hover:text-outflow text-sm"
-          >
-            {unlinkMutation.isPending ? "Отвязываю..." : "Отвязать"}
-          </button>
+          <div className="flex gap-3 mt-3">
+            <button
+              onClick={handleRefresh}
+              disabled={previewMutation.isPending}
+              className="text-sm text-accent hover:text-accent-dark"
+            >
+              {previewMutation.isPending ? "Загрузка..." : "Обновить"}
+            </button>
+            <button
+              onClick={() => unlinkMutation.mutate(link.id)}
+              disabled={unlinkMutation.isPending}
+              className="text-text-muted hover:text-outflow text-sm"
+            >
+              {unlinkMutation.isPending ? "Отвязываю..." : "Отвязать"}
+            </button>
+          </div>
+          {previewError && <p className="text-outflow text-sm mt-2">{previewError}</p>}
         </div>
       </div>
     )
@@ -272,13 +289,23 @@ export default function Ali1688Tab({ productId, onRefresh }: MasterCardTabProps)
           )}
 
           {/* Link button */}
-          <button
-            onClick={handleLink}
-            disabled={linkMutation.isPending}
-            className="px-4 py-2 bg-accent text-white rounded text-sm hover:bg-accent-dark disabled:opacity-50"
-          >
-            {linkMutation.isPending ? "Привязываю..." : "Привязать"}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleLink}
+              disabled={linkMutation.isPending}
+              className="px-4 py-2 bg-accent text-white rounded text-sm hover:bg-accent-dark disabled:opacity-50"
+            >
+              {linkMutation.isPending ? "Сохраняю..." : link ? "Сохранить" : "Привязать"}
+            </button>
+            {link && (
+              <button
+                onClick={() => { setPreview(null); setSelectedSku(null) }}
+                className="text-sm text-text-muted hover:text-text-secondary"
+              >
+                Отмена
+              </button>
+            )}
+          </div>
           {linkMutation.isError && (
             <span className="text-outflow text-sm ml-2">Ошибка: {(linkMutation.error as Error).message}</span>
           )}
