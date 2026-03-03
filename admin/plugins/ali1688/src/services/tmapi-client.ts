@@ -78,7 +78,7 @@ function parseTmapiResponse(payload: any): TmapiItem {
 
   const title = String(item.title || item.subject || item.name || item.itemTitle || "").trim() || null
   const item_id = String(item.item_id || item.itemId || item.id || "").trim() || null
-  const url = String(item.url || item.itemUrl || root.url || "").trim() || null
+  const url = String(item.url || item.itemUrl || root.product_url || root.url || "").trim() || null
   const supplier_name = String(item.company_name || item.companyName || item.seller_name || item.sellerName || item.shop_name || item.shopName || "").trim() || null
 
   // Images
