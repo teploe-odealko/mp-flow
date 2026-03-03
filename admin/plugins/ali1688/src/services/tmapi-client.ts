@@ -129,6 +129,11 @@ function parseTmapiResponse(payload: any): TmapiItem {
     if (parsed.length > 0) price_tiers = parsed
   }
 
+  // Fallback: no tiered pricing → single entry from price_min
+  if (!price_tiers && prices.length > 0) {
+    price_tiers = [{ min_qty: 1, price: Math.min(...prices) }]
+  }
+
   // Currency
   const currency = String(root.currency || item.currency || "").trim() || null
 
