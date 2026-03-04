@@ -3,96 +3,78 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MP Flow — Аналитика и управление продажами на Ozon | Open Source ERP для маркетплейсов</title>
-  <meta name="description" content="FIFO складской учёт, юнит-экономика, управление ценами и акциями на Ozon. Калькулятор прибыли, расчёт себестоимости, AI-агент. Open source — разверните бесплатно.">
-  <meta name="keywords" content="аналитика ozon, юнит экономика ozon, калькулятор прибыли ozon, управление маркетплейсами, erp для маркетплейсов, складской учет маркетплейс, себестоимость товара ozon, комиссии ozon, управление ценами ozon, автоматизация ozon, open source erp, ai агент маркетплейс">
-  <meta name="author" content="MP Flow">
+  <title>MPFlow — AI Agent First ERP для маркетплейсов | Open Source</title>
+  <meta name="description" content="Управление маркетплейсами через AI-агентов. Учёт партий и себестоимости, PnL, ДДС, закупки в 1 клик. Ozon FBO интеграция. Open Source — разверните бесплатно.">
+  <meta name="keywords" content="аналитика ozon, юнит экономика ozon, управление маркетплейсами, erp для маркетплейсов, ai агент маркетплейс, mcp протокол, open source erp, автоматизация ozon, себестоимость товара, pnl маркетплейс, учет партий">
+  <meta name="author" content="MPFlow">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="https://mp-flow.ru/">
-  <meta name="theme-color" content="#0C1117">
+  <meta name="theme-color" content="#09090B">
 
   <!-- Open Graph -->
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://mp-flow.ru/">
-  <meta property="og:title" content="MP Flow — Аналитика и управление продажами на Ozon">
-  <meta property="og:description" content="Open source ERP для маркетплейсов. FIFO учёт, юнит-экономика, управление ценами, AI-агент.">
+  <meta property="og:title" content="MPFlow — AI Agent First ERP для маркетплейсов">
+  <meta property="og:description" content="Управление маркетплейсами через AI-агентов. Учёт, аналитика, закупки. Open Source.">
   <meta property="og:image" content="https://mp-flow.ru/og-image.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:locale" content="ru_RU">
-  <meta property="og:site_name" content="MP Flow">
+  <meta property="og:site_name" content="MPFlow">
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="MP Flow — Open Source ERP для маркетплейсов">
-  <meta name="twitter:description" content="FIFO учёт, юнит-экономика, управление ценами на Ozon. AI-агент. Бесплатно.">
+  <meta name="twitter:title" content="MPFlow — AI Agent First ERP для маркетплейсов">
+  <meta name="twitter:description" content="Управление маркетплейсами через AI-агентов. Open Source.">
   <meta name="twitter:image" content="https://mp-flow.ru/og-image.png">
+
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
 
   <!-- Structured Data -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
-    "name": "MP Flow",
-    "alternateName": "MPFlow",
-    "description": "Open source ERP для маркетплейсов. FIFO складской учёт, юнит-экономика, управление ценами и акциями на Ozon. AI Agent Native.",
-    "url": "https://mp-flow.ru",
+    "name": "MPFlow",
+    "description": "AI Agent First ERP для маркетплейсов. Учёт партий, PnL, ДДС, закупки, интеграция с Ozon.",
     "applicationCategory": "BusinessApplication",
     "operatingSystem": "Web, Docker",
+    "url": "https://mp-flow.ru",
     "offers": [
-      {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "RUB",
-        "description": "Self-host: бесплатно навсегда"
-      },
-      {
-        "@type": "Offer",
-        "price": "990",
-        "priceCurrency": "RUB",
-        "description": "Облако Pro: 990 ₽/мес"
-      }
+      { "@type": "Offer", "price": "0", "priceCurrency": "RUB", "name": "Self-host" },
+      { "@type": "Offer", "price": "990", "priceCurrency": "RUB", "name": "Cloud Pro", "billingIncrement": "P1M" }
     ],
-    "author": {
-      "@type": "Organization",
-      "name": "MP Flow",
-      "url": "https://mp-flow.ru"
-    },
-    "featureList": "FIFO складской учёт, Юнит-экономика, Калькулятор прибыли Ozon, Управление ценами, Управление акциями, AI Agent (MCP), REST API, Open Source"
+    "featureList": ["AI Agent MCP", "Учёт партий и себестоимости", "PnL и ДДС", "Ozon FBO", "Плагины", "REST API", "Open Source"]
   }
   </script>
-
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png">
 
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-  <!-- Tailwind CSS -->
+  <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
       theme: {
         extend: {
           colors: {
-            deep: '#0C1117',
-            surface: '#151B23',
-            elevated: '#1A2230',
-            border: '#1E2A35',
-            'border-h': '#2A3A4A',
-            foam: '#E6EDF3',
-            muted: '#8B949E',
-            dim: '#5A6470',
-            cyan: '#0EA5E9',
-            'cyan-h': '#38BDF8',
-            'cyan-d': '#0284C7',
-            income: '#22C55E',
+            bg: '#09090B',
+            surface: '#111113',
+            elevated: '#18181B',
+            border: 'rgba(255,255,255,0.06)',
+            'border-h': 'rgba(255,255,255,0.12)',
+            foam: '#F0F0F3',
+            muted: '#A0A4B0',
+            dim: '#5C6070',
+            accent: '#6366F1',
+            'accent-h': '#818CF8',
+            'accent-glow': 'rgba(99,102,241,0.15)',
+            income: '#10B981',
             expense: '#F97316',
-            risk: '#EAB308',
-            loss: '#EF4444',
+            violet: '#8B5CF6',
           },
           fontFamily: {
             sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
@@ -107,176 +89,187 @@
     * { box-sizing: border-box; }
     html { scroll-behavior: smooth; }
     body {
-      background: #0C1117;
-      color: #E6EDF3;
+      background: #09090B;
+      color: #F0F0F3;
       font-family: 'Inter', system-ui, -apple-system, sans-serif;
       overflow-x: hidden;
       -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
 
-    /* Grid background */
-    .grid-bg {
-      background-image:
-        linear-gradient(rgba(14,165,233,0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(14,165,233,0.03) 1px, transparent 1px);
-      background-size: 64px 64px;
+    /* Hero glow */
+    .hero-glow {
+      position: absolute;
+      top: -20%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 140%;
+      height: 100%;
+      background:
+        radial-gradient(ellipse 50% 60% at 40% 40%, rgba(99,102,241,0.12), transparent 70%),
+        radial-gradient(ellipse 40% 50% at 60% 30%, rgba(139,92,246,0.08), transparent 65%),
+        radial-gradient(ellipse 60% 40% at 50% 70%, rgba(6,182,212,0.06), transparent 60%);
+      filter: blur(60px);
+      pointer-events: none;
+      animation: glowShift 12s ease-in-out infinite alternate;
     }
+    @keyframes glowShift {
+      0% { transform: translateX(-50%) scale(1); opacity: 0.8; }
+      100% { transform: translateX(-48%) scale(1.05); opacity: 1; }
+    }
+
+    /* Grid bg */
     .grid-bg::before {
       content: '';
       position: absolute;
       inset: 0;
-      background: radial-gradient(ellipse 60% 50% at 50% 0%, rgba(14,165,233,0.08) 0%, transparent 70%);
+      background-image:
+        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+      background-size: 80px 80px;
+      mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, black, transparent 70%);
+      -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, black, transparent 70%);
       pointer-events: none;
     }
 
-    /* Scroll animations */
+    /* Scroll reveal */
     .reveal {
       opacity: 0;
-      transform: translateY(24px);
-      transition: opacity 0.7s ease, transform 0.7s ease;
+      transform: translateY(28px);
+      transition: opacity 0.6s cubic-bezier(0.16,1,0.3,1), transform 0.6s cubic-bezier(0.16,1,0.3,1);
     }
-    .reveal.visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
     .reveal-d1 { transition-delay: 0.1s; }
     .reveal-d2 { transition-delay: 0.2s; }
     .reveal-d3 { transition-delay: 0.3s; }
     .reveal-d4 { transition-delay: 0.4s; }
+    .reveal-d5 { transition-delay: 0.5s; }
 
-    /* Number counter animation */
-    @keyframes countUp {
-      from { opacity: 0; transform: translateY(8px); }
-      to { opacity: 1; transform: translateY(0); }
+    /* Card glow on hover */
+    .glow-card {
+      border: 1px solid rgba(255,255,255,0.06);
+      transition: border-color 0.3s, box-shadow 0.3s, transform 0.3s;
     }
-
-    /* Glow effect for AI section */
-    .glow-cyan {
-      background: radial-gradient(ellipse 80% 60% at 50% 50%, rgba(14,165,233,0.06) 0%, transparent 70%);
-    }
-
-    /* Code block styling */
-    .code-block {
-      background: #0D1117;
-      border: 1px solid #1E2A35;
-      border-radius: 8px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 13px;
-      line-height: 1.6;
-    }
-    .code-block .line-comment { color: #5A6470; }
-    .code-block .line-key { color: #0EA5E9; }
-    .code-block .line-string { color: #22C55E; }
-    .code-block .line-bracket { color: #8B949E; }
-
-    /* FIFO bar animation */
-    .fifo-bar {
-      background: linear-gradient(90deg, #0EA5E9, #38BDF8);
-      border-radius: 2px;
-      height: 6px;
-      transition: width 1s ease;
-    }
-
-    /* Calculator row highlight */
-    .calc-row-profit {
-      color: #22C55E;
-      font-weight: 600;
-    }
-
-    /* FAQ accordion */
-    .faq-answer {
-      max-height: 0;
-      overflow: hidden;
-      transition: max-height 0.35s ease, padding 0.35s ease;
-    }
-    .faq-item.open .faq-answer {
-      max-height: 300px;
-    }
-    .faq-item.open .faq-chevron {
-      transform: rotate(180deg);
-    }
-    .faq-chevron {
-      transition: transform 0.3s ease;
-    }
-
-    /* Card hover */
-    .feature-card {
-      transition: border-color 0.25s ease, transform 0.25s ease;
-    }
-    .feature-card:hover {
-      border-color: #0EA5E9;
+    .glow-card:hover {
+      border-color: rgba(99,102,241,0.3);
+      box-shadow: 0 0 40px rgba(99,102,241,0.06);
       transform: translateY(-2px);
     }
 
-    /* Pricing popular */
-    .pricing-popular {
-      border-color: #0EA5E9;
-      box-shadow: 0 0 40px rgba(14,165,233,0.08);
+    /* Terminal typing */
+    .terminal-cursor {
+      display: inline-block;
+      width: 8px;
+      height: 16px;
+      background: #6366F1;
+      animation: blink 1s step-end infinite;
+      vertical-align: text-bottom;
+      margin-left: 2px;
     }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    .terminal-line {
+      opacity: 0;
+      transform: translateY(4px);
+      transition: opacity 0.4s ease, transform 0.4s ease;
+    }
+    .terminal-line.show { opacity: 1; transform: translateY(0); }
+
+    /* Code styling */
+    .code-key { color: #6366F1; }
+    .code-str { color: #10B981; }
+    .code-comment { color: #5C6070; }
+    .code-bracket { color: #A0A4B0; }
+
+    /* Section glow */
+    .section-glow {
+      position: relative;
+    }
+    .section-glow::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 50%; transform: translateX(-50%);
+      width: 80%; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(99,102,241,0.3), transparent);
+    }
+
+    /* FAQ */
+    .faq-answer { max-height: 0; overflow: hidden; transition: max-height 0.35s ease; }
+    .faq-item.open .faq-answer { max-height: 300px; }
+    .faq-item.open .faq-chevron { transform: rotate(180deg); }
+    .faq-chevron { transition: transform 0.3s ease; }
 
     /* Mobile menu */
-    .mobile-menu {
-      max-height: 0;
-      overflow: hidden;
-      transition: max-height 0.3s ease;
-    }
-    .mobile-menu.open {
-      max-height: 400px;
+    .mobile-menu { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
+    .mobile-menu.open { max-height: 400px; }
+
+    /* Pricing popular */
+    .pricing-popular {
+      border-color: rgba(99,102,241,0.4);
+      box-shadow: 0 0 60px rgba(99,102,241,0.08);
     }
 
-    /* Smooth section dividers */
-    .section-divider {
-      height: 1px;
-      background: linear-gradient(90deg, transparent, #1E2A35 30%, #1E2A35 70%, transparent);
+    /* Plugin card */
+    .plugin-card { position: relative; overflow: hidden; }
+    .plugin-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, #6366F1, #8B5CF6);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .plugin-card:hover::before { opacity: 1; }
+
+    /* Bento large card gradient */
+    .bento-hero-card {
+      background: linear-gradient(135deg, rgba(99,102,241,0.08) 0%, rgba(139,92,246,0.04) 50%, transparent 100%);
     }
   </style>
 </head>
 <body>
 
-  <!-- ===== 1. HEADER ===== -->
-  <header id="header" class="fixed top-0 left-0 right-0 z-50 transition-all duration-300" style="background: rgba(12,17,23,0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);">
+  <!-- ===== HEADER ===== -->
+  <header id="header" class="fixed top-0 left-0 right-0 z-50 transition-all duration-300" style="background: rgba(9,9,11,0.8); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);">
     <div class="max-w-6xl mx-auto px-4 sm:px-6">
       <div class="flex items-center justify-between h-16">
-        <!-- Logo -->
         <a href="/" class="flex items-center gap-2.5 shrink-0">
           <img src="logo.png" alt="MPFlow" width="28" height="28" class="rounded-md">
-          <span class="text-foam font-semibold text-lg tracking-tight">mpflow</span>
+          <span class="text-foam font-semibold text-lg" style="letter-spacing:-0.02em">MPFlow</span>
         </a>
 
-        <!-- Desktop Nav -->
         <nav class="hidden md:flex items-center gap-6 text-sm text-muted">
           <a href="#features" class="hover:text-foam transition-colors">Возможности</a>
+          <a href="#plugins" class="hover:text-foam transition-colors">Плагины</a>
           <a href="#pricing" class="hover:text-foam transition-colors">Цены</a>
           <a href="https://docs.mp-flow.ru" class="hover:text-foam transition-colors">Документация</a>
-          <a href="https://github.com/teploe-odealko/mp-flow" target="_blank" rel="noopener" class="hover:text-foam transition-colors flex items-center gap-1.5 border border-border rounded-md px-2.5 py-1 hover:border-cyan/40">
+          <a href="https://github.com/teploe-odealko/mp-flow" target="_blank" rel="noopener" class="hover:text-foam transition-colors flex items-center gap-1.5 border border-border rounded-md px-2.5 py-1 hover:border-accent/40">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
             <span id="gh-stars" class="tabular-nums">—</span>
           </a>
         </nav>
 
-        <!-- CTA -->
         <div class="hidden md:flex items-center gap-3">
           <a href="https://admin.mp-flow.ru" class="text-sm text-muted hover:text-foam transition-colors px-3 py-1.5">Войти</a>
-          <a href="https://admin.mp-flow.ru" class="text-sm font-medium text-deep bg-cyan hover:bg-cyan-h transition-colors px-4 py-2 rounded-lg">Начать бесплатно</a>
+          <a href="https://admin.mp-flow.ru" class="text-sm font-medium text-white bg-accent hover:bg-accent-h transition-colors px-4 py-2 rounded-lg">Начать бесплатно</a>
         </div>
 
-        <!-- Mobile burger -->
         <button id="burger" class="md:hidden p-2 text-muted hover:text-foam" aria-label="Меню">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
         </button>
       </div>
 
-      <!-- Mobile menu -->
       <div id="mobile-menu" class="mobile-menu md:hidden">
         <div class="pb-4 pt-2 border-t border-border space-y-1">
-          <a href="#features" class="block px-3 py-2 text-sm text-muted hover:text-foam transition-colors rounded-lg hover:bg-surface">Возможности</a>
-          <a href="#pricing" class="block px-3 py-2 text-sm text-muted hover:text-foam transition-colors rounded-lg hover:bg-surface">Цены</a>
-          <a href="https://docs.mp-flow.ru" class="block px-3 py-2 text-sm text-muted hover:text-foam transition-colors rounded-lg hover:bg-surface">Документация</a>
-          <a href="https://github.com/teploe-odealko/mp-flow" target="_blank" rel="noopener" class="block px-3 py-2 text-sm text-muted hover:text-foam transition-colors rounded-lg hover:bg-surface">GitHub</a>
+          <a href="#features" class="block px-3 py-2 text-sm text-muted hover:text-foam rounded-lg hover:bg-surface">Возможности</a>
+          <a href="#plugins" class="block px-3 py-2 text-sm text-muted hover:text-foam rounded-lg hover:bg-surface">Плагины</a>
+          <a href="#pricing" class="block px-3 py-2 text-sm text-muted hover:text-foam rounded-lg hover:bg-surface">Цены</a>
+          <a href="https://docs.mp-flow.ru" class="block px-3 py-2 text-sm text-muted hover:text-foam rounded-lg hover:bg-surface">Документация</a>
           <div class="pt-2 flex gap-2">
-            <a href="https://admin.mp-flow.ru" class="flex-1 text-center text-sm text-muted border border-border hover:border-border-h px-3 py-2 rounded-lg transition-colors">Войти</a>
-            <a href="https://admin.mp-flow.ru" class="flex-1 text-center text-sm font-medium text-deep bg-cyan hover:bg-cyan-h px-3 py-2 rounded-lg transition-colors">Начать</a>
+            <a href="https://admin.mp-flow.ru" class="flex-1 text-center text-sm text-muted border border-border px-3 py-2 rounded-lg">Войти</a>
+            <a href="https://admin.mp-flow.ru" class="flex-1 text-center text-sm font-medium text-white bg-accent px-3 py-2 rounded-lg">Начать</a>
           </div>
         </div>
       </div>
@@ -284,342 +277,351 @@
   </header>
 
 
-  <!-- ===== 2. HERO ===== -->
-  <section class="relative grid-bg pt-28 pb-20 sm:pt-36 sm:pb-28">
-    <div class="relative max-w-4xl mx-auto px-4 sm:px-6 text-center">
-      <h1 class="reveal text-3xl sm:text-4xl md:text-5xl lg:text-[3.4rem] font-bold tracking-tight leading-[1.15] text-foam">
-        Аналитика и управление<br class="hidden sm:block"> продажами на Ozon
-      </h1>
-      <p class="reveal reveal-d1 mt-5 sm:mt-6 text-base sm:text-lg text-muted max-w-2xl mx-auto leading-relaxed">
-        Open source ERP для маркетплейсов. FIFO учёт по партиям, юнит-экономика, массовое управление ценами и&nbsp;акциями. Подключите AI&#8209;агента&nbsp;— он будет работать за&nbsp;вас.
-      </p>
-      <div class="reveal reveal-d2 mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-        <a href="https://admin.mp-flow.ru" class="w-full sm:w-auto text-center font-medium text-deep bg-cyan hover:bg-cyan-h transition-colors px-7 py-3 rounded-lg text-base">Начать бесплатно</a>
-        <a href="https://github.com/teploe-odealko/mp-flow" target="_blank" rel="noopener" class="w-full sm:w-auto text-center font-medium text-foam border border-border hover:border-cyan transition-colors px-7 py-3 rounded-lg text-base">
-          Self-host&nbsp;&rarr;
-        </a>
+  <!-- ===== HERO ===== -->
+  <section class="relative grid-bg pt-32 pb-24 sm:pt-44 sm:pb-36 overflow-hidden">
+    <div class="hero-glow"></div>
+    <div class="relative max-w-5xl mx-auto px-4 sm:px-6">
+      <div class="text-center">
+        <div class="reveal inline-flex items-center gap-2 bg-accent/10 border border-accent/20 rounded-full px-4 py-1.5 text-xs text-accent-h font-medium mb-6">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          AI Agent First
+        </div>
+        <h1 class="reveal reveal-d1 text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold tracking-tight leading-[1.08]" style="letter-spacing:-0.03em">
+          Маркетплейс<br>на автопилоте
+        </h1>
+        <p class="reveal reveal-d2 mt-6 text-base sm:text-lg md:text-xl text-muted max-w-2xl mx-auto leading-relaxed">
+          Пусть рутину делают AI&#8209;агенты. Учёт партий, себестоимость, PnL, ДДС, закупки в&nbsp;1&nbsp;клик&nbsp;— из&nbsp;коробки. Расширяемая система на&nbsp;плагинах.
+        </p>
+        <div class="reveal reveal-d3 mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+          <a href="https://admin.mp-flow.ru" class="w-full sm:w-auto text-center font-medium text-white bg-accent hover:bg-accent-h transition-all px-8 py-3.5 rounded-xl text-base shadow-lg shadow-accent/20 hover:shadow-accent/30">Начать бесплатно</a>
+          <a href="https://github.com/teploe-odealko/mp-flow" target="_blank" rel="noopener" class="w-full sm:w-auto text-center font-medium text-foam border border-border hover:border-accent/40 transition-all px-8 py-3.5 rounded-xl text-base">
+            Self&#8209;host&nbsp;&rarr;
+          </a>
+        </div>
       </div>
-      <p class="reveal reveal-d3 mt-5 text-xs sm:text-sm text-dim tracking-wide">
-        Open Source&ensp;·&ensp;Ozon FBO&ensp;·&ensp;AI Agent Native&ensp;·&ensp;54+ MCP инструмента
-      </p>
+
+      <!-- Terminal demo -->
+      <div class="reveal reveal-d4 mt-16 max-w-2xl mx-auto">
+        <div class="bg-surface border border-border rounded-2xl overflow-hidden shadow-2xl shadow-black/40">
+          <!-- Terminal header -->
+          <div class="flex items-center gap-2 px-4 py-3 border-b border-border bg-elevated/50">
+            <span class="w-3 h-3 rounded-full bg-red-500/60"></span>
+            <span class="w-3 h-3 rounded-full bg-yellow-500/60"></span>
+            <span class="w-3 h-3 rounded-full bg-green-500/60"></span>
+            <span class="ml-3 text-xs text-dim font-mono">Claude Code &mdash; MPFlow MCP</span>
+          </div>
+          <!-- Terminal content -->
+          <div class="p-5 sm:p-6 font-mono text-[13px] leading-relaxed space-y-3" id="terminal">
+            <div class="terminal-line" data-delay="400">
+              <span class="text-accent-h font-medium">you:</span>
+              <span class="text-foam ml-2">Установи минимальную цену на воронку 1000 рублей</span>
+            </div>
+            <div class="terminal-line" data-delay="1200">
+              <span class="text-income font-medium">agent:</span>
+              <span class="text-muted ml-2">Ищу товар "воронка"...</span>
+            </div>
+            <div class="terminal-line" data-delay="2000">
+              <span class="text-dim ml-[52px]">Найден: Фильтр для кофе V60 пуровер воронка дриппер</span>
+            </div>
+            <div class="terminal-line" data-delay="2600">
+              <span class="text-dim ml-[52px]">offer_id: card-55d3cada3021 | текущая мин. цена: 900 &#8381;</span>
+            </div>
+            <div class="terminal-line" data-delay="3400">
+              <span class="text-dim ml-[52px]">&#x2192; ozon_api /v1/product/import/prices</span>
+            </div>
+            <div class="terminal-line" data-delay="4200">
+              <span class="text-income font-medium">agent:</span>
+              <span class="text-income ml-2">&#10003; Минимальная цена обновлена: 900 &#8381; &#8594; 1000 &#8381;</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
 
-  <!-- ===== 3. METRICS ===== -->
+  <!-- ===== METRICS ===== -->
   <section class="py-12 sm:py-16">
     <div class="max-w-4xl mx-auto px-4 sm:px-6">
       <div class="reveal grid grid-cols-2 md:grid-cols-4 gap-6 sm:gap-8">
         <div class="text-center">
-          <div class="text-2xl sm:text-3xl font-bold font-mono text-cyan">54+</div>
+          <div class="text-2xl sm:text-3xl font-bold font-mono text-accent">54+</div>
           <div class="mt-1 text-xs sm:text-sm text-muted">MCP инструментов</div>
         </div>
         <div class="text-center">
-          <div class="text-2xl sm:text-3xl font-bold font-mono text-cyan">84</div>
-          <div class="mt-1 text-xs sm:text-sm text-muted">REST API endpoints</div>
+          <div class="text-2xl sm:text-3xl font-bold font-mono text-accent">400+</div>
+          <div class="mt-1 text-xs sm:text-sm text-muted">Методов Ozon API</div>
         </div>
         <div class="text-center">
-          <div class="text-2xl sm:text-3xl font-bold font-mono text-cyan">100%</div>
+          <div class="text-2xl sm:text-3xl font-bold font-mono text-accent">100%</div>
           <div class="mt-1 text-xs sm:text-sm text-muted">Open Source</div>
         </div>
         <div class="text-center">
-          <div class="text-2xl sm:text-3xl font-bold font-mono text-cyan">0 ₽</div>
+          <div class="text-2xl sm:text-3xl font-bold font-mono text-accent">0 &#8381;</div>
           <div class="mt-1 text-xs sm:text-sm text-muted">Self-host навсегда</div>
         </div>
       </div>
     </div>
   </section>
 
-  <div class="section-divider max-w-5xl mx-auto"></div>
 
-
-  <!-- ===== 4. FEATURES OVERVIEW ===== -->
-  <section id="features" class="py-16 sm:py-24">
+  <!-- ===== BENTO FEATURES ===== -->
+  <section id="features" class="py-20 sm:py-28 section-glow">
     <div class="max-w-6xl mx-auto px-4 sm:px-6">
-      <h2 class="reveal text-2xl sm:text-3xl font-bold text-center tracking-tight">Всё для управления продажами на&nbsp;маркетплейсах</h2>
-      <div class="mt-12 grid sm:grid-cols-2 gap-4 sm:gap-5">
+      <div class="text-center mb-14">
+        <h2 class="reveal text-3xl sm:text-4xl font-bold tracking-tight" style="letter-spacing:-0.025em">Всё для управления магазином</h2>
+        <p class="reveal reveal-d1 mt-4 text-muted text-lg max-w-xl mx-auto">Из коробки: учёт, аналитика, закупки, AI-автоматизация. Через плагины&nbsp;— любая интеграция.</p>
+      </div>
 
-        <!-- Card: FIFO -->
-        <div class="reveal feature-card bg-surface border border-border rounded-xl p-6 sm:p-7">
-          <div class="w-10 h-10 rounded-lg bg-elevated flex items-center justify-center mb-4">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0EA5E9" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <!-- Large: AI Agent -->
+        <div class="reveal glow-card sm:col-span-2 rounded-2xl p-7 sm:p-8 bento-hero-card bg-surface">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-xl bg-accent/15 flex items-center justify-center">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6366F1" stroke-width="1.8" stroke-linecap="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            </div>
+            <div class="text-xs font-medium bg-accent/10 text-accent-h px-2.5 py-1 rounded-full">Ключевая функция</div>
           </div>
-          <h3 class="text-lg font-semibold text-foam">Складской учёт FIFO</h3>
-          <p class="mt-2 text-sm text-muted leading-relaxed">Учёт по партиям, точная себестоимость каждой единицы товара. Распределение затрат: закупка, логистика, таможня, упаковка.</p>
+          <h3 class="text-xl sm:text-2xl font-bold tracking-tight" style="letter-spacing:-0.02em">AI-агент управляет магазином за вас</h3>
+          <p class="mt-3 text-muted leading-relaxed max-w-lg">Подключите Claude Code, Cursor или любой MCP-совместимый агент. 54+ инструментов: цены, остатки, аналитика, заказы, 400+ методов Ozon API. Попросите словами&nbsp;— агент сделает.</p>
         </div>
 
-        <!-- Card: Unit Economics -->
-        <div class="reveal reveal-d1 feature-card bg-surface border border-border rounded-xl p-6 sm:p-7">
-          <div class="w-10 h-10 rounded-lg bg-elevated flex items-center justify-center mb-4">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0EA5E9" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        <!-- PnL -->
+        <div class="reveal reveal-d1 glow-card rounded-2xl p-6 sm:p-7 bg-surface">
+          <div class="w-10 h-10 rounded-xl bg-income/10 flex items-center justify-center mb-4">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="1.8" stroke-linecap="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
           </div>
-          <h3 class="text-lg font-semibold text-foam">Юнит-экономика и PnL</h3>
-          <p class="mt-2 text-sm text-muted leading-relaxed">Финансовые отчёты с реальной себестоимостью FIFO. ДДС, прибыль-убыток, аналитика по каждому SKU.</p>
+          <h3 class="text-lg font-semibold">PnL и ДДС</h3>
+          <p class="mt-2 text-sm text-muted leading-relaxed">Управленческие отчёты из коробки. Прибыль-убыток и движение денежных средств по каждому товару и за период.</p>
         </div>
 
-        <!-- Card: Pricing -->
-        <div class="reveal reveal-d2 feature-card bg-surface border border-border rounded-xl p-6 sm:p-7">
-          <div class="w-10 h-10 rounded-lg bg-elevated flex items-center justify-center mb-4">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0EA5E9" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+        <!-- Procurement -->
+        <div class="reveal reveal-d2 glow-card rounded-2xl p-6 sm:p-7 bg-surface">
+          <div class="w-10 h-10 rounded-xl bg-violet/10 flex items-center justify-center mb-4">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="1.8" stroke-linecap="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
           </div>
-          <h3 class="text-lg font-semibold text-foam">Управление ценами</h3>
-          <p class="mt-2 text-sm text-muted leading-relaxed">Калькулятор прибыли с учётом всех комиссий Ozon. Массовое обновление цен под нужную маржу или&nbsp;ROI.</p>
+          <h3 class="text-lg font-semibold">Закупки в 1 клик</h3>
+          <p class="mt-2 text-sm text-muted leading-relaxed">Прогноз закупок по скорости продаж. Формирует заказ поставщику в нужном формате автоматически.</p>
         </div>
 
-        <!-- Card: AI -->
-        <div class="reveal reveal-d3 feature-card bg-surface border border-border rounded-xl p-6 sm:p-7">
-          <div class="w-10 h-10 rounded-lg bg-elevated flex items-center justify-center mb-4">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0EA5E9" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 014 4v2a4 4 0 01-8 0V6a4 4 0 014-4z"/><path d="M16 14H8a4 4 0 00-4 4v2h16v-2a4 4 0 00-4-4z"/><circle cx="12" cy="6" r="1" fill="#0EA5E9"/></svg>
+        <!-- Batch costing -->
+        <div class="reveal reveal-d3 glow-card rounded-2xl p-6 sm:p-7 bg-surface">
+          <div class="w-10 h-10 rounded-xl bg-expense/10 flex items-center justify-center mb-4">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F97316" stroke-width="1.8" stroke-linecap="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
           </div>
-          <h3 class="text-lg font-semibold text-foam">AI Agent Native</h3>
-          <p class="mt-2 text-sm text-muted leading-relaxed">54+ MCP инструментов для Claude, ChatGPT, Manus. Агент управляет ценами, анализирует продажи, контролирует акции.</p>
+          <h3 class="text-lg font-semibold">Учёт партий</h3>
+          <p class="mt-2 text-sm text-muted leading-relaxed">Себестоимость каждой партии с распределением затрат: закупка, логистика, таможня, упаковка.</p>
+        </div>
+
+        <!-- Sales FBO -->
+        <div class="reveal reveal-d4 glow-card rounded-2xl p-6 sm:p-7 bg-surface">
+          <div class="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center mb-4">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6366F1" stroke-width="1.8" stroke-linecap="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>
+          </div>
+          <h3 class="text-lg font-semibold">Продажи FBO</h3>
+          <p class="mt-2 text-sm text-muted leading-relaxed">Автосинхронизация с Ozon: отправления, возвраты, комиссии, логистика. Всё в одном месте.</p>
+        </div>
+
+        <!-- Plugins -->
+        <div class="reveal reveal-d5 glow-card rounded-2xl p-6 sm:p-7 bg-surface">
+          <div class="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center mb-4">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6366F1" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          </div>
+          <h3 class="text-lg font-semibold">Система плагинов</h3>
+          <p class="mt-2 text-sm text-muted leading-relaxed">Расширяйте функциональность без изменения ядра. Entities, routes, services, MCP tools&nbsp;— всё модульно.</p>
         </div>
       </div>
     </div>
   </section>
 
-  <div class="section-divider max-w-5xl mx-auto"></div>
 
-
-  <!-- ===== 5. DEEP DIVE: FIFO ===== -->
-  <section class="py-16 sm:py-24">
+  <!-- ===== AI AGENT DEEP DIVE ===== -->
+  <section class="py-20 sm:py-28 section-glow">
     <div class="max-w-6xl mx-auto px-4 sm:px-6">
-      <div class="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
-        <!-- Text -->
+      <div class="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
         <div class="reveal">
-          <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">Складской учёт по партиям&nbsp;— точная себестоимость каждой единицы</h2>
-          <p class="mt-4 text-muted leading-relaxed">Каждая закупка создаёт отдельный лот с&nbsp;полной разбивкой затрат. При продаже система автоматически списывает самые старые партии (FIFO) и рассчитывает реальную себестоимость проданного&nbsp;товара.</p>
-          <ul class="mt-6 space-y-3">
-            <li class="flex items-start gap-3 text-sm"><span class="mt-0.5 w-5 h-5 rounded-full bg-cyan/10 flex items-center justify-center shrink-0"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6l2.5 2.5 4.5-5" stroke="#0EA5E9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="text-foam/90">Учёт по каждой партии закупки</span></li>
-            <li class="flex items-start gap-3 text-sm"><span class="mt-0.5 w-5 h-5 rounded-full bg-cyan/10 flex items-center justify-center shrink-0"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6l2.5 2.5 4.5-5" stroke="#0EA5E9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="text-foam/90">Автоматический FIFO при продаже</span></li>
-            <li class="flex items-start gap-3 text-sm"><span class="mt-0.5 w-5 h-5 rounded-full bg-cyan/10 flex items-center justify-center shrink-0"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6l2.5 2.5 4.5-5" stroke="#0EA5E9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="text-foam/90">Точный COGS для отчётов PnL</span></li>
-            <li class="flex items-start gap-3 text-sm"><span class="mt-0.5 w-5 h-5 rounded-full bg-cyan/10 flex items-center justify-center shrink-0"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6l2.5 2.5 4.5-5" stroke="#0EA5E9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="text-foam/90">Импорт с 1688.com с расчётом курса</span></li>
-          </ul>
+          <div class="inline-flex items-center gap-2 bg-accent/10 border border-accent/20 rounded-full px-3 py-1 text-xs text-accent-h font-medium mb-4">
+            MCP Protocol
+          </div>
+          <h2 class="text-2xl sm:text-3xl font-bold tracking-tight" style="letter-spacing:-0.025em">Подключите любого AI-агента за&nbsp;2&nbsp;минуты</h2>
+          <p class="mt-4 text-muted leading-relaxed">Создайте API-ключ в настройках, добавьте конфиг&nbsp;— и&nbsp;агент получит доступ к каталогу, складу, ценам, закупкам, аналитике и всему Ozon API.</p>
+          <div class="mt-6 flex flex-wrap gap-2">
+            <span class="text-xs text-muted bg-elevated px-3 py-1.5 rounded-lg">Claude Code</span>
+            <span class="text-xs text-muted bg-elevated px-3 py-1.5 rounded-lg">Cursor</span>
+            <span class="text-xs text-muted bg-elevated px-3 py-1.5 rounded-lg">Claude Desktop</span>
+            <span class="text-xs text-muted bg-elevated px-3 py-1.5 rounded-lg">Любой MCP&#8209;клиент</span>
+          </div>
         </div>
-        <!-- Visual: FIFO diagram -->
         <div class="reveal reveal-d2">
-          <div class="bg-surface border border-border rounded-xl p-5 sm:p-6 font-mono text-sm">
-            <div class="text-xs text-dim uppercase tracking-wider mb-4">FIFO очередь складских лотов</div>
-            <!-- Lot 1: sold -->
-            <div class="flex items-center gap-3 py-2.5 border-b border-border/50 opacity-50">
-              <span class="text-dim w-24 shrink-0">Янв 2025</span>
-              <span class="text-foam/70 w-20 shrink-0 text-right">450 ₽/шт</span>
-              <div class="flex-1"><div class="fifo-bar w-full bg-muted/20" style="background: #5A6470;"></div></div>
-              <span class="text-income text-xs font-medium">ПРОДАНО</span>
+          <div class="bg-surface border border-border rounded-2xl p-5 overflow-x-auto font-mono text-[13px] leading-relaxed">
+            <div class="text-xs text-dim mb-3 flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-red-500/60"></span>
+              <span class="w-2.5 h-2.5 rounded-full bg-yellow-500/60"></span>
+              <span class="w-2.5 h-2.5 rounded-full bg-green-500/60"></span>
+              <span class="ml-2">.mcp.json</span>
             </div>
-            <!-- Lot 2: partial -->
-            <div class="flex items-center gap-3 py-2.5 border-b border-border/50">
-              <span class="text-muted w-24 shrink-0">Фев 2025</span>
-              <span class="text-foam w-20 shrink-0 text-right">520 ₽/шт</span>
-              <div class="flex-1 bg-elevated rounded-sm overflow-hidden h-1.5"><div class="fifo-bar" style="width:40%"></div></div>
-              <span class="text-cyan text-xs font-medium">40%</span>
-            </div>
-            <!-- Lot 3: full -->
-            <div class="flex items-center gap-3 py-2.5 border-b border-border/50">
-              <span class="text-muted w-24 shrink-0">Мар 2025</span>
-              <span class="text-foam w-20 shrink-0 text-right">480 ₽/шт</span>
-              <div class="flex-1 bg-elevated rounded-sm overflow-hidden h-1.5"><div class="fifo-bar" style="width:100%"></div></div>
-              <span class="text-cyan text-xs font-medium">100%</span>
-            </div>
-            <!-- Lot 4: full -->
-            <div class="flex items-center gap-3 py-2.5">
-              <span class="text-muted w-24 shrink-0">Апр 2025</span>
-              <span class="text-foam w-20 shrink-0 text-right">495 ₽/шт</span>
-              <div class="flex-1 bg-elevated rounded-sm overflow-hidden h-1.5"><div class="fifo-bar" style="width:100%"></div></div>
-              <span class="text-cyan text-xs font-medium">100%</span>
-            </div>
-            <div class="mt-4 pt-3 border-t border-border/50 flex justify-between text-xs">
-              <span class="text-dim">Средневзвешенная себестоимость</span>
-              <span class="text-cyan font-medium">498 ₽/шт</span>
-            </div>
+            <pre class="whitespace-pre"><span class="code-comment">// Подключение к MPFlow</span>
+<span class="code-bracket">{</span>
+  <span class="code-key">"mcpServers"</span><span class="code-bracket">: {</span>
+    <span class="code-key">"mpflow"</span><span class="code-bracket">: {</span>
+      <span class="code-key">"type"</span>: <span class="code-str">"http"</span>,
+      <span class="code-key">"url"</span>: <span class="code-str">"https://admin.mp-flow.ru/mcp"</span>,
+      <span class="code-key">"headers"</span><span class="code-bracket">: {</span>
+        <span class="code-key">"Authorization"</span>: <span class="code-str">"Bearer mpf_..."</span>
+      <span class="code-bracket">}</span>
+    <span class="code-bracket">}</span>
+  <span class="code-bracket">}</span>
+<span class="code-bracket">}</span></pre>
           </div>
         </div>
       </div>
     </div>
   </section>
 
-  <div class="section-divider max-w-5xl mx-auto"></div>
 
-
-  <!-- ===== 6. DEEP DIVE: PRICING CALC ===== -->
-  <section class="py-16 sm:py-24">
+  <!-- ===== REPORTS & PROCUREMENT ===== -->
+  <section class="py-20 sm:py-28 section-glow">
     <div class="max-w-6xl mx-auto px-4 sm:px-6">
-      <div class="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
-        <!-- Visual: Calculator -->
+      <div class="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
+        <!-- Visual: PnL -->
         <div class="reveal order-2 lg:order-1">
-          <div class="bg-surface border border-border rounded-xl p-5 sm:p-6 font-mono text-sm">
-            <div class="text-xs text-dim uppercase tracking-wider mb-4">Расчёт прибыли при продаже</div>
+          <div class="bg-surface border border-border rounded-2xl p-5 sm:p-6 font-mono text-sm">
+            <div class="text-xs text-dim uppercase tracking-wider mb-4">PnL отчёт &mdash; март 2026</div>
             <div class="space-y-2">
               <div class="flex justify-between py-1">
-                <span class="text-muted">Цена продажи</span>
-                <span class="text-foam font-medium">2 490 ₽</span>
+                <span class="text-muted">Выручка</span>
+                <span class="text-foam font-medium">185 400 &#8381;</span>
               </div>
               <div class="h-px bg-border"></div>
               <div class="flex justify-between py-1">
-                <span class="text-muted">Себестоимость FIFO</span>
-                <span class="text-expense">- 850 ₽</span>
+                <span class="text-muted">Себестоимость</span>
+                <span class="text-expense">- 62 300 &#8381;</span>
               </div>
               <div class="flex justify-between py-1">
-                <span class="text-muted">Комиссия Ozon <span class="text-dim">(15%)</span></span>
-                <span class="text-expense">- 374 ₽</span>
+                <span class="text-muted">Комиссии маркетплейса</span>
+                <span class="text-expense">- 27 810 &#8381;</span>
               </div>
               <div class="flex justify-between py-1">
-                <span class="text-muted">Last mile</span>
-                <span class="text-expense">- 120 ₽</span>
+                <span class="text-muted">Логистика</span>
+                <span class="text-expense">- 18 540 &#8381;</span>
               </div>
               <div class="flex justify-between py-1">
-                <span class="text-muted">Эквайринг <span class="text-dim">(1.5%)</span></span>
-                <span class="text-expense">- 37 ₽</span>
-              </div>
-              <div class="flex justify-between py-1">
-                <span class="text-muted">УСН <span class="text-dim">(6%)</span></span>
-                <span class="text-expense">- 149 ₽</span>
+                <span class="text-muted">Возвраты</span>
+                <span class="text-expense">- 4 200 &#8381;</span>
               </div>
               <div class="h-px bg-border mt-1"></div>
               <div class="flex justify-between py-1.5">
-                <span class="text-income font-semibold">Прибыль</span>
-                <span class="text-income font-bold text-base">960 ₽</span>
+                <span class="text-income font-semibold">Чистая прибыль</span>
+                <span class="text-income font-bold text-base">72 550 &#8381;</span>
               </div>
               <div class="flex gap-6 pt-1">
-                <div><span class="text-dim text-xs">ROI</span> <span class="text-income font-medium ml-1">113%</span></div>
-                <div><span class="text-dim text-xs">Маржа</span> <span class="text-income font-medium ml-1">38.6%</span></div>
+                <div><span class="text-dim text-xs">Маржа</span> <span class="text-income font-medium ml-1">39.1%</span></div>
+                <div><span class="text-dim text-xs">ROI</span> <span class="text-income font-medium ml-1">116%</span></div>
               </div>
             </div>
           </div>
         </div>
         <!-- Text -->
         <div class="reveal order-1 lg:order-2">
-          <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">Калькулятор прибыли Ozon&nbsp;— установите цену с&nbsp;нужной&nbsp;маржой</h2>
-          <p class="mt-4 text-muted leading-relaxed">Система знает все комиссии Ozon по категориям, логистику, хранение, возвраты и&nbsp;налоги. Поставьте цену с&nbsp;нужным ROI одной кнопкой&nbsp;— или задайте целевую маржу, и система рассчитает цену сама.</p>
+          <h2 class="text-2xl sm:text-3xl font-bold tracking-tight" style="letter-spacing:-0.025em">Управленческие отчёты из&nbsp;коробки</h2>
+          <p class="mt-4 text-muted leading-relaxed">PnL и ДДС формируются автоматически. Видите реальную прибыль с учётом себестоимости партий, комиссий маркетплейса, логистики и возвратов.</p>
           <ul class="mt-6 space-y-3">
-            <li class="flex items-start gap-3 text-sm"><span class="mt-0.5 w-5 h-5 rounded-full bg-cyan/10 flex items-center justify-center shrink-0"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6l2.5 2.5 4.5-5" stroke="#0EA5E9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="text-foam/90">Все комиссии Ozon по категориям</span></li>
-            <li class="flex items-start gap-3 text-sm"><span class="mt-0.5 w-5 h-5 rounded-full bg-cyan/10 flex items-center justify-center shrink-0"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6l2.5 2.5 4.5-5" stroke="#0EA5E9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="text-foam/90">Forward: цена &rarr; маржа</span></li>
-            <li class="flex items-start gap-3 text-sm"><span class="mt-0.5 w-5 h-5 rounded-full bg-cyan/10 flex items-center justify-center shrink-0"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6l2.5 2.5 4.5-5" stroke="#0EA5E9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="text-foam/90">Reverse: маржа &rarr; цена</span></li>
-            <li class="flex items-start gap-3 text-sm"><span class="mt-0.5 w-5 h-5 rounded-full bg-cyan/10 flex items-center justify-center shrink-0"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6l2.5 2.5 4.5-5" stroke="#0EA5E9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="text-foam/90">Массовое обновление цен</span></li>
+            <li class="flex items-start gap-3 text-sm"><span class="mt-0.5 w-5 h-5 rounded-full bg-accent/10 flex items-center justify-center shrink-0"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6l2.5 2.5 4.5-5" stroke="#6366F1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="text-foam/90">PnL: прибыль-убыток по товарам и периодам</span></li>
+            <li class="flex items-start gap-3 text-sm"><span class="mt-0.5 w-5 h-5 rounded-full bg-accent/10 flex items-center justify-center shrink-0"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6l2.5 2.5 4.5-5" stroke="#6366F1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="text-foam/90">ДДС: движение денежных средств</span></li>
+            <li class="flex items-start gap-3 text-sm"><span class="mt-0.5 w-5 h-5 rounded-full bg-accent/10 flex items-center justify-center shrink-0"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6l2.5 2.5 4.5-5" stroke="#6366F1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="text-foam/90">Юнит-экономика: маржа и ROI по каждому SKU</span></li>
+            <li class="flex items-start gap-3 text-sm"><span class="mt-0.5 w-5 h-5 rounded-full bg-accent/10 flex items-center justify-center shrink-0"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6l2.5 2.5 4.5-5" stroke="#6366F1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="text-foam/90">Закупки: прогноз и заказ поставщику в 1 клик</span></li>
           </ul>
         </div>
       </div>
     </div>
   </section>
 
-  <div class="section-divider max-w-5xl mx-auto"></div>
 
-
-  <!-- ===== 7. DEEP DIVE: PROMOTIONS ===== -->
-  <section class="py-16 sm:py-24">
-    <div class="max-w-6xl mx-auto px-4 sm:px-6 text-center">
-      <h2 class="reveal text-2xl sm:text-3xl font-bold tracking-tight">Управление акциями Ozon&nbsp;— массовое включение с&nbsp;защитой&nbsp;маржи</h2>
-      <p class="reveal reveal-d1 mt-4 text-muted max-w-2xl mx-auto leading-relaxed">Массово задайте минимальную цену для акций с&nbsp;учётом себестоимости, чтобы не&nbsp;продавать в&nbsp;минус. Включайте и&nbsp;выключайте акции одной кнопкой.</p>
-
-      <div class="mt-12 grid sm:grid-cols-3 gap-5">
-        <div class="reveal feature-card bg-surface border border-border rounded-xl p-6 text-center">
-          <div class="w-12 h-12 rounded-xl bg-elevated flex items-center justify-center mx-auto mb-4">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0EA5E9" stroke-width="1.8" stroke-linecap="round"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/></svg>
-          </div>
-          <h3 class="font-semibold text-foam">Минимальная цена</h3>
-          <p class="mt-2 text-sm text-muted">Себестоимость + маржа = минимум, ниже которого система не позволит продавать</p>
-        </div>
-
-        <div class="reveal reveal-d1 feature-card bg-surface border border-border rounded-xl p-6 text-center">
-          <div class="w-12 h-12 rounded-xl bg-elevated flex items-center justify-center mx-auto mb-4">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0EA5E9" stroke-width="1.8" stroke-linecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-          </div>
-          <h3 class="font-semibold text-foam">Массовые операции</h3>
-          <p class="mt-2 text-sm text-muted">Включение и выключение акций для всех товаров одной кнопкой</p>
-        </div>
-
-        <div class="reveal reveal-d2 feature-card bg-surface border border-border rounded-xl p-6 text-center">
-          <div class="w-12 h-12 rounded-xl bg-elevated flex items-center justify-center mx-auto mb-4">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0EA5E9" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          </div>
-          <h3 class="font-semibold text-foam">Автообновление таймеров</h3>
-          <p class="mt-2 text-sm text-muted">Система обновляет таймеры минимальной цены автоматически</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <div class="section-divider max-w-5xl mx-auto"></div>
-
-
-  <!-- ===== 8. DEEP DIVE: AI AGENT ===== -->
-  <section class="py-16 sm:py-24 relative glow-cyan">
+  <!-- ===== PLUGINS ===== -->
+  <section id="plugins" class="py-20 sm:py-28 section-glow">
     <div class="max-w-6xl mx-auto px-4 sm:px-6">
-      <div class="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
-        <!-- Text -->
-        <div class="reveal">
-          <div class="inline-flex items-center gap-2 bg-cyan/10 border border-cyan/20 rounded-full px-3 py-1 text-xs text-cyan font-medium mb-4">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-            AI-powered
-          </div>
-          <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">AI-агент для автоматизации маркетплейсов</h2>
-          <p class="mt-4 text-muted leading-relaxed">Подключите Claude Code, ChatGPT, Manus или OpenClaw через MCP протокол. 54+ инструментов: каталог, закупки, продажи, цены, отчёты, прямой доступ к Ozon API. Агент работает за&nbsp;вас.</p>
-          <p class="mt-4 text-sm text-dim">Claude&ensp;·&ensp;ChatGPT&ensp;·&ensp;Manus&ensp;·&ensp;OpenClaw&ensp;·&ensp;Любой MCP-клиент</p>
-        </div>
-        <!-- Code block -->
-        <div class="reveal reveal-d2">
-          <div class="code-block p-5 overflow-x-auto">
-            <div class="text-xs text-dim mb-3 flex items-center gap-2">
-              <span class="w-2.5 h-2.5 rounded-full bg-loss/60"></span>
-              <span class="w-2.5 h-2.5 rounded-full bg-risk/60"></span>
-              <span class="w-2.5 h-2.5 rounded-full bg-income/60"></span>
-              <span class="ml-2">mcp-config.json</span>
+      <div class="text-center mb-14">
+        <h2 class="reveal text-3xl sm:text-4xl font-bold tracking-tight" style="letter-spacing:-0.025em">Плагины</h2>
+        <p class="reveal reveal-d1 mt-4 text-muted text-lg max-w-xl mx-auto">Ядро + плагины = любая функциональность. Каждый плагин добавляет свои таблицы, API, UI-страницы и MCP-инструменты.</p>
+      </div>
+
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <!-- Ozon Plugin -->
+        <div class="reveal plugin-card glow-card sm:col-span-2 rounded-2xl p-7 bg-surface">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400 font-bold text-lg">O</div>
+            <div>
+              <h3 class="font-semibold text-lg">Ozon FBO</h3>
+              <span class="text-xs text-income">Установлен</span>
             </div>
-            <pre class="whitespace-pre"><span class="line-comment">// Подключение MCP сервера MP Flow</span>
-<span class="line-bracket">{</span>
-  <span class="line-key">"mcpServers"</span><span class="line-bracket">: {</span>
-    <span class="line-key">"mpflow"</span><span class="line-bracket">: {</span>
-      <span class="line-key">"url"</span>: <span class="line-string">"https://proxy.mp-flow.ru/mcp"</span>,
-      <span class="line-key">"headers"</span><span class="line-bracket">: {</span>
-        <span class="line-key">"Authorization"</span>: <span class="line-string">"Bearer mpk_..."</span>
-      <span class="line-bracket">}</span>
-    <span class="line-bracket">}</span>
-  <span class="line-bracket">}</span>
-<span class="line-bracket">}</span></pre>
           </div>
+          <p class="text-muted text-sm leading-relaxed mb-4">Полная интеграция с Ozon по схеме FBO. Синхронизация товаров, остатков, продаж, возвратов и финансовых операций. AI-агент получает доступ к 400+ методам Ozon Seller API через единый прокси.</p>
+          <div class="flex flex-wrap gap-2">
+            <span class="text-xs text-dim bg-elevated px-2.5 py-1 rounded-md">Товары</span>
+            <span class="text-xs text-dim bg-elevated px-2.5 py-1 rounded-md">Остатки FBO</span>
+            <span class="text-xs text-dim bg-elevated px-2.5 py-1 rounded-md">Продажи</span>
+            <span class="text-xs text-dim bg-elevated px-2.5 py-1 rounded-md">Возвраты</span>
+            <span class="text-xs text-dim bg-elevated px-2.5 py-1 rounded-md">Финансы</span>
+            <span class="text-xs text-dim bg-elevated px-2.5 py-1 rounded-md">AI прокси</span>
+            <span class="text-xs text-dim bg-elevated px-2.5 py-1 rounded-md">400+ API методов</span>
+          </div>
+        </div>
+
+        <!-- Coming soon -->
+        <div class="reveal reveal-d1 glow-card rounded-2xl p-6 bg-surface flex flex-col justify-between">
+          <div>
+            <div class="w-10 h-10 rounded-xl bg-violet/10 flex items-center justify-center text-violet font-bold text-lg mb-4">WB</div>
+            <h3 class="font-semibold">Wildberries</h3>
+            <p class="mt-2 text-sm text-muted">FBO интеграция с Wildberries. Синхронизация продаж, остатков, финансов.</p>
+          </div>
+          <span class="mt-4 text-xs text-dim border border-border px-2.5 py-1 rounded-md w-fit">Скоро</span>
+        </div>
+
+        <!-- Custom plugin -->
+        <div class="reveal reveal-d2 glow-card rounded-2xl p-6 bg-surface flex flex-col justify-between">
+          <div>
+            <div class="w-10 h-10 rounded-xl bg-elevated flex items-center justify-center text-muted mb-4">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </div>
+            <h3 class="font-semibold">Свой плагин</h3>
+            <p class="mt-2 text-sm text-muted">Создайте плагин под ваши задачи. Convention-based discovery: положите файлы&nbsp;— система подхватит.</p>
+          </div>
+          <a href="https://docs.mp-flow.ru/docs/developer/plugin-development" class="mt-4 text-xs text-accent hover:text-accent-h transition-colors">Документация&nbsp;&rarr;</a>
+        </div>
+
+        <!-- YandexMarket -->
+        <div class="reveal reveal-d3 glow-card rounded-2xl p-6 bg-surface flex flex-col justify-between">
+          <div>
+            <div class="w-10 h-10 rounded-xl bg-yellow-500/10 flex items-center justify-center text-yellow-400 font-bold text-lg mb-4">YM</div>
+            <h3 class="font-semibold">Яндекс.Маркет</h3>
+            <p class="mt-2 text-sm text-muted">Интеграция с Яндекс.Маркетом. FBO/FBS синхронизация.</p>
+          </div>
+          <span class="mt-4 text-xs text-dim border border-border px-2.5 py-1 rounded-md w-fit">Скоро</span>
         </div>
       </div>
     </div>
   </section>
 
-  <div class="section-divider max-w-5xl mx-auto"></div>
 
-
-  <!-- ===== 9. OPEN SOURCE ===== -->
-  <section class="py-16 sm:py-24">
+  <!-- ===== OPEN SOURCE ===== -->
+  <section class="py-20 sm:py-28 section-glow">
     <div class="max-w-4xl mx-auto px-4 sm:px-6">
-      <div class="reveal bg-surface border border-border rounded-2xl p-6 sm:p-10 text-center relative overflow-hidden">
-        <!-- Decorative gradient -->
-        <div class="absolute inset-0 bg-gradient-to-br from-cyan/5 via-transparent to-transparent pointer-events-none"></div>
+      <div class="reveal glow-card bg-surface rounded-2xl p-8 sm:p-12 text-center relative overflow-hidden">
+        <div class="absolute inset-0 bg-gradient-to-br from-accent/5 via-transparent to-violet/5 pointer-events-none"></div>
         <div class="relative">
-          <h2 class="text-2xl sm:text-3xl font-bold tracking-tight">Open Source — разверните на&nbsp;своём сервере за&nbsp;5&nbsp;минут</h2>
-          <p class="mt-4 text-muted max-w-lg mx-auto leading-relaxed">Весь код открыт. Все данные на вашем сервере. Нет vendor lock-in. Docker Compose — и&nbsp;готово.</p>
+          <h2 class="text-2xl sm:text-3xl font-bold tracking-tight" style="letter-spacing:-0.025em">Open Source&nbsp;— разверните на&nbsp;своём сервере</h2>
+          <p class="mt-4 text-muted max-w-lg mx-auto leading-relaxed">Весь код открыт. Все данные на вашем сервере. Docker Compose&nbsp;— и&nbsp;готово.</p>
 
-          <div class="mt-8 code-block text-left p-5 max-w-md mx-auto">
-            <pre class="whitespace-pre"><span class="line-comment">$ git clone https://github.com/teploe-odealko/mp-flow</span>
-<span class="line-comment">$ cd mpflow</span>
-<span class="line-string">$ docker compose up -d</span>
-<span class="line-dim" style="color:#5A6470"># Готово: http://localhost:3000</span></pre>
-          </div>
-
-          <div class="mt-8 grid grid-cols-3 gap-4 max-w-sm mx-auto text-center">
-            <div>
-              <div class="text-sm font-semibold text-foam">Open Source</div>
-              <div class="text-xs text-dim mt-0.5">MIT лицензия</div>
-            </div>
-            <div>
-              <div class="text-sm font-semibold text-foam">Self-host</div>
-              <div class="text-xs text-dim mt-0.5">Docker Compose</div>
-            </div>
-            <div>
-              <div class="text-sm font-semibold text-foam">Extensible</div>
-              <div class="text-xs text-dim mt-0.5">Плагины и API</div>
-            </div>
+          <div class="mt-8 bg-bg border border-border rounded-xl text-left p-5 max-w-md mx-auto font-mono text-sm">
+            <pre class="whitespace-pre"><span class="code-comment">$ git clone https://github.com/teploe-odealko/mp-flow</span>
+<span class="code-comment">$ cd mp-flow</span>
+<span class="code-str">$ docker compose up -d</span>
+<span class="text-dim"># &#10003; http://localhost:3000</span></pre>
           </div>
 
           <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-            <a href="https://docs.mp-flow.ru" class="w-full sm:w-auto text-center font-medium text-foam border border-border hover:border-cyan transition-colors px-6 py-2.5 rounded-lg text-sm">Документация&nbsp;&rarr;</a>
-            <a href="https://github.com/teploe-odealko/mp-flow" target="_blank" rel="noopener" class="w-full sm:w-auto text-center font-medium text-foam border border-border hover:border-cyan transition-colors px-6 py-2.5 rounded-lg text-sm flex items-center justify-center gap-2">
+            <a href="https://docs.mp-flow.ru/docs/developer/self-hosting" class="w-full sm:w-auto text-center font-medium text-foam border border-border hover:border-accent/40 transition-colors px-6 py-2.5 rounded-lg text-sm">Инструкция&nbsp;&rarr;</a>
+            <a href="https://github.com/teploe-odealko/mp-flow" target="_blank" rel="noopener" class="w-full sm:w-auto text-center font-medium text-foam border border-border hover:border-accent/40 transition-colors px-6 py-2.5 rounded-lg text-sm flex items-center justify-center gap-2">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
               GitHub&nbsp;&rarr;
             </a>
@@ -629,225 +631,150 @@
     </div>
   </section>
 
-  <div class="section-divider max-w-5xl mx-auto"></div>
 
-
-  <!-- ===== 10. DEPLOYMENT OPTIONS ===== -->
-  <section class="py-16 sm:py-24">
+  <!-- ===== PRICING ===== -->
+  <section id="pricing" class="py-20 sm:py-28 section-glow">
     <div class="max-w-4xl mx-auto px-4 sm:px-6">
-      <h2 class="reveal text-2xl sm:text-3xl font-bold text-center tracking-tight">Выберите свой вариант</h2>
-      <div class="mt-10 grid sm:grid-cols-2 gap-5">
+      <h2 class="reveal text-3xl sm:text-4xl font-bold text-center tracking-tight" style="letter-spacing:-0.025em">Тарифы</h2>
+      <p class="reveal reveal-d1 mt-4 text-center text-muted">Все функции одинаковы. Разница&nbsp;— в&nbsp;инфраструктуре.</p>
+
+      <div class="mt-12 grid sm:grid-cols-2 gap-5 max-w-2xl mx-auto">
         <!-- Self-host -->
-        <div class="reveal feature-card bg-surface border border-border rounded-xl p-6 sm:p-7">
-          <div class="text-xs font-medium text-dim uppercase tracking-wider">Self-host</div>
-          <div class="mt-2 text-2xl font-bold font-mono text-foam">Бесплатно</div>
-          <div class="text-sm text-muted mt-1">навсегда</div>
-          <ul class="mt-5 space-y-2.5">
-            <li class="flex items-center gap-2.5 text-sm text-muted"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-5.5" stroke="#8B949E" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Docker Compose</li>
-            <li class="flex items-center gap-2.5 text-sm text-muted"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-5.5" stroke="#8B949E" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Все функции без ограничений</li>
-            <li class="flex items-center gap-2.5 text-sm text-muted"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-5.5" stroke="#8B949E" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Свой сервер, свои данные</li>
-            <li class="flex items-center gap-2.5 text-sm text-muted"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-5.5" stroke="#8B949E" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Community поддержка</li>
-          </ul>
-          <a href="https://docs.mp-flow.ru/docs/self-hosting/docker-compose" class="mt-6 block w-full text-center font-medium text-foam border border-border hover:border-cyan transition-colors px-5 py-2.5 rounded-lg text-sm">Документация по установке&nbsp;&rarr;</a>
-        </div>
-        <!-- Cloud -->
-        <div class="reveal reveal-d1 feature-card bg-surface border border-cyan/40 rounded-xl p-6 sm:p-7 relative">
-          <div class="absolute top-4 right-4 text-[10px] font-medium bg-cyan/10 text-cyan px-2 py-0.5 rounded-full">Рекомендуем</div>
-          <div class="text-xs font-medium text-dim uppercase tracking-wider">Облако mp-flow.ru</div>
-          <div class="mt-2 text-2xl font-bold font-mono text-foam">Готово к работе</div>
-          <div class="text-sm text-muted mt-1">без установки</div>
-          <ul class="mt-5 space-y-2.5">
-            <li class="flex items-center gap-2.5 text-sm text-foam/80"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-5.5" stroke="#0EA5E9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Без установки и настройки</li>
-            <li class="flex items-center gap-2.5 text-sm text-foam/80"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-5.5" stroke="#0EA5E9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Автоматические обновления</li>
-            <li class="flex items-center gap-2.5 text-sm text-foam/80"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-5.5" stroke="#0EA5E9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Бэкапы и мониторинг</li>
-            <li class="flex items-center gap-2.5 text-sm text-foam/80"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-5.5" stroke="#0EA5E9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Приоритетная поддержка</li>
-          </ul>
-          <a href="https://admin.mp-flow.ru" class="mt-6 block w-full text-center font-medium text-deep bg-cyan hover:bg-cyan-h transition-colors px-5 py-2.5 rounded-lg text-sm">Начать бесплатно&nbsp;&rarr;</a>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <div class="section-divider max-w-5xl mx-auto"></div>
-
-
-  <!-- ===== 11. PRICING ===== -->
-  <section id="pricing" class="py-16 sm:py-24">
-    <div class="max-w-5xl mx-auto px-4 sm:px-6">
-      <h2 class="reveal text-2xl sm:text-3xl font-bold text-center tracking-tight">Тарифы</h2>
-      <div class="mt-10 grid sm:grid-cols-3 gap-5">
-
-        <!-- Self-host -->
-        <div class="reveal feature-card bg-surface border border-border rounded-xl p-6">
+        <div class="reveal glow-card bg-surface rounded-2xl p-7">
           <div class="text-sm font-medium text-muted">Self-host</div>
-          <div class="mt-3"><span class="text-3xl font-bold font-mono text-foam">0 ₽</span></div>
+          <div class="mt-3"><span class="text-3xl font-bold font-mono">0 &#8381;</span></div>
           <div class="text-sm text-dim mt-1">бесплатно навсегда</div>
-          <ul class="mt-6 space-y-2">
-            <li class="text-sm text-muted flex items-start gap-2"><span class="text-dim mt-0.5">—</span> Все функции</li>
-            <li class="text-sm text-muted flex items-start gap-2"><span class="text-dim mt-0.5">—</span> Без ограничений</li>
-            <li class="text-sm text-muted flex items-start gap-2"><span class="text-dim mt-0.5">—</span> Community support</li>
-            <li class="text-sm text-muted flex items-start gap-2"><span class="text-dim mt-0.5">—</span> Свой сервер</li>
+          <ul class="mt-6 space-y-2.5">
+            <li class="flex items-center gap-2.5 text-sm text-muted"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-5.5" stroke="#A0A4B0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Все функции без ограничений</li>
+            <li class="flex items-center gap-2.5 text-sm text-muted"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-5.5" stroke="#A0A4B0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Свой сервер, свои данные</li>
+            <li class="flex items-center gap-2.5 text-sm text-muted"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-5.5" stroke="#A0A4B0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Docker Compose</li>
+            <li class="flex items-center gap-2.5 text-sm text-muted"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-5.5" stroke="#A0A4B0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Community поддержка</li>
           </ul>
-          <a href="https://docs.mp-flow.ru/docs/self-hosting/docker-compose" class="mt-6 block w-full text-center text-sm font-medium text-foam border border-border hover:border-cyan transition-colors px-4 py-2.5 rounded-lg">Установить&nbsp;&rarr;</a>
+          <a href="https://docs.mp-flow.ru/docs/developer/self-hosting" class="mt-6 block w-full text-center text-sm font-medium text-foam border border-border hover:border-accent/40 transition-colors px-5 py-2.5 rounded-xl">Установить&nbsp;&rarr;</a>
         </div>
 
-        <!-- Pro -->
-        <div class="reveal reveal-d1 pricing-popular bg-surface border border-cyan/40 rounded-xl p-6 relative">
-          <div class="absolute -top-3 left-1/2 -translate-x-1/2 text-[10px] font-semibold bg-cyan text-deep px-3 py-1 rounded-full">Популярный</div>
-          <div class="text-sm font-medium text-muted">Pro</div>
-          <div class="mt-3"><span class="text-3xl font-bold font-mono text-foam">990 ₽</span><span class="text-sm text-muted ml-1">/мес</span></div>
-          <div class="text-sm text-dim mt-1">облако mp-flow.ru</div>
-          <ul class="mt-6 space-y-2">
-            <li class="text-sm text-foam/80 flex items-start gap-2"><span class="text-cyan mt-0.5">+</span> Все функции self-host</li>
-            <li class="text-sm text-foam/80 flex items-start gap-2"><span class="text-cyan mt-0.5">+</span> Приоритетная поддержка</li>
-            <li class="text-sm text-foam/80 flex items-start gap-2"><span class="text-cyan mt-0.5">+</span> Автообновления</li>
-            <li class="text-sm text-foam/80 flex items-start gap-2"><span class="text-cyan mt-0.5">+</span> Бэкапы</li>
+        <!-- Cloud -->
+        <div class="reveal reveal-d1 pricing-popular bg-surface rounded-2xl p-7 relative">
+          <div class="absolute -top-3 left-1/2 -translate-x-1/2 text-[10px] font-semibold bg-accent text-white px-3 py-1 rounded-full">Рекомендуем</div>
+          <div class="text-sm font-medium text-muted">Облако</div>
+          <div class="mt-3"><span class="text-3xl font-bold font-mono">990 &#8381;</span><span class="text-sm text-muted ml-1">/мес</span></div>
+          <div class="text-sm text-dim mt-1">admin.mp-flow.ru</div>
+          <ul class="mt-6 space-y-2.5">
+            <li class="flex items-center gap-2.5 text-sm text-foam/80"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-5.5" stroke="#6366F1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Без установки и настройки</li>
+            <li class="flex items-center gap-2.5 text-sm text-foam/80"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-5.5" stroke="#6366F1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Автоматические обновления</li>
+            <li class="flex items-center gap-2.5 text-sm text-foam/80"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-5.5" stroke="#6366F1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Бэкапы и мониторинг</li>
+            <li class="flex items-center gap-2.5 text-sm text-foam/80"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-5.5" stroke="#6366F1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Приоритетная поддержка</li>
           </ul>
-          <a href="https://admin.mp-flow.ru" class="mt-6 block w-full text-center text-sm font-medium text-deep bg-cyan hover:bg-cyan-h transition-colors px-4 py-2.5 rounded-lg">Подключить&nbsp;&rarr;</a>
-        </div>
-
-        <!-- Enterprise -->
-        <div class="reveal reveal-d2 feature-card bg-surface border border-border rounded-xl p-6">
-          <div class="text-sm font-medium text-muted">Enterprise</div>
-          <div class="mt-3"><span class="text-3xl font-bold font-mono text-foam">?</span></div>
-          <div class="text-sm text-dim mt-1">по запросу</div>
-          <ul class="mt-6 space-y-2">
-            <li class="text-sm text-muted flex items-start gap-2"><span class="text-dim mt-0.5">—</span> Выделенный сервер</li>
-            <li class="text-sm text-muted flex items-start gap-2"><span class="text-dim mt-0.5">—</span> SLA</li>
-            <li class="text-sm text-muted flex items-start gap-2"><span class="text-dim mt-0.5">—</span> Кастомные интеграции</li>
-            <li class="text-sm text-muted flex items-start gap-2"><span class="text-dim mt-0.5">—</span> Персональный менеджер</li>
-          </ul>
-          <a href="https://t.me/mp_flow_bot" target="_blank" rel="noopener" class="mt-6 block w-full text-center text-sm font-medium text-foam border border-border hover:border-cyan transition-colors px-4 py-2.5 rounded-lg">Связаться&nbsp;&rarr;</a>
+          <a href="https://admin.mp-flow.ru" class="mt-6 block w-full text-center text-sm font-medium text-white bg-accent hover:bg-accent-h transition-colors px-5 py-2.5 rounded-xl">Начать бесплатно&nbsp;&rarr;</a>
         </div>
       </div>
-      <p class="reveal mt-6 text-center text-sm text-dim">Self-host всегда бесплатно. Основные функции одинаковы во&nbsp;всех тарифах.</p>
     </div>
   </section>
 
-  <div class="section-divider max-w-5xl mx-auto"></div>
 
-
-  <!-- ===== 12. FAQ ===== -->
-  <section class="py-16 sm:py-24">
+  <!-- ===== FAQ ===== -->
+  <section class="py-20 sm:py-28 section-glow">
     <div class="max-w-2xl mx-auto px-4 sm:px-6">
-      <h2 class="reveal text-2xl sm:text-3xl font-bold text-center tracking-tight mb-10">Частые вопросы</h2>
+      <h2 class="reveal text-2xl sm:text-3xl font-bold text-center tracking-tight mb-10" style="letter-spacing:-0.025em">Частые вопросы</h2>
 
       <div class="reveal space-y-2" id="faq">
-        <div class="faq-item border border-border rounded-lg">
-          <button class="faq-toggle w-full flex items-center justify-between p-4 sm:p-5 text-left" aria-expanded="false">
-            <span class="text-sm font-medium text-foam pr-4">Чем MP Flow отличается от Sellerboard, MPStats?</span>
+        <div class="faq-item border border-border rounded-xl">
+          <button class="faq-toggle w-full flex items-center justify-between p-5 text-left">
+            <span class="text-sm font-medium text-foam pr-4">Чем MPFlow отличается от Sellerboard, MPStats?</span>
             <svg class="faq-chevron w-4 h-4 text-muted shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
           </button>
-          <div class="faq-answer px-4 sm:px-5">
-            <p class="pb-4 sm:pb-5 text-sm text-muted leading-relaxed">MP Flow — это open source ERP, а не просто аналитический сервис. Ключевые отличия: FIFO учёт по партиям с точной себестоимостью, полноценный MCP сервер для AI-агентов (54+ инструментов), возможность self-host на своём сервере бесплатно. Код открыт — вы можете дорабатывать систему под себя.</p>
+          <div class="faq-answer px-5">
+            <p class="pb-5 text-sm text-muted leading-relaxed">MPFlow&nbsp;— это open source ERP с нативной поддержкой AI-агентов (MCP), а не просто аналитический сервис. Ключевые отличия: учёт партий с себестоимостью, управленческие отчёты PnL и ДДС, система плагинов, возможность self-host бесплатно. Код открыт&nbsp;— можно дорабатывать под себя.</p>
           </div>
         </div>
 
-        <div class="faq-item border border-border rounded-lg">
-          <button class="faq-toggle w-full flex items-center justify-between p-4 sm:p-5 text-left" aria-expanded="false">
+        <div class="faq-item border border-border rounded-xl">
+          <button class="faq-toggle w-full flex items-center justify-between p-5 text-left">
             <span class="text-sm font-medium text-foam pr-4">Какие маркетплейсы поддерживаются?</span>
             <svg class="faq-chevron w-4 h-4 text-muted shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
           </button>
-          <div class="faq-answer px-4 sm:px-5">
-            <p class="pb-4 sm:pb-5 text-sm text-muted leading-relaxed">Сейчас полностью поддерживается Ozon FBO: синхронизация продаж, финансов, остатков, возвратов, поставок. Система проектировалась как мульти-маркетплейсная — добавление Wildberries и других площадок в&nbsp;планах.</p>
+          <div class="faq-answer px-5">
+            <p class="pb-5 text-sm text-muted leading-relaxed">Сейчас полностью поддерживается Ozon FBO: синхронизация продаж, финансов, остатков, возвратов. Система расширяема через плагины&nbsp;— добавление Wildberries и Яндекс.Маркета в планах.</p>
           </div>
         </div>
 
-        <div class="faq-item border border-border rounded-lg">
-          <button class="faq-toggle w-full flex items-center justify-between p-4 sm:p-5 text-left" aria-expanded="false">
-            <span class="text-sm font-medium text-foam pr-4">Можно ли развернуть у себя бесплатно?</span>
-            <svg class="faq-chevron w-4 h-4 text-muted shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
-          </button>
-          <div class="faq-answer px-4 sm:px-5">
-            <p class="pb-4 sm:pb-5 text-sm text-muted leading-relaxed">Да. <code class="text-xs bg-elevated px-1.5 py-0.5 rounded">docker compose up -d</code> — и система работает. Все функции доступны без ограничений. Нужен сервер с Docker (VPS от 1 GB RAM).</p>
-          </div>
-        </div>
-
-        <div class="faq-item border border-border rounded-lg">
-          <button class="faq-toggle w-full flex items-center justify-between p-4 sm:p-5 text-left" aria-expanded="false">
+        <div class="faq-item border border-border rounded-xl">
+          <button class="faq-toggle w-full flex items-center justify-between p-5 text-left">
             <span class="text-sm font-medium text-foam pr-4">Как подключить AI-агента?</span>
             <svg class="faq-chevron w-4 h-4 text-muted shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
           </button>
-          <div class="faq-answer px-4 sm:px-5">
-            <p class="pb-4 sm:pb-5 text-sm text-muted leading-relaxed">Создайте API ключ в настройках, укажите URL MCP сервера в вашем AI-клиенте (Claude Code, ChatGPT и др.). Подробная инструкция — в <a href="https://docs.mp-flow.ru/docs/ai-agents/mcp-setup" class="text-cyan hover:underline">документации</a>.</p>
+          <div class="faq-answer px-5">
+            <p class="pb-5 text-sm text-muted leading-relaxed">Создайте API-ключ в Настройках, добавьте конфиг .mcp.json в ваш проект с URL и ключом. Подробная инструкция&nbsp;— в <a href="https://docs.mp-flow.ru/docs/user/ai-agents/setup" class="text-accent hover:underline">документации</a>.</p>
           </div>
         </div>
 
-        <div class="faq-item border border-border rounded-lg">
-          <button class="faq-toggle w-full flex items-center justify-between p-4 sm:p-5 text-left" aria-expanded="false">
+        <div class="faq-item border border-border rounded-xl">
+          <button class="faq-toggle w-full flex items-center justify-between p-5 text-left">
+            <span class="text-sm font-medium text-foam pr-4">Можно ли развернуть бесплатно?</span>
+            <svg class="faq-chevron w-4 h-4 text-muted shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
+          </button>
+          <div class="faq-answer px-5">
+            <p class="pb-5 text-sm text-muted leading-relaxed">Да. <code class="text-xs bg-elevated px-1.5 py-0.5 rounded">docker compose up -d</code>&nbsp;— и система работает. Все функции доступны без ограничений. Нужен сервер с Docker (VPS от 1 GB RAM).</p>
+          </div>
+        </div>
+
+        <div class="faq-item border border-border rounded-xl">
+          <button class="faq-toggle w-full flex items-center justify-between p-5 text-left">
             <span class="text-sm font-medium text-foam pr-4">Безопасны ли мои данные?</span>
             <svg class="faq-chevron w-4 h-4 text-muted shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
           </button>
-          <div class="faq-answer px-4 sm:px-5">
-            <p class="pb-4 sm:pb-5 text-sm text-muted leading-relaxed">При self-host все данные хранятся на вашем сервере. В облаке: Ozon API ключи шифруются через pgcrypto, доступ по JWT токенам. Код открыт — можете проверить сами.</p>
-          </div>
-        </div>
-
-        <div class="faq-item border border-border rounded-lg">
-          <button class="faq-toggle w-full flex items-center justify-between p-4 sm:p-5 text-left" aria-expanded="false">
-            <span class="text-sm font-medium text-foam pr-4">Есть ли API?</span>
-            <svg class="faq-chevron w-4 h-4 text-muted shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
-          </button>
-          <div class="faq-answer px-4 sm:px-5">
-            <p class="pb-4 sm:pb-5 text-sm text-muted leading-relaxed">Да. 84 REST API endpoints с документацией на <a href="https://proxy.mp-flow.ru/docs" class="text-cyan hover:underline">proxy.mp-flow.ru/docs</a> + 54 MCP инструментов для AI-агентов. Пользовательская документация на <a href="https://docs.mp-flow.ru" class="text-cyan hover:underline">docs.mp-flow.ru</a>.</p>
+          <div class="faq-answer px-5">
+            <p class="pb-5 text-sm text-muted leading-relaxed">При self-host все данные на вашем сервере. В облаке: шифрованные сессии, API-ключи хешируются. Код открыт&nbsp;— можете проверить сами.</p>
           </div>
         </div>
       </div>
     </div>
   </section>
 
-  <div class="section-divider max-w-5xl mx-auto"></div>
 
-
-  <!-- ===== 13. FINAL CTA ===== -->
-  <section class="py-16 sm:py-24 relative">
-    <div class="absolute inset-0 bg-gradient-to-b from-transparent via-cyan/[0.03] to-transparent pointer-events-none"></div>
+  <!-- ===== FINAL CTA ===== -->
+  <section class="py-20 sm:py-28 relative">
+    <div class="absolute inset-0 bg-gradient-to-b from-transparent via-accent/[0.02] to-transparent pointer-events-none"></div>
     <div class="relative max-w-3xl mx-auto px-4 sm:px-6 text-center">
-      <h2 class="reveal text-2xl sm:text-3xl font-bold tracking-tight">Начните управлять продажами на&nbsp;Ozon</h2>
-      <p class="reveal reveal-d1 mt-4 text-muted">Open source. AI-powered. Бесплатно.</p>
+      <h2 class="reveal text-3xl sm:text-4xl font-bold tracking-tight" style="letter-spacing:-0.025em">Пусть агент работает&nbsp;— вы&nbsp;управляйте</h2>
+      <p class="reveal reveal-d1 mt-4 text-muted text-lg">Open source. AI&#8209;native. Бесплатно.</p>
       <div class="reveal reveal-d2 mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-        <a href="https://admin.mp-flow.ru" class="w-full sm:w-auto text-center font-medium text-deep bg-cyan hover:bg-cyan-h transition-colors px-7 py-3 rounded-lg text-base">Начать бесплатно</a>
-        <a href="https://github.com/teploe-odealko/mp-flow" target="_blank" rel="noopener" class="w-full sm:w-auto text-center font-medium text-foam border border-border hover:border-cyan transition-colors px-7 py-3 rounded-lg text-base">Self-host на GitHub&nbsp;&rarr;</a>
+        <a href="https://admin.mp-flow.ru" class="w-full sm:w-auto text-center font-medium text-white bg-accent hover:bg-accent-h transition-all px-8 py-3.5 rounded-xl text-base shadow-lg shadow-accent/20">Начать бесплатно</a>
+        <a href="https://github.com/teploe-odealko/mp-flow" target="_blank" rel="noopener" class="w-full sm:w-auto text-center font-medium text-foam border border-border hover:border-accent/40 transition-all px-8 py-3.5 rounded-xl text-base">GitHub&nbsp;&rarr;</a>
       </div>
     </div>
   </section>
 
 
-  <!-- ===== 14. FOOTER ===== -->
+  <!-- ===== FOOTER ===== -->
   <footer class="border-t border-border py-12 sm:py-16">
     <div class="max-w-6xl mx-auto px-4 sm:px-6">
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-8">
-        <!-- Column: Product -->
         <div>
           <div class="text-xs font-medium text-dim uppercase tracking-wider mb-4">Продукт</div>
           <ul class="space-y-2.5">
-            <li><a href="#features" class="text-sm text-muted hover:text-foam transition-colors">Аналитика Ozon</a></li>
-            <li><a href="#features" class="text-sm text-muted hover:text-foam transition-colors">Юнит-экономика</a></li>
-            <li><a href="#features" class="text-sm text-muted hover:text-foam transition-colors">Калькулятор прибыли</a></li>
-            <li><a href="#features" class="text-sm text-muted hover:text-foam transition-colors">Управление ценами</a></li>
-            <li><a href="#features" class="text-sm text-muted hover:text-foam transition-colors">AI агент</a></li>
+            <li><a href="#features" class="text-sm text-muted hover:text-foam transition-colors">Возможности</a></li>
+            <li><a href="#plugins" class="text-sm text-muted hover:text-foam transition-colors">Плагины</a></li>
+            <li><a href="#pricing" class="text-sm text-muted hover:text-foam transition-colors">Тарифы</a></li>
+            <li><a href="https://admin.mp-flow.ru/api/docs" class="text-sm text-muted hover:text-foam transition-colors">API Playground</a></li>
           </ul>
         </div>
-        <!-- Column: Open Source -->
         <div>
           <div class="text-xs font-medium text-dim uppercase tracking-wider mb-4">Open Source</div>
           <ul class="space-y-2.5">
             <li><a href="https://github.com/teploe-odealko/mp-flow" target="_blank" rel="noopener" class="text-sm text-muted hover:text-foam transition-colors">GitHub</a></li>
             <li><a href="https://docs.mp-flow.ru" class="text-sm text-muted hover:text-foam transition-colors">Документация</a></li>
-            <li><a href="https://proxy.mp-flow.ru/docs" class="text-sm text-muted hover:text-foam transition-colors">API</a></li>
-            <li><a href="https://github.com/teploe-odealko/mp-flow" target="_blank" rel="noopener" class="text-sm text-muted hover:text-foam transition-colors">Contributing</a></li>
+            <li><a href="https://docs.mp-flow.ru/docs/developer/plugin-development" class="text-sm text-muted hover:text-foam transition-colors">Разработка плагинов</a></li>
           </ul>
         </div>
-        <!-- Column: Resources -->
         <div>
           <div class="text-xs font-medium text-dim uppercase tracking-wider mb-4">Ресурсы</div>
           <ul class="space-y-2.5">
-            <li><a href="https://docs.mp-flow.ru/docs/getting-started/quick-start" class="text-sm text-muted hover:text-foam transition-colors">Быстрый старт</a></li>
-            <li><a href="https://docs.mp-flow.ru/docs/ai-agents/mcp-setup" class="text-sm text-muted hover:text-foam transition-colors">MCP настройка</a></li>
+            <li><a href="https://docs.mp-flow.ru/docs/developer/self-hosting" class="text-sm text-muted hover:text-foam transition-colors">Self-hosting</a></li>
+            <li><a href="https://docs.mp-flow.ru/docs/user/ai-agents/setup" class="text-sm text-muted hover:text-foam transition-colors">Подключение AI-агента</a></li>
             <li><a href="#faq" class="text-sm text-muted hover:text-foam transition-colors">FAQ</a></li>
           </ul>
         </div>
-        <!-- Column: Contact -->
         <div>
           <div class="text-xs font-medium text-dim uppercase tracking-wider mb-4">Контакты</div>
           <ul class="space-y-2.5">
@@ -859,7 +786,7 @@
       <div class="mt-10 pt-6 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4">
         <div class="flex items-center gap-2.5">
           <img src="logo.png" alt="MPFlow" width="20" height="20" class="rounded">
-          <span class="text-sm text-dim">&copy; 2025 MP Flow. Open source.</span>
+          <span class="text-sm text-dim">&copy; 2025 MPFlow. Open source.</span>
         </div>
         <div class="flex items-center gap-4">
           <a href="https://github.com/teploe-odealko/mp-flow" target="_blank" rel="noopener" class="text-muted hover:text-foam transition-colors" aria-label="GitHub">
@@ -885,21 +812,31 @@
     // Scroll reveal
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('visible');
-        }
+        if (entry.isIntersecting) entry.target.classList.add('visible');
       });
     }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
-
     document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+    // Terminal typing animation
+    const terminalObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const lines = entry.target.querySelectorAll('.terminal-line');
+          lines.forEach(line => {
+            const delay = parseInt(line.dataset.delay) || 0;
+            setTimeout(() => line.classList.add('show'), delay);
+          });
+          terminalObserver.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.3 });
+    const terminal = document.getElementById('terminal');
+    if (terminal) terminalObserver.observe(terminal);
 
     // Mobile menu
     const burger = document.getElementById('burger');
     const mobileMenu = document.getElementById('mobile-menu');
-    burger.addEventListener('click', () => {
-      mobileMenu.classList.toggle('open');
-    });
-    // Close mobile menu on link click
+    burger.addEventListener('click', () => mobileMenu.classList.toggle('open'));
     mobileMenu.querySelectorAll('a').forEach(a => {
       a.addEventListener('click', () => mobileMenu.classList.remove('open'));
     });
@@ -909,38 +846,29 @@
       btn.addEventListener('click', () => {
         const item = btn.closest('.faq-item');
         const isOpen = item.classList.contains('open');
-        // Close all
         document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
-        // Toggle current
         if (!isOpen) item.classList.add('open');
       });
     });
 
-    // Header background on scroll
+    // Header scroll
     const header = document.getElementById('header');
     let ticking = false;
     window.addEventListener('scroll', () => {
       if (!ticking) {
         requestAnimationFrame(() => {
-          if (window.scrollY > 20) {
-            header.style.borderBottom = '1px solid rgba(30,42,53,0.5)';
-          } else {
-            header.style.borderBottom = 'none';
-          }
+          header.style.borderBottom = window.scrollY > 20 ? '1px solid rgba(255,255,255,0.06)' : 'none';
           ticking = false;
         });
         ticking = true;
       }
     });
 
-    // Smooth scroll for anchor links
+    // Smooth scroll
     document.querySelectorAll('a[href^="#"]').forEach(a => {
       a.addEventListener('click', e => {
         const target = document.querySelector(a.getAttribute('href'));
-        if (target) {
-          e.preventDefault();
-          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
+        if (target) { e.preventDefault(); target.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
       });
     });
   </script>
