@@ -217,7 +217,7 @@ export default function PhotoStudioTab({ productId, onRefresh }: MasterCardTabPr
                     <iframe
                       srcDoc={`<!DOCTYPE html><html><head><style>body{margin:0;display:flex;align-items:center;justify-content:center;background:#1a1a1a;overflow:hidden}svg{max-width:100%;max-height:100%}</style></head><body>${frame.svg_content}</body></html>`}
                       sandbox="allow-same-origin"
-                      className="w-full h-full border-0"
+                      className="w-full h-full border-0 pointer-events-none"
                       title={`Frame ${frame.index}`}
                     />
                   ) : (
