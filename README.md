@@ -4,7 +4,7 @@
 [![CI](https://github.com/teploe-odealko/mp-flow/actions/workflows/ci.yml/badge.svg)](https://github.com/teploe-odealko/mp-flow/actions/workflows/ci.yml)
 [![Docker](https://img.shields.io/badge/Docker-ghcr.io-blue)](https://github.com/teploe-odealko/mp-flow/pkgs/container/mp-flow%2Fadmin)
 
-Open source ERP для продавцов на маркетплейсах. Управление каталогом, закупками, складом (FIFO), ценами и финансами в одном месте.
+AI Agent First ERP для продавцов на маркетплейсах. Каталог, закупки, склад, продажи, финансы — в одном месте. Подключайте AI-агентов через MCP для управления магазином.
 
 **[mp-flow.ru](https://mp-flow.ru)** · **[Документация](https://docs.mp-flow.ru)** · **[Облако](https://admin.mp-flow.ru)**
 
@@ -29,11 +29,12 @@ docker compose up -d
 
 - **Каталог** — карточки товаров с SKU, размерами, ценами, данными поставщиков
 - **Закупки** — заказы поставщикам с распределением общих затрат (логистика, таможня)
-- **FIFO учёт** — партионный складской учёт с точной себестоимостью каждой единицы
-- **Юнит-экономика** — PnL по товару с реальной себестоимостью FIFO
+- **Складской учёт** — партионный учёт с точной себестоимостью каждой единицы
+- **Юнит-экономика** — PnL по товару с реальной себестоимостью
 - **Продажи** — синхронизация с Ozon (отправления, возвраты, комиссии)
 - **Финансы** — транзакции, ДДС, отчёты
 - **Аналитика** — сводные отчёты по продажам и складу
+- **AI-агенты** — MCP-сервер для подключения Claude Code, Cursor, Codex и других AI-клиентов
 - **Плагины** — расширяемая архитектура с convention-based auto-discovery
 
 ## Облако
@@ -46,7 +47,7 @@ docker compose up -d
 
 ```
 ┌───────────────────────────────────┐
-│        Браузер                    │
+│        Браузер / AI-агент         │
 │   http://localhost:3000           │
 └──────────────┬────────────────────┘
                │
@@ -54,6 +55,7 @@ docker compose up -d
 │   MPFlow Admin (Node.js)          │
 │   - Hono API (:3000)             │
 │   - React SPA (встроена)         │
+│   - MCP-сервер (/mcp)           │
 │   - Плагины (auto-discovery)    │
 ├───────────────────────────────────┤
 │   Core-модули:                    │
@@ -66,6 +68,7 @@ docker compose up -d
 │   - entities → auto-schema       │
 │   - services → DI (awilix)      │
 │   - routes, middleware, nav      │
+│   - mcpTools, mcpResources      │
 └──────────┬────────────────────────┘
            │
 ┌──────────▼──────┐
@@ -75,8 +78,9 @@ docker compose up -d
 ```
 
 - **Admin** — Hono API + React SPA в одном Node.js процессе. MikroORM для БД, awilix для DI.
+- **MCP-сервер** — Streamable HTTP транспорт на `/mcp`. AI-агенты управляют магазином через tools и resources.
 - **PostgreSQL** — все данные. Миграции + auto-schema применяются при запуске.
-- **Плагины** — свои entities, routes, middleware. Таблицы создаются автоматически.
+- **Плагины** — свои entities, routes, middleware, MCP tools. Таблицы создаются автоматически.
 
 ## Tech Stack
 
@@ -90,15 +94,18 @@ docker compose up -d
 | Frontend | React 19 + Vite 6 + Tailwind CSS 3 |
 | Data fetching | TanStack Query 5 |
 | Router | React Router 7 |
+| AI | MCP (Model Context Protocol) |
 
 ## Интеграции
 
 | Интеграция | Описание |
 |------------|----------|
 | **Ozon Seller API** | Синхронизация товаров, остатков, продаж (плагин `ozon`) |
+| **1688.com** | Поиск поставщиков, импорт товаров (плагин `ali1688`) |
+| **AI Фото-студия** | Генерация фото товаров через AI (плагин `photo-studio`) |
 | **Logto OIDC** | SSO авторизация |
 
-Интеграции подключаются как плагины. Ozon — встроенный плагин, другие можно создать самостоятельно.
+Интеграции подключаются как плагины. Три плагина из коробки, другие можно создать самостоятельно.
 
 ## Разработка
 

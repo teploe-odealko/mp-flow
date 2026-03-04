@@ -32,15 +32,17 @@ npm run dev
 ## Структура проекта
 
 ```
-admin/               Основное приложение (бэкенд + фронтенд)
-  src/server/        Hono API, MikroORM модули, маршруты
-  src/client/        React SPA (Tailwind CSS, TanStack Query)
-  plugins/ozon/      Ozon интеграция (плагин)
-  mpflow.config.ts   Конфигурация (БД, auth, плагины)
-landing/             Лэндинг (статический HTML)
-website/             Документация (Next.js 16 + Fumadocs)
-brand/               Логотип, брендбук
-ee/                  Лицензия EE
+admin/                    Основное приложение (бэкенд + фронтенд)
+  src/server/             Hono API, MikroORM модули, MCP-сервер, маршруты
+  src/client/             React SPA (Tailwind CSS, TanStack Query)
+  plugins/ozon/           Ozon интеграция (плагин)
+  plugins/ali1688/        1688.com поиск поставщиков (плагин)
+  plugins/photo-studio/   AI фото-студия (плагин)
+  mpflow.config.ts        Конфигурация (БД, auth, плагины)
+landing/                  Лэндинг (статический HTML)
+website/                  Документация (Next.js 16 + Fumadocs)
+brand/                    Логотип, брендбук
+ee/                       Лицензия EE
 ```
 
 ## Git Flow
@@ -57,7 +59,7 @@ ee/                  Лицензия EE
 | Префикс | Когда использовать | Пример |
 |---------|-------------------|--------|
 | `feat:` | Новая функциональность | `feat: добавить страницу аналитики` |
-| `fix:` | Исправление бага | `fix: исправить подсчёт FIFO себестоимости` |
+| `fix:` | Исправление бага | `fix: исправить подсчёт себестоимости` |
 | `refactor:` | Рефакторинг без изменения поведения | `refactor: convention-based auto-discovery` |
 | `docs:` | Только документация | `docs: обновить README` |
 | `chore:` | Обслуживание (зависимости, CI) | `chore: обновить dependencies` |
@@ -111,7 +113,7 @@ npm run db:migrate
 
 Плагины расширяют систему: свои entities, API-роуты, middleware, страницы в админке. Convention-based auto-discovery — entities, services, routes обнаруживаются по структуре папок.
 
-Смотрите плагин `ozon` как референс: `admin/plugins/ozon/`.
+Смотрите плагин `ozon` как референс: `admin/plugins/ozon/`. Плагины также могут добавлять MCP tools и resources через `mcpTools` и `mcpResources` в `definePlugin()`.
 
 Подробная документация: [docs.mp-flow.ru/docs/developer/plugin-development](https://docs.mp-flow.ru/docs/developer/plugin-development)
 
