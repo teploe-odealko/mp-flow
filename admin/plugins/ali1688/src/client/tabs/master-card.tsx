@@ -91,6 +91,11 @@ export default function Ali1688Tab({ productId, onRefresh }: MasterCardTabProps)
   /** Shared pipeline: build link body from fresh preview + selected SKU */
   function buildLinkBody(freshPreview: PreviewData, sku: Sku | null) {
     const skuPrice = sku?.price ?? (freshPreview.price_min ? Number(freshPreview.price_min) : null)
+    // If no real tiered pricing (single fallback entry) and SKU has a price, use SKU price
+    let priceTiers = freshPreview.price_tiers
+    if (sku?.price != null && priceTiers?.length === 1 && priceTiers[0].min_qty === 1) {
+      priceTiers = [{ min_qty: 1, price: sku.price }]
+    }
     return {
       master_card_id: productId,
       url: freshPreview.url || url.trim() || link?.url || "",
@@ -102,7 +107,7 @@ export default function Ali1688Tab({ productId, onRefresh }: MasterCardTabProps)
       supplier_name: freshPreview.supplier_name,
       title: freshPreview.title,
       images: freshPreview.images,
-      price_tiers: freshPreview.price_tiers,
+      price_tiers: priceTiers,
       currency: freshPreview.currency || "CNY",
       raw_data: freshPreview,
     }
