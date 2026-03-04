@@ -427,19 +427,9 @@ function SourceImagesSection({ projectId, sourceImages, onRefresh }: {
 }
 
 function SourceImageThumb({ fileId, onRemove }: { fileId: string; onRemove: () => void }) {
-  const { data } = useQuery({
-    queryKey: ["file-url", fileId],
-    queryFn: () => apiGet<{ url: string }>(`/api/files/${fileId}/url`),
-    staleTime: 50 * 60 * 1000,
-  })
-
   return (
     <div className="relative group aspect-square bg-bg-deep rounded overflow-hidden">
-      {data?.url ? (
-        <img src={data.url} alt="" className="w-full h-full object-cover" />
-      ) : (
-        <div className="w-full h-full flex items-center justify-center text-text-muted text-[10px]">...</div>
-      )}
+      <img src={`/api/files/${fileId}/download`} alt="" className="w-full h-full object-cover" />
       <button
         onClick={(e) => { e.stopPropagation(); onRemove() }}
         className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-outflow/80 text-white text-[10px] leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
@@ -676,12 +666,6 @@ function SourceImagePickerThumb({ fileId, selected, onToggle }: {
   selected: boolean
   onToggle: () => void
 }) {
-  const { data } = useQuery({
-    queryKey: ["file-url", fileId],
-    queryFn: () => apiGet<{ url: string }>(`/api/files/${fileId}/url`),
-    staleTime: 50 * 60 * 1000,
-  })
-
   return (
     <button
       onClick={(e) => { e.stopPropagation(); onToggle() }}
@@ -689,11 +673,7 @@ function SourceImagePickerThumb({ fileId, selected, onToggle }: {
         selected ? "border-accent" : "border-transparent opacity-50 hover:opacity-80"
       }`}
     >
-      {data?.url ? (
-        <img src={data.url} alt="" className="w-full h-full object-cover" />
-      ) : (
-        <div className="w-full h-full bg-bg-deep" />
-      )}
+      <img src={`/api/files/${fileId}/download`} alt="" className="w-full h-full object-cover" />
     </button>
   )
 }
@@ -701,13 +681,5 @@ function SourceImagePickerThumb({ fileId, selected, onToggle }: {
 // ── Generated Image ──
 
 function GeneratedImage({ fileId }: { fileId: string }) {
-  const { data } = useQuery({
-    queryKey: ["file-url", fileId],
-    queryFn: () => apiGet<{ url: string }>(`/api/files/${fileId}/url`),
-    staleTime: 50 * 60 * 1000, // 50 min (URL expires in 1h)
-  })
-
-  if (!data?.url) return <div className="text-text-muted text-xs">Загрузка...</div>
-
-  return <img src={data.url} alt="Generated" className="w-full h-full object-cover" />
+  return <img src={`/api/files/${fileId}/download`} alt="Generated" className="w-full h-full object-cover" />
 }
