@@ -33,11 +33,16 @@ analytics.get("/", async (c) => {
       const saleService: SaleService = c.get("container").resolve("saleService")
       const data = await saleService.getSalesPnl(new Date(from), new Date(to), filters)
 
-      // Add manual income/expense from FinanceTransaction
+      // Add manual cash flows from FinanceTransaction (ДДС)
       const financeService: FinanceService = c.get("container").resolve("financeService")
       const financeFilters: Record<string, any> = {}
       if (userId) financeFilters.user_id = userId
       const financePnl = await financeService.calculatePnl(new Date(from), new Date(to), financeFilters)
+
+      // Add non-cash accruals from plugins (P&L-only entries)
+      const accrualsFilters: Record<string, any> = {}
+      if (userId) accrualsFilters.user_id = userId
+      const accruals = await financeService.calculateAccruals(new Date(from), new Date(to), accrualsFilters)
 
       const manualIncomeByType: Record<string, number> = {}
       const manualExpenseByType: Record<string, number> = {}
@@ -46,14 +51,19 @@ analytics.get("/", async (c) => {
         else if (amount < 0) manualExpenseByType[type] = Math.abs(amount)
       }
 
-      const totalIncome = data.revenue + financePnl.income
-      const totalExpense = data.fees + data.cogs + financePnl.expense
+      // Combine: sale revenue + accrual income + manual income
+      const totalIncome = data.revenue + accruals.income + financePnl.income
+      // Combine: sale fees + cogs + accrual expenses + manual expenses
+      const totalExpense = data.fees + data.cogs + accruals.expense + financePnl.expense
       const netProfit = totalIncome - totalExpense
 
       return c.json({
         report: "pnl", from, to,
         data: {
           ...data,
+          accrual_income: accruals.income,
+          accrual_expense: accruals.expense,
+          accrual_by_type: accruals.by_type,
           manual_income: financePnl.income,
           manual_income_by_type: manualIncomeByType,
           manual_expense: financePnl.expense,

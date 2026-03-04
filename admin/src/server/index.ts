@@ -8,6 +8,7 @@ import { collectPluginEntities, loadPlugins, getLoadedPlugins } from "./core/plu
 import { MasterCard } from "./modules/master-card/entity.js"
 import { SupplierOrder, SupplierOrderItem, Supplier } from "./modules/supplier-order/entities.js"
 import { FinanceTransaction } from "./modules/finance/entity.js"
+import { FinanceAccrual } from "./modules/finance/accrual-entity.js"
 import { Sale } from "./modules/sale/entity.js"
 import { PluginSetting } from "./modules/plugin-setting/entity.js"
 import { ProcurementSetting } from "./modules/procurement/entity.js"
@@ -50,7 +51,7 @@ async function main() {
   console.log("[mpflow] Starting admin server...")
 
   // Collect ALL entities (core + plugins) before ORM init
-  const coreEntities = [MasterCard, SupplierOrder, SupplierOrderItem, Supplier, FinanceTransaction, Sale, PluginSetting, ProcurementSetting, ApiKey, FileAsset]
+  const coreEntities = [MasterCard, SupplierOrder, SupplierOrderItem, Supplier, FinanceTransaction, FinanceAccrual, Sale, PluginSetting, ProcurementSetting, ApiKey, FileAsset]
   const pluginPaths = [{ resolve: "./plugins/ozon" }, { resolve: "./plugins/ali1688" }, { resolve: "./plugins/photo-studio" }]
   const pluginEntities = await collectPluginEntities(pluginPaths)
   const allEntities = [...coreEntities, ...pluginEntities]

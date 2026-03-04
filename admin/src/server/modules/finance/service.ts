@@ -1,5 +1,6 @@
 import type { EntityManager } from "@mikro-orm/core"
 import { FinanceTransaction } from "./entity.js"
+import { FinanceAccrual } from "./accrual-entity.js"
 
 export class FinanceService {
   constructor(private em: EntityManager) {}
@@ -14,7 +15,6 @@ export class FinanceService {
     if (filters.master_card_id) where.master_card_id = filters.master_card_id
     if (filters.source) where.source = filters.source
     if (filters.transaction_date) where.transaction_date = filters.transaction_date
-    if (filters.is_cash !== undefined) where.is_cash = filters.is_cash
     return this.em.find(FinanceTransaction, where, {
       orderBy: { transaction_date: "DESC" },
     })
@@ -31,7 +31,6 @@ export class FinanceService {
     if (filters.direction) where.direction = filters.direction
     if (filters.source) where.source = filters.source
     if (filters.transaction_date) where.transaction_date = filters.transaction_date
-    if (filters.is_cash !== undefined) where.is_cash = filters.is_cash
     if (filters.supplier_order_id) where.supplier_order_id = filters.supplier_order_id
     if (filters.search) {
       where.$or = [
@@ -58,7 +57,7 @@ export class FinanceService {
     const tx = await this.em.findOneOrFail(FinanceTransaction, { id, deleted_at: null })
     const allowed = [
       "type", "direction", "amount", "category", "description",
-      "transaction_date", "source", "metadata", "is_cash",
+      "transaction_date", "source", "metadata",
     ]
     for (const key of allowed) {
       if (key in data) {
@@ -75,13 +74,34 @@ export class FinanceService {
     await this.em.flush()
   }
 
+  async calculateAccruals(from: Date, to: Date, filters?: Record<string, any>) {
+    const where: Record<string, any> = {
+      deleted_at: null,
+      accrual_date: { $gte: from, $lte: to },
+    }
+    if (filters?.user_id) where.user_id = filters.user_id
+    if (filters?.plugin_source) where.plugin_source = filters.plugin_source
+
+    const accruals = await this.em.find(FinanceAccrual, where)
+
+    const income = accruals.filter((a) => a.direction === "income").reduce((s, a) => s + Number(a.amount), 0)
+    const expense = accruals.filter((a) => a.direction === "expense").reduce((s, a) => s + Number(a.amount), 0)
+
+    const byType: Record<string, number> = {}
+    for (const a of accruals) {
+      const sign = a.direction === "income" ? 1 : -1
+      byType[a.type] = (byType[a.type] || 0) + sign * Number(a.amount)
+    }
+
+    return { income, expense, net: income - expense, by_type: byType, count: accruals.length }
+  }
+
   async calculatePnl(from: Date, to: Date, filters?: Record<string, any>) {
     const where: Record<string, any> = {
       deleted_at: null,
       transaction_date: { $gte: from, $lte: to },
     }
     if (filters?.user_id) where.user_id = filters.user_id
-    if (filters?.is_cash !== undefined) where.is_cash = filters.is_cash
 
     const transactions = await this.em.find(FinanceTransaction, where)
 
@@ -107,5 +127,51 @@ export class FinanceService {
       by_type: byType,
       transaction_count: transactions.length,
     }
+  }
+
+  // --- FinanceAccrual methods ---
+
+  async createAccrual(data: {
+    user_id?: string | null
+    plugin_source: string
+    external_id?: string | null
+    direction: string
+    amount: number
+    currency_code?: string
+    type: string
+    category?: string | null
+    description?: string | null
+    accrual_date: Date
+    metadata?: any
+  }) {
+    const accrual = this.em.create(FinanceAccrual, {
+      ...data,
+      currency_code: data.currency_code ?? "RUB",
+      created_at: new Date(),
+      updated_at: new Date(),
+      deleted_at: null,
+    })
+    await this.em.persistAndFlush(accrual)
+    return accrual
+  }
+
+  async listAccruals(filters: Record<string, any> = {}) {
+    const where: Record<string, any> = { deleted_at: null }
+    if (filters.user_id) where.user_id = filters.user_id
+    if (filters.plugin_source) where.plugin_source = filters.plugin_source
+    if (filters.external_id) where.external_id = filters.external_id
+    if (filters.accrual_date) where.accrual_date = filters.accrual_date
+    return this.em.find(FinanceAccrual, where, { orderBy: { accrual_date: "DESC" } })
+  }
+
+  async accrualExternalIdExists(pluginSource: string, externalIds: (string | number)[]): Promise<Set<string>> {
+    if (externalIds.length === 0) return new Set()
+    const ids = externalIds.map(String)
+    const found = await this.em.find(FinanceAccrual, {
+      deleted_at: null,
+      plugin_source: pluginSource,
+      external_id: { $in: ids },
+    })
+    return new Set(found.map((a) => a.external_id!))
   }
 }

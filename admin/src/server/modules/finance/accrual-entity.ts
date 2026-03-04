@@ -1,8 +1,13 @@
-import { Entity, PrimaryKey, Property, Index, Enum } from "@mikro-orm/core"
+import { Entity, PrimaryKey, Property, Index } from "@mikro-orm/core"
 import { v4 } from "uuid"
 
-@Entity({ tableName: "finance_transaction" })
-export class FinanceTransaction {
+/**
+ * Generic P&L accrual table — non-cash entries from any plugin.
+ * Plugin writes here during sync; core P&L analytics reads from it.
+ * NOT part of ДДС (cash flow). Only real money movements go to FinanceTransaction.
+ */
+@Entity({ tableName: "finance_accrual" })
+export class FinanceAccrual {
   @PrimaryKey({ type: "text" })
   id: string = v4()
 
@@ -10,26 +15,19 @@ export class FinanceTransaction {
   @Index()
   user_id?: string | null
 
-  @Enum({
-    items: [
-      "sale_revenue", "sale_commission", "sale_logistics",
-      "cogs", "supplier_payment", "shipping_cost",
-      "refund", "adjustment", "other", "ozon_payout",
-    ],
-  })
+  /** Which plugin created this: "ozon", "wildberries", "manual", etc. */
+  @Property({ type: "text" })
   @Index()
-  type!: string
+  plugin_source!: string
 
+  /** Deduplication key within a plugin (e.g. Ozon operation_id as string) */
   @Property({ type: "text", nullable: true })
   @Index()
-  order_id?: string | null
+  external_id?: string | null
 
-  @Property({ type: "text", nullable: true })
-  supplier_order_id?: string | null
-
-  @Property({ type: "text", nullable: true })
+  @Property({ type: "text" })
   @Index()
-  master_card_id?: string | null
+  direction!: string // "income" | "expense"
 
   @Property({ type: "numeric" })
   amount!: number
@@ -37,9 +35,10 @@ export class FinanceTransaction {
   @Property({ type: "text", default: "RUB" })
   currency_code: string = "RUB"
 
-  @Enum({ items: ["income", "expense"] })
+  /** Generic type: "marketplace_fee", "storage", "marketing", "fbo_services", "other" */
+  @Property({ type: "text" })
   @Index()
-  direction!: "income" | "expense"
+  type!: string
 
   @Property({ type: "text", nullable: true })
   category?: string | null
@@ -49,10 +48,7 @@ export class FinanceTransaction {
 
   @Property({ type: "timestamptz" })
   @Index()
-  transaction_date!: Date
-
-  @Property({ type: "text", nullable: true })
-  source?: string | null
+  accrual_date!: Date
 
   @Property({ type: "json", nullable: true })
   metadata?: any

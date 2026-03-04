@@ -155,15 +155,8 @@ export async function syncOzonTransactions(
     }
   }
 
-  // Save unmatched and orphan transactions to FinanceTransaction
+  // Save unmatched and orphan transactions to FinanceAccrual (P&L only, not cash)
   const financeService: any = container.resolve("financeService")
-  const existingFinance = await financeService.listFinanceTransactions({
-    source: "ozon_api",
-    transaction_date: { $gte: from, $lte: to },
-  })
-  const existingOpIds = new Set(
-    existingFinance.map((f: any) => f.metadata?.operation_id).filter(Boolean),
-  )
 
   const allUnlinked: Array<{ tx: TransactionSummary; postingNumber?: string }> = []
   for (const [posting, txs] of Object.entries(unmatchedDetails)) {
@@ -171,30 +164,33 @@ export async function syncOzonTransactions(
   }
   for (const tx of orphanTransactions) allUnlinked.push({ tx })
 
+  // Deduplicate by external_id
+  const allExternalIds = allUnlinked.map(({ tx }) => tx.operation_id)
+  const existingExternalIds = await financeService.accrualExternalIdExists("ozon", allExternalIds)
+
   let financeCreated = 0
   for (const { tx, postingNumber } of allUnlinked) {
-    if (existingOpIds.has(tx.operation_id)) continue
+    if (existingExternalIds.has(String(tx.operation_id))) continue
 
     const classified = classifyOzonTransaction(tx)
-    await financeService.createFinanceTransactions({
+    await financeService.createAccrual({
       user_id: (account as any).user_id || undefined,
+      plugin_source: "ozon",
+      external_id: String(tx.operation_id),
       type: classified.type,
       direction: tx.amount < 0 ? "expense" : "income",
       amount: Math.abs(tx.amount),
       category: classified.category,
       description: tx.operation_type_name,
-      transaction_date: new Date(tx.date),
-      source: "ozon_api",
-      is_cash: false, // Ozon accruals are P&L only, not real cash movements
+      accrual_date: new Date(tx.date),
       metadata: {
-        operation_id: tx.operation_id,
         ozon_account_id: account.id,
         posting_number: postingNumber || null,
         services: tx.services,
         items: tx.items,
       },
     })
-    existingOpIds.add(tx.operation_id)
+    existingExternalIds.add(String(tx.operation_id))
     financeCreated++
   }
 

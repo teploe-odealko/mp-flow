@@ -16,21 +16,6 @@ const TYPE_OPTIONS = [
   { value: "refund", label: "Возврат" },
   { value: "adjustment", label: "Корректировка" },
   { value: "other", label: "Прочее" },
-  // P&L-only types (for "all" view)
-  { value: "fbo_services", label: "FBO-услуги" },
-  { value: "marketing", label: "Маркетинг" },
-  { value: "sale_commission", label: "Комиссия МП" },
-  { value: "sale_logistics", label: "Логистика МП" },
-  { value: "cogs", label: "Себестоимость" },
-] as const
-
-const DDS_TYPE_OPTIONS = [
-  { value: "ozon_payout", label: "Выплата Ozon" },
-  { value: "supplier_payment", label: "Оплата поставщику" },
-  { value: "shipping_cost", label: "Доставка" },
-  { value: "refund", label: "Возврат" },
-  { value: "adjustment", label: "Корректировка" },
-  { value: "other", label: "Прочее" },
 ] as const
 
 const TYPE_LABELS: Record<string, string> = Object.fromEntries(TYPE_OPTIONS.map((o) => [o.value, o.label]))
@@ -66,7 +51,6 @@ interface Transaction {
   description?: string | null
   transaction_date: string
   source?: string | null
-  is_cash: boolean
   supplier_order_id?: string | null
   metadata?: any
   created_at: string
@@ -91,7 +75,6 @@ export default function FinancePage() {
   const [filterSource, setFilterSource] = useState("")
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(0)
-  const [showAll, setShowAll] = useState(false) // false = ДДС only, true = все
 
   // Modal
   const [modalOpen, setModalOpen] = useState(false)
@@ -119,10 +102,9 @@ export default function FinancePage() {
   if (filterDirection) txParams.set("direction", filterDirection)
   if (filterSource) txParams.set("source", filterSource)
   if (search) txParams.set("search", search)
-  if (showAll) txParams.set("is_cash", "all")
 
   const { data: txData, isLoading } = useQuery({
-    queryKey: ["finance-transactions", dateFrom, dateTo, filterType, filterDirection, filterSource, search, page, showAll],
+    queryKey: ["finance-transactions", dateFrom, dateTo, filterType, filterDirection, filterSource, search, page],
     queryFn: () => apiGet<{ transactions: Transaction[]; total_count: number }>(`/api/finance/transactions?${txParams.toString()}`),
   })
 
@@ -146,6 +128,7 @@ export default function FinancePage() {
   function resetFilters() {
     setFilterType(""); setFilterDirection(""); setFilterSource(""); setSearch(""); setPage(0)
   }
+
 
   const hasFilters = filterType || filterDirection || filterSource || search
 
@@ -218,7 +201,7 @@ export default function FinancePage() {
           className="bg-bg-surface border border-bg-border rounded px-2 py-1.5 text-sm text-text-primary"
         >
           <option value="">Все типы</option>
-          {(showAll ? TYPE_OPTIONS : DDS_TYPE_OPTIONS).map((o) => (
+          {TYPE_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
@@ -257,16 +240,7 @@ export default function FinancePage() {
           </button>
         )}
 
-        <div className="ml-auto flex items-center gap-3">
-          <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showAll}
-              onChange={(e) => { setShowAll(e.target.checked); setPage(0) }}
-              className="accent-accent"
-            />
-            Показать начисления Ozon
-          </label>
+        <div className="ml-auto">
           <span className="text-text-secondary text-sm">{totalCount} записей</span>
         </div>
       </div>
@@ -277,9 +251,9 @@ export default function FinancePage() {
       ) : transactions.length === 0 ? (
         <div className="py-8 text-center">
           <p className="text-text-secondary">Нет операций{hasFilters ? " по заданным фильтрам" : ""}</p>
-          {!showAll && !hasFilters && (
+          {!hasFilters && (
             <p className="text-text-muted text-xs mt-2">
-              Здесь отображаются реальные денежные операции. Добавьте платёж или включите «Показать начисления Ozon».
+              Здесь отображаются реальные денежные операции (ДДС). Добавьте платёж вручную.
             </p>
           )}
         </div>
@@ -300,11 +274,10 @@ export default function FinancePage() {
               </thead>
               <tbody>
                 {transactions.map((tx) => (
-                  <tr key={tx.id} className={`border-b border-bg-border hover:bg-bg-surface/50 ${!tx.is_cash ? "opacity-60" : ""}`}>
+                  <tr key={tx.id} className="border-b border-bg-border hover:bg-bg-surface/50">
                     <td className="px-2 py-1.5 text-text-secondary text-xs whitespace-nowrap">{fmtDate(tx.transaction_date)}</td>
                     <td className="px-2 py-1.5 text-xs">
                       <span>{TYPE_LABELS[tx.type] || tx.type}</span>
-                      {!tx.is_cash && <span className="ml-1 text-[10px] text-text-muted">(начисление)</span>}
                     </td>
                     <td className="px-2 py-1.5">
                       <span className={`px-2 py-0.5 rounded text-xs ${DIRECTION_COLORS[tx.direction] || ""}`}>
@@ -410,7 +383,6 @@ function TransactionModal({ transaction, onClose, onSaved }: ModalProps) {
         amount: Number(amount),
         description: description || null,
         transaction_date: txDate,
-        is_cash: true,
       }
       if (isEdit) {
         await apiPut(`/api/finance/${transaction.id}`, body)
@@ -461,7 +433,7 @@ function TransactionModal({ transaction, onClose, onSaved }: ModalProps) {
               onChange={(e) => setType(e.target.value)}
               className="w-full bg-bg-deep border border-bg-border rounded px-3 py-2 text-sm text-text-primary"
             >
-              {DDS_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
 
