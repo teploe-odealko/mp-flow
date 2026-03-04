@@ -185,6 +185,7 @@ export async function syncOzonTransactions(
       description: tx.operation_type_name,
       transaction_date: new Date(tx.date),
       source: "ozon_api",
+      is_cash: false, // Ozon accruals are P&L only, not real cash movements
       metadata: {
         operation_id: tx.operation_id,
         ozon_account_id: account.id,

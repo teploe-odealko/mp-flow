@@ -600,6 +600,11 @@ export default function SupplierDetailPage() {
         </div>
       )}
 
+      {/* Payments section */}
+      {!isNew && (
+        <PaymentsSection orderId={id!} orderNumber={orderNumber} grandTotal={grandTotal} />
+      )}
+
       {/* Receive Modal */}
       {showReceive && orderData?.supplier_order?.items && (
         <ReceiveModal
@@ -613,6 +618,160 @@ export default function SupplierDetailPage() {
           onSubmit={(receiveItems) => receiveMutation.mutate(receiveItems)}
           isPending={receiveMutation.isPending}
         />
+      )}
+    </div>
+  )
+}
+
+function PaymentsSection({ orderId, orderNumber, grandTotal }: { orderId: string; orderNumber: string; grandTotal: number }) {
+  const queryClient = useQueryClient()
+  const [addOpen, setAddOpen] = useState(false)
+  const [payAmount, setPayAmount] = useState("")
+  const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10))
+  const [payDesc, setPayDesc] = useState("")
+  const [saving, setSaving] = useState(false)
+
+  const { data } = useQuery({
+    queryKey: ["supplier-payments", orderId],
+    queryFn: () => apiGet<{ payments: any[]; total_paid: number }>(`/api/suppliers/${orderId}/payments`),
+  })
+
+  const payments = data?.payments || []
+  const totalPaid = data?.total_paid || 0
+  const remaining = grandTotal - totalPaid
+
+  const deleteMutation = useMutation({
+    mutationFn: (txId: string) => apiDelete(`/api/finance/${txId}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["supplier-payments", orderId] }),
+  })
+
+  async function handleAddPayment() {
+    if (!payAmount || Number(payAmount) <= 0) return
+    setSaving(true)
+    try {
+      await apiPost(`/api/suppliers/${orderId}/payment`, {
+        amount: Number(payAmount),
+        transaction_date: payDate,
+        description: payDesc || `Оплата заявки ${orderNumber || orderId}`,
+      })
+      queryClient.invalidateQueries({ queryKey: ["supplier-payments", orderId] })
+      queryClient.invalidateQueries({ queryKey: ["finance-transactions"] })
+      queryClient.invalidateQueries({ queryKey: ["finance-summary"] })
+      setPayAmount("")
+      setPayDesc("")
+      setAddOpen(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="mb-6">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-sm font-semibold text-text-secondary">Платежи</h2>
+        <button
+          onClick={() => setAddOpen((v) => !v)}
+          className="text-xs text-accent hover:underline"
+        >
+          + Добавить платёж
+        </button>
+      </div>
+
+      {addOpen && (
+        <div className="bg-bg-surface border border-bg-border rounded p-3 mb-3 flex flex-wrap items-end gap-3">
+          <div>
+            <label className="block text-[11px] text-text-muted mb-1">Сумма, ₽</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={payAmount}
+              onChange={(e) => setPayAmount(e.target.value)}
+              placeholder="0.00"
+              className="w-28 px-2 py-1 bg-bg-deep border border-bg-border rounded text-sm text-text-primary"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] text-text-muted mb-1">Дата</label>
+            <input
+              type="date"
+              value={payDate}
+              onChange={(e) => setPayDate(e.target.value)}
+              className="px-2 py-1 bg-bg-deep border border-bg-border rounded text-sm text-text-primary"
+            />
+          </div>
+          <div className="flex-1 min-w-[160px]">
+            <label className="block text-[11px] text-text-muted mb-1">Описание</label>
+            <input
+              type="text"
+              value={payDesc}
+              onChange={(e) => setPayDesc(e.target.value)}
+              placeholder={`Оплата заявки ${orderNumber}`}
+              className="w-full px-2 py-1 bg-bg-deep border border-bg-border rounded text-sm text-text-primary"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleAddPayment}
+              disabled={saving || !payAmount || Number(payAmount) <= 0}
+              className="px-3 py-1.5 text-sm rounded bg-accent text-white hover:bg-accent/90 disabled:opacity-50"
+            >
+              {saving ? "..." : "Сохранить"}
+            </button>
+            <button
+              onClick={() => setAddOpen(false)}
+              className="px-3 py-1.5 text-sm rounded border border-bg-border text-text-secondary hover:bg-bg-elevated"
+            >
+              Отмена
+            </button>
+          </div>
+        </div>
+      )}
+
+      {payments.length === 0 ? (
+        <p className="text-text-muted text-xs py-2">Платежей нет</p>
+      ) : (
+        <table className="w-full text-sm mb-2">
+          <thead>
+            <tr className="bg-bg-surface border-b border-bg-border">
+              <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Дата</th>
+              <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Описание</th>
+              <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Сумма</th>
+              <th className="w-8"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {payments.map((p: any) => (
+              <tr key={p.id} className="border-b border-bg-border">
+                <td className="px-2 py-1.5 text-text-secondary text-xs whitespace-nowrap">
+                  {new Date(p.transaction_date).toLocaleDateString("ru-RU")}
+                </td>
+                <td className="px-2 py-1.5 text-xs truncate max-w-[200px]">{p.description || "—"}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-outflow font-medium">
+                  -{Math.round(Number(p.amount)).toLocaleString("ru-RU")} ₽
+                </td>
+                <td className="px-2 py-1.5 text-right">
+                  <button
+                    onClick={() => { if (confirm("Удалить платёж?")) deleteMutation.mutate(p.id) }}
+                    className="text-text-muted hover:text-outflow"
+                    title="Удалить"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {grandTotal > 0 && (
+        <div className="flex gap-6 text-xs text-text-secondary">
+          <span>Итого к оплате: <span className="text-text-primary font-medium">{Math.round(grandTotal).toLocaleString("ru-RU")} ₽</span></span>
+          <span>Оплачено: <span className="text-inflow font-medium">{Math.round(totalPaid).toLocaleString("ru-RU")} ₽</span></span>
+          {remaining > 0 && <span>Остаток: <span className="text-outflow font-medium">{Math.round(remaining).toLocaleString("ru-RU")} ₽</span></span>}
+          {remaining <= 0 && totalPaid > 0 && <span className="text-inflow">✓ Оплачено полностью</span>}
+        </div>
       )}
     </div>
   )

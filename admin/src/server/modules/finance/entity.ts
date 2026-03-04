@@ -15,7 +15,7 @@ export class FinanceTransaction {
       "sale_revenue", "sale_commission", "sale_logistics",
       "cogs", "supplier_payment", "shipping_cost",
       "refund", "adjustment", "other",
-      "fbo_services", "marketing",
+      "fbo_services", "marketing", "ozon_payout",
     ],
   })
   @Index()
@@ -51,6 +51,9 @@ export class FinanceTransaction {
   @Property({ type: "timestamptz" })
   @Index()
   transaction_date!: Date
+
+  @Property({ type: "boolean", default: false })
+  is_cash: boolean = false
 
   @Property({ type: "text", nullable: true })
   source?: string | null

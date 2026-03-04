@@ -14,6 +14,7 @@ export class FinanceService {
     if (filters.master_card_id) where.master_card_id = filters.master_card_id
     if (filters.source) where.source = filters.source
     if (filters.transaction_date) where.transaction_date = filters.transaction_date
+    if (filters.is_cash !== undefined) where.is_cash = filters.is_cash
     return this.em.find(FinanceTransaction, where, {
       orderBy: { transaction_date: "DESC" },
     })
@@ -30,6 +31,8 @@ export class FinanceService {
     if (filters.direction) where.direction = filters.direction
     if (filters.source) where.source = filters.source
     if (filters.transaction_date) where.transaction_date = filters.transaction_date
+    if (filters.is_cash !== undefined) where.is_cash = filters.is_cash
+    if (filters.supplier_order_id) where.supplier_order_id = filters.supplier_order_id
     if (filters.search) {
       where.$or = [
         { description: { $ilike: `%${filters.search}%` } },
@@ -55,7 +58,7 @@ export class FinanceService {
     const tx = await this.em.findOneOrFail(FinanceTransaction, { id, deleted_at: null })
     const allowed = [
       "type", "direction", "amount", "category", "description",
-      "transaction_date", "source", "metadata",
+      "transaction_date", "source", "metadata", "is_cash",
     ]
     for (const key of allowed) {
       if (key in data) {
@@ -78,6 +81,7 @@ export class FinanceService {
       transaction_date: { $gte: from, $lte: to },
     }
     if (filters?.user_id) where.user_id = filters.user_id
+    if (filters?.is_cash !== undefined) where.is_cash = filters.is_cash
 
     const transactions = await this.em.find(FinanceTransaction, where)
 

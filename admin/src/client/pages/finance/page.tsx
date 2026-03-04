@@ -9,12 +9,23 @@ const defaultFrom = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
 const defaultTo = now.toISOString().slice(0, 10)
 
 const TYPE_OPTIONS = [
+  { value: "ozon_payout", label: "Выплата Ozon" },
+  { value: "supplier_payment", label: "Оплата поставщику" },
+  { value: "sale_revenue", label: "Выручка продаж" },
+  { value: "shipping_cost", label: "Доставка" },
+  { value: "refund", label: "Возврат" },
+  { value: "adjustment", label: "Корректировка" },
+  { value: "other", label: "Прочее" },
+  // P&L-only types (for "all" view)
   { value: "fbo_services", label: "FBO-услуги" },
   { value: "marketing", label: "Маркетинг" },
-  { value: "sale_revenue", label: "Выручка продаж" },
   { value: "sale_commission", label: "Комиссия МП" },
   { value: "sale_logistics", label: "Логистика МП" },
   { value: "cogs", label: "Себестоимость" },
+] as const
+
+const DDS_TYPE_OPTIONS = [
+  { value: "ozon_payout", label: "Выплата Ozon" },
   { value: "supplier_payment", label: "Оплата поставщику" },
   { value: "shipping_cost", label: "Доставка" },
   { value: "refund", label: "Возврат" },
@@ -24,7 +35,7 @@ const TYPE_OPTIONS = [
 
 const TYPE_LABELS: Record<string, string> = Object.fromEntries(TYPE_OPTIONS.map((o) => [o.value, o.label]))
 
-const DIRECTION_LABELS: Record<string, string> = { income: "Доход", expense: "Расход" }
+const DIRECTION_LABELS: Record<string, string> = { income: "Поступление", expense: "Расход" }
 const DIRECTION_COLORS: Record<string, string> = {
   income: "bg-inflow/20 text-inflow",
   expense: "bg-outflow/20 text-outflow",
@@ -55,11 +66,13 @@ interface Transaction {
   description?: string | null
   transaction_date: string
   source?: string | null
+  is_cash: boolean
+  supplier_order_id?: string | null
   metadata?: any
   created_at: string
 }
 
-interface PnlSummary {
+interface DdsSummary {
   income: number
   expense: number
   profit: number
@@ -78,6 +91,7 @@ export default function FinancePage() {
   const [filterSource, setFilterSource] = useState("")
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(0)
+  const [showAll, setShowAll] = useState(false) // false = ДДС only, true = все
 
   // Modal
   const [modalOpen, setModalOpen] = useState(false)
@@ -85,12 +99,12 @@ export default function FinancePage() {
 
   const offset = page * PAGE_SIZE
 
-  // Summary query
+  // Summary query (always ДДС)
   const queryParams = new URLSearchParams()
   if (dateFrom) queryParams.set("from", dateFrom)
   if (dateTo) queryParams.set("to", dateTo)
 
-  const { data: summary } = useQuery<PnlSummary>({
+  const { data: summary } = useQuery<DdsSummary>({
     queryKey: ["finance-summary", dateFrom, dateTo],
     queryFn: () => apiGet(`/api/finance?${queryParams.toString()}`),
   })
@@ -105,9 +119,10 @@ export default function FinancePage() {
   if (filterDirection) txParams.set("direction", filterDirection)
   if (filterSource) txParams.set("source", filterSource)
   if (search) txParams.set("search", search)
+  if (showAll) txParams.set("is_cash", "all")
 
   const { data: txData, isLoading } = useQuery({
-    queryKey: ["finance-transactions", dateFrom, dateTo, filterType, filterDirection, filterSource, search, page],
+    queryKey: ["finance-transactions", dateFrom, dateTo, filterType, filterDirection, filterSource, search, page, showAll],
     queryFn: () => apiGet<{ transactions: Transaction[]; total_count: number }>(`/api/finance/transactions?${txParams.toString()}`),
   })
 
@@ -148,7 +163,10 @@ export default function FinancePage() {
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-semibold">Финансы</h1>
+        <div>
+          <h1 className="text-xl font-semibold">ДДС</h1>
+          <p className="text-text-muted text-xs mt-0.5">Движение денежных средств</p>
+        </div>
         <button
           onClick={openCreate}
           className="px-3 py-1.5 text-sm rounded bg-accent text-white hover:bg-accent/90"
@@ -158,9 +176,9 @@ export default function FinancePage() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-3 gap-4 mb-6">
         <div className="bg-bg-surface border border-bg-border rounded-lg p-4">
-          <p className="text-text-secondary text-xs">Доходы</p>
+          <p className="text-text-secondary text-xs">Поступления</p>
           <p className="text-2xl font-semibold text-inflow">{fmt(summary?.income)} ₽</p>
         </div>
         <div className="bg-bg-surface border border-bg-border rounded-lg p-4">
@@ -168,14 +186,10 @@ export default function FinancePage() {
           <p className="text-2xl font-semibold text-outflow">{fmt(summary?.expense)} ₽</p>
         </div>
         <div className="bg-bg-surface border border-bg-border rounded-lg p-4">
-          <p className="text-text-secondary text-xs">Прибыль</p>
-          <p className={`text-2xl font-semibold ${(summary?.profit || 0) >= 0 ? "text-inflow" : "text-loss"}`}>
+          <p className="text-text-secondary text-xs">Сальдо</p>
+          <p className={`text-2xl font-semibold ${(summary?.profit || 0) >= 0 ? "text-inflow" : "text-outflow"}`}>
             {fmt(summary?.profit)} ₽
           </p>
-        </div>
-        <div className="bg-bg-surface border border-bg-border rounded-lg p-4">
-          <p className="text-text-secondary text-xs">Транзакций</p>
-          <p className="text-2xl font-semibold">{summary?.transaction_count || 0}</p>
         </div>
       </div>
 
@@ -204,7 +218,9 @@ export default function FinancePage() {
           className="bg-bg-surface border border-bg-border rounded px-2 py-1.5 text-sm text-text-primary"
         >
           <option value="">Все типы</option>
-          {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          {(showAll ? TYPE_OPTIONS : DDS_TYPE_OPTIONS).map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
         </select>
 
         <select
@@ -213,8 +229,8 @@ export default function FinancePage() {
           className="bg-bg-surface border border-bg-border rounded px-2 py-1.5 text-sm text-text-primary"
         >
           <option value="">Все направления</option>
-          <option value="income">Доход</option>
-          <option value="expense">Расход</option>
+          <option value="income">Поступления</option>
+          <option value="expense">Расходы</option>
         </select>
 
         <select
@@ -241,14 +257,32 @@ export default function FinancePage() {
           </button>
         )}
 
-        <span className="ml-auto text-text-secondary text-sm">{totalCount} записей</span>
+        <div className="ml-auto flex items-center gap-3">
+          <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showAll}
+              onChange={(e) => { setShowAll(e.target.checked); setPage(0) }}
+              className="accent-accent"
+            />
+            Показать начисления Ozon
+          </label>
+          <span className="text-text-secondary text-sm">{totalCount} записей</span>
+        </div>
       </div>
 
       {/* Table */}
       {isLoading ? (
         <p className="text-text-secondary">Загрузка...</p>
       ) : transactions.length === 0 ? (
-        <p className="text-text-secondary py-8 text-center">Нет транзакций{hasFilters ? " по заданным фильтрам" : ""}</p>
+        <div className="py-8 text-center">
+          <p className="text-text-secondary">Нет операций{hasFilters ? " по заданным фильтрам" : ""}</p>
+          {!showAll && !hasFilters && (
+            <p className="text-text-muted text-xs mt-2">
+              Здесь отображаются реальные денежные операции. Добавьте платёж или включите «Показать начисления Ozon».
+            </p>
+          )}
+        </div>
       ) : (
         <>
           <div className="overflow-x-auto">
@@ -259,7 +293,6 @@ export default function FinancePage() {
                   <th className="text-left px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Тип</th>
                   <th className="text-left px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Направление</th>
                   <th className="text-left px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Описание</th>
-                  <th className="text-left px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Категория</th>
                   <th className="text-right px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Сумма</th>
                   <th className="text-left px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Источник</th>
                   <th className="px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary w-20"></th>
@@ -267,18 +300,23 @@ export default function FinancePage() {
               </thead>
               <tbody>
                 {transactions.map((tx) => (
-                  <tr key={tx.id} className="border-b border-bg-border hover:bg-bg-surface/50">
+                  <tr key={tx.id} className={`border-b border-bg-border hover:bg-bg-surface/50 ${!tx.is_cash ? "opacity-60" : ""}`}>
                     <td className="px-2 py-1.5 text-text-secondary text-xs whitespace-nowrap">{fmtDate(tx.transaction_date)}</td>
-                    <td className="px-2 py-1.5 text-xs">{TYPE_LABELS[tx.type] || tx.type}</td>
+                    <td className="px-2 py-1.5 text-xs">
+                      <span>{TYPE_LABELS[tx.type] || tx.type}</span>
+                      {!tx.is_cash && <span className="ml-1 text-[10px] text-text-muted">(начисление)</span>}
+                    </td>
                     <td className="px-2 py-1.5">
                       <span className={`px-2 py-0.5 rounded text-xs ${DIRECTION_COLORS[tx.direction] || ""}`}>
                         {DIRECTION_LABELS[tx.direction] || tx.direction}
                       </span>
                     </td>
-                    <td className="px-2 py-1.5 max-w-[200px] truncate text-xs" title={tx.description || ""}>
+                    <td className="px-2 py-1.5 max-w-[240px] truncate text-xs" title={tx.description || ""}>
                       {tx.description || "—"}
+                      {tx.supplier_order_id && (
+                        <span className="ml-1 text-[10px] text-accent">(заявка)</span>
+                      )}
                     </td>
-                    <td className="px-2 py-1.5 text-text-secondary text-xs">{tx.category || "—"}</td>
                     <td className={`px-2 py-1.5 text-right tabular-nums font-medium ${tx.direction === "income" ? "text-inflow" : "text-outflow"}`}>
                       {tx.direction === "income" ? "+" : "-"}{fmt(tx.amount)} ₽
                     </td>
@@ -294,7 +332,7 @@ export default function FinancePage() {
                         </button>
                         <button
                           onClick={() => {
-                            if (confirm("Удалить транзакцию?")) deleteMutation.mutate(tx.id)
+                            if (confirm("Удалить операцию?")) deleteMutation.mutate(tx.id)
                           }}
                           className="text-text-muted hover:text-outflow p-0.5"
                           title="Удалить"
@@ -357,7 +395,6 @@ function TransactionModal({ transaction, onClose, onSaved }: ModalProps) {
   const [direction, setDirection] = useState<"income" | "expense">(transaction?.direction || "expense")
   const [amount, setAmount] = useState(transaction ? String(transaction.amount) : "")
   const [description, setDescription] = useState(transaction?.description || "")
-  const [category, setCategory] = useState(transaction?.category || "")
   const [txDate, setTxDate] = useState(
     transaction ? new Date(transaction.transaction_date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
   )
@@ -372,8 +409,8 @@ function TransactionModal({ transaction, onClose, onSaved }: ModalProps) {
         direction,
         amount: Number(amount),
         description: description || null,
-        category: category || null,
         transaction_date: txDate,
+        is_cash: true,
       }
       if (isEdit) {
         await apiPut(`/api/finance/${transaction.id}`, body)
@@ -388,9 +425,9 @@ function TransactionModal({ transaction, onClose, onSaved }: ModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-bg-surface border border-bg-border rounded-lg p-6 w-[480px] max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-bg-surface border border-bg-border rounded-lg p-6 w-[440px]" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">{isEdit ? "Редактировать транзакцию" : "Новая транзакция"}</h2>
+          <h2 className="text-lg font-semibold">{isEdit ? "Редактировать операцию" : "Новая операция ДДС"}</h2>
           <button onClick={onClose} className="text-text-muted hover:text-text-primary p-1">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
           </button>
@@ -411,7 +448,7 @@ function TransactionModal({ transaction, onClose, onSaved }: ModalProps) {
                 onClick={() => setDirection("income")}
                 className={`flex-1 py-2 rounded text-sm border ${direction === "income" ? "bg-inflow/20 border-inflow text-inflow" : "border-bg-border text-text-secondary hover:bg-bg-elevated"}`}
               >
-                Доход
+                Поступление
               </button>
             </div>
           </div>
@@ -424,7 +461,7 @@ function TransactionModal({ transaction, onClose, onSaved }: ModalProps) {
               onChange={(e) => setType(e.target.value)}
               className="w-full bg-bg-deep border border-bg-border rounded px-3 py-2 text-sm text-text-primary"
             >
-              {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              {DDS_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
 
@@ -461,19 +498,7 @@ function TransactionModal({ transaction, onClose, onSaved }: ModalProps) {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               className="w-full bg-bg-deep border border-bg-border rounded px-3 py-2 text-sm text-text-primary"
-              placeholder="Описание транзакции"
-            />
-          </div>
-
-          {/* Category */}
-          <div>
-            <label className="block text-xs text-text-secondary mb-1">Категория</label>
-            <input
-              type="text"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full bg-bg-deep border border-bg-border rounded px-3 py-2 text-sm text-text-primary"
-              placeholder="Категория (необязательно)"
+              placeholder="Описание операции"
             />
           </div>
         </div>
@@ -491,7 +516,7 @@ function TransactionModal({ transaction, onClose, onSaved }: ModalProps) {
             disabled={saving || !amount || Number(amount) <= 0}
             className="px-4 py-2 text-sm rounded bg-accent text-white hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {saving ? "Сохранение..." : isEdit ? "Сохранить" : "Создать"}
+            {saving ? "Сохранение..." : isEdit ? "Сохранить" : "Добавить"}
           </button>
         </div>
       </div>

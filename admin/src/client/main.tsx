@@ -244,6 +244,12 @@ function AppRoutes() {
   }
 
   if (!user) {
+    // Dev mode: auto-login via server endpoint
+    if (authMode === "dev") {
+      window.location.href = "/auth/login"
+      return <div className="flex items-center justify-center h-screen bg-bg-deep text-text-secondary">Вход в dev режим...</div>
+    }
+
     // Setup wizard: first-time admin creation
     if (needsSetup && authMode === "selfhosted") {
       return <SetupScreen />

@@ -2,6 +2,7 @@ import { Hono } from "hono"
 import { getUserId } from "../core/auth.js"
 import type { SupplierOrderService } from "../modules/supplier-order/service.js"
 import type { MasterCardService } from "../modules/master-card/service.js"
+import type { FinanceService } from "../modules/finance/service.js"
 import { receiveOrder } from "../workflows/receive-order.js"
 import { unreceiveOrder } from "../workflows/unreceive-order.js"
 
@@ -188,6 +189,49 @@ suppliers.post("/:id", async (c) => {
     return c.json({ error: err.message }, 400)
   }
   return c.json({ error: `Unknown action: ${body.action}` }, 400)
+})
+
+// GET /api/suppliers/:id/payments — list payments for an order
+suppliers.get("/:id/payments", async (c) => {
+  const { id } = c.req.param()
+  const financeService: FinanceService = c.get("container").resolve("financeService")
+
+  const transactions = await financeService.listFinanceTransactions({ supplier_order_id: id })
+  const totalPaid = transactions.reduce((s: number, t: any) => s + Number(t.amount), 0)
+  return c.json({ payments: transactions, total_paid: Math.round(totalPaid * 100) / 100 })
+})
+
+// POST /api/suppliers/:id/payment — record a payment for an order
+suppliers.post("/:id/payment", async (c) => {
+  const { id } = c.req.param()
+  const service: SupplierOrderService = c.get("container").resolve("supplierOrderService")
+  const financeService: FinanceService = c.get("container").resolve("financeService")
+  const userId = getUserId(c)
+  const body = await c.req.json()
+
+  const order = await service.retrieveSupplierOrder(id)
+  if (userId && (order as any).user_id && (order as any).user_id !== userId) {
+    return c.json({ error: "Not found" }, 404)
+  }
+
+  if (!body.amount || Number(body.amount) <= 0) {
+    return c.json({ error: "amount required" }, 400)
+  }
+
+  const transaction = await financeService.createFinanceTransactions({
+    type: "supplier_payment",
+    direction: "expense",
+    amount: Number(body.amount),
+    description: body.description || `Оплата заявки ${(order as any).order_number || id}`,
+    category: body.category || null,
+    transaction_date: body.transaction_date ? new Date(body.transaction_date) : new Date(),
+    supplier_order_id: id,
+    user_id: userId || null,
+    source: "manual",
+    is_cash: true,
+  })
+
+  return c.json({ transaction }, 201)
 })
 
 export default suppliers

@@ -4,7 +4,7 @@ import type { FinanceService } from "../modules/finance/service.js"
 
 const finance = new Hono<{ Variables: Record<string, any> }>()
 
-// GET /api/finance — summary P&L
+// GET /api/finance — ДДС summary (cash only)
 finance.get("/", async (c) => {
   const service: FinanceService = c.get("container").resolve("financeService")
   const userId = getUserId(c)
@@ -13,7 +13,7 @@ finance.get("/", async (c) => {
   const fromDate = from ? new Date(from) : new Date(new Date().getFullYear(), new Date().getMonth(), 1)
   const toDate = to ? new Date(to) : new Date()
 
-  const filters: Record<string, any> = {}
+  const filters: Record<string, any> = { is_cash: true }
   if (userId) filters.user_id = userId
 
   const pnl = await service.calculatePnl(fromDate, toDate, filters)
@@ -24,7 +24,7 @@ finance.get("/", async (c) => {
 finance.get("/transactions", async (c) => {
   const service: FinanceService = c.get("container").resolve("financeService")
   const userId = getUserId(c)
-  const { from, to, type, direction, source, search, limit, offset } = c.req.query()
+  const { from, to, type, direction, source, search, limit, offset, is_cash, supplier_order_id } = c.req.query()
 
   const filters: Record<string, any> = {}
   if (userId) filters.user_id = userId
@@ -32,6 +32,16 @@ finance.get("/transactions", async (c) => {
   if (direction) filters.direction = direction
   if (source) filters.source = source
   if (search) filters.search = search
+  if (supplier_order_id) filters.supplier_order_id = supplier_order_id
+  // Default: show only cash transactions (ДДС); pass is_cash=all to see everything
+  if (is_cash === "all") {
+    // no filter
+  } else if (is_cash === "false") {
+    filters.is_cash = false
+  } else {
+    // default: cash only
+    filters.is_cash = true
+  }
 
   if (from || to) {
     const dateFilter: Record<string, any> = {}
@@ -49,7 +59,7 @@ finance.get("/transactions", async (c) => {
   return c.json({ transactions: result.items, total_count: result.total })
 })
 
-// POST /api/finance — create transaction
+// POST /api/finance — create transaction (manual entries are always cash)
 finance.post("/", async (c) => {
   const service: FinanceService = c.get("container").resolve("financeService")
   const userId = getUserId(c)
@@ -60,6 +70,7 @@ finance.post("/", async (c) => {
     transaction_date: body.transaction_date ? new Date(body.transaction_date) : new Date(),
     user_id: userId || null,
     source: body.source || "manual",
+    is_cash: body.is_cash !== undefined ? body.is_cash : true, // manual = always cash
   })
   return c.json({ transaction }, 201)
 })
