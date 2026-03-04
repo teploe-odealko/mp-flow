@@ -52,6 +52,7 @@ export default function SupplierDetailPage() {
   const [status, setStatus] = useState("draft")
   const [items, setItems] = useState<ItemDraft[]>([newItem()])
   const [showReceive, setShowReceive] = useState(false)
+  const [overheadPerUnit, setOverheadPerUnit] = useState<Record<string, string>>({})
 
   // Load existing order
   const { data: orderData, isLoading } = useQuery({
@@ -474,29 +475,50 @@ export default function SupplierDetailPage() {
               <tr className="bg-bg-surface border-b border-bg-border">
                 <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Товар</th>
                 <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Кол-во</th>
-                <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Закупка</th>
-                <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Накладные</th>
-                <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">За ед.</th>
-                <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Итого</th>
+                <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Себестоимость за единицу</th>
+                <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Накладные расходы за единицу</th>
               </tr>
             </thead>
             <tbody>
-              {allocations.map((a) => (
-                <tr key={a.master_card_id} className="border-b border-bg-border">
-                  <td className="px-2 py-1.5 truncate max-w-[200px]">{a.title}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{a.ordered_qty}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{fmtNumber(a.individual_cost)}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums text-accent">{fmtNumber(a.shared_allocation)}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmtNumber(a.unit_cost)}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmtNumber(a.total_cost)}</td>
-                </tr>
-              ))}
-              <tr className="bg-bg-surface font-semibold">
-                <td className="px-2 py-1.5" colSpan={5}>Итого</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">
-                  {fmtNumber(allocations.reduce((s, a) => s + a.total_cost, 0))} ₽
-                </td>
-              </tr>
+              {allocations.map((a) => {
+                const purchasePerUnit = a.ordered_qty > 0 ? a.individual_cost / a.ordered_qty : 0
+                const overheadPerUnitCalc = a.ordered_qty > 0 ? a.shared_allocation / a.ordered_qty : 0
+                return (
+                  <tr key={a.master_card_id} className="border-b border-bg-border">
+                    <td className="px-2 py-1.5 truncate max-w-[200px]">{a.title}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{a.ordered_qty}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums font-medium">
+                      <div className="relative inline-block group">
+                        <span className="cursor-help underline decoration-dotted decoration-text-muted">{fmtNumber(a.unit_cost)}</span>
+                        <div className="absolute right-0 bottom-full mb-1.5 hidden group-hover:block z-10 bg-bg-surface border border-bg-border rounded shadow-lg p-2.5 text-xs text-left whitespace-nowrap">
+                          <div className="text-text-muted font-medium mb-1.5">Разбивка себестоимости:</div>
+                          <div className="flex justify-between gap-6 mb-1">
+                            <span className="text-text-secondary">Закупка за ед.</span>
+                            <span className="tabular-nums">{fmtNumber(purchasePerUnit)} ₽</span>
+                          </div>
+                          <div className="flex justify-between gap-6 mb-1 text-accent">
+                            <span>Накладные за ед.</span>
+                            <span className="tabular-nums">{fmtNumber(overheadPerUnitCalc)} ₽</span>
+                          </div>
+                          <div className="flex justify-between gap-6 font-semibold border-t border-bg-border pt-1.5 mt-0.5">
+                            <span>Итого</span>
+                            <span className="tabular-nums">{fmtNumber(a.unit_cost)} ₽</span>
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input
+                        type="number"
+                        value={overheadPerUnit[a.master_card_id] ?? ""}
+                        onChange={(e) => setOverheadPerUnit((prev) => ({ ...prev, [a.master_card_id]: e.target.value }))}
+                        placeholder="0"
+                        className="no-spin w-full px-2 py-1 bg-transparent text-sm text-right tabular-nums text-text-primary rounded border border-transparent hover:border-bg-border focus:border-accent focus:bg-bg-deep focus:outline-none transition-colors"
+                      />
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -688,7 +710,7 @@ function ExpensesSection({ orderId, orderNumber }: { orderId: string; orderNumbe
             <tr className="bg-bg-surface border-b border-bg-border">
               <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Дата</th>
               <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Описание</th>
-              <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Себестоимость</th>
+              <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Учет в себестоимости</th>
               <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Сумма</th>
               <th className="w-8"></th>
             </tr>
