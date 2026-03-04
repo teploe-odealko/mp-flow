@@ -117,13 +117,13 @@ procurement.get("/", async (c) => {
       salesByChannelRecent[ch] = (salesByChannelRecent[ch] || 0) + qty
     }
 
-    // 3. In-transit orders (draft/ordered/shipped supplier orders with items for this card)
+    // 3. In-transit orders (ordered/shipped supplier orders with items for this card; drafts excluded)
     const inTransitOrders: any[] = []
     let inTransitQty = 0
     for (const item of supplierItems) {
       const order = item.order as any
       if (!order || !order.status) continue
-      if (["draft", "ordered", "shipped"].includes(order.status)) {
+      if (["ordered", "shipped"].includes(order.status)) {
         const qty = Number(item.ordered_qty || 0) - Number(item.received_qty || 0)
         if (qty > 0) {
           inTransitQty += qty
