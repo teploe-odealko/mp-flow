@@ -97,6 +97,84 @@ ali1688.post("/link", async (c) => {
   return c.json({ link }, 201)
 })
 
+// POST /api/ali1688/refresh/:masterCardId — re-fetch prices from 1688 and update link
+ali1688.post("/refresh/:masterCardId", async (c) => {
+  const { masterCardId } = c.req.param()
+  const service: Ali1688Service = c.get("container").resolve("ali1688Service")
+  const cardService: MasterCardService = c.get("container").resolve("masterCardService")
+
+  const link = await service.findByMasterCard(masterCardId)
+  if (!link) return c.json({ error: "No link found for this product" }, 404)
+
+  // Cloud mode: deduct credits
+  let creditService: CreditService | null = null
+  let userId: string | null = null
+  if (getAuthMode() === "logto") {
+    userId = getUserId(c)
+    creditService = c.get("container").resolve("creditService") as CreditService
+    const result = await creditService!.deduct(
+      userId,
+      1,
+      "mpflow-plugin-ali1688",
+      "tmapi_item_detail",
+      "Обновление цен 1688",
+    )
+    if (!result.success) {
+      return c.json({ error: "Недостаточно кредитов", balance: result.balance }, 402)
+    }
+  }
+
+  try {
+    const item = await fetchAndParse1688Item(link.url)
+
+    // Match existing SKU
+    const matchedSku = link.sku_id
+      ? item.skus.find((s: any) => s.sku_id === link.sku_id) || null
+      : null
+
+    const skuPrice = matchedSku?.price ?? (item.price_min ? Number(item.price_min) : null)
+
+    // Remove old link and create updated one
+    await service.delete(link.id)
+    const newLink = await service.create({
+      master_card_id: masterCardId,
+      user_id: link.user_id || null,
+      url: item.url || link.url,
+      item_id: item.item_id || link.item_id,
+      sku_id: matchedSku?.sku_id || link.sku_id || null,
+      sku_name: matchedSku?.name || link.sku_name || null,
+      sku_image: matchedSku?.image || link.sku_image || null,
+      sku_price: skuPrice,
+      supplier_name: item.supplier_name || link.supplier_name || null,
+      title: item.title || link.title || null,
+      images: item.images || link.images || null,
+      raw_data: item,
+    })
+
+    // Update price tiers on master card
+    if (item.price_tiers || item.currency) {
+      try {
+        const update: Record<string, any> = {}
+        if (item.price_tiers) update.purchase_price_tiers = item.price_tiers
+        if (item.currency) update.purchase_currency = item.currency
+        await cardService.update(masterCardId, update as any)
+      } catch (err) {
+        console.error("[ali1688] Failed to update purchase_price_tiers:", err)
+      }
+    }
+
+    return c.json({ link: newLink, updated: true })
+  } catch (err: any) {
+    // Refund credits on server error
+    if (creditService && userId) {
+      try {
+        await creditService.topUp(userId, 1, "refund", `Ошибка TMAPI: ${err.message.slice(0, 100)}`)
+      } catch {}
+    }
+    return c.json({ error: err.message }, 500)
+  }
+})
+
 // DELETE /api/ali1688/link/:id
 ali1688.delete("/link/:id", async (c) => {
   const { id } = c.req.param()
