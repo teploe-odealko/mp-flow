@@ -545,7 +545,7 @@
         <p class="reveal reveal-d1 mt-4 text-muted text-lg max-w-xl mx-auto">Ядро + плагины = любая функциональность. Каждый плагин добавляет свои таблицы, API, UI-страницы и MCP-инструменты.</p>
       </div>
 
-      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <!-- Ozon Plugin -->
         <div class="reveal plugin-card glow-card sm:col-span-2 rounded-2xl p-7 bg-surface">
           <div class="flex items-center gap-3 mb-4">
@@ -567,18 +567,44 @@
           </div>
         </div>
 
-        <!-- Coming soon -->
+        <!-- 1688 Plugin -->
         <div class="reveal reveal-d1 glow-card rounded-2xl p-6 bg-surface flex flex-col justify-between">
           <div>
-            <div class="w-10 h-10 rounded-xl bg-violet/10 flex items-center justify-center text-violet font-bold text-lg mb-4">WB</div>
-            <h3 class="font-semibold">Wildberries</h3>
-            <p class="mt-2 text-sm text-muted">FBO интеграция с Wildberries. Синхронизация продаж, остатков, финансов.</p>
+            <div class="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center text-orange-400 font-bold text-sm mb-4">1688</div>
+            <div class="flex items-center gap-2 mb-2">
+              <h3 class="font-semibold">1688.com</h3>
+              <span class="text-xs text-income">Установлен</span>
+            </div>
+            <p class="mt-1 text-sm text-muted">Привязка товаров к поставщикам на 1688.com. Обновление закупочных цен в юанях, выгрузка заявки поставщику в XLSX.</p>
           </div>
-          <span class="mt-4 text-xs text-dim border border-border px-2.5 py-1 rounded-md w-fit">Скоро</span>
+          <div class="flex flex-wrap gap-2 mt-4">
+            <span class="text-xs text-dim bg-elevated px-2.5 py-1 rounded-md">Поставщики</span>
+            <span class="text-xs text-dim bg-elevated px-2.5 py-1 rounded-md">Цены CNY</span>
+            <span class="text-xs text-dim bg-elevated px-2.5 py-1 rounded-md">XLSX заявки</span>
+          </div>
+        </div>
+
+        <!-- Photo Studio Plugin -->
+        <div class="reveal reveal-d2 glow-card rounded-2xl p-6 bg-surface flex flex-col justify-between">
+          <div>
+            <div class="w-10 h-10 rounded-xl bg-pink-500/10 flex items-center justify-center text-pink-400 mb-4">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M3 15l4-4 4 4 4-4 5 5"/></svg>
+            </div>
+            <div class="flex items-center gap-2 mb-2">
+              <h3 class="font-semibold">Фото-студия</h3>
+              <span class="text-xs text-income">Установлен</span>
+            </div>
+            <p class="mt-1 text-sm text-muted">AI-пайплайн генерации продуктовых фото. Ресерч&nbsp;&rarr; SVG-превью&nbsp;&rarr; генерация изображений для карточек.</p>
+          </div>
+          <div class="flex flex-wrap gap-2 mt-4">
+            <span class="text-xs text-dim bg-elevated px-2.5 py-1 rounded-md">AI генерация</span>
+            <span class="text-xs text-dim bg-elevated px-2.5 py-1 rounded-md">SVG превью</span>
+            <span class="text-xs text-dim bg-elevated px-2.5 py-1 rounded-md">MCP</span>
+          </div>
         </div>
 
         <!-- Custom plugin -->
-        <div class="reveal reveal-d2 glow-card rounded-2xl p-6 bg-surface flex flex-col justify-between">
+        <div class="reveal reveal-d3 glow-card rounded-2xl p-6 bg-surface flex flex-col justify-between">
           <div>
             <div class="w-10 h-10 rounded-xl bg-elevated flex items-center justify-center text-muted mb-4">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -587,16 +613,6 @@
             <p class="mt-2 text-sm text-muted">Создайте плагин под ваши задачи. Convention-based discovery: положите файлы&nbsp;— система подхватит.</p>
           </div>
           <a href="https://docs.mp-flow.ru/docs/developer/plugin-development" class="mt-4 text-xs text-accent hover:text-accent-h transition-colors">Документация&nbsp;&rarr;</a>
-        </div>
-
-        <!-- YandexMarket -->
-        <div class="reveal reveal-d3 glow-card rounded-2xl p-6 bg-surface flex flex-col justify-between">
-          <div>
-            <div class="w-10 h-10 rounded-xl bg-yellow-500/10 flex items-center justify-center text-yellow-400 font-bold text-lg mb-4">YM</div>
-            <h3 class="font-semibold">Яндекс.Маркет</h3>
-            <p class="mt-2 text-sm text-muted">Интеграция с Яндекс.Маркетом. FBO/FBS синхронизация.</p>
-          </div>
-          <span class="mt-4 text-xs text-dim border border-border px-2.5 py-1 rounded-md w-fit">Скоро</span>
         </div>
       </div>
     </div>
@@ -694,7 +710,7 @@
             <svg class="faq-chevron w-4 h-4 text-muted shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
           </button>
           <div class="faq-answer px-5">
-            <p class="pb-5 text-sm text-muted leading-relaxed">Сейчас полностью поддерживается Ozon FBO: синхронизация продаж, финансов, остатков, возвратов. Система расширяема через плагины&nbsp;— добавление Wildberries и Яндекс.Маркета в планах.</p>
+            <p class="pb-5 text-sm text-muted leading-relaxed">Сейчас доступны 3 плагина: Ozon FBO (продажи, финансы, остатки, возвраты), 1688.com (поставщики, закупочные цены, XLSX-заявки), Фото-студия (AI-генерация продуктовых фото). Архитектура плагинов позволяет добавить поддержку любого маркетплейса.</p>
           </div>
         </div>
 
