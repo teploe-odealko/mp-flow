@@ -40,7 +40,18 @@ export async function syncOzonProducts(container: AwilixContainer, accountId: st
     details.push(...batchDetails)
   }
 
-  // Step 3: Upsert OzonProductLink records + update master card
+  // Step 3: Fetch weight/dims via /v4/product/info/attributes
+  let attrsMap = new Map<number, { weight?: number; depth?: number; width?: number; height?: number }>()
+  try {
+    attrsMap = await ozonService.fetchOzonProductAttributes(
+      { client_id: account.client_id, api_key: account.api_key },
+      allProductIds,
+    )
+  } catch (e: any) {
+    console.warn(`[ozon-sync] Failed to fetch product attributes: ${e.message}`)
+  }
+
+  // Step 4: Upsert OzonProductLink records + update master card
   let created = 0
   let updated = 0
 
@@ -100,21 +111,22 @@ export async function syncOzonProducts(container: AwilixContainer, accountId: st
       }
       if (syncFieldSet.has("title")) update.title = safeStr(product.name) || offerId
       if (syncFieldSet.has("thumbnail")) update.thumbnail = safeStr(product.primary_image) ?? null
-      // Weight in grams and dimensions in mm (Ozon returns numbers, 0 means not set)
+      // Weight in grams and dimensions in mm from /v4/product/info/attributes
+      const attrs = attrsMap.get(Number(ozonProductId))
       if (syncFieldSet.has("weight_g")) {
-        const w = Number(product.weight)
+        const w = attrs?.weight != null ? Number(attrs.weight) : 0
         update.weight_g = w > 0 ? Math.round(w) : null
       }
       if (syncFieldSet.has("length_mm")) {
-        const v = Number(product.depth)
+        const v = attrs?.depth != null ? Number(attrs.depth) : 0
         update.length_mm = v > 0 ? Math.round(v) : null
       }
       if (syncFieldSet.has("width_mm")) {
-        const v = Number(product.width)
+        const v = attrs?.width != null ? Number(attrs.width) : 0
         update.width_mm = v > 0 ? Math.round(v) : null
       }
       if (syncFieldSet.has("height_mm")) {
-        const v = Number(product.height)
+        const v = attrs?.height != null ? Number(attrs.height) : 0
         update.height_mm = v > 0 ? Math.round(v) : null
       }
       return update

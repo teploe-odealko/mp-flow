@@ -133,6 +133,35 @@ export class OzonIntegrationService {
     return result.items || result.result?.items || []
   }
 
+  async fetchOzonProductAttributes(
+    account: { client_id: string; api_key: string },
+    productIds: number[],
+  ): Promise<Map<number, { weight?: number; depth?: number; width?: number; height?: number }>> {
+    const map = new Map<number, { weight?: number; depth?: number; width?: number; height?: number }>()
+    let lastId = ""
+    const stringIds = productIds.map(String)
+
+    while (true) {
+      const result: any = await this.ozonApiCall(account, "/v4/product/info/attributes", {
+        filter: { product_id: stringIds, visibility: "ALL" },
+        limit: 100,
+        last_id: lastId,
+      })
+      const items: any[] = result.result || []
+      for (const item of items) {
+        map.set(Number(item.id), {
+          weight: item.weight_unit === "g" ? item.weight : item.weight * 1000,
+          depth: item.depth,
+          width: item.width,
+          height: item.height,
+        })
+      }
+      if (items.length < 100) break
+      lastId = String(items[items.length - 1].id)
+    }
+    return map
+  }
+
   async fetchOzonStocks(account: { client_id: string; api_key: string }) {
     const rows: any[] = []
     let offset = 0
