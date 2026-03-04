@@ -26,7 +26,7 @@ export class OzonAccount {
   last_sync_at?: Date
 
   @Property({ nullable: true, type: "text" })
-  last_error?: string
+  last_error?: string | null
 
   @Property({ default: 0 })
   total_products: number = 0
