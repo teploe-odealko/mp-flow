@@ -119,16 +119,16 @@ export class SupplierOrderItem {
   @Property({ type: "int", default: 0 })
   received_qty: number = 0
 
-  @Property({ type: "numeric", default: 0 })
+  @Property({ columnType: "numeric(14,4)", default: 0 })
   purchase_price: number = 0
 
   @Property({ type: "text", default: "CNY" })
   purchase_currency: string = "CNY"
 
-  @Property({ type: "numeric", default: 0 })
+  @Property({ columnType: "numeric(14,4)", default: 0 })
   unit_cost: number = 0
 
-  @Property({ type: "numeric", default: 0 })
+  @Property({ columnType: "numeric(14,4)", default: 0 })
   total_cost: number = 0
 
   @Property({ type: "text", default: "RUB" })
