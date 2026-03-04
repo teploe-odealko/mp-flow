@@ -554,9 +554,10 @@ export default function SupplierDetailPage() {
 }
 
 const ALLOCATION_LABELS: Record<string, string> = {
-  none: "Только ДДС",
+  none: "Не учитывать в себестоимости",
   equal: "Поровну",
   by_price: "По цене закупки",
+  by_weight: "По весу",
 }
 
 function ExpensesSection({ orderId, orderNumber }: { orderId: string; orderNumber: string }) {
@@ -654,9 +655,10 @@ function ExpensesSection({ orderId, orderNumber }: { orderId: string; orderNumbe
               onChange={(e) => setAllocationMethod(e.target.value)}
               className="px-2 py-1 bg-bg-deep border border-bg-border rounded text-sm text-text-primary"
             >
-              <option value="none">Только ДДС</option>
+              <option value="none">Не учитывать в себестоимости</option>
               <option value="equal">Поровну по товарам</option>
               <option value="by_price">По цене закупки</option>
+              <option value="by_weight">По весу</option>
             </select>
           </div>
           <div className="flex gap-2">
