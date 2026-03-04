@@ -12,6 +12,8 @@ import { Sale } from "./modules/sale/entity.js"
 import { PluginSetting } from "./modules/plugin-setting/entity.js"
 import { ProcurementSetting } from "./modules/procurement/entity.js"
 import { ApiKey } from "./modules/api-key/entity.js"
+import { FileAsset } from "./modules/file-storage/entity.js"
+import { FileStorageService } from "./modules/file-storage/service.js"
 import catalogRoutes from "./routes/catalog.js"
 import suppliersRoutes from "./routes/suppliers.js"
 import suppliersRegistryRoutes from "./routes/suppliers-registry.js"
@@ -26,6 +28,8 @@ import columnDocsRoutes from "./routes/column-docs.js"
 import subscriptionRoutes from "./routes/subscription.js"
 import apiKeysRoutes from "./routes/api-keys.js"
 import billingRoutes from "./routes/billing.js"
+import filesRoutes from "./routes/files.js"
+import aiRoutes from "./routes/ai.js"
 import { createMcpHandler } from "./mcp/server.js"
 import { CORE_TOOLS } from "./mcp/tools.js"
 import { generateOpenApiSpec } from "./mcp/openapi.js"
@@ -46,8 +50,8 @@ async function main() {
   console.log("[mpflow] Starting admin server...")
 
   // Collect ALL entities (core + plugins) before ORM init
-  const coreEntities = [MasterCard, SupplierOrder, SupplierOrderItem, Supplier, FinanceTransaction, Sale, PluginSetting, ProcurementSetting, ApiKey]
-  const pluginPaths = [{ resolve: "./plugins/ozon" }, { resolve: "./plugins/ali1688" }]
+  const coreEntities = [MasterCard, SupplierOrder, SupplierOrderItem, Supplier, FinanceTransaction, Sale, PluginSetting, ProcurementSetting, ApiKey, FileAsset]
+  const pluginPaths = [{ resolve: "./plugins/ozon" }, { resolve: "./plugins/ali1688" }, { resolve: "./plugins/photo-studio" }]
   const pluginEntities = await collectPluginEntities(pluginPaths)
   const allEntities = [...coreEntities, ...pluginEntities]
   if (pluginEntities.length > 0) {
@@ -92,6 +96,18 @@ async function main() {
     }
   } catch (err) {
     console.error("[mpflow] Schema update error:", err)
+  }
+
+  // Configure S3 file storage (optional — disabled if S3_ENDPOINT not set)
+  if (process.env.S3_ENDPOINT) {
+    FileStorageService.configure({
+      endpoint: process.env.S3_ENDPOINT,
+      accessKeyId: process.env.S3_ACCESS_KEY || "mpflow",
+      secretAccessKey: process.env.S3_SECRET_KEY || "mpflow123",
+      bucket: process.env.S3_BUCKET || "mpflow",
+      region: process.env.S3_REGION || "us-east-1",
+      forcePathStyle: process.env.S3_FORCE_PATH_STYLE !== "false",
+    })
   }
 
   // Create DI container
@@ -158,6 +174,8 @@ async function main() {
   app.route("/api/subscription", subscriptionRoutes)
   app.route("/api/api-keys", apiKeysRoutes)
   app.route("/api/billing", billingRoutes)
+  app.route("/api/files", filesRoutes)
+  app.route("/api/ai", aiRoutes)
   app.route("/auth", authRoutes)
 
   // Collect MCP tools & resources from plugins

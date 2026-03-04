@@ -40,11 +40,48 @@ subscription.post("/grant", async (c) => {
     return c.json({ error: "User not found" }, 404)
   }
 
+  // Also grant storage quota (100 MB)
+  const em = c.get("container").resolve("em")
+  await em.getConnection().execute(
+    `UPDATE mpflow_user SET storage_quota_mb = GREATEST(COALESCE(storage_quota_mb, 0), 100) WHERE id = ?`,
+    [result.userId],
+  )
+
   return c.json({
     success: true,
     userId: result.userId,
     activeUntil: until.toISOString(),
   })
+})
+
+// PUT /api/subscription/storage-quota — admin override storage quota
+subscription.put("/storage-quota", async (c) => {
+  const adminSecret = process.env.ADMIN_SECRET
+  if (!adminSecret) {
+    return c.json({ error: "ADMIN_SECRET not configured" }, 500)
+  }
+
+  const authHeader = c.req.header("X-Admin-Secret")
+  if (authHeader !== adminSecret) {
+    return c.json({ error: "Forbidden" }, 403)
+  }
+
+  const { email, quota_mb } = await c.req.json()
+  if (!email || quota_mb === undefined) {
+    return c.json({ error: "email and quota_mb are required" }, 400)
+  }
+
+  const em = c.get("container").resolve("em")
+  const result = await em.getConnection().execute(
+    `UPDATE mpflow_user SET storage_quota_mb = ?, updated_at = NOW() WHERE email = ? AND deleted_at IS NULL RETURNING id`,
+    [quota_mb, email],
+  )
+
+  if (result.length === 0) {
+    return c.json({ error: "User not found" }, 404)
+  }
+
+  return c.json({ success: true, userId: result[0].id, quota_mb })
 })
 
 export default subscription

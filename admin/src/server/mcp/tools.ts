@@ -210,4 +210,68 @@ export const CORE_TOOLS: ApiTool[] = [
     method: "GET",
     path: "/api/suppliers-registry",
   },
+
+  // ── Файловое хранилище ──
+  {
+    name: "upload_file",
+    description: "Загрузить файл в хранилище (base64). Возвращает file_id для дальнейшего использования.",
+    method: "POST",
+    path: "/api/files/upload-base64",
+    params: {
+      base64_data: { type: "string", description: "Содержимое файла в base64", required: true, in: "body" },
+      filename: { type: "string", description: "Имя файла (напр. photo.png)", required: true, in: "body" },
+      mime_type: { type: "string", description: "MIME тип (напр. image/png)", required: true, in: "body" },
+      metadata: { type: "object", description: "Произвольные метаданные (напр. { source: 'photo-studio', project_id: '...' })", in: "body" },
+    },
+  },
+  {
+    name: "list_files",
+    description: "Список файлов пользователя в хранилище",
+    method: "GET",
+    path: "/api/files",
+    params: {
+      source: { type: "string", description: "Фильтр по источнику (metadata.source)", in: "query" },
+      limit: { type: "number", description: "Лимит", in: "query" },
+      offset: { type: "number", description: "Смещение", in: "query" },
+    },
+  },
+  {
+    name: "get_file_url",
+    description: "Получить подписанный URL для скачивания файла (действует 1 час)",
+    method: "GET",
+    path: "/api/files/:id/url",
+    params: {
+      id: { type: "string", description: "ID файла", required: true, in: "path" },
+    },
+  },
+  {
+    name: "delete_file",
+    description: "Удалить файл из хранилища (soft delete)",
+    method: "DELETE",
+    path: "/api/files/:id",
+    params: {
+      id: { type: "string", description: "ID файла", required: true, in: "path" },
+    },
+  },
+  {
+    name: "get_file_usage",
+    description: "Использование хранилища: занято байт, квота, количество файлов",
+    method: "GET",
+    path: "/api/files/usage",
+  },
+
+  // ── AI генерация изображений ──
+  {
+    name: "generate_image",
+    description: "Сгенерировать изображение через AI (Gemini). Принимает промпт и до 14 входных изображений. Тарифицируется: 1 кредит за генерацию. save=true сохраняет в хранилище и возвращает file_id, save=false возвращает base64.",
+    method: "POST",
+    path: "/api/ai/generate-image",
+    params: {
+      prompt: { type: "string", description: "Промпт для генерации", required: true, in: "body" },
+      input_images: { type: "object", description: "Массив URL или base64 входных изображений (макс 14)", in: "body" },
+      save: { type: "boolean", description: "true = сохранить в хранилище и вернуть file_id, false = вернуть base64", in: "body" },
+      filename: { type: "string", description: "Имя файла (при save=true)", in: "body" },
+      metadata: { type: "object", description: "Метаданные файла (при save=true)", in: "body" },
+    },
+  },
 ]
