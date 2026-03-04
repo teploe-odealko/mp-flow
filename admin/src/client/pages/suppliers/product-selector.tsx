@@ -6,6 +6,7 @@ interface Product {
   title: string
   purchase_price?: number | null
   purchase_currency?: string | null
+  purchase_price_tiers?: Array<{ min_qty: number; price: number }> | null
 }
 
 interface ProductValue {
@@ -13,6 +14,7 @@ interface ProductValue {
   title: string
   purchase_price?: number | null
   purchase_currency?: string | null
+  purchase_price_tiers?: Array<{ min_qty: number; price: number }> | null
 }
 
 interface Props {
@@ -52,6 +54,7 @@ export function ProductSelector({ value, onChange, excludeIds = [] }: Props) {
           title: p.title,
           purchase_price: p.purchase_price ?? null,
           purchase_currency: p.purchase_currency ?? null,
+          purchase_price_tiers: p.purchase_price_tiers ?? null,
         }))
         setResults(excludeIds.length > 0 ? all.filter((p) => !excludeIds.includes(p.id)) : all)
       } catch {
@@ -107,6 +110,7 @@ export function ProductSelector({ value, onChange, excludeIds = [] }: Props) {
                   title: p.title,
                   purchase_price: p.purchase_price,
                   purchase_currency: p.purchase_currency,
+                  purchase_price_tiers: p.purchase_price_tiers,
                 })
                 setQuery("")
                 setOpen(false)

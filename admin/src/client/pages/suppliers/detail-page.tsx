@@ -10,6 +10,15 @@ import type { OrderItem, SharedCostEntry } from "./utils"
 interface ItemDraft extends OrderItem {
   _key: string
   id?: string
+  purchase_price_tiers?: Array<{ min_qty: number; price: number }> | null
+  _price_auto?: boolean
+}
+
+/** Find the best matching price tier for given quantity */
+function priceFromTiers(tiers: Array<{ min_qty: number; price: number }> | null | undefined, qty: number): number | null {
+  if (!tiers || tiers.length === 0) return null
+  const sorted = [...tiers].sort((a, b) => b.min_qty - a.min_qty)
+  return sorted.find((t) => qty >= t.min_qty)?.price ?? null
 }
 
 function newItem(): ItemDraft {
@@ -77,6 +86,8 @@ export default function SupplierDetailPage() {
           ordered_qty: item.ordered_qty || 0,
           purchase_price: Number(item.purchase_price) || 0,
           purchase_currency: item.purchase_currency || "CNY",
+          purchase_price_tiers: item.purchase_price_tiers ?? null,
+          _price_auto: false,
         })),
       )
     }
@@ -358,10 +369,22 @@ export default function SupplierDetailPage() {
                         <ProductSelector
                           value={item.master_card_id ? { master_card_id: item.master_card_id, title: item.title } : null}
                           onChange={(p) => {
-                            updateItem(item._key, "master_card_id", p.master_card_id)
-                            updateItem(item._key, "title", p.title)
-                            if (p.purchase_price != null) updateItem(item._key, "purchase_price", Number(p.purchase_price) || 0)
-                            if (p.purchase_currency) updateItem(item._key, "purchase_currency", p.purchase_currency)
+                            const qty = item.ordered_qty || 1
+                            const tiersPrice = priceFromTiers(p.purchase_price_tiers, qty)
+                            const autoPrice = tiersPrice ?? (p.purchase_price != null ? Number(p.purchase_price) : null)
+                            setItems((prev) => prev.map((i) =>
+                              i._key === item._key
+                                ? {
+                                    ...i,
+                                    master_card_id: p.master_card_id,
+                                    title: p.title,
+                                    purchase_price_tiers: p.purchase_price_tiers ?? null,
+                                    purchase_price: autoPrice != null ? autoPrice : i.purchase_price,
+                                    purchase_currency: p.purchase_currency || i.purchase_currency,
+                                    _price_auto: autoPrice != null,
+                                  }
+                                : i,
+                            ))
                           }}
                           excludeIds={items.filter((i) => i._key !== item._key && i.master_card_id).map((i) => i.master_card_id)}
                         />
@@ -370,10 +393,35 @@ export default function SupplierDetailPage() {
                       )}
                     </td>
                     <td className="px-2 py-1.5">
-                      <NumInput value={item.ordered_qty} onChange={(v) => updateItem(item._key, "ordered_qty", v)} disabled={!canEdit} min={1} />
+                      <NumInput
+                        value={item.ordered_qty}
+                        onChange={(v) => {
+                          if (item._price_auto && item.purchase_price_tiers) {
+                            const newPrice = priceFromTiers(item.purchase_price_tiers, v)
+                            setItems((prev) => prev.map((i) =>
+                              i._key === item._key
+                                ? { ...i, ordered_qty: v, purchase_price: newPrice ?? i.purchase_price }
+                                : i,
+                            ))
+                          } else {
+                            updateItem(item._key, "ordered_qty", v)
+                          }
+                        }}
+                        disabled={!canEdit}
+                        min={1}
+                      />
                     </td>
                     <td className="px-2 py-1.5">
-                      <NumInput value={item.purchase_price} onChange={(v) => updateItem(item._key, "purchase_price", v)} disabled={!canEdit} step={0.01} />
+                      <NumInput
+                        value={item.purchase_price}
+                        onChange={(v) => {
+                          setItems((prev) => prev.map((i) =>
+                            i._key === item._key ? { ...i, purchase_price: v, _price_auto: false } : i,
+                          ))
+                        }}
+                        disabled={!canEdit}
+                        step={0.01}
+                      />
                     </td>
                     <td className="px-2 py-1.5">
                       {canEdit ? (
