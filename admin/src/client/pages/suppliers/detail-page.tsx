@@ -87,6 +87,7 @@ export default function SupplierDetailPage() {
           purchase_price: Number(item.purchase_price) || 0,
           purchase_currency: item.purchase_currency || "CNY",
           purchase_price_tiers: item.purchase_price_tiers ?? null,
+          weight: item.weight_g ?? undefined,
           _price_auto: false,
         })),
       )
@@ -146,7 +147,7 @@ export default function SupplierDetailPage() {
       .map((p: any) => ({
         name: p.description || "Расход",
         total_rub: Number(p.amount),
-        method: p.metadata.allocation_method as "equal" | "by_price",
+        method: p.metadata.allocation_method as "equal" | "by_price" | "by_weight",
       }))
   }, [expensesData])
 

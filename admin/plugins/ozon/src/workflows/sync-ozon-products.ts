@@ -1,10 +1,25 @@
 import type { AwilixContainer } from "awilix"
 import type { OzonIntegrationService } from "../services/ozon-service.js"
 
+// Fields that can be synced from Ozon to master card
+export const SYNCABLE_FIELDS = [
+  "title",
+  "thumbnail",
+  "weight_g",
+  "length_mm",
+  "width_mm",
+  "height_mm",
+] as const
+export type SyncableField = (typeof SYNCABLE_FIELDS)[number]
+
 export async function syncOzonProducts(container: AwilixContainer, accountId: string) {
   const ozonService: OzonIntegrationService = container.resolve("ozonService")
   const masterCardService: any = container.resolve("masterCardService")
   const account = await ozonService.retrieveOzonAccount(accountId)
+
+  // Determine which fields to sync (default: all)
+  const syncFields: SyncableField[] = ((account.metadata?.sync_fields as string[]) || [...SYNCABLE_FIELDS]) as SyncableField[]
+  const syncFieldSet = new Set(syncFields)
 
   // Step 1: Fetch products list
   const products = await ozonService.fetchOzonProducts({
@@ -25,7 +40,7 @@ export async function syncOzonProducts(container: AwilixContainer, accountId: st
     details.push(...batchDetails)
   }
 
-  // Step 3: Upsert OzonProductLink records
+  // Step 3: Upsert OzonProductLink records + update master card
   let created = 0
   let updated = 0
 
@@ -70,27 +85,46 @@ export async function syncOzonProducts(container: AwilixContainer, accountId: st
       raw_data: product,
     }
 
-    if (existing.length > 0) {
-      // If no master card linked yet, create one
-      if (!existing[0].master_card_id) {
-        const card = await masterCardService.create({
-          title: product.name || offerId,
-          status: ozonStatus === "archived" ? "archived" : "active",
-          user_id: (account as any).user_id || undefined,
-          thumbnail: product.primary_image || undefined,
-        })
-        linkData.master_card_id = card.id
+    // Build master card update payload based on sync_fields
+    function buildCardUpdate(isNew: boolean): Record<string, any> {
+      const update: Record<string, any> = {}
+      if (isNew) {
+        // Always set status and user_id on creation
+        update.status = ozonStatus === "archived" ? "archived" : "active"
+        update.user_id = (account as any).user_id || undefined
       }
-      await ozonService.updateOzonProductLink(existing[0].id, linkData)
+      if (syncFieldSet.has("title")) update.title = product.name || offerId
+      if (syncFieldSet.has("thumbnail")) update.thumbnail = product.primary_image || undefined
+      // Weight in grams and dimensions in mm
+      if (syncFieldSet.has("weight_g")) update.weight_g = product.weight ? Math.round(Number(product.weight)) : null
+      if (syncFieldSet.has("length_mm")) update.length_mm = product.depth ? Math.round(Number(product.depth)) : null
+      if (syncFieldSet.has("width_mm")) update.width_mm = product.width ? Math.round(Number(product.width)) : null
+      if (syncFieldSet.has("height_mm")) update.height_mm = product.height ? Math.round(Number(product.height)) : null
+      return update
+    }
+
+    if (existing.length > 0) {
+      const link = existing[0]
+      if (!link.master_card_id) {
+        // Create master card for first time
+        const cardData = buildCardUpdate(true)
+        if (!cardData.title) cardData.title = product.name || offerId
+        const card = await masterCardService.create(cardData)
+        linkData.master_card_id = card.id
+      } else {
+        // Update existing master card with synced fields
+        const cardUpdate = buildCardUpdate(false)
+        if (Object.keys(cardUpdate).length > 0) {
+          await masterCardService.update(link.master_card_id, cardUpdate)
+        }
+      }
+      await ozonService.updateOzonProductLink(link.id, linkData)
       updated++
     } else {
       // Create master card for new product
-      const card = await masterCardService.create({
-        title: product.name || offerId,
-        status: ozonStatus === "archived" ? "archived" : "active",
-        user_id: (account as any).user_id || undefined,
-        thumbnail: product.primary_image || undefined,
-      })
+      const cardData = buildCardUpdate(true)
+      if (!cardData.title) cardData.title = product.name || offerId
+      const card = await masterCardService.create(cardData)
       linkData.master_card_id = card.id
       await ozonService.createOzonProductLink(linkData as any)
       created++

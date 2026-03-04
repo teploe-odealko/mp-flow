@@ -35,6 +35,18 @@ export class MasterCard {
   @Property({ type: "json", nullable: true })
   metadata?: any
 
+  @Property({ type: "integer", nullable: true })
+  weight_g?: number | null
+
+  @Property({ type: "integer", nullable: true })
+  length_mm?: number | null
+
+  @Property({ type: "integer", nullable: true })
+  width_mm?: number | null
+
+  @Property({ type: "integer", nullable: true })
+  height_mm?: number | null
+
   @Property({ type: "timestamptz", defaultRaw: "now()" })
   created_at: Date = new Date()
 

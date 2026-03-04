@@ -119,6 +119,10 @@ catalog.put("/:id", async (c) => {
   if (body.metadata !== undefined) updateData.metadata = body.metadata
   if (body.purchase_price !== undefined) updateData.purchase_price = body.purchase_price
   if (body.purchase_currency !== undefined) updateData.purchase_currency = body.purchase_currency
+  if (body.weight_g !== undefined) updateData.weight_g = body.weight_g
+  if (body.length_mm !== undefined) updateData.length_mm = body.length_mm
+  if (body.width_mm !== undefined) updateData.width_mm = body.width_mm
+  if (body.height_mm !== undefined) updateData.height_mm = body.height_mm
 
   const card = await cardService.update(id, updateData)
   return c.json({ product: card })

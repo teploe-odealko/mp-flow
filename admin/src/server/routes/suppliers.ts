@@ -91,12 +91,14 @@ suppliers.get("/:id", async (c) => {
     items.map(async (item: any) => {
       let title = item.master_card_id
       let purchase_price_tiers: any = null
+      let weight_g: number | null = null
       try {
         const card = await cardService.retrieve(item.master_card_id)
         title = card.title || title
         purchase_price_tiers = (card as any).purchase_price_tiers ?? null
+        weight_g = (card as any).weight_g ?? null
       } catch {}
-      return { ...item, title, purchase_price_tiers, purchase_price: Number(item.purchase_price || 0), purchase_currency: item.purchase_currency || "CNY" }
+      return { ...item, title, purchase_price_tiers, weight_g, purchase_price: Number(item.purchase_price || 0), purchase_currency: item.purchase_currency || "CNY" }
     }),
   )
   const totalAmount = enrichedItems.reduce((sum: number, item: any) => sum + Number(item.total_cost || 0), 0)

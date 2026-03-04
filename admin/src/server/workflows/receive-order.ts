@@ -1,6 +1,7 @@
 import type { AwilixContainer } from "awilix"
 import type { SupplierOrderService } from "../modules/supplier-order/service.js"
 import type { FinanceService } from "../modules/finance/service.js"
+import type { MasterCardService } from "../modules/master-card/service.js"
 
 type ReceiveOrderInput = {
   supplier_order_id: string
@@ -10,6 +11,7 @@ type ReceiveOrderInput = {
 export async function receiveOrder(container: AwilixContainer, input: ReceiveOrderInput) {
   const supplierService: SupplierOrderService = container.resolve("supplierOrderService")
   const financeService: FinanceService = container.resolve("financeService")
+  const masterCardService: MasterCardService = container.resolve("masterCardService")
 
   const order = await supplierService.retrieveSupplierOrder(input.supplier_order_id)
   if (order.status === "received") throw new Error("Order already received")
@@ -27,10 +29,26 @@ export async function receiveOrder(container: AwilixContainer, input: ReceiveOrd
   const receivedLookup = new Map(input.items.map((r) => [r.item_id, r.received_qty]))
   const receivingItems = items.filter((item: any) => (receivedLookup.get(item.id) || 0) > 0)
 
-  // Total purchase value for "by_price" allocation method
+  // Fetch weight_g for each item's master card (needed for "by_weight" allocation)
+  const weightLookup = new Map<string, number>()
+  for (const item of receivingItems) {
+    if (item.master_card_id) {
+      try {
+        const card = await masterCardService.retrieve(item.master_card_id)
+        const w = (card as any).weight_g
+        if (w != null) weightLookup.set(item.id, Number(w))
+      } catch { /* no card */ }
+    }
+  }
+
+  // Pre-compute totals for proportional allocation methods
   const totalPurchaseValue = receivingItems.reduce((s: number, item: any) => {
     const qty = receivedLookup.get(item.id) || 0
     return s + Number(item.purchase_price || 0) * qty
+  }, 0)
+  const totalWeight = receivingItems.reduce((s: number, item: any) => {
+    const qty = receivedLookup.get(item.id) || 0
+    return s + (weightLookup.get(item.id) || 0) * qty
   }, 0)
 
   let totalCost = 0
@@ -40,6 +58,7 @@ export async function receiveOrder(container: AwilixContainer, input: ReceiveOrd
     if (receivedQty <= 0) continue
 
     const purchasePrice = Number(item.purchase_price || item.unit_cost || 0)
+    const weightG = weightLookup.get(item.id) || 0
 
     // Distribute shared expenses to this item
     let sharedAlloc = 0
@@ -50,6 +69,9 @@ export async function receiveOrder(container: AwilixContainer, input: ReceiveOrd
       if (method === "by_price") {
         const itemValue = purchasePrice * receivedQty
         share = totalPurchaseValue > 0 ? (itemValue / totalPurchaseValue) * amount : amount / receivingItems.length
+      } else if (method === "by_weight") {
+        const itemWeight = weightG * receivedQty
+        share = totalWeight > 0 ? (itemWeight / totalWeight) * amount : amount / receivingItems.length
       } else {
         // equal (default)
         share = amount / receivingItems.length

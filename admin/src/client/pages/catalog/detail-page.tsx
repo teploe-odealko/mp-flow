@@ -74,6 +74,10 @@ export default function CatalogDetailPage() {
   const [purchasePrice, setPurchasePrice] = useState<number | string>("")
   const [purchaseCurrency, setPurchaseCurrency] = useState("CNY")
   const [status, setStatus] = useState("draft")
+  const [weightG, setWeightG] = useState<number | string>("")
+  const [lengthMm, setLengthMm] = useState<number | string>("")
+  const [widthMm, setWidthMm] = useState<number | string>("")
+  const [heightMm, setHeightMm] = useState<number | string>("")
 
   useEffect(() => {
     if (!product) return
@@ -81,6 +85,10 @@ export default function CatalogDetailPage() {
     setPurchasePrice(product.purchase_price != null ? product.purchase_price : "")
     setPurchaseCurrency(product.purchase_currency || "CNY")
     setStatus(product.status || "draft")
+    setWeightG(product.weight_g != null ? product.weight_g : "")
+    setLengthMm(product.length_mm != null ? product.length_mm : "")
+    setWidthMm(product.width_mm != null ? product.width_mm : "")
+    setHeightMm(product.height_mm != null ? product.height_mm : "")
   }, [product])
 
   const saveMutation = useMutation({
@@ -97,6 +105,10 @@ export default function CatalogDetailPage() {
       purchase_price: purchasePrice !== "" ? Number(purchasePrice) : null,
       purchase_currency: purchaseCurrency,
       status,
+      weight_g: weightG !== "" ? Number(weightG) : null,
+      length_mm: lengthMm !== "" ? Number(lengthMm) : null,
+      width_mm: widthMm !== "" ? Number(widthMm) : null,
+      height_mm: heightMm !== "" ? Number(heightMm) : null,
     })
   }
 
@@ -221,6 +233,53 @@ export default function CatalogDetailPage() {
                   </table>
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Weight & dimensions block */}
+          <div className="mb-6 border border-bg-border rounded p-4">
+            <div className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-3">Вес и габариты</div>
+            <div className="grid grid-cols-4 gap-4">
+              <div>
+                <label className="text-text-secondary text-xs block mb-1">Вес, г</label>
+                <input
+                  type="number"
+                  value={weightG}
+                  onChange={(e) => setWeightG(e.target.value)}
+                  placeholder="—"
+                  className="no-spin w-full px-3 py-2 bg-bg-deep border border-bg-border rounded text-sm text-text-primary"
+                />
+              </div>
+              <div>
+                <label className="text-text-secondary text-xs block mb-1">Длина, мм</label>
+                <input
+                  type="number"
+                  value={lengthMm}
+                  onChange={(e) => setLengthMm(e.target.value)}
+                  placeholder="—"
+                  className="no-spin w-full px-3 py-2 bg-bg-deep border border-bg-border rounded text-sm text-text-primary"
+                />
+              </div>
+              <div>
+                <label className="text-text-secondary text-xs block mb-1">Ширина, мм</label>
+                <input
+                  type="number"
+                  value={widthMm}
+                  onChange={(e) => setWidthMm(e.target.value)}
+                  placeholder="—"
+                  className="no-spin w-full px-3 py-2 bg-bg-deep border border-bg-border rounded text-sm text-text-primary"
+                />
+              </div>
+              <div>
+                <label className="text-text-secondary text-xs block mb-1">Высота, мм</label>
+                <input
+                  type="number"
+                  value={heightMm}
+                  onChange={(e) => setHeightMm(e.target.value)}
+                  placeholder="—"
+                  className="no-spin w-full px-3 py-2 bg-bg-deep border border-bg-border rounded text-sm text-text-primary"
+                />
+              </div>
             </div>
           </div>
 

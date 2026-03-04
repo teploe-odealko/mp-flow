@@ -1,6 +1,16 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { apiGet, apiPost, apiDelete } from "@client/lib/api"
+import { apiGet, apiPost, apiDelete, apiPut } from "@client/lib/api"
+
+const SYNC_FIELD_LABELS: Record<string, string> = {
+  title: "Название",
+  thumbnail: "Фото",
+  weight_g: "Вес",
+  length_mm: "Длина",
+  width_mm: "Ширина",
+  height_mm: "Высота",
+}
+const ALL_SYNC_FIELDS = Object.keys(SYNC_FIELD_LABELS)
 
 interface OzonAccount {
   id: string
@@ -12,6 +22,7 @@ interface OzonAccount {
   last_error: string | null
   total_products: number
   total_stocks: number
+  metadata?: { sync_fields?: string[] }
 }
 
 export default function OzonPage() {
@@ -19,6 +30,7 @@ export default function OzonPage() {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: "", client_id: "", api_key: "" })
   const [verified, setVerified] = useState<{ ok: boolean; seller_name?: string; error?: string } | null>(null)
+  const [expandedSettings, setExpandedSettings] = useState<string | null>(null)
 
   const { data: accountsData, isLoading } = useQuery({
     queryKey: ["ozon-accounts"],
@@ -64,6 +76,14 @@ export default function OzonPage() {
     },
   })
 
+  const updateSyncFieldsMutation = useMutation({
+    mutationFn: ({ id, sync_fields }: { id: string; sync_fields: string[] }) =>
+      apiPut(`/api/ozon-accounts/${id}`, { metadata: { sync_fields } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ozon-accounts"] })
+    },
+  })
+
   const accounts = accountsData?.accounts || []
   const stats = syncData?.stats
 
@@ -83,6 +103,16 @@ export default function OzonPage() {
   function formatDate(d: string | null) {
     if (!d) return "\u2014"
     return new Date(d).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+  }
+
+  function getSyncFields(acc: OzonAccount): string[] {
+    return acc.metadata?.sync_fields ?? [...ALL_SYNC_FIELDS]
+  }
+
+  function toggleSyncField(acc: OzonAccount, field: string) {
+    const current = getSyncFields(acc)
+    const next = current.includes(field) ? current.filter((f) => f !== field) : [...current, field]
+    updateSyncFieldsMutation.mutate({ id: acc.id, sync_fields: next })
   }
 
   return (
@@ -163,45 +193,67 @@ export default function OzonPage() {
         ) : accounts.length === 0 ? (
           <p className="text-text-secondary">Нет подключённых аккаунтов</p>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-bg-border text-text-secondary text-left">
-                <th className="p-2">Название</th>
-                <th className="p-2">Client ID</th>
-                <th className="p-2">Статус</th>
-                <th className="p-2">Товаров</th>
-                <th className="p-2">Последний синк</th>
-                <th className="p-2">Ошибка</th>
-                <th className="p-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {accounts.map((acc) => (
-                <tr key={acc.id} className="border-b border-bg-border hover:bg-bg-elevated">
-                  <td className="p-2">{acc.name}</td>
-                  <td className="p-2 text-text-secondary font-mono text-xs">{acc.client_id}</td>
-                  <td className="p-2">
-                    <span className={`px-2 py-0.5 rounded text-xs ${
-                      acc.is_active ? "bg-inflow/20 text-inflow" : "bg-text-muted/20 text-text-muted"
-                    }`}>
-                      {acc.is_active ? "Активен" : "Отключён"}
-                    </span>
-                  </td>
-                  <td className="p-2">{acc.total_products || 0}</td>
-                  <td className="p-2 text-text-secondary">{formatDate(acc.last_sync_at)}</td>
-                  <td className="p-2 text-outflow text-xs max-w-[200px] truncate">{acc.last_error || ""}</td>
-                  <td className="p-2">
+          <div className="space-y-3">
+            {accounts.map((acc) => {
+              const syncFields = getSyncFields(acc)
+              const isExpanded = expandedSettings === acc.id
+              return (
+                <div key={acc.id} className="border border-bg-border rounded-lg overflow-hidden">
+                  <div className="flex items-center gap-3 p-3 bg-bg-surface">
+                    <div className="flex-1 grid grid-cols-5 gap-2 text-sm items-center">
+                      <span className="font-medium">{acc.name}</span>
+                      <span className="text-text-secondary font-mono text-xs">{acc.client_id}</span>
+                      <span>
+                        <span className={`px-2 py-0.5 rounded text-xs ${
+                          acc.is_active ? "bg-inflow/20 text-inflow" : "bg-text-muted/20 text-text-muted"
+                        }`}>
+                          {acc.is_active ? "Активен" : "Отключён"}
+                        </span>
+                      </span>
+                      <span className="text-text-secondary text-xs">{acc.total_products || 0} товаров · {formatDate(acc.last_sync_at)}</span>
+                      <span className="text-outflow text-xs truncate">{acc.last_error || ""}</span>
+                    </div>
+                    <button
+                      onClick={() => setExpandedSettings(isExpanded ? null : acc.id)}
+                      className="text-text-secondary hover:text-text-primary text-xs px-2 py-1 border border-bg-border rounded"
+                    >
+                      Настройки
+                    </button>
                     <button
                       onClick={() => deleteMutation.mutate(acc.id)}
                       className="text-text-muted hover:text-outflow text-xs"
                     >
                       Удалить
                     </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="p-3 border-t border-bg-border bg-bg-deep">
+                      <div className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">
+                        Поля для синхронизации из Ozon в мастер-карточку
+                      </div>
+                      <div className="flex flex-wrap gap-3">
+                        {ALL_SYNC_FIELDS.map((field) => (
+                          <label key={field} className="flex items-center gap-1.5 cursor-pointer text-sm">
+                            <input
+                              type="checkbox"
+                              checked={syncFields.includes(field)}
+                              onChange={() => toggleSyncField(acc, field)}
+                              className="accent-accent"
+                            />
+                            {SYNC_FIELD_LABELS[field]}
+                          </label>
+                        ))}
+                      </div>
+                      {updateSyncFieldsMutation.isPending && (
+                        <p className="text-text-muted text-xs mt-2">Сохраняю...</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         )}
       </div>
 
