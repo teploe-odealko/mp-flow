@@ -1,5 +1,15 @@
 import { useSearchParams } from "react-router-dom"
-import { useCallback } from "react"
+import { useCallback, useRef } from "react"
+
+/**
+ * Microtask batching: when multiple useUrlState setters fire in the same
+ * synchronous tick (e.g. setChannel("ozon"); setPage(0)), we collect all
+ * changes and flush them as a single setSearchParams call. Without this,
+ * the second call would overwrite the first (React Router navigations
+ * don't queue like React state updates).
+ */
+let pending: Map<string, string | null> | null = null
+let flushSetSearchParams: ((fn: (prev: URLSearchParams) => URLSearchParams, opts?: { replace: boolean }) => void) | null = null
 
 /**
  * Like useState but persists value in URL search params.
@@ -9,22 +19,42 @@ export function useUrlState(key: string, defaultValue = ""): [string, (v: string
   const [searchParams, setSearchParams] = useSearchParams()
   const value = searchParams.get(key) ?? defaultValue
 
+  // Keep a ref so the microtask always uses the latest setSearchParams
+  const ref = useRef(setSearchParams)
+  ref.current = setSearchParams
+
   const setValue = useCallback(
     (v: string) => {
-      setSearchParams(
-        (prev) => {
-          const next = new URLSearchParams(prev)
-          if (v === defaultValue || v === "") {
-            next.delete(key)
-          } else {
-            next.set(key, v)
-          }
-          return next
-        },
-        { replace: true },
-      )
+      // Schedule flush on first call in this tick
+      if (!pending) {
+        pending = new Map()
+        flushSetSearchParams = ref.current
+        queueMicrotask(() => {
+          const updates = pending!
+          const setter = flushSetSearchParams!
+          pending = null
+          flushSetSearchParams = null
+          setter(
+            (prev) => {
+              const next = new URLSearchParams(prev)
+              for (const [k, val] of updates) {
+                if (val === null) next.delete(k)
+                else next.set(k, val)
+              }
+              return next
+            },
+            { replace: true },
+          )
+        })
+      }
+
+      if (v === defaultValue || v === "") {
+        pending!.set(key, null)
+      } else {
+        pending!.set(key, v)
+      }
     },
-    [key, defaultValue, setSearchParams],
+    [key, defaultValue],
   )
 
   return [value, setValue]
