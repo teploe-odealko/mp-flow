@@ -54,6 +54,9 @@ export class FileStorageService {
    * Check if user has quota for the given size
    */
   async checkQuota(userId: string, sizeBytes: number): Promise<boolean> {
+    // Self-hosted: unlimited storage
+    if (!process.env.MPFLOW_CLOUD) return true
+
     const conn = this.em.getConnection()
     const result = await conn.execute(
       `SELECT storage_quota_mb FROM mpflow_user WHERE id = ? AND deleted_at IS NULL LIMIT 1`,
@@ -62,7 +65,7 @@ export class FileStorageService {
     if (result.length === 0) return false
 
     const quotaMb = result[0].storage_quota_mb
-    // NULL = unlimited (self-hosted)
+    // NULL = unlimited
     if (quotaMb === null) return true
     // 0 = no uploads
     if (quotaMb === 0) return false

@@ -350,12 +350,14 @@ function SourceImagesSection({ projectId, sourceImages, onRefresh }: {
     onSuccess: () => onRefresh(),
   })
 
+  const [uploadError, setUploadError] = useState<string | null>(null)
+
   const handleUpload = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return
     setUploading(true)
+    setUploadError(null)
     try {
       for (const file of Array.from(files)) {
-        // Upload to file storage
         const formData = new FormData()
         formData.append("file", file)
         formData.append("metadata", JSON.stringify({ source: "photo-studio", project_id: projectId }))
@@ -364,12 +366,16 @@ function SourceImagesSection({ projectId, sourceImages, onRefresh }: {
           credentials: "include",
           body: formData,
         })
-        if (!uploadRes.ok) throw new Error("Upload failed")
+        if (!uploadRes.ok) {
+          const err = await uploadRes.json().catch(() => null)
+          throw new Error(err?.error || `Upload failed (${uploadRes.status})`)
+        }
         const { file: uploaded } = await uploadRes.json()
-        // Add to project
         await apiPost(`/api/photo-studio/${projectId}/source-images`, { file_id: uploaded.id })
       }
       onRefresh()
+    } catch (e: any) {
+      setUploadError(e.message || "Upload failed")
     } finally {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ""
@@ -400,6 +406,9 @@ function SourceImagesSection({ projectId, sourceImages, onRefresh }: {
           {uploading ? "Загрузка..." : "Загрузить"}
         </button>
       </div>
+      {uploadError && (
+        <div className="text-xs text-red-400 mb-2">{uploadError}</div>
+      )}
       {sourceImages.length > 0 ? (
         <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-2">
           {sourceImages.map((fileId) => (
