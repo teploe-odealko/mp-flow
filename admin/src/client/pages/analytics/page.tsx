@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { useState } from "react"
 import { apiGet } from "../../lib/api"
+import { useUrlState } from "../../lib/use-url-state"
 import { DocTableHeader } from "../../components/doc-table-header"
 
 const now = new Date()
@@ -479,10 +480,10 @@ function StockValuationReport({ data }: { data: StockData }) {
 }
 
 export default function AnalyticsPage() {
-  const [tab, setTab] = useState<Tab>("pnl")
-  const [dateFrom, setDateFrom] = useState(thisMonth)
-  const [dateTo, setDateTo] = useState(today)
-  const [channel, setChannel] = useState("")
+  const [tab, setTab] = useUrlState("tab", "pnl") as [Tab, (v: string) => void]
+  const [dateFrom, setDateFrom] = useUrlState("from", thisMonth)
+  const [dateTo, setDateTo] = useUrlState("to", today)
+  const [channel, setChannel] = useUrlState("channel")
 
   const { data, isLoading } = useQuery({
     queryKey: ["analytics", tab, dateFrom, dateTo, channel],

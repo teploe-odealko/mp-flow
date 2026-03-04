@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import { useState } from "react"
 import { apiGet } from "../../lib/api"
 import { DocTableHeader } from "../../components/doc-table-header"
+import { useUrlState, useUrlNumber } from "../../lib/use-url-state"
 
 const PAGE_SIZE = 50
 
@@ -36,11 +37,11 @@ function fmtDateTime(d: string): string {
 
 
 export default function SalesPage() {
-  const [channel, setChannel] = useState("")
-  const [status, setStatus] = useState("")
-  const [dateFrom, setDateFrom] = useState("")
-  const [dateTo, setDateTo] = useState("")
-  const [page, setPage] = useState(0)
+  const [channel, setChannel] = useUrlState("channel")
+  const [status, setStatus] = useUrlState("status")
+  const [dateFrom, setDateFrom] = useUrlState("from")
+  const [dateTo, setDateTo] = useUrlState("to")
+  const [page, setPage] = useUrlNumber("page")
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
 
   const offset = page * PAGE_SIZE

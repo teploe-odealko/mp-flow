@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
 import { apiGet, apiPost, apiPut, apiDelete } from "../../lib/api"
+import { useUrlState, useUrlNumber } from "../../lib/use-url-state"
 
 const PAGE_SIZE = 50
 
@@ -68,13 +69,13 @@ export default function FinancePage() {
   const queryClient = useQueryClient()
 
   // Filters
-  const [dateFrom, setDateFrom] = useState(defaultFrom)
-  const [dateTo, setDateTo] = useState(defaultTo)
-  const [filterType, setFilterType] = useState("")
-  const [filterDirection, setFilterDirection] = useState("")
-  const [filterSource, setFilterSource] = useState("")
-  const [search, setSearch] = useState("")
-  const [page, setPage] = useState(0)
+  const [dateFrom, setDateFrom] = useUrlState("from", defaultFrom)
+  const [dateTo, setDateTo] = useUrlState("to", defaultTo)
+  const [filterType, setFilterType] = useUrlState("type")
+  const [filterDirection, setFilterDirection] = useUrlState("dir")
+  const [filterSource, setFilterSource] = useUrlState("source")
+  const [search, setSearch] = useUrlState("q")
+  const [page, setPage] = useUrlNumber("page")
 
   // Modal
   const [modalOpen, setModalOpen] = useState(false)

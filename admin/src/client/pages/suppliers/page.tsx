@@ -1,7 +1,7 @@
-import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Link, useNavigate } from "react-router-dom"
 import { apiGet, apiDelete } from "../../lib/api"
+import { useUrlState } from "../../lib/use-url-state"
 import { STATUS_LABELS, STATUS_COLORS } from "./utils"
 
 function fmtDate(d: string | null | undefined): string {
@@ -25,8 +25,8 @@ const STATUS_TABS = [
 export default function SuppliersPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [statusFilter, setStatusFilter] = useState("")
-  const [search, setSearch] = useState("")
+  const [statusFilter, setStatusFilter] = useUrlState("status")
+  const [search, setSearch] = useUrlState("q")
 
   const queryParams = new URLSearchParams()
   if (statusFilter) queryParams.set("status", statusFilter)

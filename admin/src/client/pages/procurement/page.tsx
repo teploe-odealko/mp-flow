@@ -2,6 +2,7 @@ import { useState, Fragment } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
 import { apiGet, apiPut, apiPost } from "../../lib/api"
+import { useUrlState } from "../../lib/use-url-state"
 
 interface ChannelSales {
   channel: string
@@ -366,8 +367,10 @@ export default function ProcurementPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showCreateOrder, setShowCreateOrder] = useState(false)
-  const [showOnlyNeedOrder, setShowOnlyNeedOrder] = useState(false)
-  const [search, setSearch] = useState("")
+  const [showOnlyNeedOrderStr, setShowOnlyNeedOrderStr] = useUrlState("needOrder")
+  const showOnlyNeedOrder = showOnlyNeedOrderStr === "1"
+  const setShowOnlyNeedOrder = (v: boolean) => setShowOnlyNeedOrderStr(v ? "1" : "")
+  const [search, setSearch] = useUrlState("q")
 
   // Settings state (local overrides)
   const [localSettings, setLocalSettings] = useState<Settings | null>(null)

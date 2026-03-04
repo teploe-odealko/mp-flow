@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { apiGet, apiPut } from "../../lib/api"
+import { useUrlNumber } from "../../lib/use-url-state"
 import type { MasterCardTabProps } from "./tab-types"
 
 // Discover plugin tabs via Vite glob (eager — small components, need labels immediately)
@@ -42,7 +43,7 @@ export default function CatalogDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState(0)
+  const [activeTab, setActiveTab] = useUrlNumber("tab")
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["catalog-product", id],
