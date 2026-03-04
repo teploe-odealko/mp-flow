@@ -201,7 +201,7 @@ suppliers.get("/:id/payments", async (c) => {
   return c.json({ payments: transactions, total_paid: Math.round(totalPaid * 100) / 100 })
 })
 
-// POST /api/suppliers/:id/payment — record a payment for an order
+// POST /api/suppliers/:id/payment — record a payment/expense for an order
 suppliers.post("/:id/payment", async (c) => {
   const { id } = c.req.param()
   const service: SupplierOrderService = c.get("container").resolve("supplierOrderService")
@@ -218,8 +218,14 @@ suppliers.post("/:id/payment", async (c) => {
     return c.json({ error: "amount required" }, 400)
   }
 
+  // allocation_method controls how this expense is distributed into COGS:
+  // "none" — ДДС only, not allocated to product costs
+  // "equal" — split equally across all ordered items
+  // "by_price" — split proportionally by purchase price × quantity
+  const allocationMethod = body.allocation_method || "none"
+
   const transaction = await financeService.createFinanceTransactions({
-    type: "supplier_payment",
+    type: body.type || "supplier_payment",
     direction: "expense",
     amount: Number(body.amount),
     description: body.description || `Оплата заявки ${(order as any).order_number || id}`,
@@ -228,7 +234,7 @@ suppliers.post("/:id/payment", async (c) => {
     supplier_order_id: id,
     user_id: userId || null,
     source: "manual",
-    is_cash: true,
+    metadata: { allocation_method: allocationMethod },
   })
 
   return c.json({ transaction }, 201)

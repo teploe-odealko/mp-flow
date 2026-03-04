@@ -49,6 +49,8 @@ export class FinanceService {
 
   async createFinanceTransactions(data: any) {
     const tx = this.em.create(FinanceTransaction, { ...data, deleted_at: null })
+    // MikroORM 6 skips optional JSON properties in em.create() — assign explicitly
+    if (data.metadata !== undefined) tx.metadata = data.metadata
     await this.em.persistAndFlush(tx)
     return tx
   }

@@ -32,10 +32,6 @@ function newItem(): ItemDraft {
   }
 }
 
-function newSharedCost(): SharedCostEntry {
-  return { name: "", total_rub: 0, method: "equal" }
-}
-
 function fmtNumber(n: number): string {
   return Math.round(n).toLocaleString("ru-RU")
 }
@@ -55,13 +51,19 @@ export default function SupplierDetailPage() {
   const [orderDate, setOrderDate] = useState("")
   const [status, setStatus] = useState("draft")
   const [items, setItems] = useState<ItemDraft[]>([newItem()])
-  const [sharedCosts, setSharedCosts] = useState<SharedCostEntry[]>([])
   const [showReceive, setShowReceive] = useState(false)
 
   // Load existing order
   const { data: orderData, isLoading } = useQuery({
     queryKey: ["supplier-order", id],
     queryFn: () => apiGet<any>(`/api/suppliers/${id}`),
+    enabled: !!id,
+  })
+
+  // Load expenses for allocation preview (saved orders only)
+  const { data: expensesData } = useQuery({
+    queryKey: ["supplier-payments", id],
+    queryFn: () => apiGet<{ payments: any[]; total_paid: number }>(`/api/suppliers/${id}/payments`),
     enabled: !!id,
   })
 
@@ -73,8 +75,6 @@ export default function SupplierDetailPage() {
     setNotes(o.notes || "")
     setOrderDate(o.order_date ? o.order_date.slice(0, 10) : "")
     setStatus(o.status || "draft")
-    const sc = typeof o.shared_costs === "string" ? JSON.parse(o.shared_costs) : o.shared_costs
-    setSharedCosts(Array.isArray(sc) && sc.length > 0 ? sc : [])
 
     if (o.items?.length) {
       setItems(
@@ -139,6 +139,17 @@ export default function SupplierDetailPage() {
     },
   })
 
+  // Shared costs from saved expenses (for allocation preview)
+  const sharedCosts: SharedCostEntry[] = useMemo(() => {
+    return (expensesData?.payments || [])
+      .filter((p: any) => p.metadata?.allocation_method && p.metadata.allocation_method !== "none")
+      .map((p: any) => ({
+        name: p.description || "Расход",
+        total_rub: Number(p.amount),
+        method: p.metadata.allocation_method as "equal" | "by_price",
+      }))
+  }, [expensesData])
+
   // Computed
   const validItems = items.filter((i) => i.master_card_id)
   const allocations = useMemo(
@@ -155,7 +166,6 @@ export default function SupplierDetailPage() {
       order_number: orderNumber || undefined,
       notes: notes || undefined,
       order_date: orderDate || undefined,
-      shared_costs: sharedCosts.filter((c) => c.name && c.total_rub > 0),
       items: validItems.map((i) => ({
         master_card_id: i.master_card_id,
         ordered_qty: i.ordered_qty,
@@ -171,11 +181,7 @@ export default function SupplierDetailPage() {
 
   function handleMarkOrdered() {
     if (!id) return
-    const payload = {
-      ...buildPayload(),
-      status: "ordered",
-    }
-    saveMutation.mutate(payload)
+    saveMutation.mutate({ ...buildPayload(), status: "ordered" })
   }
 
   function handleDelete() {
@@ -196,15 +202,6 @@ export default function SupplierDetailPage() {
       const filtered = prev.filter((i) => i._key !== key)
       return filtered.length > 0 ? filtered : [newItem()]
     })
-  }
-
-  // Shared cost helpers
-  function updateSharedCost(index: number, field: string, value: any) {
-    setSharedCosts((prev) => prev.map((c, i) => (i === index ? { ...c, [field]: value } : c)))
-  }
-
-  function removeSharedCost(index: number) {
-    setSharedCosts((prev) => prev.filter((_, i) => i !== index))
   }
 
   if (!isNew && isLoading) {
@@ -367,7 +364,7 @@ export default function SupplierDetailPage() {
                     <td className="px-2 py-1.5">
                       {canEdit ? (
                         <ProductSelector
-                          value={item.master_card_id ? { master_card_id: item.master_card_id, title: item.title } : null}
+                          value={item.master_card_id ? { master_card_id: item.master_card_id, title: item.title || "" } : null}
                           onChange={(p) => {
                             const qty = item.ordered_qty || 1
                             const tiersPrice = priceFromTiers(p.purchase_price_tiers, qty)
@@ -467,77 +464,8 @@ export default function SupplierDetailPage() {
         )}
       </div>
 
-      {/* Shared costs */}
-      <div className="mb-6">
-        <h2 className="text-sm font-semibold text-text-secondary mb-2">Накладные расходы</h2>
-        {sharedCosts.length > 0 && (
-          <table className="w-full text-sm mb-2">
-            <thead>
-              <tr className="bg-bg-surface border-b border-bg-border">
-                <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Название</th>
-                <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary w-28">Сумма ₽</th>
-                <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary w-40">Метод</th>
-                {canEdit && <th className="w-8"></th>}
-              </tr>
-            </thead>
-            <tbody>
-              {sharedCosts.map((cost, i) => (
-                <tr key={i} className="border-b border-bg-border">
-                  <td className="px-2 py-1.5">
-                    <input
-                      type="text"
-                      value={cost.name}
-                      onChange={(e) => updateSharedCost(i, "name", e.target.value)}
-                      disabled={!canEdit}
-                      placeholder="Доставка, Карго..."
-                      className="w-full px-2 py-1 bg-bg-deep border border-bg-border rounded text-sm text-text-primary disabled:opacity-60"
-                    />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <NumInput value={cost.total_rub} onChange={(v) => updateSharedCost(i, "total_rub", v)} disabled={!canEdit} />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <select
-                      value={cost.method}
-                      onChange={(e) => updateSharedCost(i, "method", e.target.value)}
-                      disabled={!canEdit}
-                      className="w-full px-2 py-1 bg-bg-deep border border-bg-border rounded text-sm text-text-primary disabled:opacity-60"
-                    >
-                      <option value="equal">Поровну</option>
-                      <option value="by_price">По цене закупки</option>
-                      <option value="by_weight">По весу</option>
-                      <option value="by_volume">По объёму</option>
-                    </select>
-                  </td>
-                  {canEdit && (
-                    <td className="px-1 py-1.5 text-center">
-                      <button
-                        type="button"
-                        onClick={() => removeSharedCost(i)}
-                        className="text-text-muted hover:text-outflow text-sm"
-                      >
-                        ×
-                      </button>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        {canEdit && (
-          <button
-            type="button"
-            onClick={() => setSharedCosts((prev) => [...prev, newSharedCost()])}
-            className="text-accent hover:text-accent-dark text-sm"
-          >
-            + Добавить расход
-          </button>
-        )}
-      </div>
-
-      {/* Allocation preview */}
-      {allocations.length > 0 && sharedCosts.length > 0 && (
+      {/* Allocation preview — shown when there are expenses with allocation */}
+      {!isNew && allocations.length > 0 && sharedCosts.length > 0 && (
         <div className="mb-6">
           <h2 className="text-sm font-semibold text-text-secondary mb-2">Превью себестоимости</h2>
           <table className="w-full text-sm">
@@ -564,7 +492,9 @@ export default function SupplierDetailPage() {
               ))}
               <tr className="bg-bg-surface font-semibold">
                 <td className="px-2 py-1.5" colSpan={5}>Итого</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{fmtNumber(grandTotal)} ₽</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">
+                  {fmtNumber(allocations.reduce((s, a) => s + a.total_cost, 0))} ₽
+                </td>
               </tr>
             </tbody>
           </table>
@@ -600,9 +530,9 @@ export default function SupplierDetailPage() {
         </div>
       )}
 
-      {/* Payments section */}
+      {/* Unified expenses section */}
       {!isNew && (
-        <PaymentsSection orderId={id!} orderNumber={orderNumber} grandTotal={grandTotal} />
+        <ExpensesSection orderId={id!} orderNumber={orderNumber} />
       )}
 
       {/* Receive Modal */}
@@ -623,12 +553,19 @@ export default function SupplierDetailPage() {
   )
 }
 
-function PaymentsSection({ orderId, orderNumber, grandTotal }: { orderId: string; orderNumber: string; grandTotal: number }) {
+const ALLOCATION_LABELS: Record<string, string> = {
+  none: "Только ДДС",
+  equal: "Поровну",
+  by_price: "По цене закупки",
+}
+
+function ExpensesSection({ orderId, orderNumber }: { orderId: string; orderNumber: string }) {
   const queryClient = useQueryClient()
   const [addOpen, setAddOpen] = useState(false)
-  const [payAmount, setPayAmount] = useState("")
-  const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10))
-  const [payDesc, setPayDesc] = useState("")
+  const [amount, setAmount] = useState("")
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
+  const [description, setDescription] = useState("")
+  const [allocationMethod, setAllocationMethod] = useState("none")
   const [saving, setSaving] = useState(false)
 
   const { data } = useQuery({
@@ -636,29 +573,29 @@ function PaymentsSection({ orderId, orderNumber, grandTotal }: { orderId: string
     queryFn: () => apiGet<{ payments: any[]; total_paid: number }>(`/api/suppliers/${orderId}/payments`),
   })
 
-  const payments = data?.payments || []
-  const totalPaid = data?.total_paid || 0
-  const remaining = grandTotal - totalPaid
+  const expenses = data?.payments || []
 
   const deleteMutation = useMutation({
     mutationFn: (txId: string) => apiDelete(`/api/finance/${txId}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["supplier-payments", orderId] }),
   })
 
-  async function handleAddPayment() {
-    if (!payAmount || Number(payAmount) <= 0) return
+  async function handleAdd() {
+    if (!amount || Number(amount) <= 0) return
     setSaving(true)
     try {
       await apiPost(`/api/suppliers/${orderId}/payment`, {
-        amount: Number(payAmount),
-        transaction_date: payDate,
-        description: payDesc || `Оплата заявки ${orderNumber || orderId}`,
+        amount: Number(amount),
+        transaction_date: date,
+        description: description || `Оплата заявки ${orderNumber || orderId}`,
+        allocation_method: allocationMethod,
       })
       queryClient.invalidateQueries({ queryKey: ["supplier-payments", orderId] })
       queryClient.invalidateQueries({ queryKey: ["finance-transactions"] })
       queryClient.invalidateQueries({ queryKey: ["finance-summary"] })
-      setPayAmount("")
-      setPayDesc("")
+      setAmount("")
+      setDescription("")
+      setAllocationMethod("none")
       setAddOpen(false)
     } finally {
       setSaving(false)
@@ -668,12 +605,12 @@ function PaymentsSection({ orderId, orderNumber, grandTotal }: { orderId: string
   return (
     <div className="mb-6">
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-sm font-semibold text-text-secondary">Платежи</h2>
+        <h2 className="text-sm font-semibold text-text-secondary">Расходы</h2>
         <button
           onClick={() => setAddOpen((v) => !v)}
           className="text-xs text-accent hover:underline"
         >
-          + Добавить платёж
+          + Добавить расход
         </button>
       </div>
 
@@ -685,8 +622,8 @@ function PaymentsSection({ orderId, orderNumber, grandTotal }: { orderId: string
               type="number"
               step="0.01"
               min="0"
-              value={payAmount}
-              onChange={(e) => setPayAmount(e.target.value)}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
               placeholder="0.00"
               className="w-28 px-2 py-1 bg-bg-deep border border-bg-border rounded text-sm text-text-primary"
             />
@@ -695,8 +632,8 @@ function PaymentsSection({ orderId, orderNumber, grandTotal }: { orderId: string
             <label className="block text-[11px] text-text-muted mb-1">Дата</label>
             <input
               type="date"
-              value={payDate}
-              onChange={(e) => setPayDate(e.target.value)}
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
               className="px-2 py-1 bg-bg-deep border border-bg-border rounded text-sm text-text-primary"
             />
           </div>
@@ -704,16 +641,28 @@ function PaymentsSection({ orderId, orderNumber, grandTotal }: { orderId: string
             <label className="block text-[11px] text-text-muted mb-1">Описание</label>
             <input
               type="text"
-              value={payDesc}
-              onChange={(e) => setPayDesc(e.target.value)}
-              placeholder={`Оплата заявки ${orderNumber}`}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Доставка, карго..."
               className="w-full px-2 py-1 bg-bg-deep border border-bg-border rounded text-sm text-text-primary"
             />
           </div>
+          <div>
+            <label className="block text-[11px] text-text-muted mb-1">В себестоимость</label>
+            <select
+              value={allocationMethod}
+              onChange={(e) => setAllocationMethod(e.target.value)}
+              className="px-2 py-1 bg-bg-deep border border-bg-border rounded text-sm text-text-primary"
+            >
+              <option value="none">Только ДДС</option>
+              <option value="equal">Поровну по товарам</option>
+              <option value="by_price">По цене закупки</option>
+            </select>
+          </div>
           <div className="flex gap-2">
             <button
-              onClick={handleAddPayment}
-              disabled={saving || !payAmount || Number(payAmount) <= 0}
+              onClick={handleAdd}
+              disabled={saving || !amount || Number(amount) <= 0}
               className="px-3 py-1.5 text-sm rounded bg-accent text-white hover:bg-accent/90 disabled:opacity-50"
             >
               {saving ? "..." : "Сохранить"}
@@ -728,31 +677,35 @@ function PaymentsSection({ orderId, orderNumber, grandTotal }: { orderId: string
         </div>
       )}
 
-      {payments.length === 0 ? (
-        <p className="text-text-muted text-xs py-2">Платежей нет</p>
+      {expenses.length === 0 ? (
+        <p className="text-text-muted text-xs py-2">Расходов нет</p>
       ) : (
-        <table className="w-full text-sm mb-2">
+        <table className="w-full text-sm">
           <thead>
             <tr className="bg-bg-surface border-b border-bg-border">
               <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Дата</th>
               <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Описание</th>
+              <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Себестоимость</th>
               <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Сумма</th>
               <th className="w-8"></th>
             </tr>
           </thead>
           <tbody>
-            {payments.map((p: any) => (
-              <tr key={p.id} className="border-b border-bg-border">
+            {expenses.map((e: any) => (
+              <tr key={e.id} className="border-b border-bg-border">
                 <td className="px-2 py-1.5 text-text-secondary text-xs whitespace-nowrap">
-                  {new Date(p.transaction_date).toLocaleDateString("ru-RU")}
+                  {new Date(e.transaction_date).toLocaleDateString("ru-RU")}
                 </td>
-                <td className="px-2 py-1.5 text-xs truncate max-w-[200px]">{p.description || "—"}</td>
+                <td className="px-2 py-1.5 text-xs truncate max-w-[200px]">{e.description || "—"}</td>
+                <td className="px-2 py-1.5 text-xs text-text-secondary">
+                  {ALLOCATION_LABELS[e.metadata?.allocation_method] || ALLOCATION_LABELS.none}
+                </td>
                 <td className="px-2 py-1.5 text-right tabular-nums text-outflow font-medium">
-                  -{Math.round(Number(p.amount)).toLocaleString("ru-RU")} ₽
+                  -{Math.round(Number(e.amount)).toLocaleString("ru-RU")} ₽
                 </td>
                 <td className="px-2 py-1.5 text-right">
                   <button
-                    onClick={() => { if (confirm("Удалить платёж?")) deleteMutation.mutate(p.id) }}
+                    onClick={() => { if (confirm("Удалить расход?")) deleteMutation.mutate(e.id) }}
                     className="text-text-muted hover:text-outflow"
                     title="Удалить"
                   >
@@ -763,15 +716,6 @@ function PaymentsSection({ orderId, orderNumber, grandTotal }: { orderId: string
             ))}
           </tbody>
         </table>
-      )}
-
-      {grandTotal > 0 && (
-        <div className="flex gap-6 text-xs text-text-secondary">
-          <span>Итого к оплате: <span className="text-text-primary font-medium">{Math.round(grandTotal).toLocaleString("ru-RU")} ₽</span></span>
-          <span>Оплачено: <span className="text-inflow font-medium">{Math.round(totalPaid).toLocaleString("ru-RU")} ₽</span></span>
-          {remaining > 0 && <span>Остаток: <span className="text-outflow font-medium">{Math.round(remaining).toLocaleString("ru-RU")} ₽</span></span>}
-          {remaining <= 0 && totalPaid > 0 && <span className="text-inflow">✓ Оплачено полностью</span>}
-        </div>
       )}
     </div>
   )
