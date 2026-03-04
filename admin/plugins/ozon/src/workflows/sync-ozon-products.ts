@@ -85,6 +85,11 @@ export async function syncOzonProducts(container: AwilixContainer, accountId: st
       raw_data: product,
     }
 
+    // Safely extract string value or return undefined
+    function safeStr(v: any): string | undefined {
+      return typeof v === "string" && v ? v : undefined
+    }
+
     // Build master card update payload based on sync_fields
     function buildCardUpdate(isNew: boolean): Record<string, any> {
       const update: Record<string, any> = {}
@@ -93,13 +98,25 @@ export async function syncOzonProducts(container: AwilixContainer, accountId: st
         update.status = ozonStatus === "archived" ? "archived" : "active"
         update.user_id = (account as any).user_id || undefined
       }
-      if (syncFieldSet.has("title")) update.title = product.name || offerId
-      if (syncFieldSet.has("thumbnail")) update.thumbnail = product.primary_image || undefined
-      // Weight in grams and dimensions in mm
-      if (syncFieldSet.has("weight_g")) update.weight_g = product.weight ? Math.round(Number(product.weight)) : null
-      if (syncFieldSet.has("length_mm")) update.length_mm = product.depth ? Math.round(Number(product.depth)) : null
-      if (syncFieldSet.has("width_mm")) update.width_mm = product.width ? Math.round(Number(product.width)) : null
-      if (syncFieldSet.has("height_mm")) update.height_mm = product.height ? Math.round(Number(product.height)) : null
+      if (syncFieldSet.has("title")) update.title = safeStr(product.name) || offerId
+      if (syncFieldSet.has("thumbnail")) update.thumbnail = safeStr(product.primary_image) ?? null
+      // Weight in grams and dimensions in mm (Ozon returns numbers, 0 means not set)
+      if (syncFieldSet.has("weight_g")) {
+        const w = Number(product.weight)
+        update.weight_g = w > 0 ? Math.round(w) : null
+      }
+      if (syncFieldSet.has("length_mm")) {
+        const v = Number(product.depth)
+        update.length_mm = v > 0 ? Math.round(v) : null
+      }
+      if (syncFieldSet.has("width_mm")) {
+        const v = Number(product.width)
+        update.width_mm = v > 0 ? Math.round(v) : null
+      }
+      if (syncFieldSet.has("height_mm")) {
+        const v = Number(product.height)
+        update.height_mm = v > 0 ? Math.round(v) : null
+      }
       return update
     }
 
@@ -108,14 +125,19 @@ export async function syncOzonProducts(container: AwilixContainer, accountId: st
       if (!link.master_card_id) {
         // Create master card for first time
         const cardData = buildCardUpdate(true)
-        if (!cardData.title) cardData.title = product.name || offerId
+        if (!cardData.title) cardData.title = safeStr(product.name) || offerId
         const card = await masterCardService.create(cardData)
         linkData.master_card_id = card.id
       } else {
         // Update existing master card with synced fields
-        const cardUpdate = buildCardUpdate(false)
-        if (Object.keys(cardUpdate).length > 0) {
-          await masterCardService.update(link.master_card_id, cardUpdate)
+        try {
+          const cardUpdate = buildCardUpdate(false)
+          if (Object.keys(cardUpdate).length > 0) {
+            await masterCardService.update(link.master_card_id, cardUpdate)
+          }
+        } catch (e: any) {
+          // Log but don't fail the whole sync for one product
+          console.warn(`[ozon-sync] Failed to update master card ${link.master_card_id}: ${e.message}`)
         }
       }
       await ozonService.updateOzonProductLink(link.id, linkData)
@@ -123,7 +145,7 @@ export async function syncOzonProducts(container: AwilixContainer, accountId: st
     } else {
       // Create master card for new product
       const cardData = buildCardUpdate(true)
-      if (!cardData.title) cardData.title = product.name || offerId
+      if (!cardData.title) cardData.title = safeStr(product.name) || offerId
       const card = await masterCardService.create(cardData)
       linkData.master_card_id = card.id
       await ozonService.createOzonProductLink(linkData as any)
@@ -135,7 +157,7 @@ export async function syncOzonProducts(container: AwilixContainer, accountId: st
   await ozonService.updateOzonAccount(account.id, {
     last_sync_at: new Date(),
     total_products: details.length,
-    last_error: undefined,
+    last_error: null,
   })
 
   return { created, updated, total: details.length }
