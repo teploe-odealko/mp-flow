@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useRef, useCallback } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { apiGet, apiPost, apiDelete } from "../../../../../src/client/lib/api"
 import type { MasterCardTabProps } from "../../../../../src/client/pages/catalog/tab-types"
@@ -21,11 +21,22 @@ interface PhotoFrame {
   attempts: number
 }
 
+interface PhotoStyleConfig {
+  color_scheme?: string
+  accent_colors?: string[]
+  typography?: string
+  layout_style?: string
+  mood?: string
+  notes?: string
+}
+
 interface PhotoProject {
   id: string
   status: string
   research?: any
   frames: PhotoFrame[]
+  source_images: string[]
+  style_config?: PhotoStyleConfig | null
   total_frames: number
   approved_frames: number
   generated_frames: number
@@ -57,6 +68,11 @@ const FRAME_STATUS_COLORS: Record<FrameStatus, string> = {
   generating: "text-accent",
   generated: "text-inflow",
   failed: "text-outflow",
+}
+
+// SVG iframe srcDoc with script that strips fixed dimensions for responsive scaling
+function svgSrcDoc(svgContent: string): string {
+  return `<!DOCTYPE html><html><head><style>body{margin:0;display:flex;align-items:center;justify-content:center;background:#1a1a1a;width:100vw;height:100vh;overflow:hidden}svg{width:100%;height:100%}</style></head><body>${svgContent}<script>document.querySelectorAll('svg').forEach(function(s){var w=s.getAttribute('width'),h=s.getAttribute('height');if(w&&h&&!s.getAttribute('viewBox')){s.setAttribute('viewBox','0 0 '+parseInt(w)+' '+parseInt(h))}s.removeAttribute('width');s.removeAttribute('height')})</script></body></html>`
 }
 
 export default function PhotoStudioTab({ productId, onRefresh }: MasterCardTabProps) {
@@ -103,6 +119,12 @@ export default function PhotoStudioTab({ productId, onRefresh }: MasterCardTabPr
       setFeedbackText("")
       refetch()
     },
+  })
+
+  const setFrameSourcesMutation = useMutation({
+    mutationFn: ({ projectId, index, fileIds }: { projectId: string; index: number; fileIds: string[] }) =>
+      apiPost(`/api/photo-studio/${projectId}/frames/${index}/source-images`, { file_ids: fileIds }),
+    onSuccess: () => refetch(),
   })
 
   if (isLoading) return <p className="text-text-secondary text-sm">Загрузка...</p>
@@ -188,6 +210,12 @@ export default function PhotoStudioTab({ productId, onRefresh }: MasterCardTabPr
         </div>
       )}
 
+      {/* Source images */}
+      <SourceImagesSection projectId={project.id} sourceImages={project.source_images || []} onRefresh={refetch} />
+
+      {/* Style config */}
+      <StyleConfigSection projectId={project.id} config={project.style_config} onRefresh={refetch} />
+
       {project.error && (
         <div className="mb-4 bg-outflow/10 border border-outflow/30 rounded p-3 text-sm text-outflow">
           {project.error}
@@ -200,7 +228,7 @@ export default function PhotoStudioTab({ productId, onRefresh }: MasterCardTabPr
           <div className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-3">
             Фреймы ({project.frames.length})
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {project.frames.map((frame) => (
               <div
                 key={frame.index}
@@ -215,8 +243,8 @@ export default function PhotoStudioTab({ productId, onRefresh }: MasterCardTabPr
                     <GeneratedImage fileId={frame.generated_file_id} />
                   ) : frame.svg_content ? (
                     <iframe
-                      srcDoc={`<!DOCTYPE html><html><head><style>body{margin:0;display:flex;align-items:center;justify-content:center;background:#1a1a1a;overflow:hidden}svg{max-width:100%;max-height:100%}</style></head><body>${frame.svg_content}</body></html>`}
-                      sandbox="allow-same-origin"
+                      srcDoc={svgSrcDoc(frame.svg_content)}
+                      sandbox="allow-same-origin allow-scripts"
                       className="w-full h-full border-0 pointer-events-none"
                       title={`Frame ${frame.index}`}
                     />
@@ -228,6 +256,13 @@ export default function PhotoStudioTab({ productId, onRefresh }: MasterCardTabPr
                   <span className={`absolute top-1 right-1 text-[10px] px-1.5 py-0.5 rounded bg-bg-deep/80 ${FRAME_STATUS_COLORS[frame.status]}`}>
                     {FRAME_STATUS_LABELS[frame.status]}
                   </span>
+
+                  {/* Source images count */}
+                  {(frame.source_images?.length ?? 0) > 0 && (
+                    <span className="absolute bottom-1 left-1 text-[10px] px-1.5 py-0.5 rounded bg-bg-deep/80 text-text-secondary">
+                      {frame.source_images!.length} фото
+                    </span>
+                  )}
 
                   {/* Feedback indicator */}
                   {frame.svg_feedback && (
@@ -250,8 +285,10 @@ export default function PhotoStudioTab({ productId, onRefresh }: MasterCardTabPr
             <FrameDetail
               frame={project.frames[selectedFrame]}
               projectId={project.id}
+              projectSourceImages={project.source_images || []}
               onApprove={() => approveMutation.mutate({ projectId: project.id, index: selectedFrame })}
               onFeedback={() => setFeedbackIndex(selectedFrame)}
+              onSetSources={(fileIds) => setFrameSourcesMutation.mutate({ projectId: project.id, index: selectedFrame, fileIds })}
               isApproving={approveMutation.isPending}
             />
           )}
@@ -298,13 +335,266 @@ export default function PhotoStudioTab({ productId, onRefresh }: MasterCardTabPr
   )
 }
 
-function FrameDetail({ frame, projectId, onApprove, onFeedback, isApproving }: {
+// ── Source Images Section ──
+
+function SourceImagesSection({ projectId, sourceImages, onRefresh }: {
+  projectId: string
+  sourceImages: string[]
+  onRefresh: () => void
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+
+  const removeMutation = useMutation({
+    mutationFn: (fileId: string) => apiDelete(`/api/photo-studio/${projectId}/source-images/${fileId}`),
+    onSuccess: () => onRefresh(),
+  })
+
+  const handleUpload = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    setUploading(true)
+    try {
+      for (const file of Array.from(files)) {
+        // Upload to file storage
+        const formData = new FormData()
+        formData.append("file", file)
+        formData.append("metadata", JSON.stringify({ source: "photo-studio", project_id: projectId }))
+        const uploadRes = await fetch("/api/files/upload", {
+          method: "POST",
+          credentials: "include",
+          body: formData,
+        })
+        if (!uploadRes.ok) throw new Error("Upload failed")
+        const { file: uploaded } = await uploadRes.json()
+        // Add to project
+        await apiPost(`/api/photo-studio/${projectId}/source-images`, { file_id: uploaded.id })
+      }
+      onRefresh()
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+    }
+  }, [projectId, onRefresh])
+
+  return (
+    <div className="mb-4 border border-bg-border rounded p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <div className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+          Исходные фото
+        </div>
+        <span className="text-xs text-text-muted">{sourceImages.length}</span>
+        <div className="flex-1" />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          style={{ display: "none" }}
+          onChange={(e) => handleUpload(e.target.files)}
+        />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          className="text-xs px-2 py-1 bg-accent/10 text-accent rounded hover:bg-accent/20 disabled:opacity-50"
+        >
+          {uploading ? "Загрузка..." : "Загрузить"}
+        </button>
+      </div>
+      {sourceImages.length > 0 ? (
+        <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-2">
+          {sourceImages.map((fileId) => (
+            <SourceImageThumb
+              key={fileId}
+              fileId={fileId}
+              onRemove={() => removeMutation.mutate(fileId)}
+            />
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-text-muted">Загрузите фото товара для использования в кадрах</p>
+      )}
+    </div>
+  )
+}
+
+function SourceImageThumb({ fileId, onRemove }: { fileId: string; onRemove: () => void }) {
+  const { data } = useQuery({
+    queryKey: ["file-url", fileId],
+    queryFn: () => apiGet<{ url: string }>(`/api/files/${fileId}/url`),
+    staleTime: 50 * 60 * 1000,
+  })
+
+  return (
+    <div className="relative group aspect-square bg-bg-deep rounded overflow-hidden">
+      {data?.url ? (
+        <img src={data.url} alt="" className="w-full h-full object-cover" />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-text-muted text-[10px]">...</div>
+      )}
+      <button
+        onClick={(e) => { e.stopPropagation(); onRemove() }}
+        className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-outflow/80 text-white text-[10px] leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+      >
+        x
+      </button>
+    </div>
+  )
+}
+
+// ── Style Config Section ──
+
+function StyleConfigSection({ projectId, config, onRefresh }: {
+  projectId: string
+  config?: PhotoStyleConfig | null
+  onRefresh: () => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const [form, setForm] = useState<PhotoStyleConfig>(config || {})
+  const [dirty, setDirty] = useState(false)
+
+  const saveMutation = useMutation({
+    mutationFn: (data: PhotoStyleConfig) => apiPost(`/api/photo-studio/${projectId}/style-config`, data),
+    onSuccess: () => {
+      setDirty(false)
+      onRefresh()
+    },
+  })
+
+  const update = (key: keyof PhotoStyleConfig, value: any) => {
+    setForm((prev) => ({ ...prev, [key]: value }))
+    setDirty(true)
+  }
+
+  const hasConfig = config && Object.values(config).some((v) => v !== undefined && v !== null && v !== "")
+
+  return (
+    <div className="mb-4 border border-bg-border rounded p-3">
+      <div
+        className="flex items-center gap-2 cursor-pointer"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Стиль</div>
+        {hasConfig && <span className="text-[10px] text-inflow">настроен</span>}
+        <div className="flex-1" />
+        <span className="text-xs text-text-muted">{expanded ? "▲" : "▼"}</span>
+      </div>
+      {expanded && (
+        <div className="mt-3 space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block">
+              <span className="text-[11px] text-text-muted">Цветовая схема</span>
+              <select
+                value={form.color_scheme || ""}
+                onChange={(e) => update("color_scheme", e.target.value || undefined)}
+                className="w-full mt-0.5 px-2 py-1 bg-bg-deep border border-bg-border rounded text-xs text-text-primary"
+              >
+                <option value="">—</option>
+                <option value="светлая">Светлая</option>
+                <option value="тёмная">Тёмная</option>
+                <option value="яркая">Яркая</option>
+                <option value="пастельная">Пастельная</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-[11px] text-text-muted">Настроение</span>
+              <select
+                value={form.mood || ""}
+                onChange={(e) => update("mood", e.target.value || undefined)}
+                className="w-full mt-0.5 px-2 py-1 bg-bg-deep border border-bg-border rounded text-xs text-text-primary"
+              >
+                <option value="">—</option>
+                <option value="весёлый">Весёлый</option>
+                <option value="премиальный">Премиальный</option>
+                <option value="детский">Детский</option>
+                <option value="минималистичный">Минималистичный</option>
+                <option value="энергичный">Энергичный</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-[11px] text-text-muted">Типографика</span>
+              <select
+                value={form.typography || ""}
+                onChange={(e) => update("typography", e.target.value || undefined)}
+                className="w-full mt-0.5 px-2 py-1 bg-bg-deep border border-bg-border rounded text-xs text-text-primary"
+              >
+                <option value="">—</option>
+                <option value="крупный жирный">Крупный жирный</option>
+                <option value="минималистичный">Минималистичный</option>
+                <option value="рукописный">Рукописный</option>
+                <option value="без текста">Без текста</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-[11px] text-text-muted">Компоновка</span>
+              <select
+                value={form.layout_style || ""}
+                onChange={(e) => update("layout_style", e.target.value || undefined)}
+                className="w-full mt-0.5 px-2 py-1 bg-bg-deep border border-bg-border rounded text-xs text-text-primary"
+              >
+                <option value="">—</option>
+                <option value="полный кадр">Полный кадр</option>
+                <option value="с рамками">С рамками</option>
+                <option value="коллаж">Коллаж</option>
+                <option value="инфографика">Инфографика</option>
+              </select>
+            </label>
+          </div>
+          <label className="block">
+            <span className="text-[11px] text-text-muted">Акцентные цвета (HEX через запятую)</span>
+            <input
+              type="text"
+              value={(form.accent_colors || []).join(", ")}
+              onChange={(e) => update("accent_colors", e.target.value.split(",").map((s) => s.trim()).filter(Boolean))}
+              placeholder="#FF6B35, #004E89"
+              className="w-full mt-0.5 px-2 py-1 bg-bg-deep border border-bg-border rounded text-xs text-text-primary"
+            />
+          </label>
+          <label className="block">
+            <span className="text-[11px] text-text-muted">Заметки</span>
+            <textarea
+              value={form.notes || ""}
+              onChange={(e) => update("notes", e.target.value || undefined)}
+              placeholder="Дополнительные пожелания по стилю..."
+              className="w-full mt-0.5 px-2 py-1 bg-bg-deep border border-bg-border rounded text-xs text-text-primary resize-none h-16"
+            />
+          </label>
+          {dirty && (
+            <div className="flex justify-end">
+              <button
+                onClick={() => saveMutation.mutate(form)}
+                disabled={saveMutation.isPending}
+                className="px-3 py-1 bg-accent text-white rounded text-xs hover:bg-accent-dark disabled:opacity-50"
+              >
+                {saveMutation.isPending ? "Сохраняю..." : "Сохранить стиль"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Frame Detail ──
+
+function FrameDetail({ frame, projectId, projectSourceImages, onApprove, onFeedback, onSetSources, isApproving }: {
   frame: PhotoFrame
   projectId: string
+  projectSourceImages: string[]
   onApprove: () => void
   onFeedback: () => void
+  onSetSources: (fileIds: string[]) => void
   isApproving: boolean
 }) {
+  const frameSources = frame.source_images || []
+
+  const toggleSource = (fileId: string) => {
+    const next = frameSources.includes(fileId)
+      ? frameSources.filter((id) => id !== fileId)
+      : [...frameSources, fileId]
+    onSetSources(next)
+  }
+
   return (
     <div className="mt-4 border border-bg-border rounded p-4">
       <div className="flex items-center gap-3 mb-3">
@@ -334,6 +624,25 @@ function FrameDetail({ frame, projectId, onApprove, onFeedback, isApproving }: {
 
       <div className="text-xs text-text-secondary mb-2">{frame.concept}</div>
 
+      {/* Frame source images picker */}
+      {projectSourceImages.length > 0 && (
+        <div className="mb-3">
+          <div className="text-[11px] text-text-muted mb-1">
+            Фото для кадра ({frameSources.length}/{projectSourceImages.length})
+          </div>
+          <div className="flex gap-1.5 flex-wrap">
+            {projectSourceImages.map((fileId) => (
+              <SourceImagePickerThumb
+                key={fileId}
+                fileId={fileId}
+                selected={frameSources.includes(fileId)}
+                onToggle={() => toggleSource(fileId)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
       {frame.svg_feedback && (
         <div className="bg-outflow/10 border border-outflow/20 rounded p-2 text-xs text-outflow mb-2">
           Фидбек: {frame.svg_feedback}
@@ -352,6 +661,35 @@ function FrameDetail({ frame, projectId, onApprove, onFeedback, isApproving }: {
     </div>
   )
 }
+
+function SourceImagePickerThumb({ fileId, selected, onToggle }: {
+  fileId: string
+  selected: boolean
+  onToggle: () => void
+}) {
+  const { data } = useQuery({
+    queryKey: ["file-url", fileId],
+    queryFn: () => apiGet<{ url: string }>(`/api/files/${fileId}/url`),
+    staleTime: 50 * 60 * 1000,
+  })
+
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onToggle() }}
+      className={`w-10 h-10 rounded overflow-hidden border-2 transition-colors ${
+        selected ? "border-accent" : "border-transparent opacity-50 hover:opacity-80"
+      }`}
+    >
+      {data?.url ? (
+        <img src={data.url} alt="" className="w-full h-full object-cover" />
+      ) : (
+        <div className="w-full h-full bg-bg-deep" />
+      )}
+    </button>
+  )
+}
+
+// ── Generated Image ──
 
 function GeneratedImage({ fileId }: { fileId: string }) {
   const { data } = useQuery({

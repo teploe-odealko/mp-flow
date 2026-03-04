@@ -14,6 +14,15 @@ export interface PhotoFrame {
   attempts: number
 }
 
+export interface PhotoStyleConfig {
+  color_scheme?: string
+  accent_colors?: string[]
+  typography?: string
+  layout_style?: string
+  mood?: string
+  notes?: string
+}
+
 export interface PhotoResearch {
   product_title?: string
   product_description?: string
@@ -57,6 +66,12 @@ export class PhotoProject {
 
   @Property({ type: "int", default: 0 })
   generated_frames: number = 0
+
+  @Property({ type: "json", default: "[]" })
+  source_images: string[] = []
+
+  @Property({ type: "json", nullable: true })
+  style_config?: PhotoStyleConfig | null
 
   @Property({ type: "text", nullable: true })
   error?: string | null

@@ -80,6 +80,47 @@ photoStudio.post("/:id/plan", async (c) => {
   return c.json({ project })
 })
 
+// POST /api/photo-studio/:id/source-images — add source image
+photoStudio.post("/:id/source-images", async (c) => {
+  const userId = getUserId(c)
+  const { id } = c.req.param()
+  const { file_id } = await c.req.json()
+  if (!file_id) return c.json({ error: "file_id is required" }, 400)
+  const service: PhotoStudioService = c.get("container").resolve("photoStudioService")
+  const project = await service.addSourceImage(userId, id, file_id)
+  return c.json({ project })
+})
+
+// DELETE /api/photo-studio/:id/source-images/:fileId — remove source image
+photoStudio.delete("/:id/source-images/:fileId", async (c) => {
+  const userId = getUserId(c)
+  const { id, fileId } = c.req.param()
+  const service: PhotoStudioService = c.get("container").resolve("photoStudioService")
+  const project = await service.removeSourceImage(userId, id, fileId)
+  return c.json({ project })
+})
+
+// POST /api/photo-studio/:id/frames/:index/source-images — set frame source images
+photoStudio.post("/:id/frames/:index/source-images", async (c) => {
+  const userId = getUserId(c)
+  const { id, index } = c.req.param()
+  const { file_ids } = await c.req.json()
+  if (!Array.isArray(file_ids)) return c.json({ error: "file_ids array is required" }, 400)
+  const service: PhotoStudioService = c.get("container").resolve("photoStudioService")
+  const project = await service.setFrameSourceImages(userId, id, Number(index), file_ids)
+  return c.json({ project })
+})
+
+// POST /api/photo-studio/:id/style-config — save style config
+photoStudio.post("/:id/style-config", async (c) => {
+  const userId = getUserId(c)
+  const { id } = c.req.param()
+  const config = await c.req.json()
+  const service: PhotoStudioService = c.get("container").resolve("photoStudioService")
+  const project = await service.saveStyleConfig(userId, id, config)
+  return c.json({ project })
+})
+
 // POST /api/photo-studio/:id/frames/:index/svg — save SVG preview
 photoStudio.post("/:id/frames/:index/svg", async (c) => {
   const userId = getUserId(c)

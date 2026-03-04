@@ -1,5 +1,5 @@
 import type { EntityManager } from "@mikro-orm/core"
-import { PhotoProject, type PhotoFrame, type PhotoResearch } from "../entities/photo-project.js"
+import { PhotoProject, type PhotoFrame, type PhotoResearch, type PhotoStyleConfig } from "../entities/photo-project.js"
 
 export class PhotoStudioService {
   constructor(private em: EntityManager) {}
@@ -152,6 +152,48 @@ export class PhotoStudioService {
     project.generated_frames = project.frames.filter((f) => f.status === "generated").length
 
     if (project.status === "completed") project.status = "generating"
+    await this.em.flush()
+    return project
+  }
+
+  // ── Source images ──
+
+  async addSourceImage(userId: string, projectId: string, fileId: string): Promise<PhotoProject> {
+    const project = await this.getProject(userId, projectId)
+    if (!project.source_images.includes(fileId)) {
+      project.source_images = [...project.source_images, fileId]
+    }
+    await this.em.flush()
+    return project
+  }
+
+  async removeSourceImage(userId: string, projectId: string, fileId: string): Promise<PhotoProject> {
+    const project = await this.getProject(userId, projectId)
+    project.source_images = project.source_images.filter((id) => id !== fileId)
+    // Also remove from any frames referencing this image
+    for (const frame of project.frames) {
+      if (frame.source_images?.includes(fileId)) {
+        frame.source_images = frame.source_images.filter((id) => id !== fileId)
+      }
+    }
+    await this.em.flush()
+    return project
+  }
+
+  async setFrameSourceImages(userId: string, projectId: string, frameIndex: number, fileIds: string[]): Promise<PhotoProject> {
+    const project = await this.getProject(userId, projectId)
+    const frame = project.frames[frameIndex]
+    if (!frame) throw new Error(`Frame ${frameIndex} not found`)
+    frame.source_images = fileIds
+    await this.em.flush()
+    return project
+  }
+
+  // ── Style config ──
+
+  async saveStyleConfig(userId: string, projectId: string, config: PhotoStyleConfig): Promise<PhotoProject> {
+    const project = await this.getProject(userId, projectId)
+    project.style_config = config
     await this.em.flush()
     return project
   }

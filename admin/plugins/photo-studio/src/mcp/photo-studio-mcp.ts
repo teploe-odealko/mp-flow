@@ -53,6 +53,52 @@ export const mcpTools: ApiTool[] = [
     },
   },
   {
+    name: "photostudio_add_source_image",
+    description: "Добавить исходное фото в проект. Сначала загрузи файл через upload_file, потом привяжи file_id к проекту.",
+    method: "POST",
+    path: "/api/photo-studio/:id/source-images",
+    params: {
+      id: { type: "string", description: "ID проекта", required: true, in: "path" },
+      file_id: { type: "string", description: "ID файла из file storage", required: true, in: "body" },
+    },
+  },
+  {
+    name: "photostudio_remove_source_image",
+    description: "Убрать исходное фото из проекта (также уберёт его из фреймов)",
+    method: "DELETE",
+    path: "/api/photo-studio/:id/source-images/:fileId",
+    params: {
+      id: { type: "string", description: "ID проекта", required: true, in: "path" },
+      fileId: { type: "string", description: "ID файла для удаления", required: true, in: "path" },
+    },
+  },
+  {
+    name: "photostudio_set_frame_sources",
+    description: "Назначить исходные фото для конкретного фрейма. Можно 0 фото (полностью генерируемый кадр) или несколько.",
+    method: "POST",
+    path: "/api/photo-studio/:id/frames/:index/source-images",
+    params: {
+      id: { type: "string", description: "ID проекта", required: true, in: "path" },
+      index: { type: "number", description: "Индекс фрейма (0-based)", required: true, in: "path" },
+      file_ids: { type: "object", description: "Массив ID файлов для этого фрейма (пустой массив = без фото)", required: true, in: "body" },
+    },
+  },
+  {
+    name: "photostudio_save_style_config",
+    description: "Сохранить настройки единого стиля проекта: цветовая схема, акценты, типографика, настроение. SVG-превью должны следовать этим настройкам.",
+    method: "POST",
+    path: "/api/photo-studio/:id/style-config",
+    params: {
+      id: { type: "string", description: "ID проекта", required: true, in: "path" },
+      color_scheme: { type: "string", description: "Цветовая схема: тёмная, светлая, яркая", in: "body" },
+      accent_colors: { type: "object", description: "Массив HEX акцентных цветов", in: "body" },
+      typography: { type: "string", description: "Стиль типографики", in: "body" },
+      layout_style: { type: "string", description: "Стиль компоновки: с рамками, полный кадр, коллаж", in: "body" },
+      mood: { type: "string", description: "Настроение: весёлый, премиальный, детский и т.д.", in: "body" },
+      notes: { type: "string", description: "Дополнительные заметки по стилю", in: "body" },
+    },
+  },
+  {
     name: "photostudio_save_frame_svg",
     description: "Сохранить SVG-превью для фрейма. SVG должен быть 900×1200px (формат Ozon). Показывает расположение элементов, текст, инфографику.",
     method: "POST",
