@@ -25,6 +25,7 @@ services:
       S3_FORCE_PATH_STYLE: "true"
       # AI Image Generation
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-${OPENROUTER_API:-}}
+      OPENROUTER_IMAGE_MODEL: ${OPENROUTER_IMAGE_MODEL:-}
     depends_on:
       minio:
         condition: service_healthy
