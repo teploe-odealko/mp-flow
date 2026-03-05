@@ -4,108 +4,78 @@
 [![CI](https://github.com/teploe-odealko/mp-flow/actions/workflows/ci.yml/badge.svg)](https://github.com/teploe-odealko/mp-flow/actions/workflows/ci.yml)
 [![Docker](https://img.shields.io/badge/Docker-ghcr.io-blue)](https://github.com/teploe-odealko/mp-flow/pkgs/container/mp-flow%2Fadmin)
 
-AI Agent First ERP для продавцов на маркетплейсах. Каталог, закупки, склад, продажи, финансы — в одном месте. Подключайте AI-агентов через MCP для управления магазином.
+AI Agent First ERP для продавцов на маркетплейсах. Пусть рутину делают AI-агенты — учёт партий, себестоимость, PnL, ДДС, закупки в 1 клик из коробки.
 
 **[mp-flow.ru](https://mp-flow.ru)** · **[Документация](https://docs.mp-flow.ru)** · **[Облако](https://admin.mp-flow.ru)**
 
-## Быстрый старт
+## Возможности
+
+**AI-агент управляет магазином за вас** — подключите Claude Code, Codex, Cursor, Windsurf или любой MCP-клиент. 54+ инструментов: цены, остатки, аналитика, заказы и весь Ozon API. Попросите словами — агент сделает.
+
+- **PnL и ДДС** — управленческие отчёты из коробки. Прибыль-убыток и движение денежных средств по каждому товару и за период
+- **Закупки в 1 клик** — прогноз по скорости продаж, формирование заказа поставщику автоматически
+- **Учёт партий** — себестоимость каждой партии с распределением затрат: закупка, логистика, таможня, упаковка
+- **Продажи FBO** — автосинхронизация с Ozon: отправления, возвраты, комиссии, логистика
+- **Юнит-экономика** — маржа и ROI по каждому SKU
+- **Система плагинов** — расширяйте функциональность без изменения ядра
+
+## Плагины
+
+| Плагин | Описание |
+|--------|----------|
+| **Ozon FBO** | Синхронизация товаров, остатков, продаж, возвратов и финансов. AI-агент получает доступ к 400+ методам Ozon Seller API |
+| **1688.com** | Привязка товаров к поставщикам на 1688.com. Цены в юанях, выгрузка заявки в XLSX |
+| **Фото-студия** | AI-генерация продуктовых фото: ресерч → SVG-превью → готовые изображения для карточек |
+| **Свой плагин** | Создайте под ваши задачи. [Документация →](https://docs.mp-flow.ru/docs/developer/plugin-development) |
+
+## Облако
+
+Не хотите разворачивать самостоятельно? Используйте облачную версию — без установки, автообновления, бэкапы:
+
+**[admin.mp-flow.ru](https://admin.mp-flow.ru)** — 14 дней бесплатно, от 300 ₽/мес.
+
+## Self-hosting
+
+Все функции без ограничений на вашем сервере. Нужны Docker 24+ и Docker Compose v2 (минимум 2 ГБ RAM).
+
+### Быстрый старт
 
 ```bash
 curl -O https://raw.githubusercontent.com/teploe-odealko/mp-flow/main/docker-compose.yml
 
 cat > .env << 'EOF'
-DB_PASSWORD=ваш_пароль
-COOKIE_SECRET=$(openssl rand -base64 32)
+DB_PASSWORD=ваш_надёжный_пароль
+COOKIE_SECRET=вставьте_результат_команды_ниже
 EOF
+
+# Сгенерируйте COOKIE_SECRET:
+openssl rand -base64 32
 
 docker compose up -d
 ```
 
-Откройте **http://localhost:3000** — админка готова к работе.
+Откройте **http://localhost:3000** — готово.
 
-> **Важно:** `COOKIE_SECRET` обязателен. Сгенерируйте случайное значение: `openssl rand -base64 32`.
+> `COOKIE_SECRET` обязателен. Без него сервер не запустится.
 
-## Возможности
+### Переменные окружения
 
-- **Каталог** — карточки товаров с SKU, размерами, ценами, данными поставщиков
-- **Закупки** — заказы поставщикам с распределением общих затрат (логистика, таможня)
-- **Складской учёт** — партионный учёт с точной себестоимостью каждой единицы
-- **Юнит-экономика** — PnL по товару с реальной себестоимостью
-- **Продажи** — синхронизация с Ozon (отправления, возвраты, комиссии)
-- **Финансы** — транзакции, ДДС, отчёты
-- **Аналитика** — сводные отчёты по продажам и складу
-- **AI-агенты** — MCP-сервер для подключения Claude Code, Cursor, Codex и других AI-клиентов
-- **Плагины** — расширяемая архитектура с convention-based auto-discovery
+| Переменная | Обязательная | Описание |
+|------------|:---:|----------|
+| `DB_PASSWORD` | да | Пароль PostgreSQL |
+| `COOKIE_SECRET` | да | Секрет для шифрования сессий (`openssl rand -base64 32`) |
+| `PORT` | нет | Порт админки (по умолчанию 3000) |
 
-## Облако
+### Обновление
 
-Не хотите разворачивать самостоятельно? Используйте облачную версию:
-
-**[admin.mp-flow.ru](https://admin.mp-flow.ru)** — готово к работе, автообновления, бэкапы.
-
-## Архитектура
-
-```
-┌───────────────────────────────────┐
-│        Браузер / AI-агент         │
-│   http://localhost:3000           │
-└──────────────┬────────────────────┘
-               │
-┌──────────────▼────────────────────┐
-│   MPFlow Admin (Node.js)          │
-│   - Hono API (:3000)             │
-│   - React SPA (встроена)         │
-│   - MCP-сервер (/mcp)           │
-│   - Плагины (auto-discovery)    │
-├───────────────────────────────────┤
-│   Core-модули:                    │
-│   - master-card (каталог)        │
-│   - supplier-order (закупки)     │
-│   - finance (транзакции)         │
-│   - sale (продажи)               │
-├───────────────────────────────────┤
-│   Плагины (convention-based):    │
-│   - entities → auto-schema       │
-│   - services → DI (awilix)      │
-│   - routes, middleware, nav      │
-│   - mcpTools, mcpResources      │
-└──────────┬────────────────────────┘
-           │
-┌──────────▼──────┐
-│   PostgreSQL    │
-│   :5432         │
-└─────────────────┘
+```bash
+docker compose pull
+docker compose up -d
 ```
 
-- **Admin** — Hono API + React SPA в одном Node.js процессе. MikroORM для БД, awilix для DI.
-- **MCP-сервер** — Streamable HTTP транспорт на `/mcp`. AI-агенты управляют магазином через tools и resources.
-- **PostgreSQL** — все данные. Миграции + auto-schema применяются при запуске.
-- **Плагины** — свои entities, routes, middleware, MCP tools. Таблицы создаются автоматически.
+Миграции применяются автоматически при старте.
 
-## Tech Stack
-
-| Слой | Технология |
-|------|-----------|
-| HTTP | Hono 4 |
-| ORM | MikroORM 6 + PostgreSQL 17 |
-| DI | awilix |
-| Сессии | iron-session (encrypted cookies) |
-| Auth | Logto OIDC |
-| Frontend | React 19 + Vite 6 + Tailwind CSS 3 |
-| Data fetching | TanStack Query 5 |
-| Router | React Router 7 |
-| AI | MCP (Model Context Protocol) |
-
-## Интеграции
-
-| Интеграция | Описание |
-|------------|----------|
-| **Ozon Seller API** | Синхронизация товаров, остатков, продаж (плагин `ozon`) |
-| **1688.com** | Поиск поставщиков, импорт товаров (плагин `ali1688`) |
-| **AI Фото-студия** | Генерация фото товаров через AI (плагин `photo-studio`) |
-| **Logto OIDC** | SSO авторизация |
-
-Интеграции подключаются как плагины. Три плагина из коробки, другие можно создать самостоятельно.
+Подробнее — [документация по self-hosting](https://docs.mp-flow.ru/docs/developer/self-hosting).
 
 ## Разработка
 
@@ -115,32 +85,31 @@ cd mp-flow/admin
 npm install
 ```
 
-Запустить PostgreSQL и dev-сервер:
+Создайте `.env` в директории `admin/`:
+
+```env
+DATABASE_URL=postgresql://mpflow:mpflow@localhost:5432/mpflow
+COOKIE_SECRET=dev-secret
+```
+
+Запустите PostgreSQL и dev-сервер:
 
 ```bash
-docker run -d --name mpflow-pg -e POSTGRES_USER=mpflow -e POSTGRES_PASSWORD=mpflow -e POSTGRES_DB=mpflow -p 5432:5432 postgres:17-alpine
+docker run -d --name mpflow-pg \
+  -e POSTGRES_USER=mpflow \
+  -e POSTGRES_PASSWORD=mpflow \
+  -e POSTGRES_DB=mpflow \
+  -p 5432:5432 \
+  postgres:17-alpine
 
 npm run dev
 ```
 
-Админка: `http://localhost:5173` (клиент) с прокси на API `http://localhost:3000`.
+Клиент: `http://localhost:5173` с прокси на API `http://localhost:3000`.
 
-Подробнее — [CONTRIBUTING.md](CONTRIBUTING.md) и [документация](https://docs.mp-flow.ru/docs/developer).
+> В dev-режиме (без `LOGTO_ENDPOINT`) авторизация не требуется — автоматический вход как dev-пользователь.
 
-## Обновление
-
-```bash
-docker compose pull
-docker compose up -d
-```
-
-Миграции и auto-schema применяются автоматически при старте.
-
-## Версионирование
-
-Проект использует [Semantic Versioning](https://semver.org/). Текущие релизы — pre-1.0 (API может меняться).
-
-Changelog: [CHANGELOG.md](CHANGELOG.md)
+Подробнее — [CONTRIBUTING.md](CONTRIBUTING.md) и [документация для разработчиков](https://docs.mp-flow.ru/docs/developer).
 
 ## Лицензия
 
