@@ -114,10 +114,12 @@ files.get("/:id/download", async (c) => {
   const service: FileStorageService = c.get("container").resolve("fileStorageService")
   try {
     const { stream, contentType, filename } = await service.download(userId, id)
+    const safeFilename = encodeURIComponent(filename)
     return new Response(stream, {
       headers: {
         "Content-Type": contentType,
-        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Disposition": `inline; filename*=UTF-8''${safeFilename}`,
+        "Cache-Control": "private, max-age=3600",
       },
     })
   } catch (e: any) {
