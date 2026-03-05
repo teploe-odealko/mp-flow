@@ -25,7 +25,7 @@ export class AiImageService {
   ) {}
 
   async generate(params: GenerateParams): Promise<GenerateResult> {
-    const apiKey = process.env.OPENROUTER_API_KEY
+    const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_API
     if (!apiKey) throw new Error("OPENROUTER_API_KEY not configured")
 
     const model = process.env.OPENROUTER_IMAGE_MODEL || "google/gemini-2.5-flash-preview-05-20"
