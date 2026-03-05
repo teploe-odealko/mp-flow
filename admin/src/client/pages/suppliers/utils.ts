@@ -31,6 +31,7 @@ export function computeAllocations(items: OrderItem[], sharedCosts: SharedCostEn
   const totalPriceValue = items.reduce((s, i) => s + (Number(i.purchase_price) || 0) * (i.ordered_qty || 0), 0)
   const totalWeight = items.reduce((s, i) => s + (Number(i.weight) || 0) * (i.ordered_qty || 0), 0)
   const totalVolume = items.reduce((s, i) => s + (Number(i.volume) || 0) * (i.ordered_qty || 0), 0)
+  const totalUnits = items.reduce((s, i) => s + (i.ordered_qty || 0), 0)
 
   return items.map((item) => {
     const qty = item.ordered_qty || 0
@@ -64,7 +65,8 @@ export function computeAllocations(items: OrderItem[], sharedCosts: SharedCostEn
         }
         case "equal":
         default:
-          share = amount / items.length
+          // Поровну между всеми единицами: сумма / всего единиц * кол-во данного товара
+          share = totalUnits > 0 ? (qty / totalUnits) * amount : amount / items.length
           break
       }
       sharedAlloc += share
@@ -97,6 +99,7 @@ export function computePerCategoryOverhead(
   const totalPriceValue = allItems.reduce((s, i) => s + (Number(i.purchase_price) || 0) * (i.ordered_qty || 0), 0)
   const totalWeight = allItems.reduce((s, i) => s + (Number(i.weight) || 0) * (i.ordered_qty || 0), 0)
   const totalVolume = allItems.reduce((s, i) => s + (Number(i.volume) || 0) * (i.ordered_qty || 0), 0)
+  const totalUnits = allItems.reduce((s, i) => s + (i.ordered_qty || 0), 0)
   const purchasePrice = Number(item.purchase_price) || 0
 
   return sharedCosts
@@ -123,7 +126,7 @@ export function computePerCategoryOverhead(
         }
         case "equal":
         default:
-          share = amount / allItems.length
+          share = totalUnits > 0 ? (qty / totalUnits) * amount : amount / allItems.length
       }
 
       return { name: cost.name, per_unit: qty > 0 ? share / qty : 0 }

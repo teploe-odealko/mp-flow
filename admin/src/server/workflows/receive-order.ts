@@ -50,6 +50,7 @@ export async function receiveOrder(container: AwilixContainer, input: ReceiveOrd
     const qty = receivedLookup.get(item.id) || 0
     return s + (weightLookup.get(item.id) || 0) * qty
   }, 0)
+  const totalUnits = receivingItems.reduce((s: number, item: any) => s + (receivedLookup.get(item.id) || 0), 0)
 
   let totalCost = 0
 
@@ -73,8 +74,8 @@ export async function receiveOrder(container: AwilixContainer, input: ReceiveOrd
         const itemWeight = weightG * receivedQty
         share = totalWeight > 0 ? (itemWeight / totalWeight) * amount : amount / receivingItems.length
       } else {
-        // equal (default)
-        share = amount / receivingItems.length
+        // equal (default) — поровну между всеми единицами
+        share = totalUnits > 0 ? (receivedQty / totalUnits) * amount : amount / receivingItems.length
       }
       sharedAlloc += share
     }

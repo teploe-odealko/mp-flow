@@ -595,7 +595,7 @@ export default function SupplierDetailPage() {
 
 const ALLOCATION_LABELS: Record<string, string> = {
   none: "Не учитывать в себестоимости",
-  equal: "Поровну",
+  equal: "Поровну между единицами",
   by_price: "По цене закупки",
   by_weight: "По весу",
 }
@@ -709,7 +709,7 @@ function ExpensesSection({
               className="px-2 py-1 bg-bg-deep border border-bg-border rounded text-sm text-text-primary"
             >
               <option value="none">Не учитывать в себестоимости</option>
-              <option value="equal">Поровну по товарам</option>
+              <option value="equal">Поровну между всеми единицами</option>
               <option value="by_price">По цене закупки</option>
               <option value="by_weight">По весу</option>
             </select>
