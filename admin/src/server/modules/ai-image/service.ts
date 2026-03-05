@@ -28,7 +28,7 @@ export class AiImageService {
     const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_API
     if (!apiKey) throw new Error("OPENROUTER_API_KEY not configured")
 
-    const model = process.env.OPENROUTER_IMAGE_MODEL || "google/gemini-2.5-flash-preview-05-20"
+    const model = process.env.OPENROUTER_IMAGE_MODEL || "google/gemini-2.5-flash-image-preview"
 
     // Deduct 1 credit
     const deductResult = await this.creditService.deduct(
