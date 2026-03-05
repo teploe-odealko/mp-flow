@@ -72,6 +72,7 @@ export class AiImageService {
         body: JSON.stringify({
           model,
           messages: [{ role: "user", content }],
+          provider: { order: ["google"] },
         }),
       })
 
@@ -117,12 +118,31 @@ export class AiImageService {
   private extractImage(data: any): { base64_data: string; mime_type: string } | null {
     const choices = data.choices || []
     for (const choice of choices) {
-      const content = choice.message?.content
+      const msg = choice.message
+      if (!msg) continue
+
+      // OpenRouter non-standard field: message.images (used by Gemini models)
+      const images = msg.images
+      if (Array.isArray(images)) {
+        for (const imgItem of images) {
+          const url = imgItem?.image_url?.url || imgItem?.url || ""
+          if (url.startsWith("data:")) {
+            const match = url.match(/^data:([^;]+);base64,(.+)$/)
+            if (match) {
+              return { base64_data: match[2], mime_type: match[1] }
+            }
+            // Fallback: split on comma
+            const b64 = url.split(",", 2)[1]
+            if (b64) return { base64_data: b64, mime_type: "image/png" }
+          }
+        }
+      }
+
+      const content = msg.content
       if (!content) continue
 
-      // String response with inline_data (Gemini format)
+      // String response — check if raw base64
       if (typeof content === "string") {
-        // Check if it's a base64 image directly
         if (content.length > 1000 && !content.includes(" ")) {
           return { base64_data: content, mime_type: "image/png" }
         }
