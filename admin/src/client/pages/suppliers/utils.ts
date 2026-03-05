@@ -85,6 +85,52 @@ export function computeAllocations(items: OrderItem[], sharedCosts: SharedCostEn
   })
 }
 
+/** Per-category overhead allocation for one item (per unit) */
+export function computePerCategoryOverhead(
+  item: OrderItem,
+  sharedCosts: SharedCostEntry[],
+  allItems: OrderItem[],
+): Array<{ name: string; per_unit: number }> {
+  const qty = item.ordered_qty || 0
+  if (qty === 0) return []
+
+  const totalPriceValue = allItems.reduce((s, i) => s + (Number(i.purchase_price) || 0) * (i.ordered_qty || 0), 0)
+  const totalWeight = allItems.reduce((s, i) => s + (Number(i.weight) || 0) * (i.ordered_qty || 0), 0)
+  const totalVolume = allItems.reduce((s, i) => s + (Number(i.volume) || 0) * (i.ordered_qty || 0), 0)
+  const purchasePrice = Number(item.purchase_price) || 0
+
+  return sharedCosts
+    .map((cost) => {
+      const amount = Number(cost.total_rub) || 0
+      if (amount === 0) return null
+
+      let share = 0
+      switch (cost.method) {
+        case "by_price": {
+          const itemValue = purchasePrice * qty
+          share = totalPriceValue > 0 ? (itemValue / totalPriceValue) * amount : amount / allItems.length
+          break
+        }
+        case "by_weight": {
+          const itemWeight = (Number(item.weight) || 0) * qty
+          share = totalWeight > 0 ? (itemWeight / totalWeight) * amount : amount / allItems.length
+          break
+        }
+        case "by_volume": {
+          const itemVolume = (Number(item.volume) || 0) * qty
+          share = totalVolume > 0 ? (itemVolume / totalVolume) * amount : amount / allItems.length
+          break
+        }
+        case "equal":
+        default:
+          share = amount / allItems.length
+      }
+
+      return { name: cost.name, per_unit: qty > 0 ? share / qty : 0 }
+    })
+    .filter(Boolean) as Array<{ name: string; per_unit: number }>
+}
+
 export const STATUS_LABELS: Record<string, string> = {
   draft: "Черновик",
   ordered: "Заказано",

@@ -5,7 +5,7 @@ import { apiGet, apiPost, apiPut, apiDelete } from "../../lib/api"
 import { ProductSelector } from "./product-selector"
 import { ReceiveModal } from "./receive-modal"
 import { CategorySelector } from "../../components/category-selector"
-import { computeAllocations, STATUS_LABELS, STATUS_COLORS } from "./utils"
+import { computeAllocations, computePerCategoryOverhead, STATUS_LABELS, STATUS_COLORS } from "./utils"
 import type { OrderItem, SharedCostEntry } from "./utils"
 
 interface ItemDraft extends OrderItem {
@@ -485,8 +485,6 @@ export default function SupplierDetailPage() {
             </thead>
             <tbody>
               {allocations.map((a) => {
-                const purchasePerUnit = a.ordered_qty > 0 ? a.individual_cost / a.ordered_qty : 0
-                const overheadPerUnitCalc = a.ordered_qty > 0 ? a.shared_allocation / a.ordered_qty : 0
                 const itemDraft = validItems.find((i) => i.master_card_id === a.master_card_id)
                 const overheadVal = itemDraft?.overhead_per_unit ?? null
                 return (
@@ -497,15 +495,17 @@ export default function SupplierDetailPage() {
                       <div className="relative inline-block group">
                         <span className="cursor-help underline decoration-dotted decoration-text-muted">{fmtNumber(a.unit_cost)}</span>
                         <div className="absolute right-0 bottom-full mb-1.5 hidden group-hover:block z-10 bg-bg-surface border border-bg-border rounded shadow-lg p-2.5 text-xs text-left whitespace-nowrap">
-                          <div className="text-text-muted font-medium mb-1.5">Разбивка себестоимости:</div>
-                          <div className="flex justify-between gap-6 mb-1">
-                            <span className="text-text-secondary">Закупка за ед.</span>
-                            <span className="tabular-nums">{fmtNumber(purchasePerUnit)} ₽</span>
-                          </div>
-                          <div className="flex justify-between gap-6 mb-1 text-accent">
-                            <span>Накладные за ед.</span>
-                            <span className="tabular-nums">{fmtNumber(overheadPerUnitCalc)} ₽</span>
-                          </div>
+                          <div className="text-text-muted font-medium mb-1.5">Разбивка за единицу:</div>
+                          {computePerCategoryOverhead(
+                            validItems.find((i) => i.master_card_id === a.master_card_id)!,
+                            sharedCosts,
+                            validItems,
+                          ).map((row) => (
+                            <div key={row.name} className="flex justify-between gap-6 mb-1 text-accent">
+                              <span>{row.name}</span>
+                              <span className="tabular-nums">{fmtNumber(row.per_unit)} ₽</span>
+                            </div>
+                          ))}
                           <div className="flex justify-between gap-6 font-semibold border-t border-bg-border pt-1.5 mt-0.5">
                             <span>Итого</span>
                             <span className="tabular-nums">{fmtNumber(a.unit_cost)} ₽</span>
