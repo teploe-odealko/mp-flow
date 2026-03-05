@@ -59,6 +59,7 @@ suppliers.post("/", async (c) => {
         order_id: order.id, master_card_id: item.master_card_id, ordered_qty: item.ordered_qty,
         purchase_price: purchasePrice, purchase_currency: item.purchase_currency || "CNY",
         unit_cost: purchasePrice, total_cost: purchasePrice * item.ordered_qty, status: "pending",
+        overhead_per_unit: item.overhead_per_unit != null ? Number(item.overhead_per_unit) : null,
       })
       if (item.master_card_id && purchasePrice > 0) {
         try {
@@ -142,6 +143,7 @@ suppliers.put("/:id", async (c) => {
         order_id: id, master_card_id: item.master_card_id, ordered_qty: item.ordered_qty,
         purchase_price: purchasePrice, purchase_currency: item.purchase_currency || "CNY",
         unit_cost: purchasePrice, total_cost: purchasePrice * item.ordered_qty, status: "pending",
+        overhead_per_unit: item.overhead_per_unit != null ? Number(item.overhead_per_unit) : null,
       })
       if (item.master_card_id && purchasePrice > 0) {
         try {

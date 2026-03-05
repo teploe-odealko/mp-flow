@@ -84,4 +84,22 @@ finance.delete("/:id", async (c) => {
   return c.json({ ok: true })
 })
 
+// GET /api/finance/categories
+finance.get("/categories", async (c) => {
+  const service: FinanceService = c.get("container").resolve("financeService")
+  const userId = getUserId(c)
+  const categories = await service.listExpenseCategories(userId)
+  return c.json({ categories })
+})
+
+// POST /api/finance/categories
+finance.post("/categories", async (c) => {
+  const service: FinanceService = c.get("container").resolve("financeService")
+  const userId = getUserId(c)
+  const { name } = await c.req.json()
+  if (!name?.trim()) return c.json({ error: "Name is required" }, 400)
+  const category = await service.createExpenseCategory(name.trim(), userId)
+  return c.json({ category }, 201)
+})
+
 export default finance

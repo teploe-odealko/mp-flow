@@ -1,5 +1,5 @@
 import type { EntityManager } from "@mikro-orm/core"
-import { FinanceTransaction } from "./entity.js"
+import { FinanceTransaction, ExpenseCategory } from "./entity.js"
 import { FinanceAccrual } from "./accrual-entity.js"
 
 export class FinanceService {
@@ -175,5 +175,21 @@ export class FinanceService {
       external_id: { $in: ids },
     })
     return new Set(found.map((a) => a.external_id!))
+  }
+
+  // ── Expense Categories ──
+
+  async listExpenseCategories(userId?: string | null) {
+    const where: Record<string, any> = {}
+    if (userId) where.$or = [{ user_id: userId }, { user_id: null }]
+    return this.em.find(ExpenseCategory, where, { orderBy: { name: "ASC" } })
+  }
+
+  async createExpenseCategory(name: string, userId?: string | null) {
+    const existing = await this.em.findOne(ExpenseCategory, { name })
+    if (existing) return existing
+    const cat = this.em.create(ExpenseCategory, { name, user_id: userId ?? null } as any)
+    await this.em.persistAndFlush(cat)
+    return cat
   }
 }

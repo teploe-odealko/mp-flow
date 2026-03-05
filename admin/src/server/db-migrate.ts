@@ -3,7 +3,7 @@ import { PostgreSqlDriver } from "@mikro-orm/postgresql"
 import { Migrator } from "@mikro-orm/migrations"
 import { MasterCard } from "./modules/master-card/entity.js"
 import { SupplierOrder, SupplierOrderItem, Supplier } from "./modules/supplier-order/entities.js"
-import { FinanceTransaction } from "./modules/finance/entity.js"
+import { FinanceTransaction, ExpenseCategory } from "./modules/finance/entity.js"
 import { Sale } from "./modules/sale/entity.js"
 
 const DATABASE_URL = process.env.DATABASE_URL || "postgresql://mpflow:mpflow@localhost:5432/mpflow"
@@ -12,7 +12,7 @@ async function run() {
   const orm = await MikroORM.init({
     driver: PostgreSqlDriver,
     clientUrl: DATABASE_URL,
-    entities: [MasterCard, SupplierOrder, SupplierOrderItem, Supplier, FinanceTransaction, Sale],
+    entities: [MasterCard, SupplierOrder, SupplierOrderItem, Supplier, FinanceTransaction, ExpenseCategory, Sale],
     extensions: [Migrator],
     migrations: {
       path: "./dist/src/server/migrations",

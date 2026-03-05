@@ -1,6 +1,22 @@
 import { Entity, PrimaryKey, Property, Index, Enum } from "@mikro-orm/core"
 import { v4 } from "uuid"
 
+@Entity({ tableName: "expense_category" })
+export class ExpenseCategory {
+  @PrimaryKey({ type: "text" })
+  id: string = v4()
+
+  @Property({ type: "text" })
+  name!: string
+
+  @Property({ type: "text", nullable: true })
+  @Index()
+  user_id?: string | null
+
+  @Property({ type: "timestamptz", defaultRaw: "now()" })
+  created_at: Date = new Date()
+}
+
 @Entity({ tableName: "finance_transaction" })
 export class FinanceTransaction {
   @PrimaryKey({ type: "text" })

@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { apiGet, apiPost, apiPut, apiDelete } from "../../lib/api"
 import { ProductSelector } from "./product-selector"
 import { ReceiveModal } from "./receive-modal"
+import { CategorySelector } from "../../components/category-selector"
 import { computeAllocations, STATUS_LABELS, STATUS_COLORS } from "./utils"
 import type { OrderItem, SharedCostEntry } from "./utils"
 
@@ -12,6 +13,7 @@ interface ItemDraft extends OrderItem {
   id?: string
   purchase_price_tiers?: Array<{ min_qty: number; price: number }> | null
   _price_auto?: boolean
+  overhead_per_unit?: number | null
 }
 
 /** Find the best matching price tier for given quantity */
@@ -52,7 +54,7 @@ export default function SupplierDetailPage() {
   const [status, setStatus] = useState("draft")
   const [items, setItems] = useState<ItemDraft[]>([newItem()])
   const [showReceive, setShowReceive] = useState(false)
-  const [overheadPerUnit, setOverheadPerUnit] = useState<Record<string, string>>({})
+  const [overheadCategory, setOverheadCategory] = useState("Накладные расходы на товар")
 
   // Load existing order
   const { data: orderData, isLoading } = useQuery({
@@ -89,6 +91,7 @@ export default function SupplierDetailPage() {
           purchase_currency: item.purchase_currency || "CNY",
           purchase_price_tiers: item.purchase_price_tiers ?? null,
           weight: item.weight_g ?? undefined,
+          overhead_per_unit: item.overhead_per_unit != null ? Number(item.overhead_per_unit) : null,
           _price_auto: false,
         })),
       )
@@ -173,6 +176,7 @@ export default function SupplierDetailPage() {
         ordered_qty: i.ordered_qty,
         purchase_price: i.purchase_price,
         purchase_currency: i.purchase_currency,
+        overhead_per_unit: i.overhead_per_unit ?? null,
       })),
     }
   }
@@ -483,6 +487,8 @@ export default function SupplierDetailPage() {
               {allocations.map((a) => {
                 const purchasePerUnit = a.ordered_qty > 0 ? a.individual_cost / a.ordered_qty : 0
                 const overheadPerUnitCalc = a.ordered_qty > 0 ? a.shared_allocation / a.ordered_qty : 0
+                const itemDraft = validItems.find((i) => i.master_card_id === a.master_card_id)
+                const overheadVal = itemDraft?.overhead_per_unit ?? null
                 return (
                   <tr key={a.master_card_id} className="border-b border-bg-border">
                     <td className="px-2 py-1.5 truncate max-w-[200px]">{a.title}</td>
@@ -510,8 +516,13 @@ export default function SupplierDetailPage() {
                     <td className="px-2 py-1.5">
                       <input
                         type="number"
-                        value={overheadPerUnit[a.master_card_id] ?? ""}
-                        onChange={(e) => setOverheadPerUnit((prev) => ({ ...prev, [a.master_card_id]: e.target.value }))}
+                        value={overheadVal ?? ""}
+                        onChange={(e) => {
+                          const v = e.target.value === "" ? null : Number(e.target.value)
+                          setItems((prev) => prev.map((i) =>
+                            i.master_card_id === a.master_card_id ? { ...i, overhead_per_unit: v } : i,
+                          ))
+                        }}
                         placeholder="0"
                         className="no-spin w-full px-2 py-1 bg-transparent text-sm text-right tabular-nums text-text-primary rounded border border-transparent hover:border-bg-border focus:border-accent focus:bg-bg-deep focus:outline-none transition-colors"
                       />
@@ -555,7 +566,13 @@ export default function SupplierDetailPage() {
 
       {/* Unified expenses section */}
       {!isNew && (
-        <ExpensesSection orderId={id!} orderNumber={orderNumber} />
+        <ExpensesSection
+          orderId={id!}
+          orderNumber={orderNumber}
+          overheadTotal={validItems.reduce((s, i) => s + (i.overhead_per_unit ?? 0) * i.ordered_qty, 0)}
+          overheadCategory={overheadCategory}
+          onOverheadCategoryChange={setOverheadCategory}
+        />
       )}
 
       {/* Receive Modal */}
@@ -583,12 +600,24 @@ const ALLOCATION_LABELS: Record<string, string> = {
   by_weight: "По весу",
 }
 
-function ExpensesSection({ orderId, orderNumber }: { orderId: string; orderNumber: string }) {
+function ExpensesSection({
+  orderId,
+  orderNumber,
+  overheadTotal,
+  overheadCategory,
+  onOverheadCategoryChange,
+}: {
+  orderId: string
+  orderNumber: string
+  overheadTotal: number
+  overheadCategory: string
+  onOverheadCategoryChange: (v: string) => void
+}) {
   const queryClient = useQueryClient()
   const [addOpen, setAddOpen] = useState(false)
   const [amount, setAmount] = useState("")
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
-  const [description, setDescription] = useState("")
+  const [category, setCategory] = useState("")
   const [allocationMethod, setAllocationMethod] = useState("none")
   const [saving, setSaving] = useState(false)
 
@@ -611,14 +640,15 @@ function ExpensesSection({ orderId, orderNumber }: { orderId: string; orderNumbe
       await apiPost(`/api/suppliers/${orderId}/payment`, {
         amount: Number(amount),
         transaction_date: date,
-        description: description || `Оплата заявки ${orderNumber || orderId}`,
+        category: category || undefined,
+        description: category || `Расход заявки ${orderNumber || orderId}`,
         allocation_method: allocationMethod,
       })
       queryClient.invalidateQueries({ queryKey: ["supplier-payments", orderId] })
       queryClient.invalidateQueries({ queryKey: ["finance-transactions"] })
       queryClient.invalidateQueries({ queryKey: ["finance-summary"] })
       setAmount("")
-      setDescription("")
+      setCategory("")
       setAllocationMethod("none")
       setAddOpen(false)
     } finally {
@@ -662,14 +692,14 @@ function ExpensesSection({ orderId, orderNumber }: { orderId: string; orderNumbe
             />
           </div>
           <div className="flex-1 min-w-[160px]">
-            <label className="block text-[11px] text-text-muted mb-1">Описание</label>
-            <input
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Доставка, карго..."
-              className="w-full px-2 py-1 bg-bg-deep border border-bg-border rounded text-sm text-text-primary"
-            />
+            <label className="block text-[11px] text-text-muted mb-1">Категория</label>
+            <div className="bg-bg-deep border border-bg-border rounded">
+              <CategorySelector
+                value={category}
+                onChange={setCategory}
+                placeholder="Доставка, карго..."
+              />
+            </div>
           </div>
           <div>
             <label className="block text-[11px] text-text-muted mb-1">В себестоимость</label>
@@ -702,14 +732,14 @@ function ExpensesSection({ orderId, orderNumber }: { orderId: string; orderNumbe
         </div>
       )}
 
-      {expenses.length === 0 ? (
+      {expenses.length === 0 && overheadTotal <= 0 ? (
         <p className="text-text-muted text-xs py-2">Расходов нет</p>
       ) : (
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-bg-surface border-b border-bg-border">
               <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Дата</th>
-              <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Описание</th>
+              <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Категория</th>
               <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Учет в себестоимости</th>
               <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Сумма</th>
               <th className="w-8"></th>
@@ -721,7 +751,7 @@ function ExpensesSection({ orderId, orderNumber }: { orderId: string; orderNumbe
                 <td className="px-2 py-1.5 text-text-secondary text-xs whitespace-nowrap">
                   {new Date(e.transaction_date).toLocaleDateString("ru-RU")}
                 </td>
-                <td className="px-2 py-1.5 text-xs truncate max-w-[200px]">{e.description || "—"}</td>
+                <td className="px-2 py-1.5 text-xs truncate max-w-[200px]">{e.category || e.description || "—"}</td>
                 <td className="px-2 py-1.5 text-xs text-text-secondary">
                   {ALLOCATION_LABELS[e.metadata?.allocation_method] || ALLOCATION_LABELS.none}
                 </td>
@@ -739,6 +769,24 @@ function ExpensesSection({ orderId, orderNumber }: { orderId: string; orderNumbe
                 </td>
               </tr>
             ))}
+            {/* Virtual overhead row — computed from allocation preview inputs */}
+            {overheadTotal > 0 && (
+              <tr className="border-b border-bg-border bg-accent/5">
+                <td className="px-2 py-1.5 text-text-muted text-xs whitespace-nowrap">авто</td>
+                <td className="px-2 py-1.5 max-w-[200px]">
+                  <CategorySelector
+                    value={overheadCategory}
+                    onChange={onOverheadCategoryChange}
+                    placeholder="Категория накладных..."
+                  />
+                </td>
+                <td className="px-2 py-1.5 text-xs text-text-secondary">По товарам</td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-outflow font-medium">
+                  -{Math.round(overheadTotal).toLocaleString("ru-RU")} ₽
+                </td>
+                <td className="px-2 py-1.5 text-right text-[10px] text-text-muted">авто</td>
+              </tr>
+            )}
           </tbody>
         </table>
       )}

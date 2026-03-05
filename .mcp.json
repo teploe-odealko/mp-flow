@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "mpflow": {
+      "type": "http",
+      "url": "https://admin.mp-flow.ru/mcp",
+      "headers": {
+        "Authorization": "Bearer mpf_9104516cf3ae9212b82de2a99643508e"
+      }
+    }
+  }
+}
