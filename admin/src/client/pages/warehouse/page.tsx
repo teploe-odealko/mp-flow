@@ -121,6 +121,14 @@ function AssignCostModal({
   )
 }
 
+type WriteOffMethod = "ignore" | "redistribute" | "expense"
+
+const WRITE_OFF_METHODS: Array<{ value: WriteOffMethod; label: string; description: string }> = [
+  { value: "ignore", label: "Не учитывать", description: "Убрать из остатков без финансовых последствий" },
+  { value: "redistribute", label: "Распределить по себестоимости", description: "Стоимость поглощается оставшимися товарами" },
+  { value: "expense", label: "Списать как потери", description: "Создать статью расходов «Потери» в финансах" },
+]
+
 function WriteOffModal({
   row,
   onClose,
@@ -129,15 +137,16 @@ function WriteOffModal({
 }: {
   row: InventoryRow
   onClose: () => void
-  onSubmit: (data: { master_card_id: string; quantity: number; reason: string }) => void
+  onSubmit: (data: { master_card_id: string; quantity: number; reason: string; method: WriteOffMethod }) => void
   isPending: boolean
 }) {
   const [quantity, setQuantity] = useState(row.discrepancy > 0 ? row.discrepancy : 1)
   const [reason, setReason] = useState("")
+  const [method, setMethod] = useState<WriteOffMethod>("expense")
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-bg-surface border border-bg-border rounded-lg p-5 w-96" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-bg-surface border border-bg-border rounded-lg p-5 w-[420px]" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-base font-semibold mb-1">Списание</h3>
         <p className="text-text-secondary text-sm mb-4">{row.product_title}</p>
 
@@ -162,11 +171,32 @@ function WriteOffModal({
               className="w-full px-3 py-2 bg-bg-deep border border-bg-border rounded text-sm text-text-primary"
             />
           </div>
+          <div>
+            <label className="text-text-secondary text-xs block mb-2">Способ списания</label>
+            <div className="space-y-2">
+              {WRITE_OFF_METHODS.map((opt) => (
+                <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="write_off_method"
+                    value={opt.value}
+                    checked={method === opt.value}
+                    onChange={() => setMethod(opt.value)}
+                    className="mt-0.5 accent-accent"
+                  />
+                  <div>
+                    <span className="text-sm text-text-primary">{opt.label}</span>
+                    <p className="text-xs text-text-muted">{opt.description}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="flex gap-2">
           <button
-            onClick={() => onSubmit({ master_card_id: row.card_id, quantity, reason })}
+            onClick={() => onSubmit({ master_card_id: row.card_id, quantity, reason, method })}
             disabled={isPending || quantity <= 0}
             className="px-3 py-1.5 bg-outflow text-white rounded text-sm hover:opacity-90 disabled:opacity-50"
           >
@@ -201,7 +231,7 @@ export default function WarehousePage() {
   })
 
   const writeOffMutation = useMutation({
-    mutationFn: (d: { master_card_id: string; quantity: number; reason: string }) =>
+    mutationFn: (d: { master_card_id: string; quantity: number; reason: string; method: WriteOffMethod }) =>
       apiPost("/api/inventory", { action: "write-off", ...d }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["inventory"] })

@@ -125,8 +125,8 @@ export default function SupplierDetailPage() {
   })
 
   const receiveMutation = useMutation({
-    mutationFn: (receiveItems: Array<{ item_id: string; received_qty: number }>) =>
-      apiPost(`/api/suppliers/${id}`, { action: "receive", items: receiveItems }),
+    mutationFn: ({ items: receiveItems, write_off_method }: { items: Array<{ item_id: string; received_qty: number }>; write_off_method?: string }) =>
+      apiPost(`/api/suppliers/${id}`, { action: "receive", items: receiveItems, write_off_method }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["supplier-order", id] })
       queryClient.invalidateQueries({ queryKey: ["suppliers"] })
@@ -585,7 +585,7 @@ export default function SupplierDetailPage() {
             ordered_qty: i.ordered_qty,
           }))}
           onClose={() => setShowReceive(false)}
-          onSubmit={(receiveItems) => receiveMutation.mutate(receiveItems)}
+          onSubmit={(receiveItems, write_off_method) => receiveMutation.mutate({ items: receiveItems, write_off_method })}
           isPending={receiveMutation.isPending}
         />
       )}

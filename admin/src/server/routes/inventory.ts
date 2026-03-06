@@ -171,7 +171,7 @@ inventory.post("/", async (c) => {
     return c.json({ success: true, result })
   } else if (body.action === "write-off") {
     if (!body.master_card_id || !body.quantity) return c.json({ error: "master_card_id and quantity required" }, 400)
-    const result = await writeOff(container, { master_card_id: body.master_card_id, quantity: body.quantity, reason: body.reason, user_id: userId })
+    const result = await writeOff(container, { master_card_id: body.master_card_id, quantity: body.quantity, reason: body.reason, user_id: userId, method: body.method })
     return c.json({ success: true, result })
   }
   return c.json({ error: `Unknown action: ${body.action}` }, 400)

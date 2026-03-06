@@ -183,7 +183,7 @@ suppliers.post("/:id", async (c) => {
   try {
     if (body.action === "receive") {
       if (!body.items?.length) return c.json({ error: "Items with received quantities required" }, 400)
-      const result = await receiveOrder(container, { supplier_order_id: id, items: body.items })
+      const result = await receiveOrder(container, { supplier_order_id: id, items: body.items, write_off_method: body.write_off_method })
       return c.json({ success: true, result })
     } else if (body.action === "unreceive") {
       const result = await unreceiveOrder(container, { supplier_order_id: id })

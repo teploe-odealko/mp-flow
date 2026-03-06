@@ -2,10 +2,12 @@ import type { AwilixContainer } from "awilix"
 import type { SupplierOrderService } from "../modules/supplier-order/service.js"
 import type { FinanceService } from "../modules/finance/service.js"
 import type { MasterCardService } from "../modules/master-card/service.js"
+import type { WriteOffMethod } from "./write-off.js"
 
 type ReceiveOrderInput = {
   supplier_order_id: string
   items: Array<{ item_id: string; received_qty: number }>
+  write_off_method?: WriteOffMethod // default: "ignore" for historical compatibility
 }
 
 export async function receiveOrder(container: AwilixContainer, input: ReceiveOrderInput) {
@@ -16,6 +18,8 @@ export async function receiveOrder(container: AwilixContainer, input: ReceiveOrd
   const order = await supplierService.retrieveSupplierOrder(input.supplier_order_id)
   if (order.status === "received") throw new Error("Order already received")
   if (order.status === "cancelled") throw new Error("Cannot receive cancelled order")
+
+  const writeOffMethod = input.write_off_method ?? "ignore"
 
   const items = await supplierService.listSupplierOrderItems({ order_id: input.supplier_order_id })
 
@@ -42,6 +46,7 @@ export async function receiveOrder(container: AwilixContainer, input: ReceiveOrd
   }
 
   // Pre-compute totals for proportional allocation methods
+  // For "redistribute", use orderedQty for cost base; for others, use receivedQty
   const totalPurchaseValue = receivingItems.reduce((s: number, item: any) => {
     const qty = receivedLookup.get(item.id) || 0
     return s + Number(item.purchase_price || 0) * qty
@@ -58,6 +63,8 @@ export async function receiveOrder(container: AwilixContainer, input: ReceiveOrd
     const receivedQty = receivedLookup.get(item.id) || 0
     if (receivedQty <= 0) continue
 
+    const orderedQty = Number(item.ordered_qty || 0)
+    const shortfallQty = Math.max(0, orderedQty - receivedQty)
     const purchasePrice = Number(item.purchase_price || item.unit_cost || 0)
     const weightG = weightLookup.get(item.id) || 0
 
@@ -80,14 +87,42 @@ export async function receiveOrder(container: AwilixContainer, input: ReceiveOrd
       sharedAlloc += share
     }
 
-    const totalItemCost = purchasePrice * receivedQty + sharedAlloc
-    const unitCost = receivedQty > 0 ? Math.round((totalItemCost / receivedQty) * 100) / 100 : 0
+    let totalItemCost: number
+    let unitCost: number
+
+    if (writeOffMethod === "redistribute" && shortfallQty > 0) {
+      // Absorb shortfall cost into received items
+      // totalItemCost = purchase cost for ALL ordered (including shortfall) + shared expenses
+      totalItemCost = purchasePrice * orderedQty + sharedAlloc
+      unitCost = receivedQty > 0 ? Math.round((totalItemCost / receivedQty) * 100) / 100 : 0
+    } else {
+      // ignore or expense: normal cost for received items only
+      totalItemCost = purchasePrice * receivedQty + sharedAlloc
+      unitCost = receivedQty > 0 ? Math.round((totalItemCost / receivedQty) * 100) / 100 : 0
+    }
+
     const itemTotalCost = Math.round(unitCost * receivedQty * 100) / 100
 
     await supplierService.updateSupplierOrderItems({
       id: item.id, received_qty: receivedQty, unit_cost: unitCost, total_cost: itemTotalCost, status: "received",
     })
     totalCost += itemTotalCost
+
+    // For "expense" method: create FinanceTransaction for shortfall cost
+    if (writeOffMethod === "expense" && shortfallQty > 0) {
+      const shortfallCost = Math.round(purchasePrice * shortfallQty * 100) / 100
+      if (shortfallCost > 0) {
+        await financeService.createFinanceTransactions({
+          type: "adjustment", direction: "expense",
+          amount: shortfallCost, currency_code: "RUB",
+          master_card_id: item.master_card_id || null,
+          supplier_order_id: input.supplier_order_id,
+          category: "Потери",
+          description: `Недостача при приёмке: ${shortfallQty} ед. × ${purchasePrice} ₽`,
+          transaction_date: new Date(), source: "system",
+        })
+      }
+    }
   }
 
   await supplierService.updateSupplierOrders({ id: input.supplier_order_id, status: "received", received_at: new Date() })
