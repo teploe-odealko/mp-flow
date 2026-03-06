@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useNavigate } from "react-router-dom"
 import { apiGet, apiPost } from "../../lib/api"
 import { DocTableHeader } from "../../components/doc-table-header"
 
@@ -212,6 +213,7 @@ function WriteOffModal({
 }
 
 export default function WarehousePage() {
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [assignRow, setAssignRow] = useState<InventoryRow | null>(null)
   const [writeOffRow, setWriteOffRow] = useState<InventoryRow | null>(null)
@@ -295,13 +297,14 @@ export default function WarehousePage() {
                 className={`border-b border-bg-border hover:bg-bg-elevated ${!r.has_cost ? "border-l-2 border-l-outflow" : ""}`}
               >
                 <td className="p-2">
-                  <div className="flex items-center gap-2">
+                  <div
+                    className="flex items-center gap-2 cursor-pointer hover:text-text-primary"
+                    onClick={() => navigate(`/catalog/${r.card_id}`)}
+                  >
                     {r.thumbnail && (
                       <img src={r.thumbnail} alt="" className="w-8 h-8 rounded object-cover" />
                     )}
-                    <div>
-                      <div className="truncate max-w-[200px]">{r.product_title}</div>
-                    </div>
+                    <div className="truncate max-w-[200px] hover:underline">{r.product_title}</div>
                   </div>
                 </td>
                 <td className="p-2 text-right">{r.received_qty}</td>

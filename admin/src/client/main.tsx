@@ -5,7 +5,6 @@ import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-quer
 import { AuthProvider, useAuth } from "./app/auth-provider"
 import { Layout } from "./app/layout"
 import { apiGet } from "./lib/api"
-import CatalogPage from "./pages/catalog/page"
 const CatalogDetailPage = React.lazy(() => import("./pages/catalog/detail-page"))
 import SalesPage from "./pages/sales/page"
 import WarehousePage from "./pages/warehouse/page"
@@ -300,9 +299,9 @@ function AppRoutes() {
     <Layout>
       <Routes>
         <Route path="/" element={<Navigate to="/catalog" replace />} />
-        <Route path="/catalog" element={<CatalogPage />} />
+        <Route path="/catalog" element={<WarehousePage />} />
         <Route path="/catalog/:id" element={<Suspense fallback={<div className="text-text-secondary">Загрузка...</div>}><CatalogDetailPage /></Suspense>} />
-        <Route path="/warehouse" element={<WarehousePage />} />
+        <Route path="/warehouse" element={<Navigate to="/catalog" replace />} />
         <Route path="/procurement" element={<ProcurementPage />} />
         <Route path="/suppliers" element={<SuppliersPage />} />
         <Route path="/suppliers/new" element={<Suspense fallback={<div className="text-text-secondary">Загрузка...</div>}><SupplierDetailPage /></Suspense>} />
