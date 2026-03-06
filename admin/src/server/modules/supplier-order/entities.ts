@@ -134,7 +134,7 @@ export class SupplierOrderItem {
   @Property({ type: "text", default: "RUB" })
   currency_code: string = "RUB"
 
-  @Property({ columnType: "numeric(14,4)", default: 0, nullable: true })
+  @Property({ type: "float", columnType: "numeric(14,4)", default: 0, nullable: true })
   overhead_per_unit?: number | null
 
   @Property({ type: "json", default: "[]" })

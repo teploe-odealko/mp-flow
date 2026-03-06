@@ -2,6 +2,7 @@ import type { AwilixContainer } from "awilix"
 import type { SupplierOrderService } from "../modules/supplier-order/service.js"
 import type { FinanceService } from "../modules/finance/service.js"
 import type { MasterCardService } from "../modules/master-card/service.js"
+import type { StockMovementService } from "../modules/stock-movement/service.js"
 import type { WriteOffMethod } from "./write-off.js"
 
 type ReceiveOrderInput = {
@@ -14,6 +15,7 @@ export async function receiveOrder(container: AwilixContainer, input: ReceiveOrd
   const supplierService: SupplierOrderService = container.resolve("supplierOrderService")
   const financeService: FinanceService = container.resolve("financeService")
   const masterCardService: MasterCardService = container.resolve("masterCardService")
+  const stockMovementService: StockMovementService = container.resolve("stockMovementService")
 
   const order = await supplierService.retrieveSupplierOrder(input.supplier_order_id)
   if (order.status === "received") throw new Error("Order already received")
@@ -46,7 +48,6 @@ export async function receiveOrder(container: AwilixContainer, input: ReceiveOrd
   }
 
   // Pre-compute totals for proportional allocation methods
-  // For "redistribute", use orderedQty for cost base; for others, use receivedQty
   const totalPurchaseValue = receivingItems.reduce((s: number, item: any) => {
     const qty = receivedLookup.get(item.id) || 0
     return s + Number(item.purchase_price || 0) * qty
@@ -92,7 +93,6 @@ export async function receiveOrder(container: AwilixContainer, input: ReceiveOrd
 
     if (writeOffMethod === "redistribute" && shortfallQty > 0) {
       // Absorb shortfall cost into received items
-      // totalItemCost = purchase cost for ALL ordered (including shortfall) + shared expenses
       totalItemCost = purchasePrice * orderedQty + sharedAlloc
       unitCost = receivedQty > 0 ? Math.round((totalItemCost / receivedQty) * 100) / 100 : 0
     } else {
@@ -107,6 +107,20 @@ export async function receiveOrder(container: AwilixContainer, input: ReceiveOrd
       id: item.id, received_qty: receivedQty, unit_cost: unitCost, total_cost: itemTotalCost, status: "received",
     })
     totalCost += itemTotalCost
+
+    // Create StockMovement ledger entry for received goods
+    await stockMovementService.create({
+      master_card_id: item.master_card_id,
+      direction: "in",
+      type: "supplier_receive",
+      quantity: receivedQty,
+      unit_cost: unitCost,
+      total_cost: itemTotalCost,
+      reference_id: item.id, // supplier_order_item.id
+      notes: `Поставка ${(order as any).order_number || input.supplier_order_id}`,
+      moved_at: new Date(),
+      user_id: (order as any).user_id || null,
+    })
 
     // For "expense" method: create FinanceTransaction for shortfall cost
     if (writeOffMethod === "expense" && shortfallQty > 0) {
@@ -126,8 +140,6 @@ export async function receiveOrder(container: AwilixContainer, input: ReceiveOrd
   }
 
   await supplierService.updateSupplierOrders({ id: input.supplier_order_id, status: "received", received_at: new Date() })
-
-  // No auto FinanceTransaction — expenses were already recorded individually by the user
 
   return { success: true, total_cost: totalCost }
 }

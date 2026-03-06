@@ -3,6 +3,7 @@ import { getUserId } from "../core/auth.js"
 import type { MasterCardService } from "../modules/master-card/service.js"
 import type { SupplierOrderService } from "../modules/supplier-order/service.js"
 import type { SaleService } from "../modules/sale/service.js"
+import type { StockMovementService } from "../modules/stock-movement/service.js"
 import { calculateAvgCost, getAvailableStock } from "../utils/cost-stock.js"
 
 const catalog = new Hono<{ Variables: Record<string, any> }>()
@@ -10,8 +11,8 @@ const catalog = new Hono<{ Variables: Record<string, any> }>()
 // GET /api/catalog
 catalog.get("/", async (c) => {
   const cardService: MasterCardService = c.get("container").resolve("masterCardService")
-  const supplierService: SupplierOrderService = c.get("container").resolve("supplierOrderService")
   const saleService: SaleService = c.get("container").resolve("saleService")
+  const stockMovementService: StockMovementService = c.get("container").resolve("stockMovementService")
   const userId = getUserId(c)
 
   const { q, status, limit = "50", offset = "0" } = c.req.query()
@@ -33,8 +34,8 @@ catalog.get("/", async (c) => {
     cards.map(async (card: any) => {
       let warehouseStock = 0, avgCost = 0
       try {
-        warehouseStock = await getAvailableStock(supplierService, saleService, card.id)
-        avgCost = await calculateAvgCost(supplierService, card.id)
+        warehouseStock = await getAvailableStock(stockMovementService, saleService, card.id)
+        avgCost = await calculateAvgCost(stockMovementService, card.id)
       } catch { /* no data */ }
       return { ...card, warehouse_stock: warehouseStock, avg_cost: avgCost }
     }),
@@ -67,6 +68,7 @@ catalog.get("/:id", async (c) => {
   const cardService: MasterCardService = c.get("container").resolve("masterCardService")
   const supplierService: SupplierOrderService = c.get("container").resolve("supplierOrderService")
   const saleService: SaleService = c.get("container").resolve("saleService")
+  const stockMovementService: StockMovementService = c.get("container").resolve("stockMovementService")
   const userId = getUserId(c)
 
   let card: any
@@ -81,20 +83,35 @@ catalog.get("/:id", async (c) => {
 
   let warehouseStock = 0, avgCost = 0
   try {
-    warehouseStock = await getAvailableStock(supplierService, saleService, id)
-    avgCost = await calculateAvgCost(supplierService, id)
+    warehouseStock = await getAvailableStock(stockMovementService, saleService, id)
+    avgCost = await calculateAvgCost(stockMovementService, id)
   } catch { /* no data */ }
 
   let supplierItems: any[] = []
   try { supplierItems = await supplierService.listSupplierOrderItems({ master_card_id: id }) } catch {}
 
+  // Enrich supplier order items with order numbers
+  const enrichedSupplierItems = await Promise.all(supplierItems.map(async (item: any) => {
+    let order_number = null
+    try {
+      const o = await supplierService.retrieveSupplierOrder(item.supplier_order_id)
+      order_number = (o as any).order_number || null
+    } catch {}
+    return { id: item.id, supplier_order_id: item.supplier_order_id, order_number, ordered_qty: item.ordered_qty, received_qty: item.received_qty, unit_cost: item.unit_cost, status: item.status }
+  }))
+
+  const movements = await stockMovementService.list({ master_card_id: id })
+
   return c.json({
     product: {
       ...card, warehouse_stock: warehouseStock, avg_cost: avgCost,
-      supplier_orders: supplierItems.map((item) => ({
-        id: item.id, supplier_order_id: item.supplier_order_id,
-        ordered_qty: item.ordered_qty, received_qty: item.received_qty,
-        unit_cost: item.unit_cost, status: item.status,
+      supplier_orders: enrichedSupplierItems,
+      stock_movements: movements.map((m) => ({
+        id: m.id, direction: m.direction, type: m.type,
+        quantity: m.quantity, unit_cost: m.unit_cost, total_cost: m.total_cost,
+        write_off_method: m.write_off_method, reference_id: m.reference_id,
+        finance_transaction_id: m.finance_transaction_id,
+        notes: m.notes, moved_at: m.moved_at,
       })),
     },
   })

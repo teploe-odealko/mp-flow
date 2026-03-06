@@ -4,6 +4,7 @@ import type { MasterCardService } from "../modules/master-card/service.js"
 import type { SupplierOrderService } from "../modules/supplier-order/service.js"
 import type { SaleService } from "../modules/sale/service.js"
 import type { ProcurementService } from "../modules/procurement/service.js"
+import type { StockMovementService } from "../modules/stock-movement/service.js"
 import { calculateAvgCost } from "../utils/cost-stock.js"
 
 const procurement = new Hono<{ Variables: Record<string, any> }>()
@@ -39,6 +40,7 @@ procurement.get("/", async (c) => {
   const supplierService: SupplierOrderService = c.get("container").resolve("supplierOrderService")
   const saleService: SaleService = c.get("container").resolve("saleService")
   const procService: ProcurementService = c.get("container").resolve("procurementService")
+  const stockMovementService: StockMovementService = c.get("container").resolve("stockMovementService")
   const userId = getUserId(c)
 
   // Read settings (allow query overrides)
@@ -154,7 +156,7 @@ procurement.get("/", async (c) => {
       stockoutDate = now.toISOString().slice(0, 10) // already out
     }
 
-    let avgCost = await calculateAvgCost(supplierService, card.id)
+    let avgCost = await calculateAvgCost(stockMovementService, card.id)
     // Fallback: use master card purchase_price if no purchase history
     if (avgCost === 0 && card.purchase_price != null) {
       avgCost = Number(card.purchase_price)

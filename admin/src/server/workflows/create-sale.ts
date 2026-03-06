@@ -1,7 +1,7 @@
 import type { AwilixContainer } from "awilix"
 import type { SaleService } from "../modules/sale/service.js"
-import type { SupplierOrderService } from "../modules/supplier-order/service.js"
 import type { FinanceService } from "../modules/finance/service.js"
+import type { StockMovementService } from "../modules/stock-movement/service.js"
 import { calculateAvgCost } from "../utils/cost-stock.js"
 
 type CreateSaleInput = {
@@ -22,12 +22,12 @@ type CreateSaleInput = {
 
 export async function createSale(container: AwilixContainer, input: CreateSaleInput) {
   const saleService: SaleService = container.resolve("saleService")
-  const supplierService: SupplierOrderService = container.resolve("supplierOrderService")
   const financeService: FinanceService = container.resolve("financeService")
+  const stockMovementService: StockMovementService = container.resolve("stockMovementService")
 
   let unitCogs = 0
   if (input.master_card_id) {
-    unitCogs = await calculateAvgCost(supplierService, input.master_card_id)
+    unitCogs = await calculateAvgCost(stockMovementService, input.master_card_id)
   }
 
   const qty = input.quantity || 1

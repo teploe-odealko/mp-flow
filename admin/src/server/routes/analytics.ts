@@ -2,8 +2,8 @@ import { Hono } from "hono"
 import { getUserId } from "../core/auth.js"
 import type { SaleService } from "../modules/sale/service.js"
 import type { MasterCardService } from "../modules/master-card/service.js"
-import type { SupplierOrderService } from "../modules/supplier-order/service.js"
 import type { FinanceService } from "../modules/finance/service.js"
+import type { StockMovementService } from "../modules/stock-movement/service.js"
 import { calculateAvgCost, getAvailableStock } from "../utils/cost-stock.js"
 
 const analytics = new Hono<{ Variables: Record<string, any> }>()
@@ -75,8 +75,8 @@ analytics.get("/", async (c) => {
     }
     case "stock-valuation": {
       const cardService: MasterCardService = c.get("container").resolve("masterCardService")
-      const supplierService: SupplierOrderService = c.get("container").resolve("supplierOrderService")
       const saleService: SaleService = c.get("container").resolve("saleService")
+      const stockMovementService: StockMovementService = c.get("container").resolve("stockMovementService")
 
       const cardFilters: Record<string, any> = {}
       if (userId) cardFilters.user_id = userId
@@ -84,9 +84,9 @@ analytics.get("/", async (c) => {
 
       const items: Array<{ master_card_id: string; title: string; quantity: number; total_cost: number; avg_cost: number }> = []
       for (const card of cards) {
-        const stock = await getAvailableStock(supplierService, saleService, card.id)
+        const stock = await getAvailableStock(stockMovementService, saleService, card.id)
         if (stock <= 0) continue
-        const avg = await calculateAvgCost(supplierService, card.id)
+        const avg = await calculateAvgCost(stockMovementService, card.id)
         items.push({ master_card_id: card.id, title: card.title || "", quantity: stock, total_cost: Math.round(stock * avg * 100) / 100, avg_cost: avg })
       }
 

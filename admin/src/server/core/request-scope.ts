@@ -11,6 +11,7 @@ import { SubscriptionService } from "../modules/subscription/service.js"
 import { CreditService } from "../modules/credit/service.js"
 import { FileStorageService } from "../modules/file-storage/service.js"
 import { AiImageService } from "../modules/ai-image/service.js"
+import { StockMovementService } from "../modules/stock-movement/service.js"
 
 /**
  * Create a request-scoped DI container with a fresh EntityManager fork.
@@ -31,6 +32,7 @@ export function createRequestScope(container: AwilixContainer, orm: MikroORM) {
     creditService: asValue(new CreditService(em)),
     fileStorageService: asValue(new FileStorageService(em)),
     aiImageService: asValue(new AiImageService(em, new CreditService(em), new FileStorageService(em))),
+    stockMovementService: asValue(new StockMovementService(em)),
   })
   return { scope, em }
 }

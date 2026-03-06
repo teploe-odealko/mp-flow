@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { apiGet, apiPut } from "../../lib/api"
+import { apiGet, apiPut, apiDelete } from "../../lib/api"
 import { useUrlNumber } from "../../lib/use-url-state"
 import type { MasterCardTabProps } from "./tab-types"
 
@@ -98,6 +98,50 @@ export default function CatalogDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["catalog"] })
     },
   })
+
+  // Movement editing state
+  const [editingMovementId, setEditingMovementId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState<{ quantity: string; unit_cost: string; write_off_method: string; notes: string }>({
+    quantity: "", unit_cost: "", write_off_method: "", notes: "",
+  })
+
+  const updateMovementMutation = useMutation({
+    mutationFn: ({ movId, data }: { movId: string; data: any }) =>
+      apiPut(`/api/inventory/movements/${movId}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["catalog-product", id] })
+      setEditingMovementId(null)
+    },
+  })
+
+  const deleteMovementMutation = useMutation({
+    mutationFn: (movId: string) => apiDelete(`/api/inventory/movements/${movId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["catalog-product", id] })
+    },
+  })
+
+  function startEditMovement(m: any) {
+    setEditingMovementId(m.id)
+    setEditForm({
+      quantity: String(m.quantity),
+      unit_cost: String(m.unit_cost),
+      write_off_method: m.write_off_method || "",
+      notes: m.notes || "",
+    })
+  }
+
+  function saveMovement(movId: string) {
+    updateMovementMutation.mutate({
+      movId,
+      data: {
+        quantity: Number(editForm.quantity),
+        unit_cost: Number(editForm.unit_cost),
+        write_off_method: editForm.write_off_method || null,
+        notes: editForm.notes || null,
+      },
+    })
+  }
 
   function handleSave() {
     saveMutation.mutate({
@@ -313,32 +357,170 @@ export default function CatalogDetailPage() {
             </div>
           </div>
 
-          {/* Supplier orders history */}
-          {product.supplier_orders?.length > 0 && (
+          {/* Unified movements history */}
+          {product.stock_movements?.length > 0 && (
             <div>
-              <h2 className="text-sm font-semibold text-text-secondary mb-2">История поставок</h2>
+              <h2 className="text-sm font-semibold text-text-secondary mb-2">История движений</h2>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-bg-surface border-b border-bg-border">
-                    <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Заявка</th>
-                    <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Заказано</th>
-                    <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Получено</th>
+                    <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Дата</th>
+                    <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Тип</th>
+                    <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Кол-во</th>
                     <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">За ед.</th>
-                    <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Статус</th>
+                    <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Итого</th>
+                    <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Метод</th>
+                    <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Причина</th>
+                    <th className="px-2 py-1.5"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {product.supplier_orders.map((so: any) => (
-                    <tr key={so.id} className="border-b border-bg-border hover:bg-bg-elevated cursor-pointer"
-                      onClick={() => navigate(`/suppliers/${so.supplier_order_id}`)}
-                    >
-                      <td className="px-2 py-1.5 text-accent">{so.supplier_order_id?.slice(0, 8)}...</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{so.ordered_qty}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{so.received_qty}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{Number(so.unit_cost) > 0 ? `${fmtNumber(Number(so.unit_cost))} ₽` : "—"}</td>
-                      <td className="px-2 py-1.5 text-text-secondary">{so.status}</td>
-                    </tr>
-                  ))}
+                  {product.stock_movements.map((m: any) => {
+                    const isEdit = editingMovementId === m.id
+                    const canEdit = m.type !== "supplier_receive"
+                    const typeLabel = m.type === "supplier_receive" ? "Поставка"
+                      : m.type === "initial_balance" ? "Оприходование"
+                      : m.type === "write_off" ? "Списание" : m.type
+                    const methodLabel = m.write_off_method === "ignore" ? "Не учитывать"
+                      : m.write_off_method === "redistribute" ? "Перераспределить"
+                      : m.write_off_method === "expense" ? "Потери"
+                      : null
+                    const sign = m.direction === "in" ? "+" : "−"
+                    const signClass = m.direction === "in" ? "text-inflow" : "text-outflow"
+
+                    if (isEdit) {
+                      return (
+                        <tr key={m.id} className="border-b border-bg-border bg-bg-elevated">
+                          <td className="px-2 py-1.5 text-text-muted text-xs">
+                            {new Date(m.moved_at).toLocaleDateString("ru-RU")}
+                          </td>
+                          <td className="px-2 py-1.5 text-text-secondary">{typeLabel}</td>
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="number"
+                              min={1}
+                              value={editForm.quantity}
+                              onChange={(e) => setEditForm((f) => ({ ...f, quantity: e.target.value }))}
+                              className="w-16 px-1 py-0.5 bg-bg-deep border border-bg-border rounded text-xs text-right tabular-nums"
+                            />
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              value={editForm.unit_cost}
+                              onChange={(e) => setEditForm((f) => ({ ...f, unit_cost: e.target.value }))}
+                              className="w-20 px-1 py-0.5 bg-bg-deep border border-bg-border rounded text-xs text-right tabular-nums"
+                            />
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums text-text-muted text-xs">
+                            {(Number(editForm.quantity) * Number(editForm.unit_cost)).toFixed(0)} ₽
+                          </td>
+                          {m.type === "write_off" ? (
+                            <td className="px-2 py-1.5">
+                              <select
+                                value={editForm.write_off_method}
+                                onChange={(e) => setEditForm((f) => ({ ...f, write_off_method: e.target.value }))}
+                                className="px-1 py-0.5 bg-bg-deep border border-bg-border rounded text-xs"
+                              >
+                                <option value="ignore">Не учитывать</option>
+                                <option value="redistribute">Перераспределить</option>
+                                <option value="expense">Потери</option>
+                              </select>
+                            </td>
+                          ) : (
+                            <td className="px-2 py-1.5 text-text-muted">—</td>
+                          )}
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="text"
+                              value={editForm.notes}
+                              onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))}
+                              placeholder="Причина..."
+                              className="w-full px-1 py-0.5 bg-bg-deep border border-bg-border rounded text-xs"
+                            />
+                          </td>
+                          <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                            <button
+                              onClick={() => saveMovement(m.id)}
+                              disabled={updateMovementMutation.isPending}
+                              className="text-accent hover:text-accent-dark text-xs mr-2"
+                            >
+                              {updateMovementMutation.isPending ? "..." : "Сохр."}
+                            </button>
+                            <button
+                              onClick={() => setEditingMovementId(null)}
+                              className="text-text-muted hover:text-text-primary text-xs"
+                            >
+                              Отмена
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    }
+
+                    return (
+                      <tr key={m.id} className="border-b border-bg-border hover:bg-bg-elevated">
+                        <td className="px-2 py-1.5 text-text-muted text-xs">
+                          {new Date(m.moved_at).toLocaleDateString("ru-RU")}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          {m.type === "supplier_receive" && m.reference_id ? (
+                            <button
+                              onClick={() => {
+                                const so = product.supplier_orders?.find((s: any) => s.id === m.reference_id)
+                                if (so) navigate(`/suppliers/${so.supplier_order_id}`)
+                              }}
+                              className="text-accent hover:underline text-xs"
+                            >
+                              {typeLabel} ↗
+                            </button>
+                          ) : (
+                            <span className="text-text-secondary">{typeLabel}</span>
+                          )}
+                        </td>
+                        <td className={`px-2 py-1.5 text-right tabular-nums font-medium ${signClass}`}>
+                          {sign}{m.quantity}
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums text-text-secondary">
+                          {Number(m.unit_cost) > 0 ? `${fmtNumber(Number(m.unit_cost))} ₽` : "—"}
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">
+                          {Number(m.total_cost) > 0 ? `${fmtNumber(Number(m.total_cost))} ₽` : "—"}
+                        </td>
+                        <td className="px-2 py-1.5 text-text-muted text-xs">
+                          {methodLabel || "—"}
+                        </td>
+                        <td className="px-2 py-1.5 text-text-secondary text-xs max-w-[150px] truncate">
+                          {m.notes || "—"}
+                        </td>
+                        <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                          {canEdit && (
+                            <>
+                              <button
+                                onClick={() => startEditMovement(m)}
+                                className="text-text-muted hover:text-accent text-xs mr-2"
+                                title="Редактировать"
+                              >
+                                ✎
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (confirm("Удалить запись?")) deleteMovementMutation.mutate(m.id)
+                                }}
+                                disabled={deleteMovementMutation.isPending}
+                                className="text-text-muted hover:text-outflow text-xs"
+                                title="Удалить"
+                              >
+                                ✕
+                              </button>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
