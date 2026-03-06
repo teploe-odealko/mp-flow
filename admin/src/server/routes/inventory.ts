@@ -56,16 +56,21 @@ inventory.get("/", async (c) => {
       }
     } catch {}
 
+    // write-offs: from stock_movements (includes migrated legacy write-offs after migration_010)
     const outMovements = await stockMovementService.list({ master_card_id: card.id, direction: "out" })
-    const writtenOffQty = outMovements.reduce((s, m) => s + Number(m.quantity), 0)
+    const movementWrittenOff = outMovements.reduce((s, m) => s + Number(m.quantity), 0)
 
-    // Legacy: also count old write-off Sales not in StockMovement
+    // Legacy write-off Sales (pre-migration fallback; after migration_010 these are also in movements)
     const legacyWriteOffs = await saleService.listSales({ master_card_id: card.id, channel: "write-off" })
-    const legacyQty = legacyWriteOffs.reduce((s: number, s2: any) => s + Number(s2.quantity || 0), 0)
+    const legacyWrittenOff = legacyWriteOffs.reduce((s: number, s2: any) => s + Number(s2.quantity || 0), 0)
 
-    const stockTotal = await getAvailableStock(stockMovementService, saleService, card.id)
-    const rawStockCheck = receivedQty - writtenOffQty - soldTotal - deliveringTotal - legacyQty
-    const discrepancy = rawStockCheck < 0 ? Math.abs(rawStockCheck) : 0
+    // Use max to avoid double-counting: after migration movements >= legacy; before migration movements = 0
+    const writtenOffQty = Math.max(movementWrittenOff, legacyWrittenOff)
+
+    // Stock formula consistent with received_qty source (supplier_order_items)
+    const rawStock = receivedQty - writtenOffQty - soldTotal - deliveringTotal
+    const stockTotal = Math.max(0, rawStock)
+    const discrepancy = rawStock < 0 ? Math.abs(rawStock) : 0
 
     const avgCost = await calculateAvgCost(stockMovementService, card.id)
     const hasCost = avgCost > 0
