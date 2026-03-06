@@ -194,22 +194,44 @@ inventory.put("/movements/:id", async (c) => {
     moved_at: body.moved_at ? new Date(body.moved_at) : undefined,
   })
 
-  // Sync FinanceTransaction for expense write-offs
-  if (updated.type === "write_off" && updated.write_off_method === "expense") {
-    if (updated.finance_transaction_id) {
-      try {
-        await financeService.updateFinanceTransaction(updated.finance_transaction_id, {
+  // Sync FinanceAccrual for expense write-offs (non-cash P&L entry)
+  if (updated.type === "write_off") {
+    const accruals = await financeService.listAccruals({ plugin_source: "write_off", external_id: id })
+    const existingAccrual = accruals[0]
+
+    if (updated.write_off_method === "expense") {
+      if (existingAccrual) {
+        // Update existing accrual
+        try {
+          await financeService.updateAccrual(existingAccrual.id, {
+            amount: updated.total_cost,
+            description: updated.notes || `Списание: ${updated.quantity} ед.`,
+          })
+        } catch { /* accrual may be gone */ }
+      } else if (updated.total_cost > 0) {
+        // Create new accrual (method changed to expense)
+        await financeService.createAccrual({
+          user_id: (updated as any).user_id || null,
+          plugin_source: "write_off",
+          external_id: id,
+          direction: "expense",
           amount: updated.total_cost,
+          currency_code: "RUB",
+          type: "write_off",
+          category: "Потери",
           description: updated.notes || `Списание: ${updated.quantity} ед.`,
+          accrual_date: updated.moved_at,
         })
-      } catch { /* tx may be gone */ }
+      }
+    } else if (existingAccrual) {
+      // Method changed away from expense → delete accrual
+      try { await financeService.deleteAccrual(existingAccrual.id) } catch {}
     }
-  } else if (updated.type === "write_off" && updated.write_off_method !== "expense" && existing.finance_transaction_id) {
-    // Method changed from expense → delete old tx
-    try {
-      await financeService.deleteFinanceTransactions(existing.finance_transaction_id)
-    } catch {}
-    await stockMovementService.update(id, { write_off_method: updated.write_off_method })
+
+    // Clean up legacy FinanceTransaction if any (old write-offs created before this fix)
+    if (existing.finance_transaction_id) {
+      try { await financeService.deleteFinanceTransactions(existing.finance_transaction_id) } catch {}
+    }
   }
 
   return c.json({ movement: updated })
@@ -227,11 +249,14 @@ inventory.delete("/movements/:id", async (c) => {
     return c.json({ error: "Поставки удаляются через заказ поставщику" }, 400)
   }
 
-  // Delete linked FinanceTransaction if expense write-off
+  // Delete linked FinanceAccrual (non-cash P&L write-off entry)
+  const accruals = await financeService.listAccruals({ plugin_source: "write_off", external_id: id })
+  for (const a of accruals) {
+    try { await financeService.deleteAccrual(a.id) } catch {}
+  }
+  // Also clean up legacy FinanceTransaction if any
   if (existing.finance_transaction_id) {
-    try {
-      await financeService.deleteFinanceTransactions(existing.finance_transaction_id)
-    } catch {}
+    try { await financeService.deleteFinanceTransactions(existing.finance_transaction_id) } catch {}
   }
 
   await stockMovementService.softDelete(id)

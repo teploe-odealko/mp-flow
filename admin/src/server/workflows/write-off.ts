@@ -21,19 +21,7 @@ export async function writeOff(container: AwilixContainer, input: WriteOffInput)
   const avgCost = await calculateAvgCost(stockMovementService, input.master_card_id)
   const totalCost = Math.round(avgCost * input.quantity * 100) / 100
 
-  let finance_transaction_id: string | null = null
-
-  if (method === "expense" && totalCost > 0) {
-    const tx = await financeService.createFinanceTransactions({
-      user_id: input.user_id || null, type: "adjustment", direction: "expense",
-      amount: totalCost, currency_code: "RUB", master_card_id: input.master_card_id,
-      category: "Потери",
-      description: input.reason || `Списание: ${input.quantity} ед.`,
-      transaction_date: new Date(), source: "system",
-    })
-    finance_transaction_id = tx.id
-  }
-
+  // Create stock movement first
   const movement = await stockMovementService.create({
     master_card_id: input.master_card_id,
     direction: "out",
@@ -42,11 +30,30 @@ export async function writeOff(container: AwilixContainer, input: WriteOffInput)
     unit_cost: avgCost,
     total_cost: totalCost,
     write_off_method: method,
-    finance_transaction_id,
+    finance_transaction_id: null,
     notes: input.reason || null,
     moved_at: new Date(),
     user_id: input.user_id || null,
   })
 
-  return { movement_id: movement.id, finance_transaction_id, cost_written_off: totalCost }
+  // For "expense" method: create a non-cash P&L accrual (NOT FinanceTransaction — no cash moved)
+  // FinanceAccrual appears in P&L analytics but NOT in ДДС (cash flow) — this is correct accounting.
+  let accrual_id: string | null = null
+  if (method === "expense" && totalCost > 0) {
+    const accrual = await financeService.createAccrual({
+      user_id: input.user_id || null,
+      plugin_source: "write_off",
+      external_id: movement.id,        // links back to the StockMovement
+      direction: "expense",
+      amount: totalCost,
+      currency_code: "RUB",
+      type: "write_off",
+      category: "Потери",
+      description: input.reason || `Списание: ${input.quantity} ед.`,
+      accrual_date: new Date(),
+    })
+    accrual_id = accrual.id
+  }
+
+  return { movement_id: movement.id, accrual_id, cost_written_off: totalCost }
 }

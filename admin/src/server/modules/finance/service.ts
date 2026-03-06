@@ -166,6 +166,20 @@ export class FinanceService {
     return this.em.find(FinanceAccrual, where, { orderBy: { accrual_date: "DESC" } })
   }
 
+  async updateAccrual(id: string, data: { amount?: number; description?: string | null }) {
+    const a = await this.em.findOneOrFail(FinanceAccrual, { id, deleted_at: null })
+    if (data.amount !== undefined) a.amount = data.amount
+    if (data.description !== undefined) a.description = data.description
+    await this.em.flush()
+    return a
+  }
+
+  async deleteAccrual(id: string) {
+    const a = await this.em.findOneOrFail(FinanceAccrual, { id, deleted_at: null })
+    a.deleted_at = new Date()
+    await this.em.flush()
+  }
+
   async accrualExternalIdExists(pluginSource: string, externalIds: (string | number)[]): Promise<Set<string>> {
     if (externalIds.length === 0) return new Set()
     const ids = externalIds.map(String)
