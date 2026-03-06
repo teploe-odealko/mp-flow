@@ -15,8 +15,14 @@ export default async function ozonInventoryEnrichment(c: Context, next: Next) {
   if (c.req.method !== "GET") return
   if (!(await isOzonEnabled(c))) return
 
+  let body: any
   try {
-    const body: any = await c.res.json()
+    body = await c.res.json()
+  } catch {
+    return // not JSON, pass through
+  }
+
+  try {
     const container = c.get("container")
     const ozonService: OzonIntegrationService = container.resolve("ozonService")
 
@@ -132,7 +138,11 @@ export default async function ozonInventoryEnrichment(c: Context, next: Next) {
         headers: c.res.headers,
       })
     }
-  } catch {
-    // Response is not JSON or enrichment failed, pass through
-  }
+  } catch { /* enrichment failed, pass through */ }
+
+  // Always restore the response since we consumed the body above
+  c.res = new Response(JSON.stringify(body), {
+    status: c.res.status,
+    headers: c.res.headers,
+  })
 }
