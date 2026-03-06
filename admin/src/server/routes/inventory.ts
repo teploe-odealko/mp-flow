@@ -1,6 +1,7 @@
 import { Hono } from "hono"
 import { getUserId } from "../core/auth.js"
 import type { MasterCardService } from "../modules/master-card/service.js"
+import type { SupplierOrderService } from "../modules/supplier-order/service.js"
 import type { SaleService } from "../modules/sale/service.js"
 import type { FinanceService } from "../modules/finance/service.js"
 import type { StockMovementService } from "../modules/stock-movement/service.js"
@@ -13,6 +14,7 @@ const inventory = new Hono<{ Variables: Record<string, any> }>()
 // GET /api/inventory — equation-of-states with breakdown
 inventory.get("/", async (c) => {
   const cardService: MasterCardService = c.get("container").resolve("masterCardService")
+  const supplierService: SupplierOrderService = c.get("container").resolve("supplierOrderService")
   const saleService: SaleService = c.get("container").resolve("saleService")
   const stockMovementService: StockMovementService = c.get("container").resolve("stockMovementService")
   const userId = getUserId(c)
@@ -30,6 +32,10 @@ inventory.get("/", async (c) => {
   const rows: any[] = []
 
   for (const card of cards) {
+    // received_qty: from supplier_order_items (reliable commercial source)
+    const supplierItems = await supplierService.listSupplierOrderItems({ master_card_id: card.id })
+    const receivedQty = supplierItems.reduce((s: number, i: any) => s + (Number(i.received_qty) || 0), 0)
+
     // Group sales by (status, channel)
     let soldTotal = 0, deliveringTotal = 0
     const soldByChannel: Record<string, number> = {}
@@ -39,7 +45,7 @@ inventory.get("/", async (c) => {
       for (const sale of sales) {
         const qty = Number(sale.quantity || 0)
         const ch = (sale as any).channel || "unknown"
-        if (ch === "write-off") continue // now counted via stock movements
+        if (ch === "write-off") continue // counted via stock movements
         if ((sale as any).status === "delivered") {
           soldTotal += qty
           soldByChannel[ch] = (soldByChannel[ch] || 0) + qty
@@ -50,21 +56,16 @@ inventory.get("/", async (c) => {
       }
     } catch {}
 
-    const inMovements = await stockMovementService.list({ master_card_id: card.id, direction: "in" })
     const outMovements = await stockMovementService.list({ master_card_id: card.id, direction: "out" })
-
-    const totalIn = inMovements.reduce((s, m) => s + Number(m.quantity), 0)
-    const totalOut = outMovements.reduce((s, m) => s + Number(m.quantity), 0)
+    const writtenOffQty = outMovements.reduce((s, m) => s + Number(m.quantity), 0)
 
     // Legacy: also count old write-off Sales not in StockMovement
     const legacyWriteOffs = await saleService.listSales({ master_card_id: card.id, channel: "write-off" })
     const legacyQty = legacyWriteOffs.reduce((s: number, s2: any) => s + Number(s2.quantity || 0), 0)
 
-    const rawStock = totalIn - totalOut - soldTotal - deliveringTotal - legacyQty
-    const localQty = Math.max(0, rawStock)
-    const writtenOffQty = totalOut
-    const discrepancy = rawStock < 0 ? Math.abs(rawStock) : 0
-    const stockTotal = localQty
+    const stockTotal = await getAvailableStock(stockMovementService, saleService, card.id)
+    const rawStockCheck = receivedQty - writtenOffQty - soldTotal - deliveringTotal - legacyQty
+    const discrepancy = rawStockCheck < 0 ? Math.abs(rawStockCheck) : 0
 
     const avgCost = await calculateAvgCost(stockMovementService, card.id)
     const hasCost = avgCost > 0
@@ -84,9 +85,9 @@ inventory.get("/", async (c) => {
       card_id: card.id,
       product_title: card.title,
       thumbnail: (card as any).thumbnail || undefined,
-      received_qty: totalIn,
+      received_qty: receivedQty,
       stock_total: stockTotal,
-      stock_breakdown: [{ source: "local", label: "Наш склад", qty: localQty }],
+      stock_breakdown: [{ source: "local", label: "Наш склад", qty: stockTotal }],
       sold_total: soldTotal,
       sold_breakdown: soldBreakdown,
       delivering_total: deliveringTotal,
