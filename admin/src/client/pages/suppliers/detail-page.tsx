@@ -54,7 +54,6 @@ export default function SupplierDetailPage() {
   const [status, setStatus] = useState("draft")
   const [items, setItems] = useState<ItemDraft[]>([newItem()])
   const [showReceive, setShowReceive] = useState(false)
-  const [overheadCategory, setOverheadCategory] = useState("Накладные расходы на товар")
 
   // Load existing order
   const { data: orderData, isLoading } = useQuery({
@@ -480,13 +479,10 @@ export default function SupplierDetailPage() {
                 <th className="text-left px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Товар</th>
                 <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Кол-во</th>
                 <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Себестоимость за единицу</th>
-                <th className="text-right px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Накладные расходы за единицу</th>
               </tr>
             </thead>
             <tbody>
               {allocations.map((a) => {
-                const itemDraft = validItems.find((i) => i.master_card_id === a.master_card_id)
-                const overheadVal = itemDraft?.overhead_per_unit ?? null
                 return (
                   <tr key={a.master_card_id} className="border-b border-bg-border">
                     <td className="px-2 py-1.5 truncate max-w-[200px]">{a.title}</td>
@@ -512,20 +508,6 @@ export default function SupplierDetailPage() {
                           </div>
                         </div>
                       </div>
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <input
-                        type="number"
-                        value={overheadVal ?? ""}
-                        onChange={(e) => {
-                          const v = e.target.value === "" ? null : Number(e.target.value)
-                          setItems((prev) => prev.map((i) =>
-                            i.master_card_id === a.master_card_id ? { ...i, overhead_per_unit: v } : i,
-                          ))
-                        }}
-                        placeholder="0"
-                        className="no-spin w-full px-2 py-1 bg-transparent text-sm text-right tabular-nums text-text-primary rounded border border-transparent hover:border-bg-border focus:border-accent focus:bg-bg-deep focus:outline-none transition-colors"
-                      />
                     </td>
                   </tr>
                 )
@@ -569,9 +551,6 @@ export default function SupplierDetailPage() {
         <ExpensesSection
           orderId={id!}
           orderNumber={orderNumber}
-          overheadTotal={validItems.reduce((s, i) => s + (i.overhead_per_unit ?? 0) * i.ordered_qty, 0)}
-          overheadCategory={overheadCategory}
-          onOverheadCategoryChange={setOverheadCategory}
         />
       )}
 
@@ -603,15 +582,9 @@ const ALLOCATION_LABELS: Record<string, string> = {
 function ExpensesSection({
   orderId,
   orderNumber,
-  overheadTotal,
-  overheadCategory,
-  onOverheadCategoryChange,
 }: {
   orderId: string
   orderNumber: string
-  overheadTotal: number
-  overheadCategory: string
-  onOverheadCategoryChange: (v: string) => void
 }) {
   const queryClient = useQueryClient()
   const [addOpen, setAddOpen] = useState(false)
@@ -732,7 +705,7 @@ function ExpensesSection({
         </div>
       )}
 
-      {expenses.length === 0 && overheadTotal <= 0 ? (
+      {expenses.length === 0 ? (
         <p className="text-text-muted text-xs py-2">Расходов нет</p>
       ) : (
         <table className="w-full text-sm">
@@ -769,24 +742,6 @@ function ExpensesSection({
                 </td>
               </tr>
             ))}
-            {/* Virtual overhead row — computed from allocation preview inputs */}
-            {overheadTotal > 0 && (
-              <tr className="border-b border-bg-border bg-accent/5">
-                <td className="px-2 py-1.5 text-text-muted text-xs whitespace-nowrap">авто</td>
-                <td className="px-2 py-1.5 max-w-[200px]">
-                  <CategorySelector
-                    value={overheadCategory}
-                    onChange={onOverheadCategoryChange}
-                    placeholder="Категория накладных..."
-                  />
-                </td>
-                <td className="px-2 py-1.5 text-xs text-text-secondary">По товарам</td>
-                <td className="px-2 py-1.5 text-right tabular-nums text-outflow font-medium">
-                  -{Math.round(overheadTotal).toLocaleString("ru-RU")} ₽
-                </td>
-                <td className="px-2 py-1.5 text-right text-[10px] text-text-muted">авто</td>
-              </tr>
-            )}
           </tbody>
         </table>
       )}
