@@ -5,6 +5,7 @@ import type { MasterCardService } from "../modules/master-card/service.js"
 import type { FinanceService } from "../modules/finance/service.js"
 import { receiveOrder } from "../workflows/receive-order.js"
 import { unreceiveOrder } from "../workflows/unreceive-order.js"
+import { recalculateCosts } from "../workflows/recalculate-costs.js"
 
 const suppliers = new Hono<{ Variables: Record<string, any> }>()
 
@@ -240,6 +241,12 @@ suppliers.post("/:id/payment", async (c) => {
     source: "manual",
     metadata: { allocation_method: allocationMethod },
   })
+
+  // If the order is already received and this expense is allocated to COGS,
+  // recalculate StockMovement costs immediately so avg_cost stays current
+  if (allocationMethod !== "none" && (order as any).status === "received") {
+    await recalculateCosts(c.get("container"), { supplier_order_id: id })
+  }
 
   return c.json({ transaction }, 201)
 })

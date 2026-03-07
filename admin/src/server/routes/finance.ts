@@ -1,6 +1,8 @@
 import { Hono } from "hono"
 import { getUserId } from "../core/auth.js"
 import type { FinanceService } from "../modules/finance/service.js"
+import type { SupplierOrderService } from "../modules/supplier-order/service.js"
+import { recalculateCosts } from "../workflows/recalculate-costs.js"
 
 const finance = new Hono<{ Variables: Record<string, any> }>()
 
@@ -80,7 +82,27 @@ finance.delete("/:id", async (c) => {
   const service: FinanceService = c.get("container").resolve("financeService")
   const id = c.req.param("id")
 
+  // Before deleting, check if this is an allocated expense for a received order
+  let recalcOrderId: string | null = null
+  try {
+    const tx = await service.retrieveFinanceTransaction(id)
+    const allocationMethod = (tx as any).metadata?.allocation_method
+    const supplierOrderId = (tx as any).supplier_order_id
+    if (allocationMethod && allocationMethod !== "none" && supplierOrderId) {
+      const supplierService: SupplierOrderService = c.get("container").resolve("supplierOrderService")
+      const order = await supplierService.retrieveSupplierOrder(supplierOrderId)
+      if ((order as any).status === "received") {
+        recalcOrderId = supplierOrderId
+      }
+    }
+  } catch { /* transaction not found or order missing — skip */ }
+
   await service.deleteFinanceTransactions(id)
+
+  if (recalcOrderId) {
+    await recalculateCosts(c.get("container"), { supplier_order_id: recalcOrderId })
+  }
+
   return c.json({ ok: true })
 })
 

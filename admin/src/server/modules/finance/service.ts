@@ -47,6 +47,10 @@ export class FinanceService {
     return { items, total }
   }
 
+  async retrieveFinanceTransaction(id: string) {
+    return this.em.findOneOrFail(FinanceTransaction, { id, deleted_at: null })
+  }
+
   async createFinanceTransactions(data: any) {
     const tx = this.em.create(FinanceTransaction, { ...data, deleted_at: null })
     // MikroORM 6 skips optional JSON properties in em.create() — assign explicitly
