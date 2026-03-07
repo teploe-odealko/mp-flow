@@ -251,4 +251,11 @@ suppliers.post("/:id/payment", async (c) => {
   return c.json({ transaction }, 201)
 })
 
+// POST /api/suppliers/:id/recalculate-costs — manually trigger cost recalculation
+suppliers.post("/:id/recalculate-costs", async (c) => {
+  const { id } = c.req.param()
+  await recalculateCosts(c.get("container"), { supplier_order_id: id })
+  return c.json({ ok: true })
+})
+
 export default suppliers
