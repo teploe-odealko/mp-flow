@@ -246,7 +246,7 @@ export default function WarehousePage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-6">Склад</h1>
+      <h1 className="text-xl font-semibold mb-6">Каталог</h1>
 
       {totals && (
         <div className="grid grid-cols-4 gap-4 mb-6">
