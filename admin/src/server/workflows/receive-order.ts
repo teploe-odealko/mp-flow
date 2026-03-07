@@ -64,9 +64,8 @@ export async function receiveOrder(container: AwilixContainer, input: ReceiveOrd
     const receivedQty = receivedLookup.get(item.id) || 0
     if (receivedQty <= 0) continue
 
-    const orderedQty = Number(item.ordered_qty || 0)
-    const shortfallQty = Math.max(0, orderedQty - receivedQty)
-    const purchasePrice = Number(item.purchase_price || item.unit_cost || 0)
+    // purchase_price (CNY) used only for proportional distribution ratios, not for cost basis
+    const purchasePrice = Number(item.purchase_price || 0)
     const weightG = weightLookup.get(item.id) || 0
 
     // Distribute shared expenses to this item
@@ -88,19 +87,8 @@ export async function receiveOrder(container: AwilixContainer, input: ReceiveOrd
       sharedAlloc += share
     }
 
-    let totalItemCost: number
-    let unitCost: number
-
-    if (writeOffMethod === "redistribute" && shortfallQty > 0) {
-      // Absorb shortfall cost into received items
-      totalItemCost = purchasePrice * orderedQty + sharedAlloc
-      unitCost = receivedQty > 0 ? Math.round((totalItemCost / receivedQty) * 100) / 100 : 0
-    } else {
-      // ignore or expense: normal cost for received items only
-      totalItemCost = purchasePrice * receivedQty + sharedAlloc
-      unitCost = receivedQty > 0 ? Math.round((totalItemCost / receivedQty) * 100) / 100 : 0
-    }
-
+    // Cost basis = shared expenses only (purchase_price in CNY excluded)
+    const unitCost = receivedQty > 0 ? Math.round((sharedAlloc / receivedQty) * 100) / 100 : 0
     const itemTotalCost = Math.round(unitCost * receivedQty * 100) / 100
 
     await supplierService.updateSupplierOrderItems({
@@ -122,21 +110,7 @@ export async function receiveOrder(container: AwilixContainer, input: ReceiveOrd
       user_id: (order as any).user_id || null,
     })
 
-    // For "expense" method: create FinanceTransaction for shortfall cost
-    if (writeOffMethod === "expense" && shortfallQty > 0) {
-      const shortfallCost = Math.round(purchasePrice * shortfallQty * 100) / 100
-      if (shortfallCost > 0) {
-        await financeService.createFinanceTransactions({
-          type: "adjustment", direction: "expense",
-          amount: shortfallCost, currency_code: "RUB",
-          master_card_id: item.master_card_id || null,
-          supplier_order_id: input.supplier_order_id,
-          category: "Потери",
-          description: `Недостача при приёмке: ${shortfallQty} ед. × ${purchasePrice} ₽`,
-          transaction_date: new Date(), source: "system",
-        })
-      }
-    }
+    // Note: shortfall cost (missing items) is not auto-created — user records actual RUB spending manually
   }
 
   await supplierService.updateSupplierOrders({ id: input.supplier_order_id, status: "received", received_at: new Date() })

@@ -37,8 +37,9 @@ export function computeAllocations(items: OrderItem[], sharedCosts: SharedCostEn
     const qty = item.ordered_qty || 0
     const purchasePrice = Number(item.purchase_price) || 0
 
-    // Individual cost = purchase price * qty
-    const individual = purchasePrice * qty
+    // Individual cost from purchase_price is NOT included in cost basis (price is in foreign currency)
+    // Cost = shared expenses (in RUB) only; purchase_price used only for proportional ratios
+    const individual = 0
 
     // Shared cost allocation for this item
     let sharedAlloc = 0
