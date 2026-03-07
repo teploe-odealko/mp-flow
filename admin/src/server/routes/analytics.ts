@@ -6,6 +6,22 @@ import type { FinanceService } from "../modules/finance/service.js"
 import type { StockMovementService } from "../modules/stock-movement/service.js"
 import { calculateAvgCost, getAvailableStock } from "../utils/cost-stock.js"
 
+async function buildAvgCostMap(
+  stockMovementService: StockMovementService,
+  cardService: MasterCardService,
+  userId: string | null,
+): Promise<Map<string, number>> {
+  const cardFilters: Record<string, any> = {}
+  if (userId) cardFilters.user_id = userId
+  const cards = await cardService.list(cardFilters)
+  const map = new Map<string, number>()
+  for (const card of cards) {
+    const avg = await calculateAvgCost(stockMovementService, card.id)
+    if (avg > 0) map.set(card.id, avg)
+  }
+  return map
+}
+
 const analytics = new Hono<{ Variables: Record<string, any> }>()
 
 // GET /api/analytics?report=unit-economics|pnl|stock-valuation
@@ -25,13 +41,19 @@ analytics.get("/", async (c) => {
     case "unit-economics": {
       if (!from || !to) return c.json({ error: "from and to parameters required" }, 400)
       const saleService: SaleService = c.get("container").resolve("saleService")
-      const data = await saleService.getUnitEconomics(new Date(from), new Date(to), filters)
+      const stockMovementService: StockMovementService = c.get("container").resolve("stockMovementService")
+      const cardService: MasterCardService = c.get("container").resolve("masterCardService")
+      const avgCostByCard = await buildAvgCostMap(stockMovementService, cardService, userId)
+      const data = await saleService.getUnitEconomics(new Date(from), new Date(to), filters, avgCostByCard)
       return c.json({ report: "unit-economics", from, to, data })
     }
     case "pnl": {
       if (!from || !to) return c.json({ error: "from and to parameters required" }, 400)
       const saleService: SaleService = c.get("container").resolve("saleService")
-      const data = await saleService.getSalesPnl(new Date(from), new Date(to), filters)
+      const stockMovementService: StockMovementService = c.get("container").resolve("stockMovementService")
+      const cardService: MasterCardService = c.get("container").resolve("masterCardService")
+      const avgCostByCard = await buildAvgCostMap(stockMovementService, cardService, userId)
+      const data = await saleService.getSalesPnl(new Date(from), new Date(to), filters, avgCostByCard)
 
       // Add manual cash flows from FinanceTransaction (ДДС)
       const financeService: FinanceService = c.get("container").resolve("financeService")
@@ -87,7 +109,7 @@ analytics.get("/", async (c) => {
         const stock = await getAvailableStock(stockMovementService, saleService, card.id)
         if (stock <= 0) continue
         const avg = await calculateAvgCost(stockMovementService, card.id)
-        items.push({ master_card_id: card.id, title: card.title || "", quantity: stock, total_cost: Math.round(stock * avg * 100) / 100, avg_cost: avg })
+        items.push({ master_card_id: card.id, title: card.title || "", quantity: stock, total_cost: Math.round(stock * avg * 100) / 100, avg_cost: Math.round(avg * 100) / 100 })
       }
 
       return c.json({

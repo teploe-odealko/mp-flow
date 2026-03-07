@@ -62,6 +62,7 @@ export class SaleService {
   async getUnitEconomics(
     from: Date, to: Date,
     filters?: { user_id?: string; channel?: string; hasFees?: boolean },
+    avgCostByCard?: Map<string, number>,
   ) {
     const saleFilters: Record<string, any> = {
       sold_at: { $gte: from, $lte: to },
@@ -94,9 +95,12 @@ export class SaleService {
           total_fees: 0, cogs: 0, profit: 0, margin: 0, roi: 0,
         }
       }
+      const dynamicCogs = avgCostByCard && s.master_card_id && avgCostByCard.has(s.master_card_id)
+        ? (avgCostByCard.get(s.master_card_id) ?? 0) * (s.quantity || 0)
+        : Number(s.total_cogs || 0)
       byProduct[key].quantity += s.quantity
       byProduct[key].revenue += Number(s.revenue || 0)
-      byProduct[key].cogs += Number(s.total_cogs || 0)
+      byProduct[key].cogs += dynamicCogs
 
       for (const fee of fees) {
         const amount = Number(fee.amount || 0)
@@ -141,6 +145,7 @@ export class SaleService {
   async getSalesPnl(
     from: Date, to: Date,
     filters?: { user_id?: string; channel?: string; hasFees?: boolean },
+    avgCostByCard?: Map<string, number>,
   ) {
     const saleFilters: Record<string, any> = {
       sold_at: { $gte: from, $lte: to },
@@ -162,7 +167,9 @@ export class SaleService {
 
       salesCount++
       const revenue = Number(s.revenue || 0)
-      const cogs = Number(s.total_cogs || 0)
+      const cogs = avgCostByCard && s.master_card_id && avgCostByCard.has(s.master_card_id)
+        ? (avgCostByCard.get(s.master_card_id) ?? 0) * (s.quantity || 0)
+        : Number(s.total_cogs || 0)
       const fees = this.sumFees(feeItems)
       const netPayout = s.net_payout != null ? Number(s.net_payout) : null
       totalRevenue += revenue; totalCogs += cogs; totalFees += netPayout != null ? (revenue - netPayout) : fees
