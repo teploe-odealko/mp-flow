@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+REPO_DIR="${MPFLOW_REPO_DIR:-/opt/mpflow/repo}"
+DEPLOY_DIR="${MPFLOW_DEPLOY_DIR:-/opt/mpflow/deploy}"
+ENV_FILE="${MPFLOW_ENV_FILE:-/opt/mpflow/prod-secrets.env}"
+LOG_FILE="${MPFLOW_DEPLOY_LOG:-/var/log/mpflow-deploy.log}"
+LOCK_FILE="${MPFLOW_DEPLOY_LOCK:-/var/lock/mpflow-deploy.lock}"
+TARGET_REF="${1:-${DEPLOY_REF:-origin/main}}"
+
+log() {
+  printf '[%s] %s\n' "$(date -Is)" "$*" | tee -a "$LOG_FILE"
+}
+
+fail() {
+  log "ERROR: $*"
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || fail "command not found: $1"
+}
+
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+  fail "another deployment is already running"
+fi
+
+require_command git
+require_command docker
+require_command curl
+
+[ -d "$REPO_DIR/.git" ] || fail "repo directory is not a git repository: $REPO_DIR"
+[ -f "$ENV_FILE" ] || fail "env file not found: $ENV_FILE"
+
+cd "$REPO_DIR"
+log "fetching origin/main"
+git fetch --prune origin main
+
+if [[ "$TARGET_REF" =~ ^[0-9a-fA-F]{40}$ ]]; then
+  git cat-file -e "$TARGET_REF^{commit}" || fail "target commit not found after fetch: $TARGET_REF"
+  git merge-base --is-ancestor "$TARGET_REF" origin/main || fail "target commit is not on origin/main: $TARGET_REF"
+else
+  TARGET_REF="origin/main"
+fi
+
+TARGET_SHA="$(git rev-parse "$TARGET_REF")"
+log "deploying $TARGET_SHA"
+git checkout -B main "$TARGET_SHA"
+git reset --hard "$TARGET_SHA"
+
+REPO_SCRIPT="$REPO_DIR/deploy/scripts/mpflow-deploy-production"
+if [ -f "$REPO_SCRIPT" ] && ! cmp -s "$REPO_SCRIPT" "$0"; then
+  log "updating deploy script from repository"
+  install -m 0755 "$REPO_SCRIPT" "$0.tmp"
+  mv "$0.tmp" "$0"
+  exec "$0" "$TARGET_SHA"
+fi
+
+SOURCE_DEPLOY_DIR="$REPO_DIR/deploy/production"
+[ -d "$SOURCE_DEPLOY_DIR" ] || fail "deploy config not found: $SOURCE_DEPLOY_DIR"
+
+log "syncing production deploy config"
+install -d "$DEPLOY_DIR" "$DEPLOY_DIR/grafana"
+for file in Caddyfile blackbox.yml docker-compose.yml loki-config.yml prometheus.yml promtail-config.yml; do
+  install -m 0644 "$SOURCE_DEPLOY_DIR/$file" "$DEPLOY_DIR/$file"
+done
+rm -rf "$DEPLOY_DIR/grafana/provisioning" "$DEPLOY_DIR/grafana/dashboards"
+cp -a "$SOURCE_DEPLOY_DIR/grafana/provisioning" "$DEPLOY_DIR/grafana/provisioning"
+cp -a "$SOURCE_DEPLOY_DIR/grafana/dashboards" "$DEPLOY_DIR/grafana/dashboards"
+
+cd "$DEPLOY_DIR"
+log "validating compose config"
+docker compose --env-file "$ENV_FILE" config --quiet
+
+log "building and starting production services"
+docker compose --env-file "$ENV_FILE" up -d --build --remove-orphans
+
+log "waiting for MPFlow health"
+for _ in $(seq 1 60); do
+  if curl -fsS -H 'Host: mp-flow.ru' http://127.0.0.1/api/health/ready >/dev/null; then
+    log "MPFlow health check passed"
+    log "deployment finished: $TARGET_SHA"
+    exit 0
+  fi
+  sleep 2
+done
+
+docker compose --env-file "$ENV_FILE" ps | tee -a "$LOG_FILE" || true
+fail "MPFlow health check did not pass"

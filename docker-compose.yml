@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: mpflow-postgres
+    environment:
+      POSTGRES_USER: mpflow
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-mpflow_local}
+      POSTGRES_DB: ${DB_NAME:-mpflow}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --locale=C"
+    ports:
+      - "${DB_PORT:-54322}:5432"
+    volumes:
+      - mpflow-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mpflow -d ${DB_NAME:-mpflow}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  mpflow-pgdata:

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+test-results/
+playwright-report/
+coverage/
+.DS_Store
+tmp/
+tmp-spec-audit.json
+.env
+.env.local

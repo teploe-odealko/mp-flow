@@ -1,0 +1,48 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["prometheus:9090"]
+        labels:
+          service: prometheus
+
+  - job_name: host
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels:
+          service: mpflow-prod-host
+
+  - job_name: containers
+    static_configs:
+      - targets: ["cadvisor:8080"]
+        labels:
+          service: docker
+
+  - job_name: mpflow
+    metrics_path: /metrics
+    authorization:
+      credentials_file: /etc/prometheus/mpflow-metrics-token
+    static_configs:
+      - targets: ["mpflow:3004"]
+        labels:
+          service: mpflow
+
+  - job_name: blackbox-http
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://mpflow:3004/api/health/live
+          - http://glitchtip:8000/
+          - http://grafana:3000/api/health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

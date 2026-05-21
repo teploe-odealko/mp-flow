@@ -1,0 +1,11 @@
+[Unit]
+Description=Check origin/main and deploy MPFlow production
+
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=60s
+AccuracySec=10s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

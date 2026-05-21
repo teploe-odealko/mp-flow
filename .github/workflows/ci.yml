@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    name: test and build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Production readiness tests
+        run: npx vitest run tests/integration/prod-readiness.test.ts
+
+      - name: Build
+        run: npm run build
+
+      - name: Production startup smoke
+        env:
+          NODE_ENV: production
+          ACCOUNTING_PERSISTENCE: memory
+          HOST: 127.0.0.1
+          PORT: 4110
+        run: |
+          npm run start > /tmp/mpflow.log 2>&1 &
+          SERVER_PID=$!
+          trap "kill $SERVER_PID 2>/dev/null || true" EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4110/api/health/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/mpflow.log
+          exit 1

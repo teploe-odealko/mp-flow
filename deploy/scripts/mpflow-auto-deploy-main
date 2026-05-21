@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+REPO_DIR="${MPFLOW_REPO_DIR:-/opt/mpflow/repo}"
+STATE_DIR="${MPFLOW_DEPLOY_STATE_DIR:-/var/lib/mpflow-deploy}"
+STATE_FILE="$STATE_DIR/deployed-main.sha"
+LOG_FILE="${MPFLOW_DEPLOY_LOG:-/var/log/mpflow-deploy.log}"
+LOCK_FILE="${MPFLOW_AUTO_DEPLOY_LOCK:-/var/lock/mpflow-auto-deploy.lock}"
+DEPLOY_SCRIPT="${MPFLOW_DEPLOY_SCRIPT:-/usr/local/bin/mpflow-deploy-production}"
+
+log() {
+  printf '[%s] %s\n' "$(date -Is)" "$*" | tee -a "$LOG_FILE"
+}
+
+fail() {
+  log "ERROR: $*"
+  exit 1
+}
+
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+  log "auto deploy check skipped: previous check is still running"
+  exit 0
+fi
+
+[ -d "$REPO_DIR/.git" ] || fail "repo directory is not a git repository: $REPO_DIR"
+[ -x "$DEPLOY_SCRIPT" ] || fail "deploy script is not executable: $DEPLOY_SCRIPT"
+
+install -d "$STATE_DIR"
+
+cd "$REPO_DIR"
+git fetch --prune origin main
+REMOTE_SHA="$(git rev-parse origin/main)"
+
+if [ -f "$STATE_FILE" ]; then
+  BASE_SHA="$(tr -d '[:space:]' < "$STATE_FILE")"
+else
+  BASE_SHA="$(git rev-parse HEAD)"
+fi
+
+if [ "$REMOTE_SHA" = "$BASE_SHA" ]; then
+  log "auto deploy check: origin/main is already deployed ($REMOTE_SHA)"
+  exit 0
+fi
+
+if ! git merge-base --is-ancestor "$BASE_SHA" "$REMOTE_SHA"; then
+  log "auto deploy skipped: origin/main is not a fast-forward from deployed commit ($BASE_SHA -> $REMOTE_SHA)"
+  exit 0
+fi
+
+log "auto deploy detected new origin/main: $BASE_SHA -> $REMOTE_SHA"
+"$DEPLOY_SCRIPT" "$REMOTE_SHA"
+printf '%s\n' "$REMOTE_SHA" > "$STATE_FILE"
+log "auto deploy marked deployed commit: $REMOTE_SHA"

@@ -1,0 +1,184 @@
+services:
+  caddy:
+    image: mirror.gcr.io/library/caddy:2.10
+    restart: unless-stopped
+    depends_on:
+      - mpflow
+      - glitchtip
+      - grafana
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - public
+
+  mpflow:
+    build:
+      context: /opt/mpflow/repo
+    restart: unless-stopped
+    env_file:
+      - /opt/mpflow/env/mpflow.env
+    expose:
+      - "3004"
+    networks:
+      - public
+
+  glitchtip-db:
+    image: mirror.gcr.io/library/postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: glitchtip
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: ${GLITCHTIP_POSTGRES_PASSWORD}
+    volumes:
+      - glitchtip-pg-data:/var/lib/postgresql/data
+    networks:
+      - public
+
+  glitchtip-valkey:
+    image: mirror.gcr.io/valkey/valkey:9
+    restart: unless-stopped
+    networks:
+      - public
+
+  glitchtip:
+    image: mirror.gcr.io/glitchtip/glitchtip:6
+    restart: unless-stopped
+    depends_on:
+      - glitchtip-db
+      - glitchtip-valkey
+    environment:
+      DATABASE_URL: postgres://glitchtip:${GLITCHTIP_POSTGRES_PASSWORD}@glitchtip-db:5432/glitchtip
+      VALKEY_URL: redis://glitchtip-valkey:6379
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY}
+      EMAIL_URL: consolemail://
+      DEFAULT_FROM_EMAIL: errors@mp-flow.ru
+      GLITCHTIP_DOMAIN: https://errors.mp-flow.ru
+      CSRF_TRUSTED_ORIGINS: https://errors.mp-flow.ru
+      ALLOWED_HOSTS: errors.mp-flow.ru
+      ENABLE_ADMIN: "True"
+      ENABLE_USER_REGISTRATION: "False"
+      ENABLE_ORGANIZATION_CREATION: "True"
+      GLITCHTIP_ENABLE_UPTIME: "False"
+      GLITCHTIP_RETENTION_DAYS: "30"
+      SERVER_ROLE: all_in_one
+    expose:
+      - "8000"
+    volumes:
+      - glitchtip-uploads:/code/uploads
+    networks:
+      - public
+
+  prometheus:
+    image: quay.io/prometheus/prometheus:v3.7.3
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - /opt/mpflow/env/mpflow-metrics-token:/etc/prometheus/mpflow-metrics-token:ro
+      - prometheus-data:/prometheus
+    expose:
+      - "9090"
+    networks:
+      - public
+
+  blackbox-exporter:
+    image: quay.io/prometheus/blackbox-exporter:v0.28.0
+    restart: unless-stopped
+    volumes:
+      - ./blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+    expose:
+      - "9115"
+    networks:
+      - public
+
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:v1.10.2
+    restart: unless-stopped
+    command:
+      - "--path.rootfs=/host"
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    expose:
+      - "9100"
+    networks:
+      - public
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    expose:
+      - "8080"
+    networks:
+      - public
+
+  loki:
+    image: mirror.gcr.io/grafana/loki:3.5.8
+    restart: unless-stopped
+    command: "-config.file=/etc/loki/local-config.yaml"
+    volumes:
+      - ./loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    expose:
+      - "3100"
+    networks:
+      - public
+
+  promtail:
+    image: mirror.gcr.io/grafana/promtail:3.5.8
+    restart: unless-stopped
+    command: "-config.file=/etc/promtail/config.yml"
+    volumes:
+      - ./promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - public
+
+  grafana:
+    image: mirror.gcr.io/grafana/grafana-oss:12.3.1
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_SERVER_ROOT_URL: https://grafana.mp-flow.ru
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    expose:
+      - "3000"
+    networks:
+      - public
+
+networks:
+  public:
+
+volumes:
+  caddy-data:
+  caddy-config:
+  glitchtip-pg-data:
+  glitchtip-uploads:
+  prometheus-data:
+  loki-data:
+  grafana-data:

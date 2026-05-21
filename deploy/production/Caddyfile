@@ -1,0 +1,21 @@
+{
+	email ops@mp-flow.ru
+}
+
+mp-flow.ru, www.mp-flow.ru, app.mp-flow.ru {
+	encode zstd gzip
+	reverse_proxy mpflow:3004
+}
+
+errors.mp-flow.ru {
+	encode zstd gzip
+	request_body {
+		max_size 40MB
+	}
+	reverse_proxy glitchtip:8000
+}
+
+grafana.mp-flow.ru {
+	encode zstd gzip
+	reverse_proxy grafana:3000
+}
