@@ -1714,6 +1714,23 @@ export class AccountingApp {
     this.channelCredentials.clear();
   }
 
+  /**
+   * Invalidate every lazily-built lookup cache. Required whenever `state` is
+   * mutated wholesale (e.g. the dev/reset endpoint does
+   * `Object.assign(app.state, createEmptyState())`), since the caches index the
+   * OLD arrays by reference and would otherwise resurrect phantom records
+   * (a reset external-product cache returns a pre-reset card, so
+   * `createExternalProduct` short-circuits without pushing to the new empty
+   * array, leaving orphaned observed-stock rows).
+   */
+  resetLookupCaches() {
+    this.externalProductByChannelSku = undefined;
+    this.activeLinkByExternalProductId = undefined;
+    this.externalEventIdentityIndex = undefined;
+    this.externalEventById = undefined;
+    this.saleLookup = undefined;
+  }
+
   ingestExternalEvent(input: {
     channelId: ID;
     eventType: ExternalEvent["eventType"];
@@ -1836,12 +1853,13 @@ export class AccountingApp {
     const payload = event.normalizedPayload as Record<string, unknown>;
     const now = nowIso();
     event.updatedAt = now;
+    if (event.status === "processed" || event.status === "ignored") return event;
+
     event.lastError = undefined;
     event.reason = undefined;
     event.externalProductId = undefined;
     event.productId = undefined;
 
-    if (event.status === "processed" || event.status === "ignored") return event;
     if (event.eventType === "fee" || event.eventType === "sale_accrual" || event.eventType === "payout") {
       event.status = "ready_for_processing";
       return event;
@@ -3995,7 +4013,7 @@ export class AccountingApp {
     return run;
   }
 
-  createAgentToken(input: { name: string; scopes?: string[]; mode?: "read_only" | "read_write" }): AgentToken {
+  createAgentToken(input: { name: string; scopes?: string[]; mode?: "read_only" | "read_write"; maskedToken?: string; tokenHash?: string }): AgentToken {
     const mode = input.mode ?? (input.scopes?.some((scope) => /write|post|patch|delete|sync/i.test(scope)) ? "read_write" : "read_only");
     const scopes = input.scopes?.length ? input.scopes : (mode === "read_only" ? ["reports:read", "documents:read", "channels:read"] : ["reports:read", "documents:write", "channels:sync"]);
     const token: AgentToken = {
@@ -4005,7 +4023,8 @@ export class AccountingApp {
       mode,
       scopes,
       status: "active",
-      maskedToken: `mpf_${Math.random().toString(36).slice(2, 6)}••••${Math.random().toString(36).slice(2, 6)}`,
+      maskedToken: input.maskedToken ?? "mpf_••••",
+      tokenHash: input.tokenHash,
       createdAt: nowIso()
     };
     this.state.agentTokens.push(token);
@@ -4061,6 +4080,37 @@ export class AccountingApp {
     this.audit("organization", organization.id, "update", organizationBefore, organization, "Обновление первичной настройки");
     this.audit("accounting_policy", policy.id, "update", policyBefore, policy, "Обновление первичной настройки");
     return this.setupSnapshot();
+  }
+
+  extendAccountingStartDateBackward(accountingStartDate: string, reason = "Расширение горизонта учета") {
+    const { organization, policy } = this.ensureBootstrapped();
+    if (!accountingStartDate) {
+      throw new DomainError("accounting_start_required", "Укажите дату старта учета");
+    }
+    const startDate = new Date(`${accountingStartDate}T00:00:00.000Z`);
+    if (Number.isNaN(startDate.getTime())) {
+      throw new DomainError("invalid_accounting_start", "Некорректная дата старта учета");
+    }
+    if (accountingStartDate >= policy.accountingStartDate) return policy;
+
+    const before = { ...policy };
+    const existingPeriodsByStart = new Map(this.state.periods.map((period) => [period.startsOn, period]));
+    const latestPeriodEnd = this.state.periods.reduce(
+      (latest, period) => period.endsOn > latest ? period.endsOn : latest,
+      policy.accountingStartDate
+    );
+    const months = Math.max(24, this.monthsBetweenInclusive(accountingStartDate, latestPeriodEnd));
+
+    policy.accountingStartDate = accountingStartDate;
+    this.state.periods = monthPeriods(organization.id, accountingStartDate, months).map((period) => {
+      const existing = existingPeriodsByStart.get(period.startsOn);
+      return existing
+        ? { ...period, id: existing.id, status: existing.status, closedAt: existing.closedAt }
+        : period;
+    });
+
+    this.audit("accounting_policy", policy.id, "update", before, policy, reason);
+    return policy;
   }
 
   reopenPeriod(periodId: ID, reason?: string): AccountingPeriod {
@@ -5865,6 +5915,12 @@ export class AccountingApp {
 
   private periodForDate(date: string): AccountingPeriod | undefined {
     return this.state.periods.find((period) => period.startsOn <= date && period.endsOn >= date);
+  }
+
+  private monthsBetweenInclusive(from: string, to: string) {
+    const fromDate = new Date(`${from}T00:00:00.000Z`);
+    const toDate = new Date(`${to}T00:00:00.000Z`);
+    return (toDate.getUTCFullYear() - fromDate.getUTCFullYear()) * 12 + toDate.getUTCMonth() - fromDate.getUTCMonth() + 1;
   }
 
   private validateSetupInput(input: BootstrapInput, documentsExist: boolean) {

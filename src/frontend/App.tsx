@@ -4,6 +4,7 @@ import { AppShell } from "@/layout/AppShell";
 import { HomePage } from "@/pages/home/HomePage";
 import { SetupPage } from "@/pages/setup/SetupPage";
 import { SettingsOverviewPage } from "@/pages/setup/SettingsOverviewPage";
+import { McpSettingsPage } from "@/pages/setup/McpSettingsPage";
 import { AccountingWorkspace } from "@/pages/accounting/AccountingWorkspace";
 import { ChartAccountsPage } from "@/pages/accounting/ChartAccountsPage";
 import { JournalEntryPage, JournalPage } from "@/pages/accounting/JournalPage";
@@ -63,11 +64,12 @@ export function App() {
         <Route path="/" element={<HomePage />} />
 
         <Route path="/setup" element={<SetupPage />} />
-        <Route path="/setup/review" element={<SetupPage />} />
+        <Route path="/setup/review" element={<LegacySetupReviewRedirect />} />
         <Route path="/setup/existing-store" element={<BackfillWizardPage />} />
         <Route path="/setup/existing-store/:projectId/review" element={<LegacyBackfillReviewRedirect />} />
-        <Route path="/setup/existing-store/import/review" element={<Navigate to="/setup/existing-store?from=setup&mode=current_stock_start" replace />} />
+        <Route path="/setup/existing-store/import/review" element={<Navigate to="/setup/existing-store?from=setup&mode=historical_backfill" replace />} />
         <Route path="/settings" element={<SettingsOverviewPage />} />
+        <Route path="/settings/mcp" element={<McpSettingsPage />} />
         <Route path="/settings/periods" element={<Navigate to="/settings" replace />} />
 
         <Route path="/accounting" element={<AccountingWorkspace />} />
@@ -119,6 +121,7 @@ export function App() {
         <Route path="/integrations/channels" element={<ChannelsWorkspace />} />
         <Route path="/integrations/channels/new" element={<ChannelFormPage />} />
         <Route path="/integrations/channels/:id" element={<ChannelDetailPage />} />
+        <Route path="/integrations/channels/:id/onboarding" element={<BackfillWizardPage />} />
         <Route path="/integrations/channels/:id/sync" element={<ChannelSyncPage />} />
         <Route path="/integrations/inbox" element={<SyncInboxPage />} />
         <Route path="/integrations/channels/:id/finance" element={<ChannelFinancePage />} />
@@ -164,7 +167,7 @@ function ExistingStoreEntryRedirect() {
   const { state } = useAppState();
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
-  const mode = searchParams.get("mode") === "historical_backfill" ? "historical_backfill" : "current_stock_start";
+  const mode = searchParams.get("mode") === "current_stock_start" ? "current_stock_start" : "historical_backfill";
   const start = searchParams.get("start");
   const confirmed = searchParams.get("confirmed") === "1";
   const suffix = [
@@ -177,7 +180,19 @@ function ExistingStoreEntryRedirect() {
   return <Navigate to={state.organization ? `/setup/existing-store?${suffix}` : "/setup"} replace />;
 }
 
+function LegacySetupReviewRedirect() {
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  searchParams.delete("step");
+  if (searchParams.get("mode") !== "from_scratch") {
+    searchParams.set("mode", "existing_store");
+    if (!searchParams.get("estoreMode")) searchParams.set("estoreMode", "historical_backfill");
+  }
+  const suffix = searchParams.toString();
+  return <Navigate to={suffix ? `/setup?${suffix}` : "/setup"} replace />;
+}
+
 function LegacyBackfillReviewRedirect() {
   const { projectId } = useParams();
-  return <Navigate to={projectId ? `/setup/existing-store?from=setup&projectId=${encodeURIComponent(projectId)}` : "/setup/existing-store?from=setup&mode=current_stock_start"} replace />;
+  return <Navigate to={projectId ? `/setup/existing-store?from=setup&projectId=${encodeURIComponent(projectId)}` : "/setup/existing-store?from=setup&mode=historical_backfill"} replace />;
 }

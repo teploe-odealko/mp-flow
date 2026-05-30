@@ -211,7 +211,7 @@ export function ChannelFormPage() {
     },
     onSuccess: (channel) => {
       queryClient.invalidateQueries();
-      navigate(returnTo ?? `/integrations/channels/${channel.id}`);
+      navigate(returnTo ?? `/integrations/channels/${channel.id}/onboarding`);
     }
   });
 
@@ -345,6 +345,12 @@ export function ChannelFormPage() {
                 </label>
               );
             })}
+            <div className="md:col-span-2 rounded-[var(--radius-md)] border border-[var(--color-primary)] bg-[var(--color-primary-soft)] p-3 text-xs leading-relaxed flex items-start gap-2">
+              <ArrowRight size={14} className="text-[var(--color-primary)] mt-0.5 shrink-0" />
+              <span>
+                Сразу после подключения откроется перенос в учёт: загрузим карточки и остатки, поможем сопоставить товары и заполнить себестоимость, затем создадим стартовые остатки.
+              </span>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -361,7 +367,7 @@ export function ChannelFormPage() {
             submit.isPending
           }
         >
-          {submit.isPending ? <Loader2 size={14} className="animate-spin" /> : (step === "streams" ? <><Save size={14} /> Подключить</> : <>Далее <ArrowRight size={14} /></>)}
+          {submit.isPending ? <Loader2 size={14} className="animate-spin" /> : (step === "streams" ? <><Save size={14} /> Подключить и перенести в учёт</> : <>Далее <ArrowRight size={14} /></>)}
         </Button>
       </div>
     </div>

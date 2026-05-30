@@ -14,7 +14,8 @@ export default defineConfig({
   server: {
     port: 5174,
     proxy: {
-      "^/api/.*": "http://127.0.0.1:3004"
+      "^/api/.*": "http://127.0.0.1:3004",
+      "/mcp": "http://127.0.0.1:3004"
     }
   },
   build: {

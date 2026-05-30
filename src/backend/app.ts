@@ -1,10 +1,10 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { z } from "zod";
 import { AccountingApp } from "../core/accounting-app";
-import type { ChannelFinanceEvent, ChannelStreamCode, ExternalEvent, Payout, Sale, SalesChannel, SalesReturn, SyncRun } from "../core/models";
+import type { AccountingState, AgentToken, ChannelFinanceEvent, ChannelStreamCode, ExternalEvent, Payout, Sale, SalesChannel, SalesReturn, SyncRun } from "../core/models";
 import { createEmptyState, DomainError, id, nowIso, resetIds, runWithIdSequence } from "../core/utils";
 import type { RuntimePersistence } from "../infra/db/runtime-store";
 import { pluginRegistry } from "../plugins/registry";
@@ -19,6 +19,22 @@ interface CreateApiOptions {
   auth?: AuthService | null;
 }
 
+type PublicAuthUser = ReturnType<typeof publicUser>;
+
+interface McpAgentPrincipal {
+  tokenId: string;
+  workspaceId: string;
+  name: string;
+  mode: "read_only" | "read_write";
+  scopes: string[];
+}
+
+type ApiVariables = {
+  requestId?: string;
+  authUser?: PublicAuthUser;
+  authAgent?: McpAgentPrincipal;
+};
+
 const authSignupSchema = z.object({
   email: z.string().email(),
   name: z.string().trim().min(1).optional(),
@@ -32,11 +48,20 @@ const authLoginSchema = z.object({
 
 export function createApi(app = new AccountingApp(), options: CreateApiOptions = {}) {
   initHttpMetrics();
-  const api = new Hono<{ Variables: { requestId?: string; authUser?: ReturnType<typeof publicUser> } }>();
+  const api = new Hono<{ Variables: ApiVariables }>();
   const appStorage = new AsyncLocalStorage<AccountingApp>();
   const scopedApp = createRequestScopedApp(app, appStorage);
   const supportsSessions = Boolean(options.persistence?.openReadSession || options.persistence?.openWriteSession);
   const auth = options.auth === undefined ? (process.env.DATABASE_URL ? new AuthService() : null) : options.auth;
+  const devAuthUser = !auth && process.env.AUTH_REQUIRED !== "true" && process.env.NODE_ENV !== "production"
+    ? publicUser({
+        id: "dev_user_local",
+        email: "dev@mpflow.local",
+        name: "Local dev",
+        roleCode: "owner",
+        workspaceId: "default"
+      })
+    : null;
   const accessManagementDisabled = (c: any) => c.json({
     ok: false,
     error: {
@@ -68,7 +93,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
         path: c.req.path,
         status,
         durationMs: Date.now() - startedAt,
-        userId: (c.get("authUser") as { id?: string } | undefined)?.id
+        userId: (c.get("authUser") as { id?: string } | undefined)?.id,
+        agentTokenId: (c.get("authAgent") as { tokenId?: string } | undefined)?.tokenId
       };
       console.log(JSON.stringify(log));
     }
@@ -129,19 +155,41 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: await auth.logout(c) });
   });
   api.get("/api/auth/session", async (c) => {
-    if (!auth) return c.json({ ok: true, data: { user: null } });
+    if (!auth) return c.json({ ok: true, data: { user: devAuthUser } });
     const session = await auth.session(c);
     return c.json({ ok: true, data: { user: session ? publicUser(session) : null } });
   });
+  api.use("/api/*", async (c, next) => {
+    const rawKey = bearerToken(c.req.header("authorization"));
+    if (!rawKey || !rawKey.startsWith("mpf_")) {
+      return next();
+    }
+    const agent = await authenticateMcpKey(rawKey, app, options.persistence, true);
+    if (!agent) {
+      return c.json({ ok: false, error: { code: "invalid_agent_token", message: "Ключ MCP недействителен или отозван" } }, 401);
+    }
+    if (!agentAllowsMethod(agent, c.req.method)) {
+      return c.json({ ok: false, error: { code: "agent_read_only", message: "Ключ MCP разрешает только чтение" } }, 403);
+    }
+    c.set("authAgent", agent);
+    c.set("authUser", mcpAgentUser(agent));
+    return next();
+  });
   if (auth) {
     api.use("/api/*", createAuthMiddleware(auth));
+  } else if (devAuthUser) {
+    api.use("/api/*", async (c, next) => {
+      if (!c.get("authUser")) c.set("authUser", devAuthUser);
+      return next();
+    });
   }
   api.use("/api/*", async (c, next) => {
-    const authUser = c.get("authUser") as ReturnType<typeof publicUser> | undefined;
+    const authUser = c.get("authUser") as PublicAuthUser | undefined;
+    const authAgent = c.get("authAgent") as McpAgentPrincipal | undefined;
     const workspaceId = authUser?.workspaceId ?? "default";
     const isWrite = ["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method);
     const activateAuthUser = (targetApp: AccountingApp) => {
-      if (authUser) ensureAppUser(targetApp, { ...authUser, status: "active" });
+      if (authUser && !authAgent) ensureAppUser(targetApp, { ...authUser, status: "active" });
     };
 
     if (!supportsSessions) {
@@ -192,6 +240,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     resetIds();
     const next = createEmptyState();
     Object.assign(scopedApp.state, next);
+    scopedApp.resetLookupCaches();
     scopedApp.clearChannelCredentials();
     scopedApp.clearPluginSecrets();
     return c.json({ ok: true, data: scopedApp.dashboard() });
@@ -211,7 +260,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
 
   api.get("/api/dashboard", (c) => c.json({ ok: true, data: scopedApp.dashboard() }));
-  api.get("/api/state", (c) => c.json({ ok: true, data: scopedApp.state }));
+  api.get("/api/state", (c) => c.json({ ok: true, data: publicAccountingState(scopedApp.state) }));
   api.get("/api/reports", (c) => c.json({ ok: true, data: scopedApp.reports() }));
   api.get("/api/reports/profit-and-loss", (c) => c.json({ ok: true, data: scopedApp.reports().pnl }));
   api.get("/api/reports/balance-sheet", (c) => c.json({ ok: true, data: scopedApp.reports().balanceSheet }));
@@ -885,6 +934,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
         credentials,
         streams: body.streams,
         mode: body.mode,
+        autoLinkProducts: body.autoLinkProducts,
         pluginState: createPluginStateApi(scopedApp, plugin),
         pluginSecrets: createPluginSecretApi(scopedApp, plugin)
       })
@@ -945,17 +995,21 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
         credentials,
         streams: selectedStreams,
         mode,
+        autoLinkProducts: body.autoLinkProducts,
         pluginState: createPluginStateApi(scopedApp, plugin),
         pluginSecrets: createPluginSecretApi(scopedApp, plugin)
       });
-      const autoProcessing = autoProcessChannelFacts(scopedApp, channel.id, syncRun.id);
+      const autoProcessing = body.autoProcess === false
+        ? emptyAutoProcessingOutcome()
+        : autoProcessChannelFacts(scopedApp, channel.id, syncRun.id);
       syncRun.stats = {
         ...result.stats,
         auto_sales_materialized: autoProcessing.salesPosted,
         auto_returns_materialized: autoProcessing.returnsPosted,
         auto_finance_posted: autoProcessing.financePosted,
         auto_payouts_materialized: autoProcessing.payoutsMaterialized,
-        auto_needs_attention: autoProcessing.needsAttention
+        auto_needs_attention: autoProcessing.needsAttention,
+        auto_skipped_before_start: autoProcessing.skippedBeforeStart
       };
       syncRun.status = result.status === "completed" ? "completed" : "failed";
       syncRun.finishedAt = nowIso();
@@ -1355,6 +1409,9 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const project = scopedApp.state.backfillProjects.find((candidate) => candidate.id === c.req.param("id"));
     if (!project) throw new DomainError("backfill_project_not_found", "Проект импорта не найден");
     project.status = "importing";
+    if (body.syncRunId) {
+      project.payload = { ...(project.payload ?? {}), importSyncRunId: body.syncRunId };
+    }
     const payload = project.payload ?? {};
     const salesChannelId = typeof payload.salesChannelId === "string" ? payload.salesChannelId : undefined;
 
@@ -1374,6 +1431,22 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       const observedByExternal = scopedApp.state.observedStocks.filter((candidate) => candidate.channelId === salesChannelId);
       externalProducts.forEach((externalProduct) => {
         const rows = observedByExternal.filter((stock) => stock.externalProductId === externalProduct.id);
+        // Observed stock is a point-in-time LEVEL, not a flow. Each sync writes a fresh
+        // snapshot row (new observedAt) for the channel's warehouse, so summing every row
+        // would multiply the opening qty by the number of syncs. Take the latest snapshot
+        // per warehouse, then sum across warehouses (the model currently uses one warehouse
+        // per channel, but this stays correct if that ever changes).
+        const latestByWarehouse = new Map<string, { observedAt: string; qty: number }>();
+        for (const row of rows) {
+          const key = String(row.warehouseId ?? "");
+          const prev = latestByWarehouse.get(key);
+          if (!prev || row.observedAt > prev.observedAt) {
+            latestByWarehouse.set(key, { observedAt: row.observedAt, qty: row.qtyObserved });
+          }
+        }
+        const observedQty = round4(
+          [...latestByWarehouse.values()].reduce((sum, snapshot) => sum + snapshot.qty, 0)
+        );
         importedItems.push({
           id: id("backfill_item"),
           backfillProjectId: project.id,
@@ -1384,7 +1457,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
             externalSku: externalProduct.externalSku,
             externalName: externalProduct.externalName,
             imageUrl: externalProduct.imageUrl,
-            observedQty: round4(rows.reduce((sum, row) => sum + row.qtyObserved, 0)),
+            observedQty,
             warehouseId: rows[0]?.warehouseId ?? preferredWarehouseId(scopedApp, salesChannelId),
             observedAt: rows.map((row) => row.observedAt).sort().at(-1)
           },
@@ -1421,6 +1494,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (!item) throw new DomainError("backfill_item_not_found", "Строка импорта не найдена");
     if (body.status) item.status = body.status;
     if (body.payload) item.payload = { ...item.payload, ...body.payload };
+    linkBackfillItemProduct(scopedApp, item);
     evaluateBackfillItem(scopedApp, item);
     syncBackfillProjectStatus(scopedApp, project);
     return c.json({ ok: true, data: { item, project, summary: buildBackfillSummary(scopedApp, project.id) } });
@@ -1432,12 +1506,13 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     syncBackfillProjectStatus(scopedApp, project);
     return c.json({ ok: true, data: { project, items, summary: buildBackfillSummary(scopedApp, project.id) } });
   });
-  api.post("/api/onboarding/existing-store/projects/:id/create-opening-balances", (c) => {
+  api.post("/api/onboarding/existing-store/projects/:id/create-opening-balances", async (c) => {
+    const body = z.object({ allowPartial: z.boolean().optional() }).parse(await c.req.json().catch(() => ({})));
     const project = scopedApp.state.backfillProjects.find((candidate) => candidate.id === c.req.param("id"));
     if (!project) throw new DomainError("backfill_project_not_found", "Проект импорта не найден");
     const items = scopedApp.state.backfillItems.filter((item) => item.backfillProjectId === project.id).map((item) => evaluateBackfillItem(scopedApp, item));
     const blocking = items.filter((item) => !["ready", "applied"].includes(item.status));
-    if (blocking.length > 0) {
+    if (blocking.length > 0 && !body.allowPartial) {
       throw new DomainError("backfill_items_not_ready", "Не все строки готовы к созданию стартовых остатков", { items: blocking.map((item) => item.id) });
     }
 
@@ -1445,10 +1520,12 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     items
       .filter((item) => item.status === "ready")
       .forEach((item) => {
+        linkBackfillItemProduct(scopedApp, item);
+        evaluateBackfillItem(scopedApp, item);
         const payload = item.payload as Record<string, unknown>;
         const warehouseId = String(payload.warehouseId ?? preferredWarehouseId(scopedApp, typeof project.payload?.salesChannelId === "string" ? String(project.payload.salesChannelId) : undefined));
         const productId = String(payload.productId ?? "");
-        const qty = round4(Number(payload.observedQty ?? 0));
+        const qty = backfillOpeningQty(project, payload);
         const unitCostRub = round2(Number(payload.unitCostRub ?? 0));
         if (!productId || qty <= 0 || unitCostRub <= 0) return;
         const bucket = linesByWarehouse.get(warehouseId) ?? [];
@@ -1461,10 +1538,20 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
         linesByWarehouse.set(warehouseId, bucket);
       });
 
+    const historicalStartDate = isHistoricalBackfillProject(project) && typeof project.payload?.accountingStartDate === "string"
+      ? String(project.payload.accountingStartDate)
+      : undefined;
+    if (historicalStartDate) {
+      scopedApp.extendAccountingStartDateBackward(
+        historicalStartDate,
+        `Исторический старт магазина ${project.name}`
+      );
+    }
+
     const created = Array.from(linesByWarehouse.entries()).map(([warehouseId, lines]) => {
       const document = scopedApp.createOpeningBalance({
         warehouseId,
-        date: scopedApp.state.accountingPolicy?.accountingStartDate ?? new Date().toISOString().slice(0, 10),
+        date: historicalStartDate ?? scopedApp.state.accountingPolicy?.accountingStartDate ?? new Date().toISOString().slice(0, 10),
         comment: `Стартовые остатки по проекту ${project.name}`,
         lines
       });
@@ -1473,9 +1560,36 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     items.forEach((item) => {
       if (item.status === "ready") item.status = "applied";
     });
-    project.status = "applied";
-    project.payload = { ...(project.payload ?? {}), createdDocumentIds: created.map((entry) => entry.document.id), summary: buildBackfillSummary(scopedApp, project.id) };
-    return c.json({ ok: true, data: { project, created, items } });
+    const resetHistoricalEvents = isHistoricalBackfillProject(project) && typeof project.payload?.salesChannelId === "string"
+      ? resetOutOfScopeEventsForHistoricalBackfill(
+          scopedApp,
+          String(project.payload.salesChannelId),
+          typeof project.payload.importSyncRunId === "string" ? String(project.payload.importSyncRunId) : undefined,
+          historicalStartDate
+        )
+      : 0;
+    const historyProcessing = isHistoricalBackfillProject(project) && typeof project.payload?.salesChannelId === "string"
+      ? {
+          ...autoProcessChannelFacts(
+            scopedApp,
+            String(project.payload.salesChannelId),
+            typeof project.payload.importSyncRunId === "string" ? String(project.payload.importSyncRunId) : undefined
+          ),
+          resetOutOfScopeEvents: resetHistoricalEvents
+        }
+      : undefined;
+    const remaining = items.filter((item) => item.status === "needs_mapping" || item.status === "needs_cost");
+    const previousDocumentIds = Array.isArray(project.payload?.createdDocumentIds) ? project.payload.createdDocumentIds.map(String) : [];
+    const createdDocumentIds = [...previousDocumentIds, ...created.map((entry) => entry.document.id)];
+    if (remaining.length > 0) {
+      // Partial apply: keep the project resumable so deferred rows can be finished later.
+      syncBackfillProjectStatus(scopedApp, project);
+      project.payload = { ...(project.payload ?? {}), createdDocumentIds, historyProcessing, summary: buildBackfillSummary(scopedApp, project.id) };
+    } else {
+      project.status = "applied";
+      project.payload = { ...(project.payload ?? {}), createdDocumentIds, historyProcessing, summary: buildBackfillSummary(scopedApp, project.id) };
+    }
+    return c.json({ ok: true, data: { project, created, deferred: remaining.length, items, historyProcessing } });
   });
 
   api.get("/api/controls/corrections", (c) => c.json({ ok: true, data: { corrections: scopedApp.state.correctionCases, jobs: scopedApp.state.recalculationJobs } }));
@@ -1527,9 +1641,35 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const periodId = c.req.param("id");
     return c.json({ ok: true, data: { run: scopedApp.state.periodClosingRuns.filter((run) => run.periodId === periodId).at(-1), snapshots: scopedApp.state.reportSnapshots.filter((snapshot) => snapshot.periodId === periodId) } });
   });
+  api.get("/api/mcp/config", (c) => {
+    return c.json({ ok: true, data: mcpSettingsPayload(scopedApp, publicMcpEndpoint(c)) });
+  });
+  api.get("/api/mcp/keys", (c) => {
+    return c.json({ ok: true, data: mcpSettingsPayload(scopedApp, publicMcpEndpoint(c)) });
+  });
+  api.post("/api/mcp/keys", async (c) => {
+    const body = agentTokenCreateSchema.parse(await c.req.json());
+    const issued = issueMcpAgentToken(scopedApp, c.get("authUser")?.workspaceId ?? "default", body);
+    return c.json({
+      ok: true,
+      data: {
+        endpoint: publicMcpEndpoint(c),
+        token: publicAgentToken(issued.token),
+        secret: issued.secret,
+        instructions: mcpConnectionInstructions(publicMcpEndpoint(c), issued.secret)
+      }
+    });
+  });
+  api.post("/api/mcp/keys/:id/revoke", (c) => {
+    const token = scopedApp.state.agentTokens.find((candidate) => candidate.id === c.req.param("id"));
+    if (!token) throw new DomainError("agent_token_not_found", "Ключ MCP не найден");
+    token.status = "revoked";
+    token.revokedAt = nowIso();
+    return c.json({ ok: true, data: publicAgentToken(token) });
+  });
   api.get("/api/users", (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
-    return c.json({ ok: true, data: { users: scopedApp.state.users, roles: scopedApp.state.roles, agentTokens: scopedApp.state.agentTokens, auditEvents: scopedApp.state.auditEvents } });
+    return c.json({ ok: true, data: { users: scopedApp.state.users, roles: scopedApp.state.roles, agentTokens: scopedApp.state.agentTokens.map(publicAgentToken), auditEvents: scopedApp.state.auditEvents } });
   });
   api.get("/api/settings/users", (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
@@ -1538,7 +1678,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       data: {
         users: scopedApp.state.users,
         roles: scopedApp.state.roles,
-        agentTokens: scopedApp.state.agentTokens,
+        agentTokens: scopedApp.state.agentTokens.map(publicAgentToken),
         channelAgentPermissions: scopedApp.state.channelAgentPermissions
       }
     });
@@ -1592,18 +1732,13 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/controls/audit-events", (c) => c.json({ ok: true, data: scopedApp.state.auditEvents }));
   api.get("/api/agent-tokens", (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
-    return c.json({ ok: true, data: scopedApp.state.agentTokens });
+    return c.json({ ok: true, data: scopedApp.state.agentTokens.map(publicAgentToken) });
   });
   api.post("/api/agent-tokens", async (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
-    const body = z.object({
-      name: z.string(),
-      mode: z.enum(["read_only", "read_write"]).optional(),
-      scopes: z.array(z.string()).optional()
-    }).parse(await c.req.json());
-    const token = scopedApp.createAgentToken(body);
-    const secret = `mpf_${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
-    return c.json({ ok: true, data: { ...token, secret } });
+    const body = agentTokenCreateSchema.parse(await c.req.json());
+    const issued = issueMcpAgentToken(scopedApp, c.get("authUser")?.workspaceId ?? "default", body);
+    return c.json({ ok: true, data: { ...publicAgentToken(issued.token), secret: issued.secret } });
   });
   api.post("/api/agent-tokens/:id/revoke", (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
@@ -1611,7 +1746,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (!token) throw new DomainError("agent_token_not_found", "Токен агента не найден");
     token.status = "revoked";
     token.revokedAt = nowIso();
-    return c.json({ ok: true, data: token });
+    return c.json({ ok: true, data: publicAgentToken(token) });
   });
   api.post("/api/channels/:id/agent-permission", async (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
@@ -1622,6 +1757,26 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (!existing) scopedApp.state.channelAgentPermissions.push(permission);
     return c.json({ ok: true, data: permission });
   });
+  api.get("/mcp", (c) => {
+    return c.json({ error: "SSE для MCP не включен. Используйте Streamable HTTP POST." }, 405);
+  });
+  api.post("/mcp", async (c) => {
+    const originError = validateMcpOrigin(c);
+    if (originError) return originError;
+
+    const rawKey = bearerToken(c.req.header("authorization"));
+    if (!rawKey) {
+      return c.json({ error: "Укажите Authorization: Bearer <ключ MCP>" }, 401);
+    }
+    const agent = await authenticateMcpKey(rawKey, app, options.persistence, true);
+    if (!agent) {
+      return c.json({ error: "Ключ MCP недействителен или отозван" }, 401);
+    }
+
+    const body = await c.req.json().catch(() => undefined);
+    return handleMcpJsonRpc(c, api, rawKey, agent, body);
+  });
+  api.delete("/mcp", (c) => c.body(null, 405));
 
   return api;
 }
@@ -1638,6 +1793,441 @@ function createRequestScopedApp(baseApp: AccountingApp, storage: AsyncLocalStora
       return Reflect.set(actual, property, value, actual);
     }
   }) as AccountingApp;
+}
+
+const MCP_PROTOCOL_VERSION = "2025-06-18";
+const MCP_SERVER_VERSION = "0.1.0";
+const MCP_BLOCKED_API_PREFIXES = [
+  "/api/auth",
+  "/api/dev",
+  "/api/debug",
+  "/api/mcp/keys",
+  "/api/agent-tokens",
+  "/api/settings/users",
+  "/api/users"
+];
+
+const agentTokenCreateSchema = z.object({
+  name: z.string().trim().min(1),
+  mode: z.enum(["read_only", "read_write"]).optional(),
+  scopes: z.array(z.string().trim().min(1)).optional()
+});
+
+const MCP_TOOL_DEFINITIONS = [
+  {
+    name: "mpflow_api_request",
+    description: "Выполняет существующий HTTP API MPFlow от имени MCP-ключа. Read-only ключи могут выполнять только GET/HEAD.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        method: { type: "string", enum: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"], default: "GET" },
+        path: { type: "string", description: "Путь существующего API, например /api/dashboard или /api/products" },
+        query: { type: "object", additionalProperties: { type: ["string", "number", "boolean"] } },
+        body: { description: "JSON body для POST/PUT/PATCH/DELETE" }
+      },
+      required: ["path"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "mpflow_api_get",
+    description: "Короткая readonly-обертка над GET существующего API MPFlow.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Путь существующего API, например /api/reports или /api/documents" },
+        query: { type: "object", additionalProperties: { type: ["string", "number", "boolean"] } }
+      },
+      required: ["path"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "mpflow_dashboard",
+    description: "Возвращает текущий дашборд личного кабинета MPFlow.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "mpflow_reports",
+    description: "Возвращает набор управленческих отчетов MPFlow.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "mpflow_api_catalog",
+    description: "Показывает основные API-зоны и примеры путей, доступные через mpflow_api_request.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  }
+];
+
+function issueMcpAgentToken(app: AccountingApp, workspaceId: string, input: z.infer<typeof agentTokenCreateSchema>) {
+  const mode = input.mode ?? (input.scopes?.some((scope) => /write|post|patch|delete|sync/i.test(scope)) ? "read_write" : "read_only");
+  const scopes = input.scopes?.length ? input.scopes : defaultMcpScopes(mode);
+  const token = app.createAgentToken({ name: input.name, mode, scopes });
+  const key = createMcpKey(workspaceId, token.id);
+  token.maskedToken = key.maskedToken;
+  token.tokenHash = key.tokenHash;
+  return { token, secret: key.secret };
+}
+
+async function authenticateMcpKey(
+  rawKey: string,
+  app: AccountingApp,
+  persistence: RuntimePersistence | undefined,
+  touch: boolean
+): Promise<McpAgentPrincipal | null> {
+  const parsed = parseMcpKey(rawKey);
+  if (!parsed) return null;
+
+  const verify = (targetApp: AccountingApp) => {
+    const token = targetApp.state.agentTokens.find((candidate) => candidate.id === parsed.tokenId);
+    if (!token || token.status !== "active" || !token.tokenHash || !safeEqual(token.tokenHash, hashToken(rawKey))) {
+      return null;
+    }
+    if (touch) token.lastUsedAt = nowIso();
+    return {
+      tokenId: token.id,
+      workspaceId: parsed.workspaceId,
+      name: token.name,
+      mode: token.mode,
+      scopes: token.scopes
+    } satisfies McpAgentPrincipal;
+  };
+
+  if (!persistence?.openReadSession && !persistence?.openWriteSession) {
+    if (parsed.workspaceId !== "default") return null;
+    return verify(app);
+  }
+
+  const session = touch && persistence.openWriteSession
+    ? await persistence.openWriteSession(parsed.workspaceId)
+    : await persistence.openReadSession?.(parsed.workspaceId);
+  if (!session) return null;
+
+  try {
+    const principal = verify(session.app);
+    if (principal && touch && session.commit) {
+      await session.commit();
+    } else {
+      await session.rollback?.();
+    }
+    return principal;
+  } catch (error) {
+    await session.rollback?.().catch(() => undefined);
+    throw error;
+  } finally {
+    await session.close?.();
+  }
+}
+
+function createMcpKey(workspaceId: string, tokenId: string) {
+  const workspacePart = encodeKeyPart(workspaceId);
+  const tokenPart = encodeKeyPart(tokenId);
+  const secretPart = randomBytes(32).toString("base64url");
+  const secret = `mpf_${workspacePart}.${tokenPart}.${secretPart}`;
+  return {
+    secret,
+    tokenHash: hashToken(secret),
+    maskedToken: `mpf_${workspaceId}.${tokenId}.••••${secretPart.slice(-6)}`
+  };
+}
+
+function parseMcpKey(rawKey: string) {
+  const match = /^mpf_([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$/.exec(rawKey.trim());
+  if (!match) return null;
+  try {
+    return {
+      workspaceId: decodeKeyPart(match[1]),
+      tokenId: decodeKeyPart(match[2])
+    };
+  } catch {
+    return null;
+  }
+}
+
+function encodeKeyPart(value: string) {
+  return Buffer.from(value, "utf8").toString("base64url");
+}
+
+function decodeKeyPart(value: string) {
+  return Buffer.from(value, "base64url").toString("utf8");
+}
+
+function hashToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function safeEqual(actual: string, expected: string) {
+  const actualBuffer = Buffer.from(actual);
+  const expectedBuffer = Buffer.from(expected);
+  return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
+function defaultMcpScopes(mode: "read_only" | "read_write") {
+  return mode === "read_only" ? ["api:read", "mcp:tools"] : ["api:read", "api:write", "mcp:tools"];
+}
+
+function publicAgentToken(token: AgentToken) {
+  const { tokenHash: _tokenHash, ...publicToken } = token;
+  return publicToken;
+}
+
+function publicAccountingState(state: AccountingState): AccountingState {
+  return {
+    ...state,
+    agentTokens: state.agentTokens.map(publicAgentToken)
+  };
+}
+
+function mcpSettingsPayload(app: AccountingApp, endpoint: string) {
+  return {
+    endpoint,
+    keys: app.state.agentTokens.map(publicAgentToken),
+    tools: MCP_TOOL_DEFINITIONS.map(({ name, description }) => ({ name, description })),
+    instructions: mcpConnectionInstructions(endpoint)
+  };
+}
+
+function mcpConnectionInstructions(endpoint: string, secret = "<ключ из MPFlow>") {
+  return {
+    codex: {
+      mcpServers: {
+        mpflow: {
+          type: "http",
+          url: endpoint,
+          headers: { Authorization: `Bearer ${secret}` }
+        }
+      }
+    },
+    claude: {
+      mcpServers: {
+        mpflow: {
+          type: "http",
+          url: endpoint,
+          headers: { Authorization: `Bearer ${secret}` }
+        }
+      }
+    }
+  };
+}
+
+function publicMcpEndpoint(c: { req: { url: string } }) {
+  const configured = process.env.PUBLIC_APP_URL?.trim();
+  const origin = configured || new URL(c.req.url).origin;
+  return `${origin.replace(/\/+$/, "")}/mcp`;
+}
+
+function bearerToken(header: string | undefined) {
+  const match = /^Bearer\s+(.+)$/i.exec(header?.trim() ?? "");
+  return match?.[1]?.trim();
+}
+
+function agentAllowsMethod(agent: McpAgentPrincipal, method: string) {
+  if (["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase())) return true;
+  return agent.mode === "read_write" && agent.scopes.includes("api:write");
+}
+
+function mcpAgentUser(agent: McpAgentPrincipal): PublicAuthUser {
+  return publicUser({
+    id: `mcp_agent_${agent.tokenId}`,
+    email: `agent+${agent.tokenId}@mpflow.local`,
+    name: `MCP: ${agent.name}`,
+    roleCode: agent.mode === "read_only" ? "viewer" : "operator",
+    workspaceId: agent.workspaceId
+  });
+}
+
+function validateMcpOrigin(c: any) {
+  const origin = c.req.header("origin");
+  if (!origin) return null;
+  const endpointOrigin = new URL(publicMcpEndpoint(c)).origin;
+  const requestOrigin = new URL(c.req.url).origin;
+  if (origin === endpointOrigin || origin === requestOrigin) return null;
+  return c.json({ error: "Недопустимый Origin для MCP" }, 403);
+}
+
+async function handleMcpJsonRpc(
+  c: any,
+  api: Hono<{ Variables: ApiVariables }>,
+  rawKey: string,
+  agent: McpAgentPrincipal,
+  body: unknown
+) {
+  const message = body as { jsonrpc?: string; id?: string | number | null; method?: string; params?: any } | undefined;
+  if (!message || message.jsonrpc !== "2.0" || typeof message.method !== "string") {
+    return mcpError(c, null, -32600, "Некорректный JSON-RPC запрос");
+  }
+  if (message.id === undefined || message.method.startsWith("notifications/")) {
+    return c.body(null, 202);
+  }
+
+  try {
+    if (message.method === "initialize") {
+      return mcpResult(c, message.id, {
+        protocolVersion: MCP_PROTOCOL_VERSION,
+        capabilities: { tools: {}, resources: {} },
+        serverInfo: { name: "mpflow", version: MCP_SERVER_VERSION },
+        instructions: "Используйте tools/list, затем tools/call. Все вызовы выполняются в личном кабинете, привязанном к MCP-ключу."
+      });
+    }
+    if (message.method === "ping") {
+      return mcpResult(c, message.id, {});
+    }
+    if (message.method === "tools/list") {
+      return mcpResult(c, message.id, { tools: MCP_TOOL_DEFINITIONS });
+    }
+    if (message.method === "tools/call") {
+      const params = z.object({
+        name: z.string(),
+        arguments: z.record(z.string(), z.unknown()).optional()
+      }).parse(message.params ?? {});
+      const result = await callMcpTool(api, rawKey, agent, params.name, params.arguments ?? {});
+      return mcpResult(c, message.id, result);
+    }
+    if (message.method === "resources/list") {
+      return mcpResult(c, message.id, {
+        resources: [
+          { uri: "mpflow://dashboard", name: "Дашборд MPFlow", mimeType: "application/json" },
+          { uri: "mpflow://reports", name: "Отчеты MPFlow", mimeType: "application/json" }
+        ]
+      });
+    }
+    if (message.method === "resources/read") {
+      const params = z.object({ uri: z.string() }).parse(message.params ?? {});
+      const path = params.uri === "mpflow://dashboard" ? "/api/dashboard" : params.uri === "mpflow://reports" ? "/api/reports" : "";
+      if (!path) return mcpError(c, message.id, -32602, "Неизвестный MCP resource");
+      const data = await callMpflowApi(api, rawKey, agent, { method: "GET", path });
+      return mcpResult(c, message.id, {
+        contents: [{ uri: params.uri, mimeType: "application/json", text: JSON.stringify(data, null, 2) }]
+      });
+    }
+    return mcpError(c, message.id, -32601, `Метод MCP не поддержан: ${message.method}`);
+  } catch (error) {
+    if (error instanceof DomainError) {
+      return mcpError(c, message.id, -32000, error.message, { code: error.code, details: error.details });
+    }
+    if (error instanceof z.ZodError) {
+      return mcpError(c, message.id, -32602, "Некорректные параметры MCP", error.issues);
+    }
+    throw error;
+  }
+}
+
+async function callMcpTool(
+  api: Hono<{ Variables: ApiVariables }>,
+  rawKey: string,
+  agent: McpAgentPrincipal,
+  name: string,
+  args: Record<string, unknown>
+) {
+  if (name === "mpflow_api_catalog") {
+    return mcpToolData({
+      tools: MCP_TOOL_DEFINITIONS.map(({ name, description }) => ({ name, description })),
+      examples: [
+        "GET /api/dashboard",
+        "GET /api/reports",
+        "GET /api/products",
+        "GET /api/documents",
+        "GET /api/channels",
+        "POST /api/documents"
+      ],
+      blockedPrefixes: MCP_BLOCKED_API_PREFIXES
+    });
+  }
+  if (name === "mpflow_dashboard") {
+    return mcpToolData(await callMpflowApi(api, rawKey, agent, { method: "GET", path: "/api/dashboard" }));
+  }
+  if (name === "mpflow_reports") {
+    return mcpToolData(await callMpflowApi(api, rawKey, agent, { method: "GET", path: "/api/reports" }));
+  }
+  if (name === "mpflow_api_get") {
+    const input = z.object({
+      path: z.string(),
+      query: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional()
+    }).parse(args);
+    return mcpToolData(await callMpflowApi(api, rawKey, agent, { method: "GET", path: input.path, query: input.query }));
+  }
+  if (name === "mpflow_api_request") {
+    const input = z.object({
+      method: z.enum(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]).optional(),
+      path: z.string(),
+      query: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
+      body: z.unknown().optional()
+    }).parse(args);
+    const data = await callMpflowApi(api, rawKey, agent, { method: input.method ?? "GET", path: input.path, query: input.query, body: input.body });
+    return mcpToolData(data, !data.ok);
+  }
+  throw new DomainError("mcp_tool_not_found", `Инструмент MCP не найден: ${name}`);
+}
+
+async function callMpflowApi(
+  api: Hono<{ Variables: ApiVariables }>,
+  rawKey: string,
+  agent: McpAgentPrincipal,
+  input: { method: string; path: string; query?: Record<string, string | number | boolean>; body?: unknown }
+) {
+  const method = input.method.toUpperCase();
+  if (!agentAllowsMethod(agent, method)) {
+    throw new DomainError("agent_read_only", "Ключ MCP разрешает только чтение");
+  }
+  const path = normalizeMcpApiPath(input.path, input.query);
+  if (MCP_BLOCKED_API_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))) {
+    throw new DomainError("mcp_api_path_blocked", "Этот API-путь недоступен через MCP");
+  }
+  const response = await api.request(path, {
+    method,
+    headers: {
+      "Accept": "application/json",
+      "Authorization": `Bearer ${rawKey}`,
+      ...(input.body === undefined || method === "GET" || method === "HEAD" ? {} : { "Content-Type": "application/json" })
+    },
+    body: input.body === undefined || method === "GET" || method === "HEAD" ? undefined : JSON.stringify(input.body)
+  });
+  const text = method === "HEAD" ? "" : await response.text();
+  return {
+    ok: response.ok,
+    status: response.status,
+    path,
+    data: parseJsonIfPossible(text)
+  };
+}
+
+function normalizeMcpApiPath(path: string, query: Record<string, string | number | boolean> | undefined) {
+  if (!path.startsWith("/")) {
+    throw new DomainError("mcp_api_path_invalid", "API-путь должен начинаться с /api/");
+  }
+  const url = new URL(path, "http://mpflow.local");
+  if (!url.pathname.startsWith("/api/")) {
+    throw new DomainError("mcp_api_path_invalid", "Через MCP доступны только пути /api/*");
+  }
+  for (const [key, value] of Object.entries(query ?? {})) {
+    url.searchParams.set(key, String(value));
+  }
+  return `${url.pathname}${url.search}`;
+}
+
+function parseJsonIfPossible(text: string) {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function mcpToolData(data: unknown, isError = false) {
+  return {
+    content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+    structuredContent: data,
+    isError
+  };
+}
+
+function mcpResult(c: any, id: string | number | null | undefined, result: unknown) {
+  return c.json({ jsonrpc: "2.0", id, result });
+}
+
+function mcpError(c: any, id: string | number | null | undefined, code: number, message: string, data?: unknown) {
+  return c.json({ jsonrpc: "2.0", id, error: { code, message, data } }, code === -32601 ? 404 : 200);
 }
 
 const bootstrapSchema = z.object({
@@ -1866,6 +2456,8 @@ const pluginSyncSchema = z.object({
   since: z.string().optional(),
   mode: z.enum(["incremental", "full", "backfill"]).optional(),
   streams: z.array(streamCodeSchema).optional(),
+  autoLinkProducts: z.boolean().optional(),
+  autoProcess: z.boolean().optional(),
   credentials: z.object({
     clientId: z.string().optional(),
     apiKey: z.string().optional(),
@@ -1937,7 +2529,10 @@ const recalculationJobSchema = z.object({
   scope: z.record(z.string(), z.unknown()).optional()
 });
 const backfillProjectSchema = z.object({ name: z.string().optional(), payload: z.record(z.string(), z.unknown()).optional() });
-const backfillImportSchema = z.object({ product: z.record(z.string(), z.unknown()).optional() });
+const backfillImportSchema = z.object({
+  product: z.record(z.string(), z.unknown()).optional(),
+  syncRunId: z.string().optional()
+});
 const userInviteSchema = z.object({ email: z.string().email(), name: z.string().optional(), roleCode: z.enum(["owner", "accountant", "operator", "viewer"]).optional() });
 
 const navigationMeta = [
@@ -2101,28 +2696,127 @@ function preferredWarehouseId(app: AccountingApp, salesChannelId?: string) {
     ?? "";
 }
 
+function isHistoricalBackfillProject(project: any) {
+  return project?.payload?.mode === "historical_backfill";
+}
+
+function backfillOpeningQty(project: any, payload: Record<string, unknown>) {
+  const rawQty = isHistoricalBackfillProject(project) ? payload.openingQty : payload.observedQty;
+  return round4(Math.max(0, Number(rawQty ?? payload.observedQty ?? 0)));
+}
+
+function linkBackfillItemProduct(app: AccountingApp, item: any) {
+  const payload = item.payload as Record<string, unknown> | undefined;
+  const externalProductId = typeof payload?.externalProductId === "string" ? payload.externalProductId : undefined;
+  const productId = typeof payload?.productId === "string" ? payload.productId : undefined;
+  if (!externalProductId || !productId) return;
+  app.linkExternalProduct({ externalProductId, productId });
+}
+
+function applyHistoricalBackfillProjection(app: AccountingApp, project: any, payload: Record<string, unknown>) {
+  const observedQty = round4(Number(payload.observedQty ?? payload.qty ?? 0));
+  payload.observedQty = observedQty;
+  if (!isHistoricalBackfillProject(project)) {
+    return observedQty;
+  }
+  const salesQty = historicalEventQty(app, project, payload, "sale");
+  const returnsQty = historicalEventQty(app, project, payload, "return");
+  const openingQty = round4(Math.max(0, observedQty + salesQty - returnsQty));
+  payload.currentStockQty = observedQty;
+  payload.historicalSalesQty = salesQty;
+  payload.historicalReturnsQty = returnsQty;
+  payload.openingQty = openingQty;
+  return openingQty;
+}
+
+function historicalEventQty(
+  app: AccountingApp,
+  project: any,
+  payload: Record<string, unknown>,
+  eventType: "sale" | "return"
+) {
+  const salesChannelId = typeof project?.payload?.salesChannelId === "string" ? String(project.payload.salesChannelId) : undefined;
+  if (!salesChannelId) return 0;
+  const accountingStartDate = typeof project?.payload?.accountingStartDate === "string" ? String(project.payload.accountingStartDate) : undefined;
+  const importSyncRunId = typeof project?.payload?.importSyncRunId === "string" ? String(project.payload.importSyncRunId) : undefined;
+  return round4(app.state.externalEvents.reduce((sum, event) => {
+    if (event.channelId !== salesChannelId) return sum;
+    if (event.eventType !== eventType) return sum;
+    if (importSyncRunId && event.syncRunId !== importSyncRunId) return sum;
+    if (accountingStartDate && event.occurredAt.slice(0, 10) < accountingStartDate) return sum;
+    if (event.status === "failed") return sum;
+    if (event.status === "ignored" && !isBeforeStartIgnoredEvent(event)) return sum;
+    return round4(sum + eventQtyForBackfillItem(app, event, payload));
+  }, 0));
+}
+
+function eventQtyForBackfillItem(app: AccountingApp, event: ExternalEvent, payload: Record<string, unknown>) {
+  const normalized = event.normalizedPayload as Record<string, unknown>;
+  const rawLines = Array.isArray(normalized.lines)
+    ? normalized.lines as Array<Record<string, unknown>>
+    : [{ sku: normalized.sku, qty: normalized.qty }];
+  return rawLines.reduce((sum, line) => {
+    if (!lineMatchesBackfillItem(app, event.channelId, line, payload)) return sum;
+    const qty = Number(line.qty ?? 1);
+    return round4(sum + (Number.isFinite(qty) && qty > 0 ? qty : 0));
+  }, 0);
+}
+
+function lineMatchesBackfillItem(
+  app: AccountingApp,
+  channelId: string,
+  line: Record<string, unknown>,
+  payload: Record<string, unknown>
+) {
+  const targetExternalProductId = typeof payload.externalProductId === "string" ? payload.externalProductId : undefined;
+  const targetProductId = typeof payload.productId === "string" ? payload.productId : undefined;
+  const lineExternalProductId = typeof line.externalProductId === "string" ? line.externalProductId : undefined;
+  if (targetExternalProductId && lineExternalProductId) return targetExternalProductId === lineExternalProductId;
+
+  const externalSku = String(line.sku ?? "").trim();
+  const externalProduct = externalSku
+    ? app.state.externalProducts.find((product) => product.channelId === channelId && product.externalSku === externalSku)
+    : undefined;
+  if (targetExternalProductId) return externalProduct?.id === targetExternalProductId;
+  if (!targetProductId || !externalProduct) return false;
+  return app.state.productExternalLinks.some((link) =>
+    link.externalProductId === externalProduct.id &&
+    link.productId === targetProductId &&
+    link.status === "active"
+  );
+}
+
 function evaluateBackfillItem(app: AccountingApp, item: any) {
   const payload = { ...(item.payload ?? {}) } as Record<string, unknown>;
+  const project = app.state.backfillProjects.find((candidate) => candidate.id === item.backfillProjectId);
   const externalProductId = typeof payload.externalProductId === "string" ? payload.externalProductId : undefined;
   const externalProduct = externalProductId ? app.state.externalProducts.find((candidate) => candidate.id === externalProductId) : undefined;
   const linkedProductId = externalProductId
     ? app.state.productExternalLinks.find((link) => link.externalProductId === externalProductId)?.productId
     : undefined;
   const sku = String(payload.externalSku ?? payload.sku ?? externalProduct?.externalSku ?? "");
+  // Auto-match disabled: we only resolve a product when the user has made it explicit —
+  // either a chosen productId on the item, or a real external→internal link. We deliberately
+  // do NOT guess by SKU equality, so imported cards stay needs_mapping until the user maps
+  // or creates an internal product.
   const inferredProductId = typeof payload.productId === "string" && payload.productId
     ? String(payload.productId)
-    : linkedProductId
-      ?? app.state.products.find((candidate) => candidate.sku === sku)?.id;
+    : linkedProductId;
   if (inferredProductId) payload.productId = inferredProductId;
   payload.externalSku = sku || externalProduct?.externalSku || "";
   payload.externalName = String(payload.externalName ?? externalProduct?.externalName ?? payload.name ?? "");
   payload.channelName = String(payload.channelName ?? (payload.salesChannelId && app.state.salesChannels.find((candidate) => candidate.id === payload.salesChannelId)?.name) ?? "");
   payload.warehouseId = String(payload.warehouseId ?? preferredWarehouseId(app, typeof payload.salesChannelId === "string" ? payload.salesChannelId : undefined));
-  payload.observedQty = round4(Number(payload.observedQty ?? payload.qty ?? 0));
+  const openingQty = applyHistoricalBackfillProjection(app, project, payload);
   const inferredUnitCost = Number(payload.unitCostRub ?? averageUnitCost(app, String(payload.productId ?? "")) ?? 0);
   if (inferredUnitCost > 0) payload.unitCostRub = round2(inferredUnitCost);
-  payload.totalCostRub = round2(Number(payload.unitCostRub ?? 0) * Number(payload.observedQty ?? 0));
+  payload.totalCostRub = round2(Number(payload.unitCostRub ?? 0) * openingQty);
 
+  if (item.status === "applied") {
+    // Already turned into an opening balance; never downgrade or re-apply on re-evaluation.
+    item.payload = payload;
+    return item;
+  }
   if (!payload.productId) {
     item.status = "needs_mapping";
   } else if (!(Number(payload.unitCostRub ?? 0) > 0)) {
@@ -2135,30 +2829,34 @@ function evaluateBackfillItem(app: AccountingApp, item: any) {
 }
 
 function buildBackfillSummary(app: AccountingApp, projectId: string) {
+  const project = app.state.backfillProjects.find((candidate) => candidate.id === projectId);
   const items = app.state.backfillItems.filter((item) => item.backfillProjectId === projectId);
   const totalItems = items.length;
   const mapped = items.filter((item) => item.status === "ready" || item.status === "applied").length;
   const unmatched = items.filter((item) => item.status === "needs_mapping").length;
   const missingCost = items.filter((item) => item.status === "needs_cost").length;
-  const totalQty = round4(items.reduce((sum, item) => sum + Number(item.payload?.observedQty ?? 0), 0));
+  const totalQty = round4(items.reduce((sum, item) => sum + backfillOpeningQty(project, (item.payload ?? {}) as Record<string, unknown>), 0));
+  const totalCurrentQty = round4(items.reduce((sum, item) => sum + Number(item.payload?.observedQty ?? 0), 0));
+  const totalHistoricalSalesQty = round4(items.reduce((sum, item) => sum + Number(item.payload?.historicalSalesQty ?? 0), 0));
+  const totalHistoricalReturnsQty = round4(items.reduce((sum, item) => sum + Number(item.payload?.historicalReturnsQty ?? 0), 0));
   const totalCost = round2(items.reduce((sum, item) => sum + Number(item.payload?.totalCostRub ?? 0), 0));
   const warnings: string[] = [];
   if (totalItems === 0) warnings.push("Карточки и остатки не загружены");
   if (unmatched > 0) warnings.push(`Нужно сопоставить товаров: ${unmatched}`);
   if (missingCost > 0) warnings.push(`Нужно заполнить себестоимость строк: ${missingCost}`);
-  return { totalItems, mapped, unmatched, missingCost, totalQty, totalCost, warnings };
+  return { totalItems, mapped, unmatched, missingCost, totalQty, totalCurrentQty, totalHistoricalSalesQty, totalHistoricalReturnsQty, totalCost, warnings };
 }
 
 function materializeSaleEvent(app: AccountingApp, event: ExternalEvent): Sale {
   if (event.eventType !== "sale") {
     throw new DomainError("external_event_type_invalid", "Событие не относится к продажам");
   }
-  if (event.materializedDocumentId) {
-    const existingSale = app.state.sales.find((candidate) => candidate.documentId === event.materializedDocumentId);
-    if (existingSale) {
-      return existingSale.status === "draft" ? app.postSale(existingSale.id) : existingSale;
-    }
-  }
+	  if (event.materializedDocumentId) {
+	    const existingSale = app.state.sales.find((candidate) => candidate.documentId === event.materializedDocumentId);
+	    if (existingSale) {
+	      return existingSale.status === "draft" || existingSale.status === "needs_attention" ? app.postSale(existingSale.id) : existingSale;
+	    }
+	  }
   const payload = event.normalizedPayload as Record<string, unknown>;
   const rawLines = Array.isArray(payload.lines)
     ? payload.lines as Array<Record<string, unknown>>
@@ -2426,8 +3124,49 @@ function markExternalEventAwaitingSale(event: ExternalEvent, reason: string) {
   event.updatedAt = nowIso();
 }
 
+// A fact dated before the accounting start is outside the accounting horizon — it is already
+// reflected in the opening balance. Mark it as cleanly out-of-scope ("ignored") instead of
+// letting it pile up as inbox noise that needs attention.
+function markExternalEventOutOfScope(event: ExternalEvent, reason: string) {
+  event.status = "ignored";
+  event.reason = reason;
+  event.lastError = undefined;
+  event.updatedAt = nowIso();
+}
+
+function isBeforeStartIgnoredEvent(event: ExternalEvent) {
+  return event.status === "ignored" && String(event.reason ?? "").includes("раньше старта учёта");
+}
+
+function resetOutOfScopeEventsForHistoricalBackfill(
+  app: AccountingApp,
+  channelId: string,
+  syncRunId?: string,
+  accountingStartDate?: string
+) {
+  if (!accountingStartDate) return 0;
+  let reset = 0;
+  for (const event of app.state.externalEvents) {
+    if (event.channelId !== channelId) continue;
+    if (syncRunId && event.syncRunId !== syncRunId) continue;
+    if (!isBeforeStartIgnoredEvent(event)) continue;
+    if (event.occurredAt.slice(0, 10) < accountingStartDate) continue;
+    if (event.materializedDocumentId) continue;
+    event.status = "new";
+    event.reason = undefined;
+    event.lastError = undefined;
+    event.updatedAt = nowIso();
+    reset += 1;
+  }
+  return reset;
+}
+
 function isFinanceAwaitingSaleError(error: unknown) {
   return error instanceof DomainError && error.code === "finance_sale_link_required";
+}
+
+function isBeforeAccountingStartError(error: unknown) {
+  return error instanceof DomainError && error.code === "before_accounting_start";
 }
 
 function replayDeferredFinanceEvents(app: AccountingApp, channelId: string) {
@@ -2450,6 +3189,10 @@ function replayDeferredFinanceEvents(app: AccountingApp, channelId: string) {
     } catch (error) {
       if (isFinanceAwaitingSaleError(error)) {
         markExternalEventAwaitingSale(event, (error as DomainError).message);
+        continue;
+      }
+      if (isBeforeAccountingStartError(error)) {
+        markExternalEventOutOfScope(event, "Дата операции раньше старта учёта — вне горизонта учёта");
         continue;
       }
       if (error instanceof DomainError) {
@@ -2487,14 +3230,23 @@ function allocateAmountAcrossSales(sales: Array<{ saleId: string; grossAmountRub
   });
 }
 
-function autoProcessChannelFacts(app: AccountingApp, channelId: string, syncRunId?: string) {
-  const outcome = {
+function compareExternalEventsByDate(left: ExternalEvent, right: ExternalEvent) {
+  return left.occurredAt.localeCompare(right.occurredAt) || left.externalId.localeCompare(right.externalId) || left.id.localeCompare(right.id);
+}
+
+function emptyAutoProcessingOutcome() {
+  return {
     salesPosted: 0,
     returnsPosted: 0,
     financePosted: 0,
     payoutsMaterialized: 0,
-    needsAttention: 0
+    needsAttention: 0,
+    skippedBeforeStart: 0
   };
+}
+
+function autoProcessChannelFacts(app: AccountingApp, channelId: string, syncRunId?: string) {
+  const outcome = emptyAutoProcessingOutcome();
   const matchesCurrentRun = (event: ExternalEvent) => event.channelId === channelId && (!syncRunId || event.syncRunId === syncRunId);
   const currentRunEventIds = new Set(
     app.state.externalEvents
@@ -2506,13 +3258,18 @@ function autoProcessChannelFacts(app: AccountingApp, channelId: string, syncRunI
   const currentRunEvents = app.state.externalEvents.filter((event) =>
     matchesCurrentRun(event) && processableStatuses.has(event.status)
   );
-  const sales = currentRunEvents.filter((event) => event.eventType === "sale");
+  const sales = currentRunEvents.filter((event) => event.eventType === "sale").sort(compareExternalEventsByDate);
   for (const event of sales) {
     try {
       const sale = materializeSaleEvent(app, event);
       if (sale.status === "shipped" || sale.status === "posted") outcome.salesPosted += 1;
       else outcome.needsAttention += 1;
     } catch (error) {
+      if (isBeforeAccountingStartError(error)) {
+        markExternalEventOutOfScope(event, "Дата продажи раньше старта учёта — учтена в стартовом остатке, отдельная проводка не нужна");
+        outcome.skippedBeforeStart += 1;
+        continue;
+      }
       if (error instanceof DomainError) {
         markExternalEventNeedsAttention(event, error.message);
         outcome.needsAttention += 1;
@@ -2522,23 +3279,7 @@ function autoProcessChannelFacts(app: AccountingApp, channelId: string, syncRunI
     }
   }
 
-  const returns = currentRunEvents.filter((event) => event.eventType === "return");
-  for (const event of returns) {
-    try {
-      const salesReturn = materializeReturnEvent(app, event);
-      if (salesReturn.status === "posted") outcome.returnsPosted += 1;
-      else outcome.needsAttention += 1;
-    } catch (error) {
-      if (error instanceof DomainError) {
-        markExternalEventNeedsAttention(event, error.message);
-        outcome.needsAttention += 1;
-        continue;
-      }
-      throw error;
-    }
-  }
-
-  const saleAccruals = currentRunEvents.filter((event) => event.eventType === "sale_accrual");
+  const saleAccruals = currentRunEvents.filter((event) => event.eventType === "sale_accrual").sort(compareExternalEventsByDate);
   for (const event of saleAccruals) {
     try {
       materializeSaleAccrualEvent(app, event);
@@ -2546,6 +3287,32 @@ function autoProcessChannelFacts(app: AccountingApp, channelId: string, syncRunI
     } catch (error) {
       if (isFinanceAwaitingSaleError(error)) {
         markExternalEventAwaitingSale(event, (error as DomainError).message);
+        continue;
+      }
+      if (isBeforeAccountingStartError(error)) {
+        markExternalEventOutOfScope(event, "Дата начисления раньше старта учёта — вне горизонта учёта");
+        outcome.skippedBeforeStart += 1;
+        continue;
+      }
+      if (error instanceof DomainError) {
+        markExternalEventNeedsAttention(event, error.message);
+        outcome.needsAttention += 1;
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  const returns = currentRunEvents.filter((event) => event.eventType === "return").sort(compareExternalEventsByDate);
+  for (const event of returns) {
+    try {
+      const salesReturn = materializeReturnEvent(app, event);
+      if (salesReturn.status === "posted") outcome.returnsPosted += 1;
+      else outcome.needsAttention += 1;
+    } catch (error) {
+      if (isBeforeAccountingStartError(error)) {
+        markExternalEventOutOfScope(event, "Дата возврата раньше старта учёта — вне горизонта учёта");
+        outcome.skippedBeforeStart += 1;
         continue;
       }
       if (error instanceof DomainError) {
@@ -2567,6 +3334,11 @@ function autoProcessChannelFacts(app: AccountingApp, channelId: string, syncRunI
         markExternalEventAwaitingSale(event, (error as DomainError).message);
         continue;
       }
+      if (isBeforeAccountingStartError(error)) {
+        markExternalEventOutOfScope(event, "Дата операции раньше старта учёта — вне горизонта учёта");
+        outcome.skippedBeforeStart += 1;
+        continue;
+      }
       if (error instanceof DomainError) {
         markExternalEventNeedsAttention(event, error.message);
         outcome.needsAttention += 1;
@@ -2584,6 +3356,11 @@ function autoProcessChannelFacts(app: AccountingApp, channelId: string, syncRunI
       materializePayoutEvent(app, event);
       outcome.payoutsMaterialized += 1;
     } catch (error) {
+      if (isBeforeAccountingStartError(error)) {
+        markExternalEventOutOfScope(event, "Дата выплаты раньше старта учёта — вне горизонта учёта");
+        outcome.skippedBeforeStart += 1;
+        continue;
+      }
       if (error instanceof DomainError) {
         markExternalEventNeedsAttention(event, error.message);
         outcome.needsAttention += 1;

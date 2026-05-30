@@ -38,6 +38,19 @@ const get = <T>(api: Api, route: string) => request<T>(api, "GET", route);
 const post = <T>(api: Api, route: string, body?: unknown) => request<T>(api, "POST", route, body);
 const patch = <T>(api: Api, route: string, body: unknown) => request<T>(api, "PATCH", route, body);
 
+async function mcpRequest<T>(api: Api, token: string, method: string, params?: unknown): Promise<T> {
+  const response = await api.request("/mcp", {
+    method: "POST",
+    headers: {
+      "Accept": "application/json, text/event-stream",
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params })
+  });
+  return await response.json() as T;
+}
+
 describe("spec contract audit", () => {
   it("keeps implementation aligned with MPFlow spec artifacts", () => {
     const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -122,12 +135,18 @@ describe("MPFlow api surface", () => {
     const imported = await post<any>(api, `/api/onboarding/existing-store/projects/${project.id}/import`, {
       product: { sku: seedProduct.sku, name: seedProduct.name, qty: 7, unitCostRub: 100 }
     });
-    expect(imported.project.status).toBe("ready");
+    // Auto-match is disabled: an imported card with no explicit product link stays needs_mapping,
+    // even when an internal product happens to share the same SKU.
     expect(imported.items).toHaveLength(1);
+    expect(imported.items[0].status).toBe("needs_mapping");
+    expect(imported.project.status).toBe("needs_review");
 
-    const matched = await post<any>(api, `/api/onboarding/existing-store/projects/${project.id}/match-products`);
-    expect(matched.project.status).toBe("ready");
-    expect(matched.items[0].status).toBe("ready");
+    // The user maps the card to an internal product manually; that promotes it to ready.
+    const itemId = imported.items[0].id;
+    const mapped = await patch<any>(api, `/api/onboarding/existing-store/projects/${project.id}/items/${itemId}`, {
+      payload: { productId: seedProduct.id }
+    });
+    expect(mapped.item.status).toBe("ready");
 
     const reviewed = await post<any>(api, `/api/onboarding/existing-store/projects/${project.id}/review`);
     expect(reviewed.project.status).toBe("ready");
@@ -138,6 +157,122 @@ describe("MPFlow api surface", () => {
     expect(completed.created[0].document.status).toBe("posted");
     expect(app.state.inventoryLots.some((lot) => lot.sourceDocumentId === completed.created[0].document.id)).toBe(true);
     expect(app.state.stockStates.some((stock) => stock.productId === seedProduct.id && stock.qty >= 7)).toBe(true);
+  });
+
+  it("opening-balance import uses the latest observed-stock snapshot, not the sum of all syncs", async () => {
+    const { app, api } = makeApi();
+    await post(api, "/api/setup", { displayName: "ИП Снимок", accountingStartDate: "2026-05-01", confirmHistoricalStart: true });
+
+    const channel = app.createSalesChannel({ name: "Канал снимков", channelType: "marketplace" });
+    const external = app.createExternalProduct({ channelId: channel.id, externalSku: "SNAP-1", externalName: "Товар со снимком" });
+
+    // Observed stock is a point-in-time LEVEL, not a flow. Two syncs of the same external
+    // product / warehouse write two snapshots; the import must take the latest, never the sum.
+    app.recordObservedStock({ channelId: channel.id, externalProductId: external.id, observedAt: "2026-05-01T10:00:00.000Z", qtyObserved: 10 });
+    app.recordObservedStock({ channelId: channel.id, externalProductId: external.id, observedAt: "2026-05-02T10:00:00.000Z", qtyObserved: 8 });
+    expect(app.state.observedStocks).toHaveLength(2);
+
+    const project = await post<any>(api, "/api/onboarding/existing-store/projects", {
+      name: "QA снимки",
+      payload: { salesChannelId: channel.id }
+    });
+    const imported = await post<any>(api, `/api/onboarding/existing-store/projects/${project.id}/import`, {});
+
+    expect(imported.items).toHaveLength(1);
+    // Latest snapshot wins (8); regression guard against summing every snapshot (would be 18).
+    expect(imported.items[0].payload.observedQty).toBe(8);
+  });
+
+  it("historical marketplace start reconstructs opening stock before posting sales history", async () => {
+    const { app, api } = makeApi();
+    await post(api, "/api/setup", { displayName: "ИП История", accountingStartDate: "2026-05-01", confirmHistoricalStart: true });
+
+    const product = app.createProduct({ sku: "HIST-SKU-1", name: "Товар с историей" });
+    const channel = app.createSalesChannel({ name: "Ozon история", channelType: "marketplace" });
+    const external = app.createExternalProduct({ channelId: channel.id, externalSku: "HIST-SKU-1", externalName: "Карточка Ozon" });
+    const syncRunId = "sync_historical_january";
+    app.recordObservedStock({
+      channelId: channel.id,
+      externalProductId: external.id,
+      observedAt: "2026-05-30T10:00:00.000Z",
+      qtyObserved: 15
+    });
+    const saleEvent = app.ingestExternalEvent({
+      channelId: channel.id,
+      syncRunId,
+      eventType: "sale",
+      externalId: "ozon-posting-hist-1",
+      occurredAt: "2026-01-15T12:00:00.000Z",
+      payload: {
+        postingNumber: "hist-1",
+        lines: [{ sku: "HIST-SKU-1", qty: 50, amountRub: 200 }]
+      }
+    });
+    const returnEvent = app.ingestExternalEvent({
+      channelId: channel.id,
+      syncRunId,
+      eventType: "return",
+      externalId: "ozon-return-hist-1",
+      occurredAt: "2026-02-20T12:00:00.000Z",
+      payload: {
+        postingNumber: "hist-1",
+        lines: [{ sku: "HIST-SKU-1", qty: 2 }]
+      }
+    });
+    const accrualEvent = app.ingestExternalEvent({
+      channelId: channel.id,
+      syncRunId,
+      eventType: "sale_accrual",
+      externalId: "ozon-accrual-hist-1",
+      occurredAt: "2026-02-21T12:00:00.000Z",
+      payload: {
+        postingNumber: "hist-1",
+        saleAmountRub: 10_000
+      }
+    });
+    for (const event of [saleEvent, returnEvent, accrualEvent]) {
+      event.status = "ignored";
+      event.reason = "Дата операции раньше старта учёта — вне горизонта учёта";
+    }
+
+    const project = await post<any>(api, "/api/onboarding/existing-store/projects", {
+      name: "QA история",
+      payload: {
+        salesChannelId: channel.id,
+        mode: "historical_backfill",
+        accountingStartDate: "2026-01-01"
+      }
+    });
+    const imported = await post<any>(api, `/api/onboarding/existing-store/projects/${project.id}/import`, { syncRunId });
+    expect(imported.items).toHaveLength(1);
+    expect(imported.items[0].payload.observedQty).toBe(15);
+
+    const mapped = await patch<any>(api, `/api/onboarding/existing-store/projects/${project.id}/items/${imported.items[0].id}`, {
+      payload: { productId: product.id, unitCostRub: 110 }
+    });
+    expect(mapped.item.status).toBe("ready");
+    expect(mapped.item.payload.openingQty).toBe(63);
+    expect(mapped.item.payload.historicalSalesQty).toBe(50);
+    expect(mapped.item.payload.historicalReturnsQty).toBe(2);
+    expect(mapped.summary.totalQty).toBe(63);
+    expect(mapped.summary.totalCurrentQty).toBe(15);
+
+    const completed = await post<any>(api, `/api/onboarding/existing-store/projects/${project.id}/create-opening-balances`);
+    expect(completed.created).toHaveLength(1);
+    expect(app.state.accountingPolicy?.accountingStartDate).toBe("2026-01-01");
+    expect(completed.created[0].document.accountingDate).toBe("2026-01-01");
+    expect(completed.historyProcessing.resetOutOfScopeEvents).toBe(3);
+    expect(completed.historyProcessing.salesPosted).toBe(1);
+    expect(completed.historyProcessing.returnsPosted).toBe(1);
+    expect(completed.historyProcessing.financePosted).toBe(1);
+
+    const openingLot = app.state.inventoryLots.find((candidate) => candidate.productId === product.id && candidate.sourceDocumentId === completed.created[0].document.id);
+    expect(openingLot).toMatchObject({ qtyInitial: 63, qtyRemaining: 13, unitCostRub: 110 });
+    expect(app.state.inventoryLots.filter((candidate) => candidate.productId === product.id).reduce((sum, lot) => sum + lot.qtyRemaining, 0)).toBe(15);
+    const stock = app.state.stockStates.find((candidate) => candidate.productId === product.id && candidate.warehouseId === channel.salesPointWarehouseId);
+    expect(stock).toMatchObject({ qty: 15, costRub: 1650 });
+    expect(app.state.sales[0]).toMatchObject({ costAmountRub: 5500, status: "posted" });
+    expect(app.state.salesReturns[0]).toMatchObject({ restoredCostRub: 220, status: "posted" });
   });
 
   it("runs period closing checks, report snapshots, close, and reopen", async () => {
@@ -222,6 +357,68 @@ describe("MPFlow api surface", () => {
         process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED = previous;
       }
     }
+  });
+
+  it("issues MCP keys and serves readonly API through MCP", async () => {
+    const { api } = makeApi();
+    await post(api, "/api/dev/demo");
+
+    const issued = await post<any>(api, "/api/mcp/keys", { name: "Readonly agent", mode: "read_only" });
+    expect(issued.endpoint).toBe("http://localhost/mcp");
+    expect(issued.secret).toMatch(/^mpf_/);
+    expect(issued.token.status).toBe("active");
+    expect(issued.token.tokenHash).toBeUndefined();
+
+    const state = await get<any>(api, "/api/state");
+    expect(state.agentTokens[0].tokenHash).toBeUndefined();
+
+    const initialized = await mcpRequest<any>(api, issued.secret, "initialize", {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "vitest", version: "0.0.0" }
+    });
+    expect(initialized.result.serverInfo.name).toBe("mpflow");
+
+    const tools = await mcpRequest<any>(api, issued.secret, "tools/list");
+    expect(tools.result.tools.some((tool: any) => tool.name === "mpflow_api_request")).toBe(true);
+
+    const dashboard = await mcpRequest<any>(api, issued.secret, "tools/call", {
+      name: "mpflow_dashboard",
+      arguments: {}
+    });
+    expect(dashboard.result.structuredContent.data.data.configured).toBe(true);
+
+    const writeAttempt = await mcpRequest<any>(api, issued.secret, "tools/call", {
+      name: "mpflow_api_request",
+      arguments: {
+        method: "POST",
+        path: "/api/products",
+        body: { sku: "MCP-001", name: "MCP product" }
+      }
+    });
+    expect(writeAttempt.error.data.code).toBe("agent_read_only");
+
+    const bearerWrite = await api.request("/api/products", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${issued.secret}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ sku: "MCP-002", name: "MCP product" })
+    });
+    expect(bearerWrite.status).toBe(403);
+
+    const revoked = await post<any>(api, `/api/mcp/keys/${issued.token.id}/revoke`);
+    expect(revoked.status).toBe("revoked");
+    const afterRevoke = await api.request("/mcp", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${issued.secret}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" })
+    });
+    expect(afterRevoke.status).toBe(401);
   });
 
   it("creates and retries recalculation jobs", async () => {

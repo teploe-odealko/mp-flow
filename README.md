@@ -48,7 +48,6 @@ npm run dev
 ```bash
 npm test
 npm run build
-npm run test:browser
 ```
 
 Полный прогон PostgreSQL-теста:

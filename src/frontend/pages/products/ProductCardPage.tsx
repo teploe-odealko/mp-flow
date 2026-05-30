@@ -38,6 +38,7 @@ export function ProductCardPage() {
     () => (state.inventoryLots ?? []).filter((lot: any) => lot.productId === id),
     [id, state.inventoryLots]
   );
+  const hasOpenLots = useMemo(() => lots.some((lot: any) => Number(lot.qtyRemaining ?? 0) > 0), [lots]);
   const movements = useMemo(
     () => (state.stockMovements ?? []).filter((movement: any) => movement.productId === id),
     [id, state.stockMovements]
@@ -91,7 +92,7 @@ export function ProductCardPage() {
       .filter((lot: any) => {
         const document = relatedDocuments.find((candidate: any) => candidate.id === lot.sourceDocumentId);
         const sourceKey = sourceTypeKey(document?.documentType);
-        if (openLotsOnly && lot.qtyRemaining <= 0) return false;
+        if (openLotsOnly && hasOpenLots && lot.qtyRemaining <= 0) return false;
         if (lotWarehouse && lot.warehouseId !== lotWarehouse) return false;
         if (lotState && (lot.stockStateCode ?? "sellable") !== lotState) return false;
         if (lotSourceType && sourceKey !== lotSourceType) return false;
@@ -114,6 +115,7 @@ export function ProductCardPage() {
       });
   }, [
     costApplications,
+    hasOpenLots,
     documents,
     journalEntries,
     lotDateFrom,
@@ -332,10 +334,10 @@ export function ProductCardPage() {
               <Card className="renderPanel">
                 <CardContent className="p-0">
                   <div className="flex flex-wrap items-center gap-2 p-3 border-b border-[var(--color-border)]">
-                    <label className="flex items-center gap-2 px-3 py-2 text-sm">
-                      <input type="checkbox" checked={openLotsOnly} onChange={(event) => setOpenLotsOnly(event.target.checked)} />
-                      Только открытые партии
-                    </label>
+	                    <label className="flex items-center gap-2 px-3 py-2 text-sm">
+	                      <input type="checkbox" checked={openLotsOnly && hasOpenLots} disabled={!hasOpenLots} onChange={(event) => setOpenLotsOnly(event.target.checked)} />
+	                      Только открытые партии
+	                    </label>
                     <Select value={lotWarehouse} onChange={(event) => setLotWarehouse(event.target.value)} className="w-44">
                       <option value="">Все склады</option>
                       {warehouses.map((warehouse: any) => (
@@ -361,8 +363,12 @@ export function ProductCardPage() {
                       <Input className="pl-9" placeholder="Поиск по партии или источнику" value={lotSearch} onChange={(event) => setLotSearch(event.target.value)} />
                     </div>
                   </div>
-                  {lotRows.length === 0 ? (
-                    <EmptyState icon={<ListTree size={20} />} title="Партий по выбранным фильтрам нет" />
+	                  {lotRows.length === 0 ? (
+	                    <EmptyState
+	                      icon={<ListTree size={20} />}
+	                      title="Партий по выбранным фильтрам нет"
+	                      description={lots.length > 0 && !hasOpenLots ? "Все партии уже полностью списаны продажами, поэтому открытых партий нет." : undefined}
+	                    />
                   ) : (
                     <Table>
                       <THead>

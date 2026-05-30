@@ -165,7 +165,7 @@ export const ozonPlugin: MarketplacePlugin = {
   }
 };
 
-async function syncRealOzon({ app, channelId, syncRunId, since, credentials, streams }: SyncContext): Promise<SyncResult> {
+async function syncRealOzon({ app, channelId, syncRunId, since, credentials, streams, autoLinkProducts }: SyncContext): Promise<SyncResult> {
   const channel = app.state.salesChannels.find((candidate) => candidate.id === channelId);
   const startedAt = parseSince(since, channel?.lastSyncAt);
   const finishedAt = new Date();
@@ -189,7 +189,11 @@ async function syncRealOzon({ app, channelId, syncRunId, since, credentials, str
         externalByOfferId.set(offerId, externalProduct);
         if (wantProducts) {
           stats.products += 1;
-          ensureInternalProduct(app, externalProduct, productInfo);
+          // Onboarding import passes autoLinkProducts:false so cards arrive unmapped and the
+          // user maps/creates internal products explicitly. Ongoing syncs keep auto-linking.
+          if (autoLinkProducts !== false) {
+            ensureInternalProduct(app, externalProduct, productInfo);
+          }
         }
 
         if (wantStocks) {
@@ -747,7 +751,7 @@ function isDemoCredentials(credentials?: PluginCredentials) {
   return credentials?.clientId === "demo-client" || credentials?.apiKey === "demo-key";
 }
 
-function syncDemo({ app, channelId, syncRunId, streams }: SyncContext): SyncResult {
+function syncDemo({ app, channelId, syncRunId, streams, autoLinkProducts }: SyncContext): SyncResult {
   const wantStream = (code: string) => !streams || streams.length === 0 || streams.includes(code as any);
   const product = app.state.products[0];
   if (!product) {
@@ -759,7 +763,9 @@ function syncDemo({ app, channelId, syncRunId, streams }: SyncContext): SyncResu
     externalSku: `OZON-${product.sku}`,
     externalName: `${product.name} / карточка Ozon`
   });
-  if (!app.state.productExternalLinks.some((link) => link.externalProductId === external.id && link.productId === product.id && link.status === "active")) {
+  // Onboarding import passes autoLinkProducts:false — observe the card/stock but leave mapping
+  // to an explicit user decision. Ongoing syncs (undefined/true) keep auto-linking.
+  if (autoLinkProducts !== false && !app.state.productExternalLinks.some((link) => link.externalProductId === external.id && link.productId === product.id && link.status === "active")) {
     app.linkExternalProduct({ externalProductId: external.id, productId: product.id });
   }
   app.recordObservedStock({

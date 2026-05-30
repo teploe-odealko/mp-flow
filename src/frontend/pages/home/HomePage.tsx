@@ -65,7 +65,7 @@ function HomeBeforeSetup() {
           <CardHeader>
             <div>
               <CardTitle>Чеклист настройки</CardTitle>
-              <CardDescription>4 простых шага, чтобы открыть рабочий период</CardDescription>
+              <CardDescription>Один маршрут: кабинет, сценарий и стартовые данные</CardDescription>
             </div>
           </CardHeader>
           <CardContent>

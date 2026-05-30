@@ -825,6 +825,7 @@ export interface AgentToken {
   status: "active" | "revoked";
   scopes: string[];
   maskedToken?: string;
+  tokenHash?: string;
   createdAt: string;
   lastUsedAt?: string;
   revokedAt?: string;

@@ -90,6 +90,11 @@ export interface PluginRuntimeContext {
   credentials?: PluginCredentials;
   streams?: ChannelStreamCode[];
   mode?: "incremental" | "full" | "backfill";
+  // When false, the sync must NOT auto-create or auto-link internal products from the
+  // marketplace catalog — it only records external products/observed stock and leaves
+  // product mapping to an explicit user decision (used by the onboarding import).
+  // Undefined/true preserves the legacy auto-link behavior for ongoing syncs.
+  autoLinkProducts?: boolean;
   pluginState: PluginStateApi;
   pluginSecrets: PluginSecretApi;
 }

@@ -444,20 +444,21 @@ export function createAuthMiddleware(auth: AuthService) {
     if (!authRequired()) return next();
     if (isPublicPath(c.req.path)) return next();
 
-    const session = await auth.session(c);
-    if (!session) {
+    const existing = (c as any).get("authUser") as ReturnType<typeof publicUser> | undefined;
+    const principal = existing ?? await auth.session(c);
+    if (!principal) {
       return c.json({ ok: false, error: { code: "auth_required", message: "Требуется вход в систему" } }, 401);
     }
 
     const method = c.req.method.toUpperCase();
-    if (session.roleCode === "viewer" && !["GET", "HEAD", "OPTIONS"].includes(method)) {
+    if (principal.roleCode === "viewer" && !["GET", "HEAD", "OPTIONS"].includes(method)) {
       return c.json({ ok: false, error: { code: "forbidden", message: "У пользователя только просмотр" } }, 403);
     }
-    if (isOwnerPath(c.req.path) && session.roleCode !== "owner") {
+    if (isOwnerPath(c.req.path) && principal.roleCode !== "owner") {
       return c.json({ ok: false, error: { code: "forbidden", message: "Доступно только владельцу" } }, 403);
     }
 
-    c.set("authUser", publicUser(session));
+    c.set("authUser", publicUser(principal));
     return next();
   };
 }
@@ -526,6 +527,7 @@ function isPublicPath(path: string) {
 
 function isOwnerPath(path: string) {
   return path.startsWith("/api/settings/users") ||
+    path.startsWith("/api/mcp/keys") ||
     path.startsWith("/api/agent-tokens") ||
     path.includes("/agent-permission");
 }

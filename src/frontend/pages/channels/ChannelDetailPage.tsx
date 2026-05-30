@@ -9,6 +9,7 @@ import {
   Inbox,
   KeyRound,
   Loader2,
+  PackageCheck,
   Pencil,
   PlugZap,
   Power,
@@ -133,6 +134,20 @@ export function ChannelDetailPage() {
   const capabilities: string[] = data?.plugin?.capabilities ?? [];
   const counts = data?.counts;
 
+  // Onboarding ("перенос в учёт") progress for this channel, derived from its backfill project.
+  const onboarding = useMemo(() => {
+    const projects = (state.backfillProjects ?? [])
+      .filter((p: any) => String(p?.payload?.salesChannelId ?? "") === String(id))
+      .slice()
+      .sort((a: any, b: any) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")));
+    const project = projects[0];
+    const summary = project?.payload?.summary ?? null;
+    const done = project ? ["applied", "completed"].includes(project.status) : false;
+    const started = Boolean(project) && !done;
+    return { project, summary, done, started };
+  }, [state.backfillProjects, id]);
+  const onboardingPath = `/integrations/channels/${channel.id}/onboarding`;
+
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
@@ -157,6 +172,7 @@ export function ChannelDetailPage() {
             </Button>
             <Button
               onClick={() => setSyncOpen(true)}
+              variant="secondary"
               disabled={!credsSaved || status === "disabled"}
               title={credsSaved ? undefined : "Сначала введите учётные данные"}
             >
@@ -190,6 +206,42 @@ export function ChannelDetailPage() {
             </Button>
           </div>
         </div>
+      )}
+
+      {credsSaved && status !== "disabled" && (
+        onboarding.done ? (
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-success)] bg-[var(--color-success-soft)] p-4 flex items-start gap-3">
+            <CheckCircle2 size={18} className="text-[var(--color-success)] mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold">Каталог и остатки перенесены в учёт</p>
+              <p className="text-xs text-[var(--color-foreground)]/75 leading-relaxed mt-1">
+                Стартовые остатки по каналу созданы. Откройте мастер, чтобы дозаполнить отложенные строки или перенести новые карточки.
+              </p>
+            </div>
+            <Button size="sm" variant="secondary" asChild>
+              <Link to={onboardingPath}><PackageCheck size={14} /> Открыть мастер</Link>
+            </Button>
+          </div>
+        ) : (
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-primary)] bg-[var(--color-primary-soft)] p-4 flex flex-col sm:flex-row sm:items-center gap-4">
+            <PackageCheck size={20} className="text-[var(--color-primary)] shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold">
+                {onboarding.started ? "Продолжите перенос в учёт" : "Следующий шаг: перенести каталог и остатки в учёт"}
+              </p>
+              <p className="text-xs text-[var(--color-foreground)]/75 leading-relaxed mt-1">
+                {onboarding.started && onboarding.summary
+                  ? <>Готово {onboarding.summary.mapped ?? 0} из {onboarding.summary.totalItems ?? 0}. Осталось сопоставить товары и заполнить себестоимость, затем создать стартовые остатки.</>
+                  : <>Загрузим карточки и остатки из «{channel.name}», поможем сопоставить их с вашим каталогом и заполнить себестоимость, затем создадим стартовые остатки. Прогресс сохраняется — можно делать постепенно.</>}
+              </p>
+            </div>
+            <Button asChild>
+              <Link to={onboardingPath}>
+                <PackageCheck size={14} /> {onboarding.started ? "Продолжить перенос" : "Начать перенос"}
+              </Link>
+            </Button>
+          </div>
+        )
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5">
@@ -565,6 +617,26 @@ function CredentialsDialog({
   );
 }
 
+const SYNC_STAT_LABELS: Record<string, string> = {
+  products: "Товары",
+  events: "Событий",
+  stocks: "Остатки",
+  sales: "Продажи",
+  returns: "Возвраты",
+  finance_events: "Финоперации",
+  payouts: "Выплаты",
+  auto_sales_materialized: "Продажи проведены",
+  auto_returns_materialized: "Возвраты проведены",
+  auto_finance_posted: "Финансы проведены",
+  auto_payouts_materialized: "Выплаты разнесены",
+  auto_needs_attention: "Требуют внимания",
+  auto_skipped_before_start: "Вне учёта (до старта)"
+};
+
+function syncStatLabel(key: string) {
+  return SYNC_STAT_LABELS[key] ?? key.replace(/_/g, " ");
+}
+
 function SyncDialog({
   open, onClose, channelId, capabilities, enabledStreams, onCompleted
 }: {
@@ -585,7 +657,7 @@ function SyncDialog({
     mutationFn: () => apiPost<any>(`/api/integrations/channels/${channelId}/sync-runs`, {
       mode,
       streams,
-      since: mode === "incremental" ? since : undefined
+      since: mode === "full" ? undefined : since
     }),
     onSuccess: (data) => { setResult(data); setError(null); onCompleted(); },
     onError: (err) => { setError((err as Error).message); setResult(null); }
@@ -610,10 +682,15 @@ function SyncDialog({
               <option value="backfill">Исторический период</option>
             </Select>
           </Field>
-          {mode === "incremental" && (
-            <Field label="Забирать с даты">
+          {mode !== "full" && (
+            <Field label={mode === "backfill" ? "Начало исторического периода" : "Забирать с даты"}>
               <Input type="date" value={since} onChange={(e) => setSince(e.target.value)} />
             </Field>
+          )}
+          {mode === "backfill" && (
+            <div className="md:col-span-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-muted)]/40 px-3 py-2 text-[11px] text-[var(--color-muted-foreground)]">
+              Загрузим продажи и операции с выбранной даты. Всё, что раньше старта учёта, попадёт в стартовый остаток и не будет проводиться отдельно — такие факты помечаются «Вне учёта (до старта)».
+            </div>
           )}
           <div className="md:col-span-2">
             <div className="text-xs font-medium text-[var(--color-muted-foreground)] mb-2">Потоки</div>
@@ -662,7 +739,7 @@ function SyncDialog({
               <div className="grid grid-cols-3 gap-2 text-xs">
                 {Object.entries(result.stats ?? {}).map(([k, v]) => (
                   <div key={k} className="rounded-[var(--radius-sm)] bg-[var(--color-card)] p-2 border border-[var(--color-border)]">
-                    <div className="text-[10px] uppercase font-semibold text-[var(--color-muted-foreground)]">{k}</div>
+                    <div className="text-[10px] font-semibold text-[var(--color-muted-foreground)]">{syncStatLabel(k)}</div>
                     <div className="text-sm font-semibold numeric">{String(v)}</div>
                   </div>
                 ))}

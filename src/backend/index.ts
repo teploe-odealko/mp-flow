@@ -38,7 +38,7 @@ console.log(`mpflow listening on http://${hostname}:${port}`);
 
 async function routeRequest(request: Request, apiFetch: typeof api.fetch) {
   const url = new URL(request.url);
-  if (url.pathname.startsWith("/api/") || url.pathname === "/metrics") {
+  if (url.pathname.startsWith("/api/") || url.pathname === "/mcp" || url.pathname === "/metrics") {
     return apiFetch(request);
   }
   if (url.pathname === "/app-config.js") {

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -9,8 +9,7 @@ import {
   Download,
   PackageCheck,
   Plus,
-  Save,
-  Sparkles
+  Save
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,14 +29,12 @@ import { qty, rub } from "@/lib/format";
 const today = () => new Date().toISOString().slice(0, 10);
 const CURRENT_STOCK_STEPS = [
   { key: "start", label: "Канал Ozon", desc: "Подключение магазина" },
-  { key: "mapping", label: "Сопоставление и цена", desc: "Карточки и себестоимость" },
-  { key: "review", label: "Проверка и документы", desc: "Стартовый остаток" }
+  { key: "mapping", label: "Товары и документы", desc: "Себестоимость и старт" }
 ] as const;
 const HISTORICAL_STEPS = [
   { key: "start", label: "Канал Ozon", desc: "Подключение магазина" },
   { key: "date", label: "Дата начала истории", desc: "Граница импорта" },
-  { key: "mapping", label: "Сопоставление и цена", desc: "Карточки и себестоимость" },
-  { key: "review", label: "Проверка и документы", desc: "Стартовый остаток" }
+  { key: "mapping", label: "Товары и документы", desc: "Себестоимость и старт" }
 ] as const;
 type WizardStepKey = (typeof HISTORICAL_STEPS)[number]["key"];
 
@@ -46,6 +43,8 @@ export function BackfillWizardPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
+  const routeParams = useParams();
+  const channelIdFromRoute = routeParams.id ? String(routeParams.id) : undefined;
   const searchParams = new URLSearchParams(location.search);
   const modeFromSetup = searchParams.get("mode") === "historical_backfill" ? "historical_backfill" : searchParams.get("mode") === "current_stock_start" ? "current_stock_start" : undefined;
   const startFromSetup = searchParams.get("start") || undefined;
@@ -54,7 +53,6 @@ export function BackfillWizardPage() {
   const setupContinuation = inSetupNamespace || searchParams.get("from") === "setup";
   const modeLocked = setupContinuation;
   const historyDateLocked = setupContinuation && Boolean(startFromSetup);
-  const confirmedFromSetup = searchParams.get("confirmed") === "1";
   const returnTo = `${location.pathname}${location.search}`;
   const createChannelPath = `/integrations/channels/new?returnTo=${encodeURIComponent(returnTo)}`;
   const channels = (state.salesChannels ?? []).filter((channel: any) => channel.status !== "disabled");
@@ -64,15 +62,19 @@ export function BackfillWizardPage() {
   const [step, setStep] = useState(0);
   const [projectId, setProjectId] = useState<string | null>(projectIdFromQuery ?? latestProject?.id ?? null);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const [salesChannelId, setSalesChannelId] = useState(latestProject?.payload?.salesChannelId ? String(latestProject.payload.salesChannelId) : (channels[0]?.id ?? ""));
+  const [salesChannelId, setSalesChannelId] = useState(channelIdFromRoute ?? (latestProject?.payload?.salesChannelId ? String(latestProject.payload.salesChannelId) : (channels[0]?.id ?? "")));
   const [mode, setMode] = useState<"current_stock_start" | "historical_backfill">(
-    modeFromSetup ?? (latestProject?.payload?.mode === "historical_backfill" ? "historical_backfill" : "current_stock_start")
+    modeFromSetup ?? (latestProject?.payload?.mode === "current_stock_start" ? "current_stock_start" : "historical_backfill")
   );
   const [accountingStartDate, setAccountingStartDate] = useState(
     String(startFromSetup ?? latestProject?.payload?.accountingStartDate ?? state.accountingPolicy?.accountingStartDate ?? today())
   );
-  const [confirmHistoricalRisk, setConfirmHistoricalRisk] = useState(Boolean(confirmedFromSetup || latestProject?.payload?.confirmHistoricalRisk));
   const [autoImportKey, setAutoImportKey] = useState("");
+  // Synchronous guard against StrictMode's double-invoked mount effect: React.StrictMode runs
+  // the auto-import effect twice before the `autoImportKey` state update commits, so the state
+  // check alone lets both invocations fire `importData.mutate()` — creating duplicate backfill
+  // projects and double-counting observed stock. A ref updates immediately and blocks the second.
+  const autoImportInFlightRef = useRef<string | null>(null);
   const firstChannelId = channels[0]?.id ?? "";
   const steps = useMemo(() => {
     const sourceSteps = mode === "historical_backfill" && !historyDateLocked ? HISTORICAL_STEPS : CURRENT_STOCK_STEPS;
@@ -95,8 +97,8 @@ export function BackfillWizardPage() {
     if (!salesChannelId) return false;
     const payload = project.payload ?? {};
     if (payload.salesChannelId !== salesChannelId) return false;
-    if (modeFromSetup && payload.mode !== mode) return false;
-    if (modeFromSetup && mode === "historical_backfill" && payload.accountingStartDate !== accountingStartDate) return false;
+    if (payload.mode !== mode) return false;
+    if (mode === "historical_backfill" && payload.accountingStartDate !== accountingStartDate) return false;
     return true;
   };
 
@@ -124,14 +126,35 @@ export function BackfillWizardPage() {
     }
   });
   const apply = useMutation({
-    mutationFn: () => {
+    mutationFn: (allowPartial?: boolean) => {
       if (!projectId) throw new Error("Проект онбординга не найден");
-      return apiPost<any>(`/api/onboarding/existing-store/projects/${projectId}/create-opening-balances`);
+      return apiPost<any>(`/api/onboarding/existing-store/projects/${projectId}/create-opening-balances`, { allowPartial: Boolean(allowPartial) });
     },
     onSuccess: () => {
       queryClient.invalidateQueries();
     }
   });
+
+  const createInternal = useMutation({
+    mutationFn: (externalProductId: string) =>
+      apiPost<any>(`/api/external-products/${externalProductId}/create-internal-product`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["backfill-project", projectId] });
+      queryClient.invalidateQueries();
+    }
+  });
+  const createAllUnmatched = useMutation({
+    mutationFn: async (targets: string[]) => {
+      for (const externalProductId of targets) {
+        await apiPost(`/api/external-products/${externalProductId}/create-internal-product`);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["backfill-project", projectId] });
+      queryClient.invalidateQueries();
+    }
+  });
+  const [onlyExceptions, setOnlyExceptions] = useState(false);
 
   const ensureProject = useMutation({
     mutationFn: async () => {
@@ -144,8 +167,7 @@ export function BackfillWizardPage() {
         payload: {
           salesChannelId,
           mode,
-          accountingStartDate: mode === "historical_backfill" ? accountingStartDate : (state.accountingPolicy?.accountingStartDate ?? today()),
-          confirmHistoricalRisk
+          accountingStartDate: mode === "historical_backfill" ? accountingStartDate : (state.accountingPolicy?.accountingStartDate ?? today())
         }
       });
       setProjectId(project.id);
@@ -155,18 +177,26 @@ export function BackfillWizardPage() {
   const importData = useMutation({
     mutationFn: async () => {
       const id = await ensureProject.mutateAsync();
+      const historicalMode = mode === "historical_backfill";
       const syncRun = await apiPost<any>(`/api/integrations/channels/${salesChannelId}/sync-runs`, {
-        streams: ["products", "stocks"],
-        mode: "full"
+        streams: historicalMode ? ["products", "stocks", "sales", "returns", "finance_events"] : ["products", "stocks"],
+        mode: historicalMode ? "backfill" : "full",
+        since: historicalMode ? accountingStartDate : undefined,
+        // Используем тот же sync-run, что и страница канала. Отличие только в том, что
+        // внутренние товары не привязываются автоматически и история не проводится до
+        // финального шага, где уже есть стартовые партии и себестоимость.
+        autoLinkProducts: false,
+        autoProcess: false
       });
       if (syncRun.status !== "completed") {
         const errors = Array.isArray(syncRun.errors) ? syncRun.errors.filter(Boolean) : [];
-        throw new Error(errors[0] ?? "Не удалось синхронизировать карточки и остатки Ozon");
+        throw new Error(errors[0] ?? "Не удалось синхронизировать карточки, остатки и историю Ozon");
       }
-      await apiPost(`/api/onboarding/existing-store/projects/${id}/import`);
-      const matched = await apiPost<any>(`/api/onboarding/existing-store/projects/${id}/match-products`);
+      await apiPost(`/api/onboarding/existing-store/projects/${id}/import`, { syncRunId: syncRun.id });
+      // Auto-match disabled: cards are imported as "needs_mapping" and the user maps them
+      // (or bulk-creates internal products) manually on the next step.
       const project = await apiGet<any>(`/api/onboarding/existing-store/projects/${id}`);
-      return { id, matched, project };
+      return { id, project };
     },
     onSuccess: async ({ id, project }) => {
       await queryClient.invalidateQueries({ queryKey: ["backfill-project", id] });
@@ -183,18 +213,22 @@ export function BackfillWizardPage() {
   const blockingIssues = useMemo(() => {
     return items.filter((item: any) => item.status === "needs_mapping" || item.status === "needs_cost");
   }, [items]);
+  const unmatchedExternalIds = useMemo(() => {
+    return items
+      .filter((item: any) => item.status === "needs_mapping" && item.payload?.externalProductId)
+      .map((item: any) => String(item.payload.externalProductId));
+  }, [items]);
+  const readyCount = useMemo(() => items.filter((item: any) => item.status === "ready").length, [items]);
   const selectedItem = items.find((item: any) => item.id === selectedItemId) ?? items[0];
-  const oldRiskDays = Math.floor((Date.now() - new Date(accountingStartDate).getTime()) / 86_400_000);
-  const hasOldDateRisk = oldRiskDays > 90 && mode === "historical_backfill";
+  const historicalBackfill = mode === "historical_backfill";
   const selectedProject = projectId
     ? (currentData?.project ?? (state.backfillProjects ?? []).find((project: any) => project.id === projectId))
     : undefined;
   const importKey = `${salesChannelId}|${mode}|${mode === "historical_backfill" ? accountingStartDate : "current"}`;
   const stepValid: Record<WizardStepKey, boolean> = {
-    start: Boolean(salesChannelId && mode && !importData.isPending && (items.length > 0 || importData.isSuccess)),
-    date: Boolean(accountingStartDate && (!hasOldDateRisk || confirmHistoricalRisk) && !importData.isPending && (items.length > 0 || importData.isSuccess)),
-    mapping: items.length > 0 && Number(summary.unmatched ?? 0) === 0 && Number(summary.missingCost ?? 0) === 0,
-    review: Boolean(projectId) && items.length > 0 && Number(summary.unmatched ?? 0) === 0 && Number(summary.missingCost ?? 0) === 0
+    start: Boolean(salesChannelId && mode && !importData.isPending && items.length > 0),
+    date: Boolean(accountingStartDate && !importData.isPending && items.length > 0),
+    mapping: items.length > 0 && readyCount > 0
   };
 
   useEffect(() => {
@@ -217,19 +251,21 @@ export function BackfillWizardPage() {
 
   useEffect(() => {
     if (!salesChannelId) return;
-    if (mode === "historical_backfill" && (!accountingStartDate || hasOldDateRisk && !confirmHistoricalRisk)) return;
+    if (mode === "historical_backfill" && !accountingStartDate) return;
     if (projectId && projectQuery.isLoading) return;
     if (items.length > 0 && projectMatchesSelection(selectedProject)) return;
     if (importData.isPending || ensureProject.isPending) return;
     if (autoImportKey === importKey) return;
+    // Ref gate fires synchronously, so StrictMode's second mount-effect invocation is blocked
+    // even though the `autoImportKey` state update hasn't committed yet.
+    if (autoImportInFlightRef.current === importKey) return;
+    autoImportInFlightRef.current = importKey;
     setAutoImportKey(importKey);
     importData.mutate();
   }, [
     salesChannelId,
     mode,
     accountingStartDate,
-    confirmHistoricalRisk,
-    hasOldDateRisk,
     projectId,
     projectQuery.isLoading,
     items.length,
@@ -259,10 +295,11 @@ export function BackfillWizardPage() {
     URL.revokeObjectURL(url);
   };
 
+  const standaloneReturnPath = channelIdFromRoute ? `/integrations/channels/${channelIdFromRoute}` : "/inventory";
   const saveAndExit = async () => {
     const id = await ensureProject.mutateAsync();
     await queryClient.invalidateQueries({ queryKey: ["backfill-project", id] });
-    navigate(setupContinuation ? "/settings" : "/inventory");
+    navigate(setupContinuation ? "/settings" : standaloneReturnPath);
   };
   const setupReturnQuery = (() => {
     const params = new URLSearchParams();
@@ -270,7 +307,6 @@ export function BackfillWizardPage() {
     params.set("estoreMode", mode);
     if (mode === "historical_backfill" && accountingStartDate) {
       params.set("start", accountingStartDate);
-      if (confirmHistoricalRisk) params.set("confirmed", "1");
     }
     return params.toString();
   })();
@@ -281,8 +317,8 @@ export function BackfillWizardPage() {
   };
   const pageTitle = setupContinuation ? "Первичная настройка учета" : "Старт работающего магазина";
   const pageSubtitle = setupContinuation
-    ? "Подключите Ozon, загрузите карточки и остатки, сопоставьте товары и создайте стартовые документы."
-    : "Импортируйте карточки и остатки из канала, заполните себестоимость и создайте стартовые документы без ручного пересоздания каталога.";
+    ? "Подключите Ozon, загрузите карточки, текущие остатки и историю продаж, затем задайте себестоимость для стартового учета."
+    : "Импортируйте карточки, текущие остатки и историю продаж из канала, заполните себестоимость и создайте стартовые документы без ручного пересоздания каталога.";
   const pageBreadcrumbs = setupContinuation
     ? [{ label: "Первичная настройка", to: `/setup?${setupReturnQuery}` }, { label: "Подключение Ozon" }]
     : [{ label: "Главная", to: "/" }, { label: "Старт работающего магазина" }];
@@ -294,16 +330,10 @@ export function BackfillWizardPage() {
           desc: state.organization?.displayName ?? "Создан",
           onClick: () => goToSetupStep("org")
         },
-        {
-          key: "mode" as const,
-          label: "Сценарий",
-          desc: mode === "historical_backfill" ? "С историей продаж" : "С текущих остатков",
-          onClick: () => goToSetupStep("mode")
-        },
-        ...(historyDateLocked
-          ? [
-              {
-                key: "start" as const,
+	        ...(historyDateLocked
+	          ? [
+	              {
+	                key: "start" as const,
                 label: "Дата истории",
                 desc: accountingStartDate,
                 onClick: () => goToSetupStep("start")
@@ -323,7 +353,7 @@ export function BackfillWizardPage() {
         actions={
           <>
             <Button variant="ghost" asChild>
-              <Link to={setupContinuation ? `/setup${historyDateLocked ? `?${setupReturnQuery}&step=start` : `?${setupReturnQuery}&step=mode`}` : "/inventory"}>
+	              <Link to={setupContinuation ? `/setup${historyDateLocked ? `?${setupReturnQuery}&step=start` : `?${setupReturnQuery}`}` : standaloneReturnPath}>
                 <ArrowLeft size={14} /> Назад
               </Link>
             </Button>
@@ -396,10 +426,9 @@ export function BackfillWizardPage() {
         </CardContent>
       </Card>
 
-      {(hasOldDateRisk || (summary.unmatched ?? 0) > 0 || (summary.missingCost ?? 0) > 0 || (summary.warnings ?? []).length > 0) && (
+      {((summary.unmatched ?? 0) > 0 || (summary.missingCost ?? 0) > 0 || (summary.warnings ?? []).length > 0) && (
         <div className="rounded-[var(--radius-md)] border border-[var(--color-warning)] bg-[var(--color-warning-soft)] px-4 py-3 text-sm flex flex-wrap items-center gap-x-4 gap-y-1">
-          <span className="font-medium inline-flex items-center gap-2"><AlertTriangle size={14} className="text-[var(--color-warning)]" /> Что блокирует запуск:</span>
-          {hasOldDateRisk && <span>дата истории далеко в прошлом</span>}
+          <span className="font-medium inline-flex items-center gap-2"><AlertTriangle size={14} className="text-[var(--color-warning)]" /> Что осталось заполнить (можно позже):</span>
           {(summary.unmatched ?? 0) > 0 && <span>не сопоставлено карточек: {summary.unmatched}</span>}
           {(summary.missingCost ?? 0) > 0 && <span>без себестоимости: {summary.missingCost}</span>}
           {(summary.warnings ?? []).map((warning: string) => <span key={warning}>{warning}</span>)}
@@ -411,8 +440,8 @@ export function BackfillWizardPage() {
             <Card>
               <CardHeader>
                 <div>
-                  <CardTitle>{modeLocked ? "Канал Ozon" : "Канал и режим старта"}</CardTitle>
-                  <CardDescription>{modeLocked ? "Подключите канал Ozon. Карточки и остатки загрузятся автоматически." : "Выберите канал Ozon и сценарий запуска. Карточки и остатки загрузятся автоматически."}</CardDescription>
+                  <CardTitle>Канал Ozon</CardTitle>
+                  <CardDescription>Выберите канал продаж.</CardDescription>
                 </div>
               </CardHeader>
               <CardContent className="grid gap-4 py-5 md:grid-cols-2">
@@ -433,40 +462,15 @@ export function BackfillWizardPage() {
                 </div>
                 {channels.length === 0 && (
                   <div className="md:col-span-2 rounded-[var(--radius-md)] border border-[var(--color-warning)] bg-[var(--color-warning-soft)] p-4 text-sm leading-relaxed">
-                    Для работающего магазина нужен канал Ozon: он даст карточки, остатки и последующие синхронизации. После создания канала вы вернётесь сюда и сможете продолжить мастер.
-                  </div>
-                )}
-                {modeLocked ? (
-                  <div className="md:col-span-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-muted)]/30 p-4 text-sm leading-relaxed">
-                    <div className="font-semibold">Режим уже выбран: {mode === "historical_backfill" ? "с историей продаж" : "с текущих остатков"}</div>
-                    <div className="mt-1 text-[var(--color-muted-foreground)]">
-                      {mode === "historical_backfill"
-                        ? `История будет подтягиваться с ${accountingStartDate}.`
-                        : "Дата не требуется: после подключения канала мастер загрузит текущие карточки и остатки."}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="md:col-span-2 grid gap-3 md:grid-cols-2">
-                    <ModeCard
-                      active={mode === "current_stock_start"}
-                      title="С текущих остатков"
-                      desc="Берём текущие карточки и остатки. Отдельная дата не нужна: это снимок магазина на сейчас."
-                      onClick={() => setMode("current_stock_start")}
-                    />
-                    <ModeCard
-                      active={mode === "historical_backfill"}
-                      title="С историей"
-                      desc="Укажите дату, с которой нужно подтянуть прошлые события и построить исторические отчёты."
-                      onClick={() => setMode("historical_backfill")}
-                    />
+	                    Для работающего магазина нужен канал Ozon: он даст карточки, текущие остатки, продажи и последующие синхронизации. После создания канала вы вернётесь сюда и сможете продолжить мастер.
                   </div>
                 )}
                 {salesChannelId && (
                   <div className="md:col-span-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-muted)]/30 p-4 text-sm leading-relaxed">
-                    {importData.isPending || ensureProject.isPending ? (
-                      <span className="inline-flex items-center gap-2">
-                        <PackageCheck size={14} /> Загружаем карточки и остатки из выбранного канала...
-                      </span>
+	                    {importData.isPending || ensureProject.isPending ? (
+	                      <span className="inline-flex items-center gap-2">
+	                        <PackageCheck size={14} /> Загружаем карточки, остатки и историю продаж из выбранного канала...
+	                      </span>
                     ) : items.length > 0 ? (
                       <span className="inline-flex items-center gap-2">
                         <CheckCircle2 size={14} className="text-[var(--color-success)]" /> Данные загружены. Можно переходить к сопоставлению товаров.
@@ -474,7 +478,7 @@ export function BackfillWizardPage() {
                     ) : importData.isSuccess ? (
                       <div className="flex flex-wrap items-center gap-2 text-[var(--color-warning)]">
                         <span className="inline-flex items-center gap-2">
-                          <AlertTriangle size={14} /> По выбранному каналу не нашли карточки и остатки. Откройте канал и запустите синхронизацию карточек и остатков.
+	                          <AlertTriangle size={14} /> По выбранному каналу не нашли карточки и остатки. Откройте канал и запустите синхронизацию карточек, остатков и истории.
                         </span>
                         <Button variant="secondary" size="sm" asChild>
                           <Link to={`/integrations/channels/${salesChannelId}/sync`}>Открыть синхронизацию</Link>
@@ -485,7 +489,7 @@ export function BackfillWizardPage() {
                         <AlertTriangle size={14} /> Не удалось загрузить данные автоматически. Проверьте доступы канала.
                       </span>
                     ) : (
-                      <span>После выбора канала мастер сам создаст проект и подтянет карточки с остатками.</span>
+	                      <span>После выбора канала мастер сам создаст проект и подтянет карточки, текущие остатки и историю продаж.</span>
                     )}
                   </div>
                 )}
@@ -497,41 +501,14 @@ export function BackfillWizardPage() {
             <Card>
               <CardHeader>
                 <div>
-                  <CardTitle>Дата начала истории</CardTitle>
-                  <CardDescription>С этой даты мастер будет подтягивать прошлые события канала. Для старта с текущих остатков этот шаг не нужен.</CardDescription>
+	                  <CardTitle>Дата начала истории</CardTitle>
+	                  <CardDescription>Продажи и возвраты будут загружены с этой даты.</CardDescription>
                 </div>
               </CardHeader>
               <CardContent className="grid gap-4 py-5 md:grid-cols-2">
                 <Field label="Дата начала истории" required>
                   <Input type="date" value={accountingStartDate} onChange={(event) => setAccountingStartDate(event.target.value)} />
                 </Field>
-                <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] p-4 text-sm">
-                  <div className="font-medium">Что произойдет после выбора даты</div>
-                  <ul className="mt-3 space-y-2 text-[var(--color-muted-foreground)] leading-relaxed">
-                    <li>Мастер подтянет события канала начиная с {accountingStartDate || "выбранной даты"}.</li>
-                    <li>Себестоимость можно будет применить к историческим продажам.</li>
-                    <li>Чем дальше дата в прошлом, тем выше риск неполных данных от маркетплейса.</li>
-                  </ul>
-                </div>
-                {hasOldDateRisk && (
-                  <div className="md:col-span-2 rounded-[var(--radius-md)] border border-[var(--color-warning)] bg-[var(--color-warning-soft)] p-4">
-                    <div className="flex items-start gap-3">
-                      <AlertTriangle size={16} className="mt-0.5 text-[var(--color-warning)] shrink-0" />
-                      <div className="flex-1">
-                        <div className="font-medium">Дата начала истории далеко в прошлом</div>
-                        <p className="mt-1 text-sm text-[var(--color-foreground)]/80">
-                          Вы выбрали дату примерно {oldRiskDays} дней назад. Без исторического backfill отчеты после этой даты могут быть неполными.
-                        </p>
-                        <CheckLabel
-                          className="mt-3"
-                          checked={confirmHistoricalRisk}
-                          onCheckedChange={(checked) => setConfirmHistoricalRisk(Boolean(checked))}
-                          label="Я понимаю риск неполных отчетов и хочу продолжить с историей"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
               </CardContent>
             </Card>
           )}
@@ -540,88 +517,89 @@ export function BackfillWizardPage() {
             <Card>
               <CardHeader>
                 <div>
-                  <CardTitle>Сопоставление товаров и себестоимость</CardTitle>
-                  <CardDescription>Для каждой карточки выберите внутренний товар (или создайте новый) и укажите себестоимость остатка за штуку.</CardDescription>
+                  <CardTitle>Товары и стартовые документы</CardTitle>
+                  <CardDescription>Сопоставьте карточки Ozon, укажите себестоимость и перенесите готовые строки в учёт.</CardDescription>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4 py-5">
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <Kpi tone="warning" label="Нужно сопоставить" value={summary.unmatched ?? 0} />
                   <Kpi tone="warning" label="Без себестоимости" value={summary.missingCost ?? 0} />
-                  <Kpi tone="success" label="Готово к созданию" value={Math.max(0, (summary.mapped ?? 0) - (summary.missingCost ?? 0))} />
-                  <Kpi tone="primary" label="Оценка стоимости" value={rub(summary.totalCost ?? 0)} hint={`${qty(summary.totalQty ?? 0)} в ${items.length} строках`} />
+	                  <Kpi tone="success" label="Готово к созданию" value={summary.mapped ?? 0} />
+	                  <Kpi
+	                    tone="primary"
+	                    label={historicalBackfill ? "Старт к учету" : "Оценка стоимости"}
+	                    value={rub(summary.totalCost ?? 0)}
+	                    hint={historicalBackfill
+	                      ? `${qty(summary.totalQty ?? 0)} старт, ${qty(summary.totalCurrentQty ?? 0)} сейчас`
+	                      : `${qty(summary.totalQty ?? 0)} в ${items.length} строках`}
+	                  />
                 </div>
-                <BackfillItemsTable
-                  items={items}
-                  selectedItemId={selectedItem?.id}
-                  selectedProducts={selectedProducts}
-                  warehouses={warehouses}
-                  onSelect={setSelectedItemId}
-                  patchItem={patchItem}
-                  maxRows={12}
-                  emptyAction={<ImportFromOzonAction importData={importData} salesChannelId={salesChannelId} />}
-                />
-              </CardContent>
-            </Card>
-          )}
-
-          {currentStep === "review" && (
-            <Card>
-              <CardHeader>
-                <div>
-                  <CardTitle>Проверка и создание документов</CardTitle>
-                  <CardDescription>Проверьте строки, блокирующие проблемы и создайте стартовые документы по складам.</CardDescription>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4 py-5">
-                <div className="grid gap-3 md:grid-cols-4">
-                  <Kpi tone="success" label="Готовых строк" value={items.filter((item: any) => item.status === "ready" || item.status === "applied").length} />
-                  <Kpi tone="warning" label="Блокеры" value={(summary.unmatched ?? 0) + (summary.missingCost ?? 0)} />
-                  <Kpi tone="primary" label="Количество" value={qty(summary.totalQty ?? 0)} />
-                  <Kpi tone="info" label="Стоимость" value={rub(summary.totalCost ?? 0)} />
-                </div>
-                {blockingIssues.length > 0 ? (
-                  <div className="rounded-[var(--radius-md)] border border-[var(--color-warning)] bg-[var(--color-warning-soft)] p-4">
-                    <div className="font-medium">Есть блокирующие строки</div>
-                    <div className="mt-1 text-sm text-[var(--color-foreground)]/75">
-                      Сначала сопоставьте товары и заполните себестоимость. Стартовые документы создаются только когда блокеров нет.
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-[var(--radius-md)] border border-[var(--color-success)] bg-[var(--color-success-soft)] p-4 flex items-center gap-3">
-                    <CheckCircle2 size={16} className="text-[var(--color-success)]" />
-                    <div className="text-sm">Блокеров нет. Можно создавать стартовые документы.</div>
+                {items.length > 0 && (
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    {(summary.unmatched ?? 0) > 0 ? (
+                      <Button
+                        variant="secondary"
+                        onClick={() => createAllUnmatched.mutate(unmatchedExternalIds)}
+                        disabled={createAllUnmatched.isPending || unmatchedExternalIds.length === 0}
+                      >
+                        <Plus size={14} /> {createAllUnmatched.isPending ? "Создаём карточки…" : `Создать товары для несопоставленных (${unmatchedExternalIds.length})`}
+                      </Button>
+                    ) : (
+                      <span className="text-xs text-[var(--color-muted-foreground)]">Все карточки сопоставлены с товарами.</span>
+                    )}
+                    <CheckLabel
+                      checked={onlyExceptions}
+                      onCheckedChange={setOnlyExceptions}
+                      label="Показать только незавершённые"
+                    />
                   </div>
                 )}
-                <BackfillItemsTable
-                  items={items}
-                  selectedItemId={selectedItem?.id}
-                  selectedProducts={selectedProducts}
-                  warehouses={warehouses}
-                  onSelect={setSelectedItemId}
-                  patchItem={patchItem}
-                  maxRows={items.length || 12}
-                  emptyAction={<ImportFromOzonAction importData={importData} salesChannelId={salesChannelId} />}
-                />
-                <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-muted)]/30 p-4">
-                  <div className="font-medium">Что произойдет после создания документов</div>
-                  <ul className="mt-3 space-y-2 text-sm text-[var(--color-muted-foreground)] leading-relaxed">
-                    <li>Появятся документы `Стартовый остаток товаров` на дату {accountingStartDate || "старта"}.</li>
-                    <li>Для каждой строки будут созданы партии FIFO с начальной себестоимостью.</li>
-                    <li>Проводка: Дт 41.* / Кт 80.01.</li>
-                  </ul>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="secondary" onClick={downloadIssues}>
-                    <Download size={14} /> Скачать список ошибок
-                  </Button>
-                  <Button onClick={() => apply.mutate()} disabled={blockingIssues.length > 0 || apply.isPending}>
-                    <PackageCheck size={14} /> Создать стартовые остатки
-                  </Button>
-                </div>
+                {items.length > 0 && (
+                  <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-muted)]/30 p-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="font-medium">
+                        {blockingIssues.length > 0 ? `Готовых строк: ${readyCount}` : "Можно создавать документы"}
+                      </div>
+                      <div className="mt-1 text-sm text-[var(--color-muted-foreground)]">
+                        {blockingIssues.length > 0
+                          ? "Готовые строки можно перенести в учёт сейчас, остальные останутся в мастере."
+                          : historicalBackfill
+                            ? "Будут созданы стартовые партии и проведена история продаж."
+                            : "Будут созданы стартовые остатки по заполненным строкам."}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {blockingIssues.length > 0 && (
+                        <Button variant="secondary" onClick={downloadIssues}>
+                          <Download size={14} /> Проблемные строки
+                        </Button>
+                      )}
+                      {blockingIssues.length > 0 ? (
+                        <Button onClick={() => apply.mutate(true)} disabled={readyCount === 0 || apply.isPending}>
+                          <PackageCheck size={14} /> {apply.isPending ? "Создаём…" : `Создать документы для готовых (${readyCount})`}
+                        </Button>
+                      ) : (
+                        <Button onClick={() => apply.mutate(false)} disabled={apply.isPending}>
+                          <PackageCheck size={14} /> {apply.isPending ? "Создаём…" : historicalBackfill ? "Создать стартовые партии и провести историю" : "Создать стартовые остатки"}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {apply.data?.created?.length > 0 && (
                   <div className="rounded-[var(--radius-md)] border border-[var(--color-success)] bg-[var(--color-success-soft)] p-4 space-y-3">
                     <div className="font-medium">Документы созданы</div>
+                    {apply.data?.deferred > 0 && (
+                      <div className="text-sm text-[var(--color-foreground)]/75">
+                        Отложено строк без сопоставления или себестоимости: {apply.data.deferred}. Вернитесь к мастеру, чтобы завершить их позже — уже созданные документы не пересоздаются.
+                      </div>
+                    )}
+                    {apply.data?.historyProcessing && (
+                      <div className="text-sm text-[var(--color-foreground)]/75">
+                        История проведена: продаж {apply.data.historyProcessing.salesPosted}, возвратов {apply.data.historyProcessing.returnsPosted}, финансовых операций {apply.data.historyProcessing.financePosted}. Требуют внимания: {apply.data.historyProcessing.needsAttention}.
+                      </div>
+                    )}
                     {apply.data.created.map((entry: any) => (
                       <div key={entry.document.id} className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-card)] p-3 flex items-center justify-between gap-3">
                         <div>
@@ -634,6 +612,19 @@ export function BackfillWizardPage() {
                     <Button variant="secondary" asChild><Link to="/inventory">Перейти в складской обзор</Link></Button>
                   </div>
                 )}
+                <BackfillItemsTable
+                  items={items}
+                  selectedItemId={selectedItem?.id}
+                  selectedProducts={selectedProducts}
+                  warehouses={warehouses}
+                  onSelect={setSelectedItemId}
+                  patchItem={patchItem}
+	                  createInternal={createInternal}
+	                  onlyExceptions={onlyExceptions}
+	                  historicalMode={historicalBackfill}
+	                  maxRows={12}
+	                  emptyAction={<ImportFromOzonAction importData={importData} salesChannelId={salesChannelId} />}
+                />
               </CardContent>
             </Card>
           )}
@@ -651,30 +642,6 @@ export function BackfillWizardPage() {
           </div>
         </div>
     </div>
-  );
-}
-
-function ModeCard({ active, title, desc, onClick }: { active: boolean; title: string; desc: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={[
-        "text-left rounded-[var(--radius-md)] border p-4 transition-colors",
-        active ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)]" : "border-[var(--color-border-strong)] hover:bg-[var(--color-muted)]"
-      ].join(" ")}
-    >
-      <div className="flex items-start gap-3">
-        <span className={[
-          "mt-0.5 size-4 shrink-0 rounded-full border-2",
-          active ? "border-[var(--color-primary)] bg-[var(--color-primary)] ring-2 ring-[var(--color-primary)]/30" : "border-[var(--color-border-strong)]"
-        ].join(" ")} />
-        <div>
-          <div className="text-sm font-semibold">{title}</div>
-          <p className="mt-1 text-xs leading-relaxed text-[var(--color-muted-foreground)]">{desc}</p>
-        </div>
-      </div>
-    </button>
   );
 }
 
@@ -708,17 +675,19 @@ function ImportFromOzonAction({
       {importData.isError && (
         <p className="text-xs text-[var(--color-danger)]">Не удалось загрузить данные. Проверьте доступы канала.</p>
       )}
-      {importData.isSuccess && !importData.isPending && (
-        <div className="flex max-w-md flex-col items-center gap-2 text-xs text-[var(--color-muted-foreground)]">
-          <p>Импорт выполнен, но карточек не нашли. Откройте канал и запустите синхронизацию карточек и остатков.</p>
-          <Button variant="secondary" size="sm" asChild>
-            <Link to={`/integrations/channels/${salesChannelId}/sync`}>Открыть синхронизацию</Link>
+	      {importData.isSuccess && !importData.isPending && (
+	        <div className="flex max-w-md flex-col items-center gap-2 text-xs text-[var(--color-muted-foreground)]">
+	          <p>Импорт выполнен, но карточек не нашли. Откройте канал и запустите синхронизацию карточек, остатков и истории.</p>
+	          <Button variant="secondary" size="sm" asChild>
+	            <Link to={`/integrations/channels/${salesChannelId}/sync`}>Открыть синхронизацию</Link>
           </Button>
         </div>
       )}
     </div>
   );
 }
+
+const EXCEPTION_RANK: Record<string, number> = { needs_mapping: 0, needs_cost: 1 };
 
 function BackfillItemsTable({
   items,
@@ -727,6 +696,9 @@ function BackfillItemsTable({
   warehouses,
   onSelect,
   patchItem,
+  createInternal,
+  onlyExceptions,
+  historicalMode,
   maxRows,
   emptyAction
 }: {
@@ -736,37 +708,63 @@ function BackfillItemsTable({
   warehouses: any[];
   onSelect(itemId: string): void;
   patchItem: { mutate(input: { itemId: string; payload?: Record<string, unknown>; status?: string }): void };
+  createInternal?: { mutate(externalProductId: string): void; isPending: boolean };
+  onlyExceptions?: boolean;
+  historicalMode?: boolean;
   maxRows: number;
   emptyAction?: React.ReactNode;
 }) {
   if (items.length === 0) {
     return (
-      <EmptyState
-        title="Карточки ещё не загружены"
-        description="Нажмите «Загрузить с Ozon», чтобы выгрузить карточки и текущие остатки. Загрузка может занять до минуты."
-        action={emptyAction}
-      />
+	      <EmptyState
+	        title="Карточки ещё не загружены"
+	        description="Нажмите «Загрузить с Ozon», чтобы выгрузить карточки, текущие остатки и историю продаж. Загрузка может занять до минуты."
+	        action={emptyAction}
+	      />
+    );
+  }
+  const ordered = [...items].sort((left, right) => {
+    const leftRank = EXCEPTION_RANK[left.status] ?? 2;
+    const rightRank = EXCEPTION_RANK[right.status] ?? 2;
+    return leftRank - rightRank;
+  });
+  const visible = (onlyExceptions
+    ? ordered.filter((item) => item.status === "needs_mapping" || item.status === "needs_cost")
+    : ordered
+  ).slice(0, maxRows);
+  const hiddenCount = items.length - visible.length;
+  if (visible.length === 0) {
+    return (
+      <div className="rounded-[var(--radius-md)] border border-[var(--color-success)] bg-[var(--color-success-soft)] p-4 flex items-center gap-3">
+        <CheckCircle2 size={16} className="text-[var(--color-success)]" />
+        <div className="text-sm">Незавершённых строк нет — все карточки сопоставлены и с себестоимостью.</div>
+      </div>
     );
   }
   return (
     <div className="rounded-[var(--radius-md)] border border-[var(--color-border)]">
       <Table>
-        <THead>
-          <TR>
-            <TH>Карточка Ozon</TH>
-            <TH>Внутренний товар</TH>
-            <TH numeric>Остаток</TH>
-            <TH>Склад</TH>
-            <TH numeric>Себест./шт</TH>
-            <TH numeric>Итого</TH>
+	        <THead>
+	          <TR>
+	            <TH>Карточка Ozon</TH>
+	            <TH>Внутренний товар</TH>
+	            <TH numeric>{historicalMode ? "Старт" : "Остаток"}</TH>
+	            {historicalMode && <TH numeric>Сейчас</TH>}
+	            <TH>Склад</TH>
+	            <TH numeric>Себест./шт</TH>
+	            <TH numeric>Итого</TH>
             <TH>Статус</TH>
           </TR>
         </THead>
         <TBody>
-          {items.slice(0, maxRows).map((item: any) => {
-            const payload = item.payload ?? {};
-            const warehouse = warehouses.find((candidate: any) => candidate.id === payload.warehouseId);
-            return (
+	          {visible.map((item: any) => {
+	            const payload = item.payload ?? {};
+	            const warehouse = warehouses.find((candidate: any) => candidate.id === payload.warehouseId);
+	            const openingQty = Number(payload.openingQty ?? payload.observedQty ?? 0);
+	            const observedQty = Number(payload.observedQty ?? 0);
+	            const salesQty = Number(payload.historicalSalesQty ?? 0);
+	            const returnsQty = Number(payload.historicalReturnsQty ?? 0);
+	            return (
               <TR key={item.id} interactive selected={item.id === selectedItemId} onClick={() => onSelect(item.id)}>
                 <TD>
                   <div className="flex items-center gap-2.5">
@@ -781,44 +779,105 @@ function BackfillItemsTable({
                   <Select
                     value={String(payload.productId ?? "")}
                     onClick={(event) => event.stopPropagation()}
-                    onChange={(event) => patchItem.mutate({ itemId: item.id, payload: { productId: event.target.value || undefined } })}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (value === "__create__") {
+                        if (createInternal && payload.externalProductId) createInternal.mutate(String(payload.externalProductId));
+                        return;
+                      }
+                      patchItem.mutate({ itemId: item.id, payload: { productId: value || undefined } });
+                    }}
                     className="min-w-[180px]"
                   >
                     <option value="">— не сопоставлен —</option>
+                    {createInternal && payload.externalProductId && (
+                      <option value="__create__">＋ Создать товар из карточки</option>
+                    )}
                     {selectedProducts.map((product: any) => (
                       <option key={product.id} value={product.id}>{product.sku} · {product.name}</option>
                     ))}
                   </Select>
                 </TD>
-                <TD numeric>{qty(Number(payload.observedQty ?? 0))}</TD>
-                <TD muted>{warehouse?.name ?? "—"}</TD>
+	                <TD numeric>
+	                  <div className="font-semibold">{qty(openingQty)}</div>
+	                  {historicalMode && (
+	                    <div className="text-[11px] text-[var(--color-muted-foreground)]">
+	                      +{qty(salesQty)} продаж{returnsQty > 0 ? `, -${qty(returnsQty)} возвратов` : ""}
+	                    </div>
+	                  )}
+	                </TD>
+	                {historicalMode && <TD numeric>{qty(observedQty)}</TD>}
+	                <TD muted>{warehouse?.name ?? "—"}</TD>
                 <TD numeric>
-                  <Input
-                    key={`${item.id}:${payload.unitCostRub ?? ""}`}
-                    type="text"
-                    inputMode="decimal"
-                    defaultValue={payload.unitCostRub == null ? "" : String(payload.unitCostRub)}
-                    onClick={(event) => event.stopPropagation()}
-                    onBlur={(event) => {
-                      const next = event.target.value.trim();
-                      const parsed = parseCostRub(next);
-                      if (parsed === undefined) {
-                        event.target.value = payload.unitCostRub == null ? "" : String(payload.unitCostRub);
-                        return;
-                      }
-                      patchItem.mutate({ itemId: item.id, payload: { unitCostRub: parsed } });
-                    }}
-                    className="w-28 justify-end text-right"
-                  />
+                  <BackfillCostInput itemId={item.id} value={payload.unitCostRub} patchItem={patchItem} />
                 </TD>
-                <TD numeric>{rub(Number(payload.totalCostRub ?? Number(payload.unitCostRub ?? 0) * Number(payload.observedQty ?? 0)))}</TD>
+	                <TD numeric>{rub(Number(payload.totalCostRub ?? Number(payload.unitCostRub ?? 0) * openingQty))}</TD>
                 <TD><Badge tone={statusTone(item.status)}>{statusLabel(item.status)}</Badge></TD>
               </TR>
             );
           })}
         </TBody>
       </Table>
+      {hiddenCount > 0 && (
+        <div className="border-t border-[var(--color-border)] px-3 py-2 text-[11px] text-[var(--color-muted-foreground)]">
+          {onlyExceptions ? `Скрыто готовых строк: ${hiddenCount}` : `Показаны первые ${visible.length} из ${items.length} строк`}
+        </div>
+      )}
     </div>
+  );
+}
+
+function BackfillCostInput({
+  itemId,
+  value,
+  patchItem
+}: {
+  itemId: string;
+  value: unknown;
+  patchItem: { mutate(input: { itemId: string; payload?: Record<string, unknown>; status?: string }): void };
+}) {
+  const externalValue = value == null ? "" : String(value);
+  const [draft, setDraft] = useState(externalValue);
+  const lastCommittedRef = useRef(externalValue);
+
+  useEffect(() => {
+    setDraft(externalValue);
+    lastCommittedRef.current = externalValue;
+  }, [externalValue]);
+
+  const commitParsed = (parsed: number | null) => {
+    const normalized = parsed === null ? "" : String(parsed);
+    if (normalized === lastCommittedRef.current) return;
+    lastCommittedRef.current = normalized;
+    patchItem.mutate({ itemId, payload: { unitCostRub: parsed } });
+  };
+
+  const commitDraft = () => {
+    const parsed = parseCostRub(draft.trim());
+    if (parsed === undefined) {
+      setDraft(externalValue);
+      return;
+    }
+    commitParsed(parsed);
+  };
+
+  return (
+    <Input
+      type="text"
+      inputMode="decimal"
+      value={draft}
+      onClick={(event) => event.stopPropagation()}
+      onChange={(event) => {
+        setDraft(event.target.value);
+      }}
+      onBlur={commitDraft}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.currentTarget.blur();
+        }
+      }}
+      className="w-28 justify-end text-right"
+    />
   );
 }
 

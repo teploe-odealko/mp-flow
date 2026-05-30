@@ -9,7 +9,7 @@ MPFlow — single-service приложение: один Node.js процесс 
 - `src/infra/db` — PostgreSQL persistence, schema bootstrap, шифрование секретов каналов.
 - `src/plugins` — marketplace-интеграции и plugin runtime.
 - `src/frontend` — React приложение и пользовательские сценарии.
-- `tests` — unit, integration, scenario и browser smoke проверки.
+- `tests` — unit, integration и scenario проверки.
 
 ## Данные и multi-tenant
 

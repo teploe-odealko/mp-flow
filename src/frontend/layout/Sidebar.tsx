@@ -76,7 +76,7 @@ const NAV: NavItem[] = [
     label: "Настройки",
     path: "/settings",
     Icon: Settings,
-    match: [{ path: "/setup" }, { path: "/settings", end: true }]
+    match: [{ path: "/setup" }, { path: "/settings" }]
   }
 ];
 

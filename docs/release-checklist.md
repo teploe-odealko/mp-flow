@@ -5,7 +5,7 @@
 - [ ] Старый GitHub repo переименован в `mp-flow-archive`.
 - [ ] Новый clean repo создан как `mp-flow`.
 - [ ] В clean repo нет старых папок `accounting/`, `website/`, `landing/`, `moysklad/`, `tmp/`.
-- [ ] В clean repo нет `.env`, `node_modules`, `dist`, `test-results`, `playwright-report`, дампов и скриншотов с секретами.
+- [ ] В clean repo нет `.env`, `node_modules`, `dist`, `test-results`, дампов и скриншотов с секретами.
 - [ ] `README.md`, `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md` лежат в корне.
 - [ ] GitHub Actions проходят на `main`.
 
@@ -15,7 +15,7 @@
 - [ ] `npm test`.
 - [ ] `npm run build`.
 - [ ] Production startup smoke проходит.
-- [ ] Browser smoke проходит для login/signup/setup/onboarding.
+- [ ] Критичные UI-сценарии проверены вручную через локальный браузер.
 
 ## Production
 

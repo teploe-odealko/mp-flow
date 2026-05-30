@@ -16,6 +16,8 @@ interface AuthSession {
   user: AuthUser | null;
 }
 
+const authSessionQueryKey = ["auth", "session"] as const;
+
 interface AuthSetup {
   signUpOpen: boolean;
   signUpMode?: "owner" | "user";
@@ -54,8 +56,8 @@ export function LoginPage() {
     setError("");
     setPending(true);
     try {
-      await apiPost("/api/auth/login", { email, password }, { notifyOnError: false });
-      await queryClient.invalidateQueries({ queryKey: ["auth", "session"] });
+      const session = await apiPost<AuthSession>("/api/auth/login", { email, password }, { notifyOnError: false });
+      queryClient.setQueryData<AuthSession>(authSessionQueryKey, session);
       navigate(next, { replace: true });
     } catch (err) {
       setError(errorMessage(err));
@@ -192,7 +194,7 @@ export function VerifyEmailPage() {
 
 function useSessionQuery() {
   return useQuery({
-    queryKey: ["auth", "session"],
+    queryKey: authSessionQueryKey,
     retry: false,
     queryFn: () => apiGet<AuthSession>("/api/auth/session", { notifyOnError: false })
   });

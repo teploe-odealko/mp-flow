@@ -25,9 +25,7 @@
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
     "test:postgres": "RUN_POSTGRES_TESTS=1 vitest run tests/integration/postgres-runtime.test.ts",
-    "test:scenarios": "vitest run tests/scenarios",
-    "test:browser": "playwright test",
-    "test:browser:headed": "playwright test --headed"
+    "test:scenarios": "vitest run tests/scenarios"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.3",
@@ -54,7 +52,6 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@playwright/test": "^1.60.0",
     "@tailwindcss/vite": "^4.3.0",
     "@types/node": "^25.9.1",
     "@types/nodemailer": "^8.0.0",

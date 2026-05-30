@@ -1,9 +1,8 @@
 import { Link } from "react-router-dom";
 import {
-  ArrowRight,
   Building2,
   CalendarDays,
-  PackageCheck,
+  KeyRound,
   Pencil
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -33,11 +32,6 @@ export function SettingsOverviewPage() {
   }
 
   const policy = state.accountingPolicy;
-  const channels = (state.salesChannels ?? []).filter((channel: any) => channel.status !== "disabled");
-  const latestBackfillProject = (state.backfillProjects ?? [])
-    .slice()
-    .sort((left: any, right: any) => String(right.createdAt).localeCompare(String(left.createdAt)))[0];
-  const onboardingPath = latestBackfillProject ? `/setup/existing-store/${latestBackfillProject.id}/review` : "/setup/existing-store?from=setup&mode=current_stock_start";
 
   return (
     <div className="max-w-6xl mx-auto flex flex-col gap-5">
@@ -96,30 +90,27 @@ export function SettingsOverviewPage() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2">
+        <Card>
           <CardHeader>
             <div>
-              <CardTitle>Старт магазина</CardTitle>
-              <CardDescription>Вернитесь к мастеру работающего магазина</CardDescription>
+              <CardTitle>MCP</CardTitle>
+              <CardDescription>Ключи для Codex, Claude и других агентов</CardDescription>
             </div>
-            <PackageCheck size={20} className="text-[var(--color-muted-foreground)]" />
+            <KeyRound size={20} className="text-[var(--color-muted-foreground)]" />
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <DataList
-              columns={3}
+              columns={2}
               items={[
-                { label: "Каналы продаж", value: channels.length ? `${channels.length}` : "Нет подключённых" },
-                { label: "Последний проект старта", value: latestBackfillProject?.name ?? "Не создан" },
-                { label: "Статус", value: latestBackfillProject?.status ?? "Можно начать" }
+                { label: "Endpoint", value: "/mcp" },
+                { label: "Доступ", value: "Bearer-ключ" }
               ]}
             />
-            <div className="flex flex-wrap gap-2">
-              <Button asChild>
-                <Link to={onboardingPath}>
-                  Продолжить старт магазина <ArrowRight size={14} />
-                </Link>
-              </Button>
-            </div>
+            <Button variant="ghost" size="sm" asChild className="self-start">
+              <Link to="/settings/mcp">
+                <KeyRound size={14} /> Управлять ключами
+              </Link>
+            </Button>
           </CardContent>
         </Card>
       </div>

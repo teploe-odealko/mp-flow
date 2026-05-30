@@ -66,6 +66,34 @@ describe("sync inbox workflows", () => {
     expect(afterSecond.channelFinanceEvents.length).toBe(afterFirst.channelFinanceEvents.length);
   });
 
+  it("can load channel facts without posting them to accounting", async () => {
+    resetIds();
+    const app = new AccountingApp();
+    const api = createApi(app);
+    await post(api, "/api/dev/demo");
+    const before = await get<any>(api, "/api/state");
+    const channel = before.salesChannels.find((candidate: any) => candidate.name.includes("Ozon"));
+
+    const run = await post<any>(api, `/api/integrations/channels/${channel.id}/sync-runs`, {
+      credentials: { clientId: "demo-client", apiKey: "demo-key" },
+      mode: "backfill",
+      streams: ["products", "stocks", "sales", "finance_events"],
+      autoProcess: false
+    });
+    const after = await get<any>(api, "/api/state");
+    const saleEvent = after.externalEvents.find((event: any) => event.externalId === "ozon-sale-demo-1");
+    const feeEvent = after.externalEvents.find((event: any) => event.externalId === "ozon-fee-demo-1");
+
+    expect(run.status).toBe("completed");
+    expect(run.stats.sales).toBeGreaterThan(0);
+    expect(run.stats.auto_sales_materialized).toBe(0);
+    expect(run.stats.auto_finance_posted).toBe(0);
+    expect(after.sales.length).toBe(before.sales.length);
+    expect(after.channelFinanceEvents.length).toBe(before.channelFinanceEvents.length);
+    expect(saleEvent.status).not.toBe("processed");
+    expect(feeEvent.status).not.toBe("processed");
+  });
+
   it("moves an unmatched event to ready_for_processing after mapping and reprocess", async () => {
     resetIds();
     const app = new AccountingApp();
@@ -412,6 +440,156 @@ describe("sync inbox workflows", () => {
       (pluginRegistry as any).get = originalGet;
       (pluginRegistry as any).all = originalAll;
     }
+  });
+
+  it("skips facts dated before the accounting start as out-of-scope while posting in-range sales", async () => {
+    resetIds();
+    const app = new AccountingApp();
+    const api = createApi(app);
+    await post(api, "/api/setup", {
+      displayName: "Accounting start QA",
+      accountingStartDate: "2026-05-01",
+      confirmHistoricalStart: true
+    });
+    app.state.integrationPlugins.push({
+      id: "plugin_test",
+      code: "test",
+      displayName: "Test plugin",
+      status: "installed"
+    });
+
+    const originalGet = pluginRegistry.get.bind(pluginRegistry);
+    const originalAll = pluginRegistry.all.bind(pluginRegistry);
+    const mockPlugin = {
+      code: "test",
+      displayName: "Test plugin",
+      capabilities: ["sales"] as const,
+      validateCredentials: () => ({ ok: true as const }),
+      sync: async ({ app, channelId, syncRunId }: any) => {
+        const stats = { products: 0, events: 0, stocks: 0, sales: 0, returns: 0, finance_events: 0, payouts: 0 };
+        app.ingestExternalEvent({
+          channelId,
+          syncRunId,
+          eventType: "sale",
+          externalId: "mock-sale-before-start",
+          occurredAt: "2026-04-15T12:00:00.000Z",
+          payload: { postingNumber: "POST-PRE-1", lines: [{ sku: "EXT-A", qty: 1, amountRub: 1000 }] }
+        });
+        app.ingestExternalEvent({
+          channelId,
+          syncRunId,
+          eventType: "sale",
+          externalId: "mock-sale-in-range",
+          occurredAt: "2026-05-10T12:00:00.000Z",
+          payload: { postingNumber: "POST-IN-1", lines: [{ sku: "EXT-A", qty: 1, amountRub: 1100 }] }
+        });
+        stats.events += 2;
+        stats.sales += 2;
+        return { pluginCode: "test", channelId, status: "completed" as const, stats, errors: [] };
+      }
+    };
+
+    (pluginRegistry as any).get = (code: string) => code === "test" ? mockPlugin : originalGet(code);
+    (pluginRegistry as any).all = () => [mockPlugin as any, ...originalAll()];
+
+    try {
+      const channel = await post<any>(api, "/api/integrations/channels", {
+        name: "Boundary channel",
+        channelType: "marketplace",
+        pluginCode: "test",
+        enabledStreams: ["sales"]
+      });
+      const product = await post<any>(api, "/api/products", { sku: "SKU-A", name: "Товар A" });
+      const externalProduct = await post<any>(api, `/api/channels/${channel.id}/external-products`, { externalSku: "EXT-A", externalName: "External A" });
+      await post(api, `/api/external-products/${externalProduct.id}/link`, { productId: product.id });
+      const initial = await get<any>(api, "/api/state");
+      const ownWarehouse = initial.warehouses.find((warehouse: any) => warehouse.warehouseType === "own");
+      await post(api, "/api/inventory/opening-balances", {
+        date: "2026-05-01",
+        warehouseId: ownWarehouse.id,
+        lines: [{ productId: product.id, qty: 10, costRub: 5000 }]
+      });
+      await post(api, "/api/inventory/transfers", {
+        transferDate: "2026-05-02",
+        fromWarehouseId: ownWarehouse.id,
+        toWarehouseId: channel.salesPointWarehouseId,
+        lines: [{ productId: product.id, qty: 5 }]
+      });
+
+      const run = await post<any>(api, `/api/integrations/channels/${channel.id}/sync-runs`, {
+        mode: "incremental",
+        streams: ["sales"]
+      });
+      const after = await get<any>(api, "/api/state");
+      const beforeEvent = after.externalEvents.find((event: any) => event.externalId === "mock-sale-before-start");
+      const inRangeEvent = after.externalEvents.find((event: any) => event.externalId === "mock-sale-in-range");
+      const postedSale = after.sales.find((sale: any) => sale.externalEventId === inRangeEvent.id);
+      const preStartSale = after.sales.find((sale: any) => sale.externalEventId === beforeEvent.id);
+
+      expect(run.status).toBe("completed");
+      expect(run.stats.auto_skipped_before_start).toBe(1);
+      expect(run.stats.auto_sales_materialized).toBe(1);
+      expect(run.stats.auto_needs_attention).toBe(0);
+
+      expect(beforeEvent.status).toBe("ignored");
+      expect(beforeEvent.reason).toContain("старта учёта");
+      expect(beforeEvent.lastError).toBeUndefined();
+      expect(preStartSale).toBeUndefined();
+
+      expect(inRangeEvent.status).toBe("processed");
+      expect(postedSale?.status === "shipped" || postedSale?.status === "posted").toBe(true);
+    } finally {
+      (pluginRegistry as any).get = originalGet;
+      (pluginRegistry as any).all = originalAll;
+    }
+  });
+
+  it("honors autoLinkProducts:false — observes external cards and stock without auto-linking internal products", async () => {
+    resetIds();
+    const app = new AccountingApp();
+    const api = createApi(app);
+    await post(api, "/api/dev/demo");
+    const seeded = await get<any>(api, "/api/state");
+    const channel = seeded.salesChannels.find((candidate: any) => candidate.name.includes("Ozon"));
+    const productCountBefore = seeded.products.length;
+    expect(channel).toBeTruthy();
+    // Demo seeding never pre-links external cards — linking only ever happens during a sync.
+    expect(seeded.productExternalLinks.length).toBe(0);
+
+    // Onboarding import sync: observe cards + stock, but leave product mapping to the user.
+    const importRun = await post<any>(api, `/api/integrations/channels/${channel.id}/sync-runs`, {
+      credentials: { clientId: "demo-client", apiKey: "demo-key" },
+      mode: "full",
+      streams: ["products", "stocks", "sales", "finance_events"],
+      autoLinkProducts: false
+    });
+    const afterImport = await get<any>(api, "/api/state");
+    const externalCard = afterImport.externalProducts.find((candidate: any) => candidate.channelId === channel.id);
+    const saleEvent = afterImport.externalEvents.find((event: any) => event.externalId === "ozon-sale-demo-1");
+
+    expect(importRun.status).toBe("completed");
+    expect(importRun.stats.products).toBe(1);
+    expect(importRun.stats.stocks).toBe(1);
+    // Card observed and stock recorded, but no internal product created and no link established.
+    expect(externalCard).toBeTruthy();
+    expect(afterImport.observedStocks.some((stock: any) => stock.externalProductId === externalCard.id)).toBe(true);
+    expect(afterImport.products.length).toBe(productCountBefore);
+    expect(afterImport.productExternalLinks.length).toBe(0);
+    // With no link, the sale fact cannot resolve a product and waits for an explicit mapping decision.
+    expect(saleEvent.status).toBe("needs_mapping");
+    expect(importRun.stats.auto_sales_materialized ?? 0).toBe(0);
+
+    // A subsequent ongoing sync (default behavior) auto-links the observed card to the internal product.
+    const ongoingRun = await post<any>(api, `/api/integrations/channels/${channel.id}/sync-runs`, {
+      credentials: { clientId: "demo-client", apiKey: "demo-key" },
+      mode: "incremental",
+      streams: ["products", "stocks", "sales", "finance_events"]
+    });
+    const afterOngoing = await get<any>(api, "/api/state");
+
+    expect(ongoingRun.status).toBe("completed");
+    expect(afterOngoing.productExternalLinks.length).toBe(1);
+    expect(afterOngoing.productExternalLinks[0].externalProductId).toBe(externalCard.id);
   });
 
   it("refreshes eventType for an existing unmateralized external event on repeated ingest", async () => {
