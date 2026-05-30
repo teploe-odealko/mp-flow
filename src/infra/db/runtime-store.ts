@@ -1271,7 +1271,12 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     return Object.fromEntries(
       result.rows
         .filter((row) => typeof row.public_channel_id === "string" && row.public_channel_id.length > 0)
-        .map((row) => [row.public_channel_id, this.decryptCredentials(row.encrypted_credentials)])
+        .map((row) => [row.public_channel_id, this.decryptCredentialsSafe(row.encrypted_credentials, {
+          workspaceId,
+          secretType: "channel_credentials",
+          scopeId: row.public_channel_id
+        })])
+        .filter(([, credentials]) => Object.keys(credentials).length > 0)
     ) as ChannelCredentials;
   }
 
@@ -1345,15 +1350,22 @@ export class PostgresRuntimeStore implements RuntimePersistence {
       where workspace_id = $1 and encrypted_payload is not null
     `, [workspaceId]);
 
-    return Object.fromEntries(
-      result.rows.map((row) => [
-        [row.plugin_code, row.namespace, row.scope_type, row.scope_id, row.secret_key].join("::"),
+    const entries = result.rows.map((row) => {
+      const mapKey = [row.plugin_code, row.namespace, row.scope_type, row.scope_id, row.secret_key].join("::");
+      return [
+        mapKey,
         {
           revision: Number(row.revision ?? 1),
-          payload: this.decryptCredentials(row.encrypted_payload)
+          payload: this.decryptCredentialsSafe(row.encrypted_payload, {
+            workspaceId,
+            secretType: "plugin_secret",
+            scopeId: mapKey
+          })
         }
-      ])
-    ) as PluginSecretRecords;
+      ] satisfies [string, { revision: number; payload: Record<string, string> }];
+    }).filter(([, record]) => Object.keys(record.payload).length > 0);
+
+    return Object.fromEntries(entries) as PluginSecretRecords;
   }
 
   private async savePluginSecrets(client: PoolClient, workspaceId: string, organizationId: string | undefined, records: PluginSecretRecords) {
@@ -1504,6 +1516,22 @@ export class PostgresRuntimeStore implements RuntimePersistence {
 
   private decryptCredentials(payload: unknown): Record<string, string> {
     return this.decryptPayload<Record<string, string>>(payload) ?? {};
+  }
+
+  private decryptCredentialsSafe(payload: unknown, context: { workspaceId: string; secretType: string; scopeId: string }): Record<string, string> {
+    try {
+      return this.decryptCredentials(payload);
+    } catch (error) {
+      console.warn(JSON.stringify({
+        level: "warn",
+        event: "runtime_secret_decrypt_failed",
+        workspaceId: context.workspaceId,
+        secretType: context.secretType,
+        scopeId: context.scopeId,
+        error: error instanceof Error ? error.message : String(error)
+      }));
+      return {};
+    }
   }
 
   private decryptCredentialMap(payload: unknown): ChannelCredentials {
