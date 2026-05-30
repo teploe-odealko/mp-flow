@@ -344,6 +344,7 @@ export class AuthService {
       on conflict (id) do nothing;
     `);
     await this.migrateVerifiedUsersWithoutWorkspace();
+    await this.migrateDefaultWorkspaceMembersToPersonalWorkspaces();
   }
 
   private async migrateVerifiedUsersWithoutWorkspace() {
@@ -356,23 +357,30 @@ export class AuthService {
     );
     if (users.length === 0) return;
 
-    const defaultMember = await this.pool.query<{ exists: boolean }>(
-      "select exists(select 1 from auth_workspace_member where workspace_id = $1) as exists",
-      [DEFAULT_AUTH_WORKSPACE_ID]
-    );
-    const allowedDefaultEmails = bootstrapEmails();
-    const defaultUser = defaultMember.rows[0]?.exists
-      ? undefined
-      : users.find((user) => allowedDefaultEmails.has(normalizeEmail(user.email))) ?? users[0];
-
     for (const user of users) {
-      const workspaceId = user.id === defaultUser?.id ? DEFAULT_AUTH_WORKSPACE_ID : this.newWorkspaceId();
-      const workspaceName = workspaceId === DEFAULT_AUTH_WORKSPACE_ID ? "MPFlow" : user.email;
       await this.createWorkspaceMembership(this.pool, {
         id: user.id,
         email: user.email,
         roleCode: "owner"
-      }, workspaceId, workspaceName);
+      }, this.newWorkspaceId(), user.email);
+    }
+  }
+
+  private async migrateDefaultWorkspaceMembersToPersonalWorkspaces() {
+    const { rows: users } = await this.pool.query<{ id: string; email: string; role_code: AuthPrincipal["roleCode"] }>(
+      `select u.id, u.email, m.role_code
+       from auth_workspace_member m
+       join auth_user u on u.id = m.user_id
+       where m.workspace_id = $1
+       order by m.created_at, u.id`,
+      [DEFAULT_AUTH_WORKSPACE_ID]
+    );
+    for (const user of users) {
+      await this.createWorkspaceMembership(this.pool, {
+        id: user.id,
+        email: user.email,
+        roleCode: user.role_code
+      }, this.newWorkspaceId(), user.email);
     }
   }
 
@@ -388,14 +396,11 @@ export class AuthService {
     const row = existing.rows[0];
     if (row) return { workspaceId: row.workspace_id, roleCode: row.role_code };
 
-    const memberCount = await source.query<{ count: string }>("select count(*)::text as count from auth_workspace_member");
-    const workspaceId = Number(memberCount.rows[0]?.count ?? "0") === 0 ? DEFAULT_AUTH_WORKSPACE_ID : this.newWorkspaceId();
-    const workspaceName = workspaceId === DEFAULT_AUTH_WORKSPACE_ID ? "MPFlow" : user.email;
     return await this.createWorkspaceMembership(source, {
       id: user.id,
       email: user.email,
       roleCode: "owner"
-    }, workspaceId, workspaceName);
+    }, this.newWorkspaceId(), user.email);
   }
 
   private async createWorkspaceMembership(

@@ -273,8 +273,9 @@ describePostgres("postgres runtime store", () => {
         password: "password123"
       });
 
-      expect(ownerLogin.user.workspaceId).toBe("default");
+      expect(ownerLogin.user.workspaceId).not.toBe("default");
       expect(tenantLogin.user.workspaceId).not.toBe("default");
+      expect(tenantLogin.user.workspaceId).not.toBe(ownerLogin.user.workspaceId);
 
       const inspectPool = new Pool({ connectionString: connectionString! });
       try {
@@ -285,7 +286,7 @@ describePostgres("postgres runtime store", () => {
            order by u.email`
         );
         expect(rows.rows).toEqual([
-          { email: "owner@example.com", workspace_id: "default", role_code: "owner" },
+          { email: "owner@example.com", workspace_id: ownerLogin.user.workspaceId, role_code: "owner" },
           { email: "tenant@example.com", workspace_id: tenantLogin.user.workspaceId, role_code: "owner" }
         ]);
       } finally {
@@ -293,6 +294,69 @@ describePostgres("postgres runtime store", () => {
       }
     } finally {
       await auth.close();
+      restoreEnv("DATABASE_URL", previousEnv.DATABASE_URL);
+      restoreEnv("ACCOUNTING_AUTH_PUBLIC_SIGNUP", previousEnv.ACCOUNTING_AUTH_PUBLIC_SIGNUP);
+      restoreEnv("ACCOUNTING_SAAS_WORKSPACES_ENABLED", previousEnv.ACCOUNTING_SAAS_WORKSPACES_ENABLED);
+      restoreEnv("ACCOUNTING_AUTH_BOOTSTRAP_EMAILS", previousEnv.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS);
+    }
+  }, 30_000);
+
+  it("moves legacy default auth members to personal workspaces", async () => {
+    await resetRuntimeTables();
+
+    const previousEnv = {
+      DATABASE_URL: process.env.DATABASE_URL,
+      ACCOUNTING_AUTH_PUBLIC_SIGNUP: process.env.ACCOUNTING_AUTH_PUBLIC_SIGNUP,
+      ACCOUNTING_SAAS_WORKSPACES_ENABLED: process.env.ACCOUNTING_SAAS_WORKSPACES_ENABLED,
+      ACCOUNTING_AUTH_BOOTSTRAP_EMAILS: process.env.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS
+    };
+    process.env.DATABASE_URL = connectionString;
+    process.env.ACCOUNTING_AUTH_PUBLIC_SIGNUP = "true";
+    process.env.ACCOUNTING_SAAS_WORKSPACES_ENABLED = "true";
+    process.env.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS = "";
+
+    const initializer = new AuthService();
+    try {
+      await initializer.setup();
+    } finally {
+      await initializer.close();
+    }
+
+    const inspectPool = new Pool({ connectionString: connectionString! });
+    try {
+      await inspectPool.query(
+        `insert into auth_user (id, email, name, password_hash, role_code, email_verified, created_at, updated_at)
+         values ($1, $2, $3, $4, 'owner', true, now(), now())`,
+        ["auth_user_legacy_default", "legacy-default@example.com", "Legacy Default", "test-hash"]
+      );
+      await inspectPool.query(
+        `insert into auth_workspace_member (workspace_id, user_id, role_code, created_at)
+         values ('default', 'auth_user_legacy_default', 'owner', now())`
+      );
+    } finally {
+      await inspectPool.end();
+    }
+
+    const migratingAuth = new AuthService();
+    try {
+      await migratingAuth.setup();
+    } finally {
+      await migratingAuth.close();
+    }
+
+    const verifyPool = new Pool({ connectionString: connectionString! });
+    try {
+      const rows = await verifyPool.query<{ workspace_id: string; name: string }>(
+        `select m.workspace_id, w.name
+         from auth_workspace_member m
+         join auth_workspace w on w.id = m.workspace_id
+         where m.user_id = 'auth_user_legacy_default'`
+      );
+      expect(rows.rows).toHaveLength(1);
+      expect(rows.rows[0]?.workspace_id).not.toBe("default");
+      expect(rows.rows[0]?.name).toBe("legacy-default@example.com");
+    } finally {
+      await verifyPool.end();
       restoreEnv("DATABASE_URL", previousEnv.DATABASE_URL);
       restoreEnv("ACCOUNTING_AUTH_PUBLIC_SIGNUP", previousEnv.ACCOUNTING_AUTH_PUBLIC_SIGNUP);
       restoreEnv("ACCOUNTING_SAAS_WORKSPACES_ENABLED", previousEnv.ACCOUNTING_SAAS_WORKSPACES_ENABLED);
