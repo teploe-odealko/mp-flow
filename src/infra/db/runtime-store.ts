@@ -918,7 +918,7 @@ const TABLES: TableSpec[] = [
     organization_id: entityUuid(requiredString(entity.organizationId, "agentTokens.organizationId")),
     name: requiredString(entity.name, "agentTokens.name"),
     status: requiredString(entity.status, "agentTokens.status"),
-    scopes: entity.scopes ?? [],
+    scopes: JSON.stringify(entity.scopes ?? []),
     state_json: entity
   }), "name, id"),
   spec("channelAgentPermissions", "channel_agent_permission", ["id"], (entity) => ({
