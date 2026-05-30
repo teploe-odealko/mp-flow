@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -7,6 +7,7 @@ import {
   ArrowRight,
   CheckCircle2,
   Download,
+  FileText,
   PackageCheck,
   Plus,
   Save
@@ -37,6 +38,13 @@ const HISTORICAL_STEPS = [
   { key: "mapping", label: "Товары и документы", desc: "Себестоимость и старт" }
 ] as const;
 type WizardStepKey = (typeof HISTORICAL_STEPS)[number]["key"];
+type InventoryStartMode = "opening_balance" | "documented_flow";
+
+function inventoryStartModeFromPayload(payload?: Record<string, unknown> | null): InventoryStartMode {
+  return payload?.inventoryStartMode === "documented_flow" || payload?.startInventoryMode === "documented_flow"
+    ? "documented_flow"
+    : "opening_balance";
+}
 
 export function BackfillWizardPage() {
   const { state } = useAppState();
@@ -47,6 +55,7 @@ export function BackfillWizardPage() {
   const channelIdFromRoute = routeParams.id ? String(routeParams.id) : undefined;
   const searchParams = new URLSearchParams(location.search);
   const modeFromSetup = searchParams.get("mode") === "historical_backfill" ? "historical_backfill" : searchParams.get("mode") === "current_stock_start" ? "current_stock_start" : undefined;
+  const inventoryStartModeFromSetup: InventoryStartMode | undefined = searchParams.get("inventoryStartMode") === "documented_flow" ? "documented_flow" : searchParams.get("inventoryStartMode") === "opening_balance" ? "opening_balance" : undefined;
   const startFromSetup = searchParams.get("start") || undefined;
   const projectIdFromQuery = searchParams.get("projectId") || undefined;
   const inSetupNamespace = location.pathname.startsWith("/setup/existing-store");
@@ -66,6 +75,9 @@ export function BackfillWizardPage() {
   const [mode, setMode] = useState<"current_stock_start" | "historical_backfill">(
     modeFromSetup ?? (latestProject?.payload?.mode === "current_stock_start" ? "current_stock_start" : "historical_backfill")
   );
+  const [inventoryStartMode, setInventoryStartMode] = useState<InventoryStartMode>(
+    inventoryStartModeFromSetup ?? inventoryStartModeFromPayload(latestProject?.payload)
+  );
   const [accountingStartDate, setAccountingStartDate] = useState(
     String(startFromSetup ?? latestProject?.payload?.accountingStartDate ?? state.accountingPolicy?.accountingStartDate ?? today())
   );
@@ -81,9 +93,11 @@ export function BackfillWizardPage() {
     return sourceSteps.map((stepDefinition) =>
       stepDefinition.key === "start" && modeLocked
         ? { ...stepDefinition, label: "Канал Ozon", desc: "Подключение магазина" }
-        : stepDefinition
+        : stepDefinition.key === "mapping" && inventoryStartMode === "documented_flow"
+          ? { ...stepDefinition, label: "Товары", desc: "Сопоставление" }
+          : stepDefinition
     );
-  }, [historyDateLocked, mode, modeLocked]);
+  }, [historyDateLocked, inventoryStartMode, mode, modeLocked]);
   const currentStep = steps[step]?.key ?? "start";
   const stepIndexByKey = (key: WizardStepKey) => steps.findIndex((candidate) => candidate.key === key);
   const goToStep = (key: WizardStepKey) => {
@@ -98,6 +112,7 @@ export function BackfillWizardPage() {
     const payload = project.payload ?? {};
     if (payload.salesChannelId !== salesChannelId) return false;
     if (payload.mode !== mode) return false;
+    if (inventoryStartModeFromPayload(payload) !== inventoryStartMode) return false;
     if (mode === "historical_backfill" && payload.accountingStartDate !== accountingStartDate) return false;
     return true;
   };
@@ -167,6 +182,7 @@ export function BackfillWizardPage() {
         payload: {
           salesChannelId,
           mode,
+          inventoryStartMode,
           accountingStartDate: mode === "historical_backfill" ? accountingStartDate : (state.accountingPolicy?.accountingStartDate ?? today())
         }
       });
@@ -221,10 +237,11 @@ export function BackfillWizardPage() {
   const readyCount = useMemo(() => items.filter((item: any) => item.status === "ready").length, [items]);
   const selectedItem = items.find((item: any) => item.id === selectedItemId) ?? items[0];
   const historicalBackfill = mode === "historical_backfill";
+  const documentedFlow = inventoryStartMode === "documented_flow";
   const selectedProject = projectId
     ? (currentData?.project ?? (state.backfillProjects ?? []).find((project: any) => project.id === projectId))
     : undefined;
-  const importKey = `${salesChannelId}|${mode}|${mode === "historical_backfill" ? accountingStartDate : "current"}`;
+  const importKey = `${salesChannelId}|${mode}|${inventoryStartMode}|${mode === "historical_backfill" ? accountingStartDate : "current"}`;
   const stepValid: Record<WizardStepKey, boolean> = {
     start: Boolean(salesChannelId && mode && !importData.isPending && items.length > 0),
     date: Boolean(accountingStartDate && !importData.isPending && items.length > 0),
@@ -236,7 +253,7 @@ export function BackfillWizardPage() {
     if (projectQuery.isLoading) return;
     const existingProject = currentData?.project ?? (state.backfillProjects ?? []).find((project: any) => project.id === projectId);
     if (existingProject && !projectMatchesSelection(existingProject)) setProjectId(null);
-  }, [projectId, projectQuery.isLoading, currentData?.project, state.backfillProjects, salesChannelId, mode, accountingStartDate]);
+  }, [projectId, projectQuery.isLoading, currentData?.project, state.backfillProjects, salesChannelId, mode, inventoryStartMode, accountingStartDate]);
 
   useEffect(() => {
     const project = currentData?.project;
@@ -245,9 +262,10 @@ export function BackfillWizardPage() {
     if (payload.mode === "historical_backfill" || payload.mode === "current_stock_start") {
       setMode(payload.mode);
     }
+    if (!inventoryStartModeFromSetup) setInventoryStartMode(inventoryStartModeFromPayload(payload));
     if (typeof payload.accountingStartDate === "string") setAccountingStartDate(payload.accountingStartDate);
     if (payload.salesChannelId) setSalesChannelId(String(payload.salesChannelId));
-  }, [currentData?.project, modeFromSetup]);
+  }, [currentData?.project, modeFromSetup, inventoryStartModeFromSetup]);
 
   useEffect(() => {
     if (!salesChannelId) return;
@@ -273,7 +291,8 @@ export function BackfillWizardPage() {
     importKey,
     importData.isPending,
     ensureProject.isPending,
-    selectedProject
+    selectedProject,
+    inventoryStartMode
   ]);
 
   const downloadIssues = () => {
@@ -305,6 +324,7 @@ export function BackfillWizardPage() {
     const params = new URLSearchParams();
     params.set("mode", "existing_store");
     params.set("estoreMode", mode);
+    params.set("inventoryStartMode", inventoryStartMode);
     if (mode === "historical_backfill" && accountingStartDate) {
       params.set("start", accountingStartDate);
     }
@@ -317,8 +337,12 @@ export function BackfillWizardPage() {
   };
   const pageTitle = setupContinuation ? "Первичная настройка учета" : "Старт работающего магазина";
   const pageSubtitle = setupContinuation
-    ? "Подключите Ozon, загрузите карточки, текущие остатки и историю продаж, затем задайте себестоимость для стартового учета."
-    : "Импортируйте карточки, текущие остатки и историю продаж из канала, заполните себестоимость и создайте стартовые документы без ручного пересоздания каталога.";
+    ? documentedFlow
+      ? "Подключите Ozon, загрузите карточки и остатки, затем сопоставьте товары. Себестоимость и складские проводки мастер не создаёт."
+      : "Подключите Ozon, загрузите карточки, текущие остатки и историю продаж, затем задайте себестоимость для стартового учета."
+    : documentedFlow
+      ? "Импортируйте карточки и остатки из канала, сопоставьте их с каталогом и продолжайте вводить поставки, перемещения и закрывающие документы отдельно."
+      : "Импортируйте карточки, текущие остатки и историю продаж из канала, заполните себестоимость и создайте стартовые документы без ручного пересоздания каталога.";
   const pageBreadcrumbs = setupContinuation
     ? [{ label: "Первичная настройка", to: `/setup?${setupReturnQuery}` }, { label: "Подключение Ozon" }]
     : [{ label: "Главная", to: "/" }, { label: "Старт работающего магазина" }];
@@ -426,11 +450,11 @@ export function BackfillWizardPage() {
         </CardContent>
       </Card>
 
-      {((summary.unmatched ?? 0) > 0 || (summary.missingCost ?? 0) > 0 || (summary.warnings ?? []).length > 0) && (
+      {((summary.unmatched ?? 0) > 0 || (!documentedFlow && (summary.missingCost ?? 0) > 0) || (summary.warnings ?? []).length > 0) && (
         <div className="rounded-[var(--radius-md)] border border-[var(--color-warning)] bg-[var(--color-warning-soft)] px-4 py-3 text-sm flex flex-wrap items-center gap-x-4 gap-y-1">
           <span className="font-medium inline-flex items-center gap-2"><AlertTriangle size={14} className="text-[var(--color-warning)]" /> Что осталось заполнить (можно позже):</span>
           {(summary.unmatched ?? 0) > 0 && <span>не сопоставлено карточек: {summary.unmatched}</span>}
-          {(summary.missingCost ?? 0) > 0 && <span>без себестоимости: {summary.missingCost}</span>}
+          {!documentedFlow && (summary.missingCost ?? 0) > 0 && <span>без себестоимости: {summary.missingCost}</span>}
           {(summary.warnings ?? []).map((warning: string) => <span key={warning}>{warning}</span>)}
         </div>
       )}
@@ -459,6 +483,24 @@ export function BackfillWizardPage() {
                       <Plus size={14} /> Подключить канал
                     </Link>
                   </Button>
+                </div>
+                <div className="md:col-span-2 grid gap-3 md:grid-cols-2">
+                  <InventoryStartModeOption
+                    mode="opening_balance"
+                    selected={inventoryStartMode === "opening_balance"}
+                    icon={<PackageCheck size={16} />}
+                    title="Быстрый старт по себестоимости"
+                    description="Мастер попросит себестоимость, создаст стартовые остатки и при историческом старте проведёт продажи по этим партиям."
+                    onSelect={setInventoryStartMode}
+                  />
+                  <InventoryStartModeOption
+                    mode="documented_flow"
+                    selected={inventoryStartMode === "documented_flow"}
+                    icon={<FileText size={16} />}
+                    title="Заполню поставки и перемещения"
+                    description="Мастер только сопоставит карточки. Себестоимость, стартовые партии и складские проводки на этом шаге не создаются."
+                    onSelect={setInventoryStartMode}
+                  />
                 </div>
                 {channels.length === 0 && (
                   <div className="md:col-span-2 rounded-[var(--radius-md)] border border-[var(--color-warning)] bg-[var(--color-warning-soft)] p-4 text-sm leading-relaxed">
@@ -489,7 +531,10 @@ export function BackfillWizardPage() {
                         <AlertTriangle size={14} /> Не удалось загрузить данные автоматически. Проверьте доступы канала.
                       </span>
                     ) : (
-	                      <span>После выбора канала мастер сам создаст проект и подтянет карточки, текущие остатки и историю продаж.</span>
+	                      <span>
+	                        После выбора канала мастер сам создаст проект и подтянет карточки, текущие остатки и историю продаж.
+	                        {documentedFlow ? " Складские проводки и себестоимость в этом сценарии не создаются." : ""}
+	                      </span>
                     )}
                   </div>
                 )}
@@ -517,23 +562,47 @@ export function BackfillWizardPage() {
             <Card>
               <CardHeader>
                 <div>
-                  <CardTitle>Товары и стартовые документы</CardTitle>
-                  <CardDescription>Сопоставьте карточки Ozon, укажите себестоимость и перенесите готовые строки в учёт.</CardDescription>
+                  <CardTitle>{documentedFlow ? "Товары и документы" : "Товары и стартовые документы"}</CardTitle>
+                  <CardDescription>
+                    {documentedFlow
+                      ? "Сопоставьте карточки Ozon с товарами. Поставки, перемещения и закрывающие документы вводятся отдельно."
+                      : "Сопоставьте карточки Ozon, укажите себестоимость и перенесите готовые строки в учёт."}
+                  </CardDescription>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4 py-5">
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <Kpi tone="warning" label="Нужно сопоставить" value={summary.unmatched ?? 0} />
-                  <Kpi tone="warning" label="Без себестоимости" value={summary.missingCost ?? 0} />
-	                  <Kpi tone="success" label="Готово к созданию" value={summary.mapped ?? 0} />
-	                  <Kpi
-	                    tone="primary"
-	                    label={historicalBackfill ? "Старт к учету" : "Оценка стоимости"}
-	                    value={rub(summary.totalCost ?? 0)}
-	                    hint={historicalBackfill
-	                      ? `${qty(summary.totalQty ?? 0)} старт, ${qty(summary.totalCurrentQty ?? 0)} сейчас`
-	                      : `${qty(summary.totalQty ?? 0)} в ${items.length} строках`}
-	                  />
+                  {documentedFlow ? (
+                    <>
+                      <Kpi tone="success" label="Сопоставлено" value={summary.mapped ?? 0} />
+                      <Kpi
+                        tone="primary"
+                        label={historicalBackfill ? "Старт по документам" : "Остаток Ozon"}
+                        value={qty(summary.totalQty ?? 0)}
+                        hint={historicalBackfill ? `${qty(summary.totalCurrentQty ?? 0)} сейчас` : `${items.length} строк`}
+                      />
+                      <Kpi
+                        tone="info"
+                        label="История продаж"
+                        value={qty(summary.totalHistoricalSalesQty ?? 0)}
+                        hint={summary.totalHistoricalReturnsQty ? `возвратов ${qty(summary.totalHistoricalReturnsQty ?? 0)}` : "без проводок"}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <Kpi tone="warning" label="Без себестоимости" value={summary.missingCost ?? 0} />
+	                      <Kpi tone="success" label="Готово к созданию" value={summary.mapped ?? 0} />
+	                      <Kpi
+	                        tone="primary"
+	                        label={historicalBackfill ? "Старт к учету" : "Оценка стоимости"}
+	                        value={rub(summary.totalCost ?? 0)}
+	                        hint={historicalBackfill
+	                          ? `${qty(summary.totalQty ?? 0)} старт, ${qty(summary.totalCurrentQty ?? 0)} сейчас`
+	                          : `${qty(summary.totalQty ?? 0)} в ${items.length} строках`}
+	                      />
+                    </>
+                  )}
                 </div>
                 {items.length > 0 && (
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -559,14 +628,18 @@ export function BackfillWizardPage() {
                   <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-muted)]/30 p-4 flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <div className="font-medium">
-                        {blockingIssues.length > 0 ? `Готовых строк: ${readyCount}` : "Можно создавать документы"}
+                        {blockingIssues.length > 0 ? `Готовых строк: ${readyCount}` : documentedFlow ? "Можно завершить сопоставление" : "Можно создавать документы"}
                       </div>
                       <div className="mt-1 text-sm text-[var(--color-muted-foreground)]">
                         {blockingIssues.length > 0
-                          ? "Готовые строки можно перенести в учёт сейчас, остальные останутся в мастере."
-                          : historicalBackfill
-                            ? "Будут созданы стартовые партии и проведена история продаж."
-                            : "Будут созданы стартовые остатки по заполненным строкам."}
+                          ? documentedFlow
+                            ? "Сопоставленные строки можно зафиксировать сейчас, остальные останутся в мастере."
+                            : "Готовые строки можно перенести в учёт сейчас, остальные останутся в мастере."
+                          : documentedFlow
+                            ? "Себестоимость, стартовые партии и складские проводки созданы не будут."
+                            : historicalBackfill
+                              ? "Будут созданы стартовые партии и проведена история продаж."
+                              : "Будут созданы стартовые остатки по заполненным строкам."}
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -577,11 +650,11 @@ export function BackfillWizardPage() {
                       )}
                       {blockingIssues.length > 0 ? (
                         <Button onClick={() => apply.mutate(true)} disabled={readyCount === 0 || apply.isPending}>
-                          <PackageCheck size={14} /> {apply.isPending ? "Создаём…" : `Создать документы для готовых (${readyCount})`}
+                          <PackageCheck size={14} /> {apply.isPending ? "Сохраняем…" : documentedFlow ? `Зафиксировать сопоставленные (${readyCount})` : `Создать документы для готовых (${readyCount})`}
                         </Button>
                       ) : (
                         <Button onClick={() => apply.mutate(false)} disabled={apply.isPending}>
-                          <PackageCheck size={14} /> {apply.isPending ? "Создаём…" : historicalBackfill ? "Создать стартовые партии и провести историю" : "Создать стартовые остатки"}
+                          <PackageCheck size={14} /> {apply.isPending ? "Сохраняем…" : documentedFlow ? "Завершить без складских проводок" : historicalBackfill ? "Создать стартовые партии и провести историю" : "Создать стартовые остатки"}
                         </Button>
                       )}
                     </div>
@@ -612,6 +685,19 @@ export function BackfillWizardPage() {
                     <Button variant="secondary" asChild><Link to="/inventory">Перейти в складской обзор</Link></Button>
                   </div>
                 )}
+                {apply.data?.skippedOpeningBalances && (
+                  <div className="rounded-[var(--radius-md)] border border-[var(--color-success)] bg-[var(--color-success-soft)] p-4 space-y-2">
+                    <div className="font-medium">Сопоставление сохранено</div>
+                    <div className="text-sm text-[var(--color-foreground)]/75">
+                      Стартовые остатки, себестоимость и складские проводки не создавались. Дальше можно вводить поставки, перемещения и закрывающие документы.
+                    </div>
+                    {apply.data?.deferred > 0 && (
+                      <div className="text-sm text-[var(--color-foreground)]/75">
+                        Осталось сопоставить карточек: {apply.data.deferred}. Они сохранены в мастере.
+                      </div>
+                    )}
+                  </div>
+                )}
                 <BackfillItemsTable
                   items={items}
                   selectedItemId={selectedItem?.id}
@@ -622,8 +708,9 @@ export function BackfillWizardPage() {
 	                  createInternal={createInternal}
 	                  onlyExceptions={onlyExceptions}
 	                  historicalMode={historicalBackfill}
+	                  documentedFlow={documentedFlow}
 	                  maxRows={12}
-	                  emptyAction={<ImportFromOzonAction importData={importData} salesChannelId={salesChannelId} />}
+	                  emptyAction={<ImportFromOzonAction importData={importData} salesChannelId={salesChannelId} documentedFlow={documentedFlow} />}
                 />
               </CardContent>
             </Card>
@@ -645,12 +732,50 @@ export function BackfillWizardPage() {
   );
 }
 
+function InventoryStartModeOption({
+  mode,
+  selected,
+  icon,
+  title,
+  description,
+  onSelect
+}: {
+  mode: InventoryStartMode;
+  selected: boolean;
+  icon: ReactNode;
+  title: string;
+  description: string;
+  onSelect(mode: InventoryStartMode): void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(mode)}
+      className={[
+        "rounded-[var(--radius-md)] border px-4 py-3 text-left transition-colors",
+        selected
+          ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)]"
+          : "border-[var(--color-border-strong)] hover:bg-[var(--color-muted)]"
+      ].join(" ")}
+      aria-pressed={selected}
+    >
+      <span className="flex items-center gap-2 text-sm font-semibold">
+        <span className={selected ? "text-[var(--color-primary)]" : "text-[var(--color-muted-foreground)]"}>{icon}</span>
+        {title}
+      </span>
+      <span className="mt-1 block text-xs leading-relaxed text-[var(--color-muted-foreground)]">{description}</span>
+    </button>
+  );
+}
+
 function ImportFromOzonAction({
   importData,
-  salesChannelId
+  salesChannelId,
+  documentedFlow
 }: {
   importData: { mutate: () => void; isPending: boolean; isError: boolean; isSuccess: boolean };
   salesChannelId: string;
+  documentedFlow?: boolean;
 }) {
   if (!salesChannelId) {
     return (
@@ -677,7 +802,10 @@ function ImportFromOzonAction({
       )}
 	      {importData.isSuccess && !importData.isPending && (
 	        <div className="flex max-w-md flex-col items-center gap-2 text-xs text-[var(--color-muted-foreground)]">
-	          <p>Импорт выполнен, но карточек не нашли. Откройте канал и запустите синхронизацию карточек, остатков и истории.</p>
+	          <p>
+	            Импорт выполнен, но карточек не нашли. Откройте канал и запустите синхронизацию карточек, остатков и истории.
+	            {documentedFlow ? " Складские проводки не будут созданы автоматически." : ""}
+	          </p>
 	          <Button variant="secondary" size="sm" asChild>
 	            <Link to={`/integrations/channels/${salesChannelId}/sync`}>Открыть синхронизацию</Link>
           </Button>
@@ -699,6 +827,7 @@ function BackfillItemsTable({
   createInternal,
   onlyExceptions,
   historicalMode,
+  documentedFlow,
   maxRows,
   emptyAction
 }: {
@@ -711,14 +840,17 @@ function BackfillItemsTable({
   createInternal?: { mutate(externalProductId: string): void; isPending: boolean };
   onlyExceptions?: boolean;
   historicalMode?: boolean;
+  documentedFlow?: boolean;
   maxRows: number;
-  emptyAction?: React.ReactNode;
+  emptyAction?: ReactNode;
 }) {
   if (items.length === 0) {
     return (
 	      <EmptyState
 	        title="Карточки ещё не загружены"
-	        description="Нажмите «Загрузить с Ozon», чтобы выгрузить карточки, текущие остатки и историю продаж. Загрузка может занять до минуты."
+	        description={documentedFlow
+	          ? "Нажмите «Загрузить с Ozon», чтобы выгрузить карточки и остатки без создания складских проводок. Загрузка может занять до минуты."
+	          : "Нажмите «Загрузить с Ozon», чтобы выгрузить карточки, текущие остатки и историю продаж. Загрузка может занять до минуты."}
 	        action={emptyAction}
 	      />
     );
@@ -737,7 +869,11 @@ function BackfillItemsTable({
     return (
       <div className="rounded-[var(--radius-md)] border border-[var(--color-success)] bg-[var(--color-success-soft)] p-4 flex items-center gap-3">
         <CheckCircle2 size={16} className="text-[var(--color-success)]" />
-        <div className="text-sm">Незавершённых строк нет — все карточки сопоставлены и с себестоимостью.</div>
+        <div className="text-sm">
+          {documentedFlow
+            ? "Незавершённых строк нет — все карточки сопоставлены."
+            : "Незавершённых строк нет — все карточки сопоставлены и с себестоимостью."}
+        </div>
       </div>
     );
   }
@@ -751,8 +887,8 @@ function BackfillItemsTable({
 	            <TH numeric>{historicalMode ? "Старт" : "Остаток"}</TH>
 	            {historicalMode && <TH numeric>Сейчас</TH>}
 	            <TH>Склад</TH>
-	            <TH numeric>Себест./шт</TH>
-	            <TH numeric>Итого</TH>
+	            {!documentedFlow && <TH numeric>Себест./шт</TH>}
+	            {!documentedFlow && <TH numeric>Итого</TH>}
             <TH>Статус</TH>
           </TR>
         </THead>
@@ -808,11 +944,13 @@ function BackfillItemsTable({
 	                </TD>
 	                {historicalMode && <TD numeric>{qty(observedQty)}</TD>}
 	                <TD muted>{warehouse?.name ?? "—"}</TD>
-                <TD numeric>
-                  <BackfillCostInput itemId={item.id} value={payload.unitCostRub} patchItem={patchItem} />
-                </TD>
-	                <TD numeric>{rub(Number(payload.totalCostRub ?? Number(payload.unitCostRub ?? 0) * openingQty))}</TD>
-                <TD><Badge tone={statusTone(item.status)}>{statusLabel(item.status)}</Badge></TD>
+                {!documentedFlow && (
+                  <TD numeric>
+                    <BackfillCostInput itemId={item.id} value={payload.unitCostRub} patchItem={patchItem} />
+                  </TD>
+                )}
+	                {!documentedFlow && <TD numeric>{rub(Number(payload.totalCostRub ?? Number(payload.unitCostRub ?? 0) * openingQty))}</TD>}
+                <TD><Badge tone={statusTone(item.status)}>{statusLabel(item.status, documentedFlow)}</Badge></TD>
               </TR>
             );
           })}
@@ -887,11 +1025,11 @@ function statusTone(status: string): "success" | "warning" | "neutral" | "info" 
   return "info";
 }
 
-function statusLabel(status: string) {
+function statusLabel(status: string, documentedFlow?: boolean) {
   if (status === "needs_mapping") return "Нужно сопоставить";
   if (status === "needs_cost") return "Нужна себестоимость";
-  if (status === "ready") return "Готово";
-  if (status === "applied" || status === "created") return "Документы созданы";
+  if (status === "ready") return documentedFlow ? "Сопоставлено" : "Готово";
+  if (status === "applied" || status === "created") return documentedFlow ? "Сопоставление сохранено" : "Документы созданы";
   if (status === "matched") return "Сопоставлено";
   return "Черновик";
 }

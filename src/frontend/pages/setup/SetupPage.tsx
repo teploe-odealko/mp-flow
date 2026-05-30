@@ -5,6 +5,8 @@ import {
   ArrowLeft,
   Building2,
   CalendarDays,
+  FileText,
+  PackageCheck,
   Sparkles
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -40,6 +42,7 @@ export function SetupPage() {
   const [accountingStartDate, setAccountingStartDate] = useState(
     state.accountingPolicy?.accountingStartDate || defaultStartDate()
   );
+  const [inventoryStartMode, setInventoryStartMode] = useState<"opening_balance" | "documented_flow">("opening_balance");
 
   useEffect(() => {
     if (state.organization?.displayName) setDisplayName(state.organization.displayName);
@@ -70,6 +73,7 @@ export function SetupPage() {
 	      const params = new URLSearchParams({
 	        from: "setup",
 	        mode: "historical_backfill",
+	        inventoryStartMode,
 	        start: accountingStartDate
 	      });
 	      navigate(`/setup/existing-store?${params.toString()}`);
@@ -130,7 +134,9 @@ export function SetupPage() {
 	                />
 	              </Field>
               <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-muted)]/30 p-4 text-sm leading-relaxed text-[var(--color-muted-foreground)]">
-	                На эту дату будет создана стартовая партия. Продажи и возвраты после неё мастер подтянет из Ozon и проведёт по введённой себестоимости.
+	                {inventoryStartMode === "documented_flow"
+	                  ? "Эта дата останется границей учёта. Стартовые партии и складские проводки мастер не создаёт."
+	                  : "На эту дату будет создана стартовая партия. Продажи и возвраты после неё мастер подтянет из Ozon и проведёт по введённой себестоимости."}
               </div>
               {!accountingStartDate && (
                 <div className="md:col-span-2 text-[11px] text-[var(--color-danger)]">
@@ -139,6 +145,58 @@ export function SetupPage() {
 	              )}
 	            </CardContent>
 	          </Card>
+
+          {!isEditing && (
+            <Card>
+              <CardHeader>
+                <div>
+                  <CardTitle>Как завести остатки канала</CardTitle>
+                  <CardDescription>Выберите, что мастер сделает после подключения Ozon</CardDescription>
+                </div>
+                <PackageCheck size={22} className="text-[var(--color-muted-foreground)]" />
+              </CardHeader>
+              <CardContent className="grid gap-3 md:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setInventoryStartMode("opening_balance")}
+                  aria-pressed={inventoryStartMode === "opening_balance"}
+                  className={[
+                    "rounded-[var(--radius-md)] border px-4 py-3 text-left transition-colors",
+                    inventoryStartMode === "opening_balance"
+                      ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)]"
+                      : "border-[var(--color-border-strong)] hover:bg-[var(--color-muted)]"
+                  ].join(" ")}
+                >
+                  <span className="flex items-center gap-2 text-sm font-semibold">
+                    <PackageCheck size={16} className={inventoryStartMode === "opening_balance" ? "text-[var(--color-primary)]" : "text-[var(--color-muted-foreground)]"} />
+                    Быстрый старт по себестоимости
+                  </span>
+                  <span className="mt-1 block text-xs leading-relaxed text-[var(--color-muted-foreground)]">
+                    MPFlow загрузит текущие остатки, попросит себестоимость и создаст стартовые партии для учёта.
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInventoryStartMode("documented_flow")}
+                  aria-pressed={inventoryStartMode === "documented_flow"}
+                  className={[
+                    "rounded-[var(--radius-md)] border px-4 py-3 text-left transition-colors",
+                    inventoryStartMode === "documented_flow"
+                      ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)]"
+                      : "border-[var(--color-border-strong)] hover:bg-[var(--color-muted)]"
+                  ].join(" ")}
+                >
+                  <span className="flex items-center gap-2 text-sm font-semibold">
+                    <FileText size={16} className={inventoryStartMode === "documented_flow" ? "text-[var(--color-primary)]" : "text-[var(--color-muted-foreground)]"} />
+                    Заполню поставки и перемещения
+                  </span>
+                  <span className="mt-1 block text-xs leading-relaxed text-[var(--color-muted-foreground)]">
+                    MPFlow сопоставит карточки, но не попросит себестоимость и не создаст складские проводки.
+                  </span>
+                </button>
+              </CardContent>
+            </Card>
+          )}
 
           <div className="flex items-center justify-between gap-3">
             <Button variant="ghost" asChild>

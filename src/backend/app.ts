@@ -1511,9 +1511,40 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const project = scopedApp.state.backfillProjects.find((candidate) => candidate.id === c.req.param("id"));
     if (!project) throw new DomainError("backfill_project_not_found", "Проект импорта не найден");
     const items = scopedApp.state.backfillItems.filter((item) => item.backfillProjectId === project.id).map((item) => evaluateBackfillItem(scopedApp, item));
+    const documentedFlow = isDocumentedFlowBackfillProject(project);
     const blocking = items.filter((item) => !["ready", "applied"].includes(item.status));
     if (blocking.length > 0 && !body.allowPartial) {
-      throw new DomainError("backfill_items_not_ready", "Не все строки готовы к созданию стартовых остатков", { items: blocking.map((item) => item.id) });
+      throw new DomainError(
+        "backfill_items_not_ready",
+        documentedFlow ? "Не все строки готовы к завершению сопоставления" : "Не все строки готовы к созданию стартовых остатков",
+        { items: blocking.map((item) => item.id) }
+      );
+    }
+
+    if (documentedFlow) {
+      items.forEach((item) => {
+        if (item.status === "ready") item.status = "applied";
+      });
+      const remaining = items.filter((item) => item.status === "needs_mapping" || item.status === "needs_cost");
+      const previousDocumentIds = Array.isArray(project.payload?.createdDocumentIds) ? project.payload.createdDocumentIds.map(String) : [];
+      if (remaining.length > 0) {
+        syncBackfillProjectStatus(scopedApp, project);
+        project.payload = {
+          ...(project.payload ?? {}),
+          createdDocumentIds: previousDocumentIds,
+          skippedOpeningBalances: true,
+          summary: buildBackfillSummary(scopedApp, project.id)
+        };
+      } else {
+        project.status = "applied";
+        project.payload = {
+          ...(project.payload ?? {}),
+          createdDocumentIds: previousDocumentIds,
+          skippedOpeningBalances: true,
+          summary: buildBackfillSummary(scopedApp, project.id)
+        };
+      }
+      return c.json({ ok: true, data: { project, created: [], deferred: remaining.length, items, skippedOpeningBalances: true } });
     }
 
     const linesByWarehouse = new Map<string, Array<{ productId: string; qty: number; unitCostRub: number }>>();
@@ -2700,6 +2731,11 @@ function isHistoricalBackfillProject(project: any) {
   return project?.payload?.mode === "historical_backfill";
 }
 
+function isDocumentedFlowBackfillProject(project: any) {
+  const mode = project?.payload?.inventoryStartMode ?? project?.payload?.startInventoryMode;
+  return mode === "documented_flow";
+}
+
 function backfillOpeningQty(project: any, payload: Record<string, unknown>) {
   const rawQty = isHistoricalBackfillProject(project) ? payload.openingQty : payload.observedQty;
   return round4(Math.max(0, Number(rawQty ?? payload.observedQty ?? 0)));
@@ -2808,18 +2844,23 @@ function evaluateBackfillItem(app: AccountingApp, item: any) {
   payload.channelName = String(payload.channelName ?? (payload.salesChannelId && app.state.salesChannels.find((candidate) => candidate.id === payload.salesChannelId)?.name) ?? "");
   payload.warehouseId = String(payload.warehouseId ?? preferredWarehouseId(app, typeof payload.salesChannelId === "string" ? payload.salesChannelId : undefined));
   const openingQty = applyHistoricalBackfillProjection(app, project, payload);
-  const inferredUnitCost = Number(payload.unitCostRub ?? averageUnitCost(app, String(payload.productId ?? "")) ?? 0);
-  if (inferredUnitCost > 0) payload.unitCostRub = round2(inferredUnitCost);
-  payload.totalCostRub = round2(Number(payload.unitCostRub ?? 0) * openingQty);
+  const requiresOpeningBalanceCost = !isDocumentedFlowBackfillProject(project);
+  if (requiresOpeningBalanceCost) {
+    const inferredUnitCost = Number(payload.unitCostRub ?? averageUnitCost(app, String(payload.productId ?? "")) ?? 0);
+    if (inferredUnitCost > 0) payload.unitCostRub = round2(inferredUnitCost);
+    payload.totalCostRub = round2(Number(payload.unitCostRub ?? 0) * openingQty);
+  } else {
+    payload.totalCostRub = 0;
+  }
 
   if (item.status === "applied") {
-    // Already turned into an opening balance; never downgrade or re-apply on re-evaluation.
+    // Already finalized in the selected onboarding mode; never downgrade or re-apply.
     item.payload = payload;
     return item;
   }
   if (!payload.productId) {
     item.status = "needs_mapping";
-  } else if (!(Number(payload.unitCostRub ?? 0) > 0)) {
+  } else if (requiresOpeningBalanceCost && !(Number(payload.unitCostRub ?? 0) > 0)) {
     item.status = "needs_cost";
   } else {
     item.status = "ready";
@@ -2831,10 +2872,11 @@ function evaluateBackfillItem(app: AccountingApp, item: any) {
 function buildBackfillSummary(app: AccountingApp, projectId: string) {
   const project = app.state.backfillProjects.find((candidate) => candidate.id === projectId);
   const items = app.state.backfillItems.filter((item) => item.backfillProjectId === projectId);
+  const requiresOpeningBalanceCost = !isDocumentedFlowBackfillProject(project);
   const totalItems = items.length;
   const mapped = items.filter((item) => item.status === "ready" || item.status === "applied").length;
   const unmatched = items.filter((item) => item.status === "needs_mapping").length;
-  const missingCost = items.filter((item) => item.status === "needs_cost").length;
+  const missingCost = requiresOpeningBalanceCost ? items.filter((item) => item.status === "needs_cost").length : 0;
   const totalQty = round4(items.reduce((sum, item) => sum + backfillOpeningQty(project, (item.payload ?? {}) as Record<string, unknown>), 0));
   const totalCurrentQty = round4(items.reduce((sum, item) => sum + Number(item.payload?.observedQty ?? 0), 0));
   const totalHistoricalSalesQty = round4(items.reduce((sum, item) => sum + Number(item.payload?.historicalSalesQty ?? 0), 0));

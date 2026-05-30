@@ -159,6 +159,41 @@ describe("MPFlow api surface", () => {
     expect(app.state.stockStates.some((stock) => stock.productId === seedProduct.id && stock.qty >= 7)).toBe(true);
   });
 
+  it("lets documented-flow onboarding finish without cost or stock postings", async () => {
+    const { app, api } = makeApi();
+    await post(api, "/api/setup", { displayName: "ИП Документы", accountingStartDate: "2026-05-01", confirmHistoricalStart: true });
+    const product = app.createProduct({ sku: "DOC-FLOW-1", name: "Товар под документы" });
+
+    const project = await post<any>(api, "/api/onboarding/existing-store/projects", {
+      name: "QA полный документооборот",
+      payload: {
+        mode: "historical_backfill",
+        inventoryStartMode: "documented_flow",
+        accountingStartDate: "2026-05-01"
+      }
+    });
+    const imported = await post<any>(api, `/api/onboarding/existing-store/projects/${project.id}/import`, {
+      product: { sku: product.sku, name: product.name, qty: 7 }
+    });
+    expect(imported.items).toHaveLength(1);
+    expect(imported.items[0].status).toBe("needs_mapping");
+
+    const mapped = await patch<any>(api, `/api/onboarding/existing-store/projects/${project.id}/items/${imported.items[0].id}`, {
+      payload: { productId: product.id }
+    });
+    expect(mapped.item.status).toBe("ready");
+    expect(mapped.summary.missingCost).toBe(0);
+    expect(mapped.summary.totalCost).toBe(0);
+
+    const completed = await post<any>(api, `/api/onboarding/existing-store/projects/${project.id}/create-opening-balances`);
+    expect(completed.project.status).toBe("applied");
+    expect(completed.skippedOpeningBalances).toBe(true);
+    expect(completed.created).toEqual([]);
+    expect(completed.items[0].status).toBe("applied");
+    expect(app.state.inventoryLots.some((lot) => lot.productId === product.id)).toBe(false);
+    expect(app.state.stockStates.some((stock) => stock.productId === product.id && stock.qty > 0)).toBe(false);
+  });
+
   it("opening-balance import uses the latest observed-stock snapshot, not the sum of all syncs", async () => {
     const { app, api } = makeApi();
     await post(api, "/api/setup", { displayName: "ИП Снимок", accountingStartDate: "2026-05-01", confirmHistoricalStart: true });

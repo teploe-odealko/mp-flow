@@ -146,6 +146,7 @@ export function ChannelDetailPage() {
     const started = Boolean(project) && !done;
     return { project, summary, done, started };
   }, [state.backfillProjects, id]);
+  const onboardingDocumentedFlow = onboarding.project?.payload?.inventoryStartMode === "documented_flow";
   const onboardingPath = `/integrations/channels/${channel.id}/onboarding`;
 
   return (
@@ -213,9 +214,11 @@ export function ChannelDetailPage() {
           <div className="rounded-[var(--radius-md)] border border-[var(--color-success)] bg-[var(--color-success-soft)] p-4 flex items-start gap-3">
             <CheckCircle2 size={18} className="text-[var(--color-success)] mt-0.5 shrink-0" />
             <div className="flex-1">
-              <p className="text-sm font-semibold">Каталог и остатки перенесены в учёт</p>
+              <p className="text-sm font-semibold">{onboardingDocumentedFlow ? "Каталог сопоставлен" : "Каталог и остатки перенесены в учёт"}</p>
               <p className="text-xs text-[var(--color-foreground)]/75 leading-relaxed mt-1">
-                Стартовые остатки по каналу созданы. Откройте мастер, чтобы дозаполнить отложенные строки или перенести новые карточки.
+                {onboardingDocumentedFlow
+                  ? "Карточки сопоставлены без создания стартовых остатков. Откройте мастер, чтобы дозаполнить отложенные строки."
+                  : "Стартовые остатки по каналу созданы. Откройте мастер, чтобы дозаполнить отложенные строки или перенести новые карточки."}
               </p>
             </div>
             <Button size="sm" variant="secondary" asChild>
@@ -231,8 +234,10 @@ export function ChannelDetailPage() {
               </p>
               <p className="text-xs text-[var(--color-foreground)]/75 leading-relaxed mt-1">
                 {onboarding.started && onboarding.summary
-                  ? <>Готово {onboarding.summary.mapped ?? 0} из {onboarding.summary.totalItems ?? 0}. Осталось сопоставить товары и заполнить себестоимость, затем создать стартовые остатки.</>
-                  : <>Загрузим карточки и остатки из «{channel.name}», поможем сопоставить их с вашим каталогом и заполнить себестоимость, затем создадим стартовые остатки. Прогресс сохраняется — можно делать постепенно.</>}
+                  ? onboardingDocumentedFlow
+                    ? <>Готово {onboarding.summary.mapped ?? 0} из {onboarding.summary.totalItems ?? 0}. Осталось сопоставить товары; себестоимость и складские проводки мастер не создаёт.</>
+                    : <>Готово {onboarding.summary.mapped ?? 0} из {onboarding.summary.totalItems ?? 0}. Осталось сопоставить товары и заполнить себестоимость, затем создать стартовые остатки.</>
+                  : <>Загрузим карточки и остатки из «{channel.name}», затем дадим выбрать: быстрый старт по себестоимости или сопоставление без складских проводок. Прогресс сохраняется — можно делать постепенно.</>}
               </p>
             </div>
             <Button asChild>
