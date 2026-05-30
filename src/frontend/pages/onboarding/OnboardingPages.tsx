@@ -75,18 +75,12 @@ export function BackfillWizardPage() {
   const [mode, setMode] = useState<"current_stock_start" | "historical_backfill">(
     modeFromSetup ?? (latestProject?.payload?.mode === "current_stock_start" ? "current_stock_start" : "historical_backfill")
   );
-  const [inventoryStartMode, setInventoryStartMode] = useState<InventoryStartMode>(
-    inventoryStartModeFromSetup ?? inventoryStartModeFromPayload(latestProject?.payload)
+  const [inventoryStartMode, setInventoryStartMode] = useState<InventoryStartMode | null>(
+    inventoryStartModeFromSetup ?? (latestProject ? inventoryStartModeFromPayload(latestProject.payload) : null)
   );
   const [accountingStartDate, setAccountingStartDate] = useState(
     String(startFromSetup ?? latestProject?.payload?.accountingStartDate ?? state.accountingPolicy?.accountingStartDate ?? today())
   );
-  const [autoImportKey, setAutoImportKey] = useState("");
-  // Synchronous guard against StrictMode's double-invoked mount effect: React.StrictMode runs
-  // the auto-import effect twice before the `autoImportKey` state update commits, so the state
-  // check alone lets both invocations fire `importData.mutate()` — creating duplicate backfill
-  // projects and double-counting observed stock. A ref updates immediately and blocks the second.
-  const autoImportInFlightRef = useRef<string | null>(null);
   const firstChannelId = channels[0]?.id ?? "";
   const steps = useMemo(() => {
     const sourceSteps = mode === "historical_backfill" && !historyDateLocked ? HISTORICAL_STEPS : CURRENT_STOCK_STEPS;
@@ -109,6 +103,7 @@ export function BackfillWizardPage() {
     if (!project) return false;
     if (projectIdFromQuery && project.id === projectIdFromQuery) return true;
     if (!salesChannelId) return false;
+    if (!inventoryStartMode) return false;
     const payload = project.payload ?? {};
     if (payload.salesChannelId !== salesChannelId) return false;
     if (payload.mode !== mode) return false;
@@ -173,6 +168,8 @@ export function BackfillWizardPage() {
 
   const ensureProject = useMutation({
     mutationFn: async () => {
+      if (!salesChannelId) throw new Error("Выберите канал Ozon");
+      if (!inventoryStartMode) throw new Error("Выберите способ заведения остатков");
       const existingProject = projectId
         ? (projectQuery.data?.project ?? (state.backfillProjects ?? []).find((project: any) => project.id === projectId))
         : undefined;
@@ -241,11 +238,19 @@ export function BackfillWizardPage() {
   const selectedProject = projectId
     ? (currentData?.project ?? (state.backfillProjects ?? []).find((project: any) => project.id === projectId))
     : undefined;
-  const importKey = `${salesChannelId}|${mode}|${inventoryStartMode}|${mode === "historical_backfill" ? accountingStartDate : "current"}`;
+  const hasImportedItems = items.length > 0 && projectMatchesSelection(selectedProject);
+  const importInProgress = importData.isPending || ensureProject.isPending;
+  const hasDateStep = stepIndexByKey("date") >= 0;
+  const canImportFromOzon = Boolean(
+    salesChannelId &&
+    inventoryStartMode &&
+    (mode !== "historical_backfill" || accountingStartDate) &&
+    !importInProgress
+  );
   const stepValid: Record<WizardStepKey, boolean> = {
-    start: Boolean(salesChannelId && mode && !importData.isPending && items.length > 0),
-    date: Boolean(accountingStartDate && !importData.isPending && items.length > 0),
-    mapping: items.length > 0 && readyCount > 0
+    start: Boolean(salesChannelId && inventoryStartMode && !importInProgress && (hasDateStep || hasImportedItems)),
+    date: Boolean(accountingStartDate && !importInProgress && hasImportedItems),
+    mapping: hasImportedItems && readyCount > 0
   };
 
   useEffect(() => {
@@ -266,34 +271,6 @@ export function BackfillWizardPage() {
     if (typeof payload.accountingStartDate === "string") setAccountingStartDate(payload.accountingStartDate);
     if (payload.salesChannelId) setSalesChannelId(String(payload.salesChannelId));
   }, [currentData?.project, modeFromSetup, inventoryStartModeFromSetup]);
-
-  useEffect(() => {
-    if (!salesChannelId) return;
-    if (mode === "historical_backfill" && !accountingStartDate) return;
-    if (projectId && projectQuery.isLoading) return;
-    if (items.length > 0 && projectMatchesSelection(selectedProject)) return;
-    if (importData.isPending || ensureProject.isPending) return;
-    if (autoImportKey === importKey) return;
-    // Ref gate fires synchronously, so StrictMode's second mount-effect invocation is blocked
-    // even though the `autoImportKey` state update hasn't committed yet.
-    if (autoImportInFlightRef.current === importKey) return;
-    autoImportInFlightRef.current = importKey;
-    setAutoImportKey(importKey);
-    importData.mutate();
-  }, [
-    salesChannelId,
-    mode,
-    accountingStartDate,
-    projectId,
-    projectQuery.isLoading,
-    items.length,
-    autoImportKey,
-    importKey,
-    importData.isPending,
-    ensureProject.isPending,
-    selectedProject,
-    inventoryStartMode
-  ]);
 
   const downloadIssues = () => {
     const content = blockingIssues.map((item: any) => {
@@ -324,7 +301,7 @@ export function BackfillWizardPage() {
     const params = new URLSearchParams();
     params.set("mode", "existing_store");
     params.set("estoreMode", mode);
-    params.set("inventoryStartMode", inventoryStartMode);
+    if (inventoryStartMode) params.set("inventoryStartMode", inventoryStartMode);
     if (mode === "historical_backfill" && accountingStartDate) {
       params.set("start", accountingStartDate);
     }
@@ -337,10 +314,14 @@ export function BackfillWizardPage() {
   };
   const pageTitle = setupContinuation ? "Первичная настройка учета" : "Старт работающего магазина";
   const pageSubtitle = setupContinuation
-    ? documentedFlow
+    ? !inventoryStartMode
+      ? "Подключите Ozon и выберите, как завести остатки этого канала."
+      : documentedFlow
       ? "Подключите Ozon, загрузите карточки и остатки, затем сопоставьте товары. Себестоимость и складские проводки мастер не создаёт."
       : "Подключите Ozon, загрузите карточки, текущие остатки и историю продаж, затем задайте себестоимость для стартового учета."
-    : documentedFlow
+    : !inventoryStartMode
+      ? "Выберите канал и сценарий старта: быстрый старт по себестоимости или сопоставление без складских проводок."
+      : documentedFlow
       ? "Импортируйте карточки и остатки из канала, сопоставьте их с каталогом и продолжайте вводить поставки, перемещения и закрывающие документы отдельно."
       : "Импортируйте карточки, текущие остатки и историю продаж из канала, заполните себестоимость и создайте стартовые документы без ручного пересоздания каталога.";
   const pageBreadcrumbs = setupContinuation
@@ -465,7 +446,7 @@ export function BackfillWizardPage() {
               <CardHeader>
                 <div>
                   <CardTitle>Канал Ozon</CardTitle>
-                  <CardDescription>Выберите канал продаж.</CardDescription>
+                  <CardDescription>Выберите канал и способ старта учёта для этого канала.</CardDescription>
                 </div>
               </CardHeader>
               <CardContent className="grid gap-4 py-5 md:grid-cols-2">
@@ -491,7 +472,7 @@ export function BackfillWizardPage() {
                     icon={<PackageCheck size={16} />}
                     title="Быстрый старт по себестоимости"
                     description="Мастер попросит себестоимость, создаст стартовые остатки и при историческом старте проведёт продажи по этим партиям."
-                    onSelect={setInventoryStartMode}
+                    onSelect={(selectedMode) => setInventoryStartMode(selectedMode)}
                   />
                   <InventoryStartModeOption
                     mode="documented_flow"
@@ -499,7 +480,7 @@ export function BackfillWizardPage() {
                     icon={<FileText size={16} />}
                     title="Заполню поставки и перемещения"
                     description="Мастер только сопоставит карточки. Себестоимость, стартовые партии и складские проводки на этом шаге не создаются."
-                    onSelect={setInventoryStartMode}
+                    onSelect={(selectedMode) => setInventoryStartMode(selectedMode)}
                   />
                 </div>
                 {channels.length === 0 && (
@@ -509,33 +490,52 @@ export function BackfillWizardPage() {
                 )}
                 {salesChannelId && (
                   <div className="md:col-span-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-muted)]/30 p-4 text-sm leading-relaxed">
-	                    {importData.isPending || ensureProject.isPending ? (
-	                      <span className="inline-flex items-center gap-2">
-	                        <PackageCheck size={14} /> Загружаем карточки, остатки и историю продаж из выбранного канала...
-	                      </span>
-                    ) : items.length > 0 ? (
-                      <span className="inline-flex items-center gap-2">
-                        <CheckCircle2 size={14} className="text-[var(--color-success)]" /> Данные загружены. Можно переходить к сопоставлению товаров.
-                      </span>
-                    ) : importData.isSuccess ? (
-                      <div className="flex flex-wrap items-center gap-2 text-[var(--color-warning)]">
-                        <span className="inline-flex items-center gap-2">
-	                          <AlertTriangle size={14} /> По выбранному каналу не нашли карточки и остатки. Откройте канал и запустите синхронизацию карточек, остатков и истории.
-                        </span>
-                        <Button variant="secondary" size="sm" asChild>
-                          <Link to={`/integrations/channels/${salesChannelId}/sync`}>Открыть синхронизацию</Link>
-                        </Button>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-[220px] flex-1">
+                        {importInProgress ? (
+                          <span className="inline-flex items-center gap-2">
+                            <PackageCheck size={14} /> Загружаем карточки, остатки и историю продаж из выбранного канала...
+                          </span>
+                        ) : hasImportedItems ? (
+                          <span className="inline-flex items-center gap-2">
+                            <CheckCircle2 size={14} className="text-[var(--color-success)]" /> Данные загружены. Можно переходить к сопоставлению товаров.
+                          </span>
+                        ) : importData.isSuccess ? (
+                          <div className="flex flex-wrap items-center gap-2 text-[var(--color-warning)]">
+                            <span className="inline-flex items-center gap-2">
+                              <AlertTriangle size={14} /> По выбранному каналу не нашли карточки и остатки. Откройте канал и запустите синхронизацию карточек, остатков и истории.
+                            </span>
+                            <Button variant="secondary" size="sm" asChild>
+                              <Link to={`/integrations/channels/${salesChannelId}/sync`}>Открыть синхронизацию</Link>
+                            </Button>
+                          </div>
+                        ) : importData.isError ? (
+                          <span className="inline-flex items-center gap-2 text-[var(--color-danger)]">
+                            <AlertTriangle size={14} /> Не удалось загрузить данные. Проверьте доступы канала.
+                          </span>
+                        ) : !inventoryStartMode ? (
+                          <span>
+                            Выберите сценарий старта. После этого мастер загрузит карточки и остатки без скрытого автозапуска.
+                          </span>
+                        ) : (
+                          <span>
+                            Нажмите загрузку, чтобы создать проект и подтянуть карточки, текущие остатки и историю продаж.
+                            {documentedFlow ? " Складские проводки и себестоимость в этом сценарии не создаются." : ""}
+                          </span>
+                        )}
                       </div>
-                    ) : importData.isError ? (
-                      <span className="inline-flex items-center gap-2 text-[var(--color-danger)]">
-                        <AlertTriangle size={14} /> Не удалось загрузить данные автоматически. Проверьте доступы канала.
-                      </span>
-                    ) : (
-	                      <span>
-	                        После выбора канала мастер сам создаст проект и подтянет карточки, текущие остатки и историю продаж.
-	                        {documentedFlow ? " Складские проводки и себестоимость в этом сценарии не создаются." : ""}
-	                      </span>
-                    )}
+                      <Button onClick={() => importData.mutate()} disabled={!canImportFromOzon}>
+                        {importInProgress ? (
+                          <>
+                            <PackageCheck size={14} /> Загружаем…
+                          </>
+                        ) : (
+                          <>
+                            <Download size={14} /> {hasImportedItems ? "Обновить данные Ozon" : "Загрузить данные Ozon"}
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 )}
               </CardContent>
@@ -554,6 +554,40 @@ export function BackfillWizardPage() {
                 <Field label="Дата начала истории" required>
                   <Input type="date" value={accountingStartDate} onChange={(event) => setAccountingStartDate(event.target.value)} />
                 </Field>
+                <div className="md:col-span-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-muted)]/30 p-4 text-sm leading-relaxed">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-[220px] flex-1">
+                      {importInProgress ? (
+                        <span className="inline-flex items-center gap-2">
+                          <PackageCheck size={14} /> Загружаем карточки, остатки и историю продаж с выбранной даты...
+                        </span>
+                      ) : hasImportedItems ? (
+                        <span className="inline-flex items-center gap-2">
+                          <CheckCircle2 size={14} className="text-[var(--color-success)]" /> Данные загружены. Можно переходить к сопоставлению товаров.
+                        </span>
+                      ) : importData.isError ? (
+                        <span className="inline-flex items-center gap-2 text-[var(--color-danger)]">
+                          <AlertTriangle size={14} /> Не удалось загрузить данные. Проверьте доступы канала.
+                        </span>
+                      ) : (
+                        <span>
+                          Нажмите загрузку после выбора даты. До этого мастер не создаёт проект и не выбирает сценарий вместо пользователя.
+                        </span>
+                      )}
+                    </div>
+                    <Button onClick={() => importData.mutate()} disabled={!canImportFromOzon}>
+                      {importInProgress ? (
+                        <>
+                          <PackageCheck size={14} /> Загружаем…
+                        </>
+                      ) : (
+                        <>
+                          <Download size={14} /> {hasImportedItems ? "Обновить данные Ozon" : "Загрузить данные Ozon"}
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           )}
