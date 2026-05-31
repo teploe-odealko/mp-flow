@@ -164,6 +164,33 @@ export interface Product {
   createdAt: string;
 }
 
+export type ProductAssetRole = "source" | "generated" | "approved";
+export type ProductAssetStatus = "pending" | "ready" | "archived";
+
+/**
+ * Медиа фотостудии товара (исходники и сгенерированные слайды).
+ * Marketplace-agnostic: один набор фото на внутренний товар, переиспользуется каналами.
+ * Байты лежат в S3; здесь — метаданные и публичный URL.
+ */
+export interface ProductAsset {
+  id: ID;
+  organizationId: ID;
+  productId: ID;
+  role: ProductAssetRole;
+  slideType?: string;
+  storageKey: string;
+  url: string;
+  mimeType?: string;
+  width?: number;
+  height?: number;
+  sortOrder: number;
+  status: ProductAssetStatus;
+  createdBy: "user" | "agent";
+  createdAt: string;
+  updatedAt?: string;
+  meta?: Record<string, unknown>;
+}
+
 export interface Warehouse {
   id: ID;
   organizationId: ID;
@@ -853,6 +880,7 @@ export interface AccountingState {
   auditEvents: AuditEvent[];
   counterparties: Counterparty[];
   products: Product[];
+  productAssets: ProductAsset[];
   warehouses: Warehouse[];
   stockStates: StockState[];
   inventoryLots: InventoryLot[];

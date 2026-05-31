@@ -2,6 +2,7 @@ import type { ExternalProduct, ID, Product } from "../core/models";
 import { round4 } from "../core/utils";
 import { buildSuggestedMarketplaceAllocations } from "./shared/marketplace-allocation";
 import type {
+  CardGuidelines,
   DispatchAutoAllocateInput,
   DispatchAutoAllocateResult,
   DispatchPlan,
@@ -134,6 +135,13 @@ export const ozonPlugin: MarketplacePlugin = {
       visibility: "secret",
       scopeType: "channel",
       description: "Секретное runtime-состояние Ozon plugin"
+    },
+    {
+      namespace: "card_studio",
+      visibility: "private",
+      scopeType: "flow_session",
+      description: "План фотостудии карточки (research + единый стиль + последовательность слайдов)",
+      maxPayloadBytes: 256 * 1024
     }
   ],
   fulfillment: {
@@ -143,6 +151,33 @@ export const ozonPlugin: MarketplacePlugin = {
     },
     async autoAllocateDispatch(input) {
       return autoAllocateOzonDispatch(input);
+    }
+  },
+  card: {
+    guidelines(): CardGuidelines {
+      return {
+        marketplace: "ozon",
+        imageFormat: { aspectRatio: "3:4", minWidth: 900, minHeight: 1200, note: "Вертикальные; 1200×1600 для hero и инфографики" },
+        safeZones: "Оставляй пустые поля по краям: верхняя полоса ~110px (статус-бар), правый верхний угол (кнопка «в избранное»), левый нижний угол (бейдж скидки), нижняя полоса ~130px (точки листания), и ~50px по бокам. Весь текст, иконки и важные детали — внутри центральной безопасной зоны. Никаких видимых меток safe-zone на самой картинке.",
+        slideTaxonomy: [
+          { type: "hero", title: "Hero + УТП", purpose: "Товар крупно (60–80% кадра) + главное УТП крупным заголовком + 2–3 бейджа." },
+          { type: "benefits", title: "Преимущества", purpose: "4 иконки + короткие тезисы ключевых выгод." },
+          { type: "lifestyle", title: "В контексте", purpose: "Товар в реальном использовании, нужное настроение." },
+          { type: "macro", title: "Детали / макро", purpose: "Крупно текстура, материал, важные детали конструкции." },
+          { type: "usage", title: "Применение / инструкция", purpose: "Как использовать — шаги или сценарии." },
+          { type: "specs", title: "Размеры / характеристики", purpose: "Размерная схема, ТТХ, что в комплекте." },
+          { type: "comparison", title: "Почему мы / сравнение", purpose: "Закрытие возражений, отличие от аналогов." },
+          { type: "trust", title: "Доверие / CTA", purpose: "Гарантия, подарок, призыв к покупке." }
+        ],
+        moderation: [
+          "Товар на фото обязан соответствовать реальному; не перерисовывать его дизайн.",
+          "Без логотипов и брендов конкурентов, без чужих watermark.",
+          "Без обещаний, нарушающих правила (медицинские/«100% гарантия» и т.п.).",
+          "Текст читаемый, не мелкий; не перегружать слайд.",
+          "Без рамок на весь кадр и без контактов/ссылок/QR на изображении."
+        ],
+        recommendedSlideCount: { min: 8, max: 12 }
+      };
     }
   },
   validateCredentials(credentials) {

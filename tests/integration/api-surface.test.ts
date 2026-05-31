@@ -310,43 +310,6 @@ describe("MPFlow api surface", () => {
     expect(app.state.salesReturns[0]).toMatchObject({ restoredCostRub: 220, status: "posted" });
   });
 
-  it("runs period closing checks, report snapshots, close, and reopen", async () => {
-    const { app, api } = makeApi();
-    await post(api, "/api/setup", {
-      displayName: "QA закрытие периода",
-      accountingStartDate: "2026-01-01",
-      legalForm: "ip",
-      taxMode: "usn_income_expense"
-    });
-    const period = app.state.periods[0];
-
-    const checkRun = await post<any>(api, `/api/accounting-periods/${period.id}/closing/run-checks`);
-    expect(checkRun.status).toBe("draft");
-    expect(checkRun.checks.length).toBeGreaterThan(0);
-
-    const snapshots = await post<any[]>(api, `/api/accounting-periods/${period.id}/closing/generate-reports`);
-    expect(snapshots.map((snapshot) => snapshot.reportType).sort()).toEqual([
-      "balance-sheet",
-      "cash-flow",
-      "inventory",
-      "profit-and-loss",
-      "unit-economics"
-    ]);
-
-    const closeRun = await post<any>(api, `/api/periods/${period.id}/close`);
-    expect(closeRun.checks.length).toBeGreaterThan(0);
-    expect(closeRun.status).toBe("closed");
-    expect(app.state.periods[0].status).toBe("closed");
-
-    const closingReport = await get<any>(api, `/api/accounting-periods/${period.id}/closing-report`);
-    expect(closingReport.run.status).toBe("closed");
-    expect(closingReport.snapshots).toHaveLength(5);
-
-    const reopened = await post<any>(api, `/api/accounting-periods/${period.id}/reopen`);
-    expect(reopened.status).toBe("open");
-    expect(app.state.periods[0].status).toBe("open");
-  });
-
   it("manages users, agent tokens, and channel permissions", async () => {
     const previous = process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED;
     process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED = "true";
@@ -473,7 +436,7 @@ describe("MPFlow api surface", () => {
     expect(jobs.map((candidate) => candidate.id)).toContain(job.id);
   });
 
-  it("keeps document versions, correction audit, and cancellation history", async () => {
+  it("keeps document versions and correction audit", async () => {
     const { app, api } = makeApi();
     await post(api, "/api/dev/demo");
 
@@ -508,11 +471,8 @@ describe("MPFlow api surface", () => {
     expect(correction.correction.status).toBe("applied");
     expect(correction.correction.sourceDocumentId).toBe(document.id);
 
-    const cancelled = await post<any>(api, `/api/documents/${document.id}/cancel`, { reason: "QA cancel" });
-    expect(cancelled.status).toBe("cancelled");
-
     const history = await get<any[]>(api, `/api/documents/${document.id}/history`);
-    expect(history.map((version) => version.reason)).toEqual(["QA update", "QA correction", "QA cancel"]);
+    expect(history.map((version) => version.reason)).toEqual(["QA update", "QA correction"]);
     expect(app.state.auditEvents.some((event) => event.entityId === document.id && event.eventType === "correct")).toBe(true);
     expect(app.state.recalculationJobs.some((job) => job.jobType === "reports" && job.scope.documentId === document.id)).toBe(true);
   });
@@ -554,11 +514,5 @@ describe("MPFlow api surface", () => {
     expect((preview.error?.details as { descendants?: Array<{ documentId: string }> } | undefined)?.descendants).toEqual(
       expect.arrayContaining([expect.objectContaining({ documentId: payment.documentId })])
     );
-
-    const cancel = await requestEnvelope<any>(api, "POST", `/api/documents/${order.documentId}/cancel`, {
-      reason: "Blocked by descendants"
-    });
-    expect(cancel.ok).toBe(false);
-    expect(cancel.error?.code).toBe("document_has_descendants");
   });
 });

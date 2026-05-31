@@ -77,7 +77,6 @@ Endpoints:
 - `GET /api/returns/:id`;
 - `PATCH /api/returns/:id`;
 - `POST /api/returns/:id/post`;
-- `POST /api/returns/:id/reverse`;
 - `POST /api/integrations/events/:id/materialize-return`.
 
 Validation:

@@ -81,7 +81,6 @@ Endpoints:
 - `GET /api/controls/corrections`;
 - `POST /api/documents/:id/correction-preview`;
 - `POST /api/documents/:id/apply-correction`;
-- `POST /api/documents/:id/reverse`;
 - `POST /api/recalculation-jobs`;
 - `GET /api/recalculation-jobs`;
 - `POST /api/recalculation-jobs/:id/retry`;

@@ -235,23 +235,20 @@ export function ExpenseFormPage() {
   const [counterpartyId, setCounterpartyId] = useState(counterparties[0]?.id ?? "");
   const [counterpartyName, setCounterpartyName] = useState("");
   const [amountRub, setAmountRub] = useState("45000");
-  const [paymentMode, setPaymentMode] = useState<"paid_now" | "pay_later" | "without_payment">("paid_now");
   const [cashAccountId, setCashAccountId] = useState(cashAccounts[0]?.id ?? "");
   const [comment, setComment] = useState("Аренда склада за июнь");
 
   const create = useMutation({
-    mutationFn: async (mode: "draft" | "post" | "pay") => apiPost("/api/finance/expenses", {
+    mutationFn: async () => apiPost("/api/finance/expenses", {
       categoryId,
       counterpartyId: counterpartyId || undefined,
       counterpartyName: counterpartyId ? undefined : counterpartyName || undefined,
       expenseDate,
       amountRub: Number(amountRub),
-      paymentMode: mode === "pay" ? "paid_now" : paymentMode,
-      cashAccountId: mode === "pay" || paymentMode === "paid_now" ? cashAccountId : undefined,
-      comment,
-      post: mode !== "draft"
+      cashAccountId,
+      comment
     }),
-    onSuccess: (data: any) => {
+    onSuccess: () => {
       queryClient.invalidateQueries();
       navigate("/money?view=outgoing&type=expense_like");
     }
@@ -259,16 +256,16 @@ export function ExpenseFormPage() {
 
   const category = categories.find((candidate: any) => candidate.id === categoryId);
   const counterparty = counterparties.find((candidate: any) => candidate.id === counterpartyId);
-  const canSubmit = Boolean(categoryId && Number(amountRub) > 0 && (counterpartyId || counterpartyName.trim()) && (paymentMode !== "paid_now" || cashAccountId));
-  const creditAccount = paymentMode === "paid_now" ? "51" : "60.01";
-  const creditLabel = paymentMode === "paid_now" ? "Расчетный счет" : "Кредиторская задолженность";
+  const canSubmit = Boolean(categoryId && Number(amountRub) > 0 && (counterpartyId || counterpartyName.trim()) && cashAccountId);
+  const creditAccount = "51";
+  const creditLabel = "Расчетный счет";
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
         breadcrumbs={[{ label: "Деньги и расчеты", to: "/money" }, { label: "Новая операция" }, { label: "Расход компании" }]}
         title="Операционный расход"
-        subtitle="Расход периода с немедленной оплатой или кредиторской задолженностью."
+        subtitle="Расход компании с оплатой сразу."
         actions={<Button variant="ghost" asChild><Link to="/money?view=outgoing&type=expense_like"><ArrowLeft size={14} /> Назад</Link></Button>}
       />
 
@@ -311,43 +308,18 @@ export function ExpenseFormPage() {
 
           <Card>
             <CardHeader><CardTitle>Оплата</CardTitle></CardHeader>
-            <CardContent className="flex flex-col gap-4 py-5">
-              <Field label="Способ оплаты" required>
-                <div className="grid grid-cols-3 gap-2">
-                  <Button variant={paymentMode === "paid_now" ? "primary" : "secondary"} onClick={() => setPaymentMode("paid_now")} type="button">Оплата сейчас</Button>
-                  <Button variant={paymentMode === "pay_later" ? "primary" : "secondary"} onClick={() => setPaymentMode("pay_later")} type="button">К оплате позже</Button>
-                  <Button variant={paymentMode === "without_payment" ? "primary" : "secondary"} onClick={() => setPaymentMode("without_payment")} type="button">Без оплаты</Button>
-                </div>
+            <CardContent className="py-5">
+              <Field label="Денежный счет" required>
+                <Select value={cashAccountId} onChange={(event) => setCashAccountId(event.target.value)}>
+                  {cashAccounts.map((account: any) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                </Select>
               </Field>
-
-              {paymentMode === "paid_now" && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Field label="Денежный счет" required>
-                    <Select value={cashAccountId} onChange={(event) => setCashAccountId(event.target.value)}>
-                      {cashAccounts.map((account: any) => <option key={account.id} value={account.id}>{account.name}</option>)}
-                    </Select>
-                  </Field>
-                  <Field label="Оплата сейчас, RUB" required>
-                    <Input value={amountRub} onChange={(event) => setAmountRub(event.target.value)} type="number" />
-                  </Field>
-                </div>
-              )}
-
-              {paymentMode !== "paid_now" && (
-                <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-muted)]/30 px-4 py-3 text-sm text-[var(--color-muted-foreground)]">
-                  Расход будет отражен в P&L сразу, а денежный отток появится позже отдельным платежом или после ручной оплаты.
-                </div>
-              )}
             </CardContent>
           </Card>
 
           <div className="flex items-center justify-between gap-3">
             <Button variant="ghost" asChild><Link to="/money?view=outgoing&type=expense_like">Отмена</Link></Button>
-            <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => create.mutate("draft")} disabled={create.isPending || !canSubmit}><Save size={14} /> Сохранить черновик</Button>
-              <Button variant="secondary" onClick={() => create.mutate("pay")} disabled={create.isPending || !canSubmit || paymentMode !== "paid_now"}><CreditCard size={14} /> Создать и оплатить</Button>
-              <Button onClick={() => create.mutate("post")} disabled={create.isPending || !canSubmit}><Save size={14} /> Провести расход</Button>
-            </div>
+            <Button onClick={() => create.mutate()} disabled={create.isPending || !canSubmit}><Save size={14} /> Сохранить расход</Button>
           </div>
         </div>
 
@@ -379,7 +351,7 @@ export function ExpenseFormPage() {
                 </div>
               </div>
               <Info label="Контрагент" value={counterparty?.name ?? (counterpartyName || "—")} />
-              <Info label="Оплата" value={paymentMode === "paid_now" ? "Оплачено сейчас" : paymentMode === "pay_later" ? "К оплате позже" : "Без оплаты"} />
+              <Info label="Оплата" value="Оплачено сразу" />
               <Info label="Кредитовый счет" value={creditLabel} />
             </CardContent>
           </Card>

@@ -145,7 +145,6 @@ Route: `/documents/:id`.
 - `Редактировать`: доступно только для черновика and changes the draft source fields directly;
 - `Исправить`: доступно для проведенного документа; in an open period it opens a versioned correction flow with required reason and impact preview, and in a closed period it redirects to the correction/storno workflow from step 23;
 - `Провести`: вызывает `POST /api/documents/:id/post`;
-- `Отменить`: открывает confirmation modal, затем `POST /api/documents/:id/cancel`;
 - `Открыть проводку`: переходит в `/reports/journal/:entryId`;
 - `Открыть связанный документ`: переходит в `/documents/:id`.
 
@@ -171,7 +170,6 @@ Endpoints:
 - `GET /api/documents/:id`;
 - `PATCH /api/documents/:id`;
 - `POST /api/documents/:id/post`;
-- `POST /api/documents/:id/cancel`;
 - `GET /api/documents/:id/history`;
 - `GET /api/documents/:id/links`.
 
@@ -481,7 +479,6 @@ Controls and click behavior:
 - clicking a row selects it and updates the right preview without navigation;
 - `Открыть` in preview navigates to `/documents/:id`;
 - `Провести` in preview calls `POST /api/documents/:id/post` only for draft;
-- `Отменить` in preview opens confirmation modal and then calls `POST /api/documents/:id/cancel`;
 - `Сбросить фильтры` clears filters and reloads `GET /api/documents`.
 
 Validation and error states:
@@ -541,7 +538,6 @@ Controls and click behavior:
 
 - `Редактировать`: if draft, opens edit form; if posted, hidden or disabled with explanation `Проведенный документ исправляется через историю изменений`;
 - `Исправить`: if posted in open period, opens correction modal with reason and impact preview; if closed period, opens step 23 correction/storno flow;
-- `Отменить`: opens confirmation modal requiring reason; on confirm calls `POST /api/documents/:id/cancel`;
 - `Открыть в журнале`: navigates to `/reports/journal/:entryId`;
 - tab click switches visible tab without writing to DB;
 - linked document click navigates to `/documents/:linkedId`;

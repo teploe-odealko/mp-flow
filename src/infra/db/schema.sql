@@ -192,6 +192,19 @@ create table if not exists product_image (
   sort_order int not null default 0
 );
 
+create table if not exists product_asset (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organization(id),
+  product_id uuid not null references product(id) on delete cascade,
+  role text not null,
+  slide_type text,
+  url text not null,
+  storage_key text not null,
+  status text not null,
+  sort_order int not null default 0,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists warehouse (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organization(id),

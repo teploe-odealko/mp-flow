@@ -91,7 +91,6 @@ Endpoints:
 - `POST /api/procurement/purchase-orders/:id/shortages`;
 - `GET /api/procurement/shortages/:id`;
 - `POST /api/procurement/shortages/:id/post`;
-- `POST /api/procurement/shortages/:id/reverse`.
 
 Validation:
 

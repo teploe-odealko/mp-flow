@@ -28,7 +28,7 @@ export type RollbackDescendantSummary = RollbackDocumentSummary & {
 };
 
 export type EntityRollbackPreview = {
-  entityType: "sale" | "stock_transfer";
+  entityType: "sale" | "stock_transfer" | "payment" | "goods_receipt" | "procurement_cost";
   entityId: string;
   documentId: string;
   documentNumber: string;

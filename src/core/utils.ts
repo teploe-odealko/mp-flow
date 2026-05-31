@@ -102,6 +102,7 @@ export function createEmptyState(): AccountingState {
     auditEvents: [],
     counterparties: [],
     products: [],
+    productAssets: [],
     warehouses: [],
     stockStates: [],
     inventoryLots: [],

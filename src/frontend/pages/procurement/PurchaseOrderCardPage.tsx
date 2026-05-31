@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ArrowLeft, FileBox, FileCheck, Pencil, Plus, Wallet } from "lucide-react";
+import { AlertTriangle, ArrowLeft, FileBox, FileCheck, Pencil, Plus, Trash2, Wallet } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Kpi } from "@/components/ui/kpi";
@@ -15,7 +15,7 @@ import { Field, Input, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { ProductCell } from "@/components/product-thumb";
 import { useAppState } from "@/lib/use-app-state";
-import { apiGet, apiPost } from "@/api";
+import { apiDelete, apiGet, apiPost } from "@/api";
 import { rub, qty, date, dateTime } from "@/lib/format";
 import {
   allocationBasisLabel,
@@ -26,6 +26,7 @@ import {
   shortageActionLabel
 } from "@/lib/i18n";
 import { getPurchaseOrderMetrics } from "./metrics";
+import { EntityDeleteDialog, type EntityRollbackPreview } from "@/components/entity-delete-dialog";
 
 export function PurchaseOrderCardPage() {
   const { id } = useParams();
@@ -99,8 +100,7 @@ export function PurchaseOrderCardPage() {
     .filter(Boolean)
     .sort((left: any, right: any) => String(right.accountingDate).localeCompare(String(left.accountingDate)));
 
-  const [cancelOpen, setCancelOpen] = useState(false);
-  const [cancelReason, setCancelReason] = useState("Отмена заказа поставщику");
+  const [deleteTarget, setDeleteTarget] = useState<null | { kind: "payment" | "goods_receipt" | "procurement_cost"; id: string; label: string }>(null);
   const [receiptCorrection, setReceiptCorrection] = useState<null | {
     receiptId: string;
     purchaseOrderLineId: string;
@@ -126,11 +126,24 @@ export function PurchaseOrderCardPage() {
       queryClient.invalidateQueries();
     }
   });
-  const cancelOrder = useMutation({
-    mutationFn: () => apiPost(`/api/procurement/purchase-orders/${id}/cancel`, { reason: cancelReason }),
+  const deletePreviewPath = (target: { kind: string; id: string }) =>
+    target.kind === "payment" ? `/api/payments/${target.id}/delete-preview`
+      : target.kind === "goods_receipt" ? `/api/procurement/receipts/${target.id}/delete-preview`
+        : `/api/procurement/costs/${target.id}/delete-preview`;
+  const deletePath = (target: { kind: string; id: string }) =>
+    target.kind === "payment" ? `/api/payments/${target.id}`
+      : target.kind === "goods_receipt" ? `/api/procurement/receipts/${target.id}`
+        : `/api/procurement/costs/${target.id}`;
+  const deletePreview = useQuery({
+    queryKey: ["po-delete-preview", deleteTarget?.kind, deleteTarget?.id],
+    queryFn: () => apiGet<EntityRollbackPreview>(deletePreviewPath(deleteTarget!)),
+    enabled: Boolean(deleteTarget)
+  });
+  const deleteEntity = useMutation({
+    mutationFn: () => apiDelete(deletePath(deleteTarget!)),
     onSuccess: () => {
       queryClient.invalidateQueries();
-      setCancelOpen(false);
+      setDeleteTarget(null);
     }
   });
   const applyReceiptCorrection = useMutation({
@@ -196,13 +209,6 @@ export function PurchaseOrderCardPage() {
               <Button onClick={() => postOrder.mutate()} disabled={postOrder.isPending}>
                 <FileCheck size={14} /> Провести заказ
               </Button>
-            )}
-            {isCancellable ? (
-              <Button variant="destructive" onClick={() => setCancelOpen(true)} disabled={cancelOrder.isPending}>
-                <AlertTriangle size={14} /> Отменить
-              </Button>
-            ) : (
-              <Button variant="destructive" disabled><AlertTriangle size={14} /> Отменить</Button>
             )}
           </div>
         }
@@ -320,13 +326,16 @@ export function PurchaseOrderCardPage() {
                               <TD>{document ? <Badge tone={documentStatusTone[document.status] ?? "neutral"}>{documentStatusLabel[document.status] ?? document.status}</Badge> : "—"}</TD>
                               <TD numeric>{journalEntries.filter((entry: any) => entry.documentId === payment.documentId).length}</TD>
                               <TD>
-                                {document?.status === "draft" ? (
-                                  <Button size="sm" variant="secondary" onClick={() => postPayment.mutate(payment.id)} disabled={postPayment.isPending}>
-                                    Провести
+                                <div className="flex items-center gap-2">
+                                  {document?.status === "draft" && (
+                                    <Button size="sm" variant="secondary" onClick={() => postPayment.mutate(payment.id)} disabled={postPayment.isPending}>
+                                      Провести
+                                    </Button>
+                                  )}
+                                  <Button size="sm" variant="ghost" onClick={() => setDeleteTarget({ kind: "payment", id: payment.id, label: `оплату ${document?.number ?? ""}`.trim() })}>
+                                    <Trash2 size={14} /> Удалить
                                   </Button>
-                                ) : (
-                                  <span className="text-xs text-[var(--color-muted-foreground)]">Готово</span>
-                                )}
+                                </div>
                               </TD>
                             </TR>
                           );
@@ -407,6 +416,9 @@ export function PurchaseOrderCardPage() {
                                       </Button>
                                     </>
                                   )}
+                                  <Button size="sm" variant="ghost" onClick={() => setDeleteTarget({ kind: "goods_receipt", id: receipt.id, label: `приёмку ${document?.number ?? ""}`.trim() })}>
+                                    <Trash2 size={14} /> Удалить
+                                  </Button>
                                 </div>
                               </TD>
                             </TR>
@@ -462,15 +474,20 @@ export function PurchaseOrderCardPage() {
                               <TD>{document ? <Badge tone={documentStatusTone[document.status] ?? "neutral"}>{documentStatusLabel[document.status] ?? document.status}</Badge> : "—"}</TD>
                               <TD numeric>{journalEntries.filter((entry: any) => entry.documentId === cost.documentId).length}</TD>
                               <TD>
-                                {document?.status === "draft" ? (
-                                  <Button size="sm" variant="secondary" onClick={() => postCost.mutate(cost.id)} disabled={postCost.isPending}>
-                                    Провести
+                                <div className="flex items-center gap-2">
+                                  {document?.status === "draft" ? (
+                                    <Button size="sm" variant="secondary" onClick={() => postCost.mutate(cost.id)} disabled={postCost.isPending}>
+                                      Провести
+                                    </Button>
+                                  ) : (
+                                    <Button size="sm" variant="secondary" onClick={() => openCostCorrection(cost.id)}>
+                                      Исправить расход
+                                    </Button>
+                                  )}
+                                  <Button size="sm" variant="ghost" onClick={() => setDeleteTarget({ kind: "procurement_cost", id: cost.id, label: `расход ${document?.number ?? ""}`.trim() })}>
+                                    <Trash2 size={14} /> Удалить
                                   </Button>
-                                ) : (
-                                  <Button size="sm" variant="secondary" onClick={() => openCostCorrection(cost.id)}>
-                                    Исправить расход
-                                  </Button>
-                                )}
+                                </div>
                               </TD>
                             </TR>
                           );
@@ -717,25 +734,18 @@ export function PurchaseOrderCardPage() {
         </aside>
       </div>
 
-      <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
-        <DialogContent size="sm">
-          <DialogHeader>
-            <DialogTitle>Отменить заказ</DialogTitle>
-            <DialogDescription>Отмена допустима только пока по заказу нет оплат и приемок.</DialogDescription>
-          </DialogHeader>
-          <DialogBody>
-            <Field label="Причина">
-              <Textarea value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} />
-            </Field>
-          </DialogBody>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setCancelOpen(false)}>Закрыть</Button>
-            <Button variant="destructive" onClick={() => cancelOrder.mutate()} disabled={cancelOrder.isPending || !cancelReason.trim()}>
-              Подтвердить отмену
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <EntityDeleteDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title={`Удалить ${deleteTarget?.label ?? "запись"}?`}
+        description="Удаление возможно, только если от записи ничего не зависит дальше. Иначе сначала удалите зависимые документы."
+        preview={deletePreview.data}
+        previewLoading={deletePreview.isLoading}
+        errorMessage={deletePreview.error instanceof Error ? deletePreview.error.message : undefined}
+        onConfirm={() => deleteEntity.mutate()}
+        confirmLabel="Удалить"
+        confirmPending={deleteEntity.isPending}
+      />
 
       <Dialog open={Boolean(receiptCorrection)} onOpenChange={(open) => !open && setReceiptCorrection(null)}>
         <DialogContent size="md">

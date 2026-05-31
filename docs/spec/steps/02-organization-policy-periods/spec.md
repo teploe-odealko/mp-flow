@@ -102,8 +102,6 @@ Endpoints:
 - `GET /api/organization`
 - `PATCH /api/organization`
 - `GET /api/periods`
-- `POST /api/periods/:id/close`
-- `POST /api/periods/:id/reopen`
 
 Validation:
 
@@ -370,8 +368,6 @@ Visible content:
 
 Controls and click behavior:
 
-- `Закрыть период`: open confirmation modal; on confirm calls `POST /api/periods/:id/close`; on success row status becomes `closed`;
-- `Переоткрыть`: open confirmation modal; on confirm calls `POST /api/periods/:id/reopen`; on success row status becomes `open`;
 - period row click may open details drawer with dates and status, read-only in step 2.
 
 States:
@@ -423,8 +419,6 @@ Controls and click behavior:
 
 - `Изменить` in Organization: opens organization edit modal; calls `PATCH /api/organization` on save;
 - `Изменить правила учета`: enabled only while no accounting documents exist; calls policy update endpoint if allowed; otherwise disabled with explanation;
-- `Закрыть период` in period row: opens confirmation modal and calls `POST /api/periods/:id/close`;
-- `Переоткрыть` in period row: opens confirmation modal and calls `POST /api/periods/:id/reopen`.
 
 States:
 

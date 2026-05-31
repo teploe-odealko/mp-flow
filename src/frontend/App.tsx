@@ -48,7 +48,7 @@ import { ChannelDetailPage } from "@/pages/channels/ChannelDetailPage";
 import { MoneyWorkspace, OwnerContributionFormPage, OwnerWithdrawalFormPage, PayoutFormPage, PayoutsPage, PayoutReconciliationPage } from "@/pages/money/MoneyPages";
 import { ExpenseFormPage, ExpenseCardPage } from "@/pages/expenses/ExpensesPages";
 import { ReportsWorkspace } from "@/pages/reports/ReportsPage";
-import { ControlsWorkspace, PeriodClosingPage, PeriodClosingReportPage } from "@/pages/controls/ControlsPages";
+import { ControlsWorkspace } from "@/pages/controls/ControlsPages";
 import { AuditPage } from "@/pages/access/AccessPages";
 import { BackfillWizardPage } from "@/pages/onboarding/OnboardingPages";
 import { useAppState } from "@/lib/use-app-state";
@@ -148,8 +148,6 @@ export function App() {
 
         <Route path="/controls" element={<ControlsWorkspace />} />
         <Route path="/controls/corrections" element={<ControlsWorkspace />} />
-        <Route path="/controls/period-closing/:periodId" element={<PeriodClosingPage />} />
-        <Route path="/controls/period-closing/:periodId/report" element={<PeriodClosingReportPage />} />
         <Route path="/controls/audit" element={<AuditPage />} />
 
         <Route path="/access" element={<Navigate to="/" replace />} />

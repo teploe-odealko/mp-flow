@@ -226,12 +226,31 @@ export interface MarketplaceFulfillmentPlugin {
   createRemoteSupplyDraft?(input: RemoteSupplyDraftInput): Promise<RemoteSupplyDraft>;
 }
 
+export interface CardGuidelines {
+  marketplace: string;
+  imageFormat: { aspectRatio: string; minWidth: number; minHeight: number; note?: string };
+  safeZones: string;
+  slideTaxonomy: Array<{ type: string; title: string; purpose: string }>;
+  moderation: string[];
+  recommendedSlideCount: { min: number; max: number };
+}
+
+/**
+ * Способность плагина по оформлению карточки на маркетплейсе.
+ * v1 — только правила фото (форматы, safe-zones, таксономия слайдов).
+ * Экспорт (pictures/attributes) добавится отдельным методом в Phase 3.
+ */
+export interface MarketplaceCardPlugin {
+  guidelines(): CardGuidelines;
+}
+
 export interface MarketplacePlugin {
   code: string;
   displayName: string;
   capabilities: PluginCapability[];
   stateNamespaces?: PluginStateNamespaceDefinition[];
   fulfillment?: MarketplaceFulfillmentPlugin;
+  card?: MarketplaceCardPlugin;
   validateCredentials(credentials: PluginCredentials): { ok: true } | { ok: false; message: string };
   /**
    * Optional online check — actually pings the marketplace to verify the keys.

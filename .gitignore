@@ -8,3 +8,4 @@ tmp/
 tmp-spec-audit.json
 .env
 .env.local
+.claude/

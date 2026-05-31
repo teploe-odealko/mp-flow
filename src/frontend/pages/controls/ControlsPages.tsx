@@ -93,11 +93,6 @@ export function ControlsWorkspace() {
             <Button onClick={() => queueRecalc.mutate(selectedCorrection ? { sourceDocumentId: selectedCorrection.sourceDocument?.id } : { requestedAt: new Date().toISOString() })}>
               <RefreshCw size={14} /> Запустить пересчет
             </Button>
-            <Button asChild>
-              <Link to={`/controls/period-closing/${periods.find((p: any) => p.status === "open")?.id ?? ""}`}>
-                <Lock size={14} /> Закрытие периода
-              </Link>
-            </Button>
           </div>
         }
       />

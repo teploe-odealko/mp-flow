@@ -90,6 +90,7 @@ const COLLECTIONS: RuntimeCollectionName[] = [
   "auditEvents",
   "counterparties",
   "products",
+  "productAssets",
   "warehouses",
   "stockStates",
   "inventoryLots",
@@ -156,6 +157,7 @@ const STATE_JSON_TABLES = [
   "journal_line",
   "counterparty",
   "product",
+  "product_asset",
   "warehouse",
   "stock_state",
   "inventory_lot",
@@ -409,6 +411,19 @@ const TABLES: TableSpec[] = [
     comment: optionalString(entity.comment),
     state_json: entity
   }), "sku, id"),
+  spec("productAssets", "product_asset", ["id"], (entity) => ({
+    id: entityUuid(requiredString(entity.id, "productAssets.id")),
+    organization_id: entityUuid(requiredString(entity.organizationId, "productAssets.organizationId")),
+    product_id: entityUuid(requiredString(entity.productId, "productAssets.productId")),
+    role: requiredString(entity.role, "productAssets.role"),
+    slide_type: optionalString(entity.slideType),
+    url: requiredString(entity.url, "productAssets.url"),
+    storage_key: requiredString(entity.storageKey, "productAssets.storageKey"),
+    status: requiredString(entity.status, "productAssets.status"),
+    sort_order: requiredNumber(entity.sortOrder, "productAssets.sortOrder"),
+    created_at: requiredString(entity.createdAt, "productAssets.createdAt"),
+    state_json: entity
+  }), "product_id, sort_order, created_at"),
   spec("warehouses", "warehouse", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "warehouses.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "warehouses.organizationId")),

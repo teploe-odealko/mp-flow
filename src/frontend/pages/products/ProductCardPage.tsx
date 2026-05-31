@@ -16,6 +16,7 @@ import { date, qty, rub } from "@/lib/format";
 import { documentStatusLabel, documentStatusTone, movementTypeLabel, stockStateLabel, warehouseTypeLabel } from "@/lib/i18n";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { PhotoStudioPanel } from "./PhotoStudioPanel";
 
 export function ProductCardPage() {
   const { id } = useParams();
@@ -217,6 +218,7 @@ export function ProductCardPage() {
               <TabsTrigger value="movements">Движения</TabsTrigger>
               <TabsTrigger value="documents">Документы</TabsTrigger>
               <TabsTrigger value="channels">Каналы продаж</TabsTrigger>
+              <TabsTrigger value="studio">Фотостудия</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview">
@@ -583,6 +585,10 @@ export function ProductCardPage() {
                   )}
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            <TabsContent value="studio">
+              <PhotoStudioPanel productId={product.id} />
             </TabsContent>
           </Tabs>
         </div>

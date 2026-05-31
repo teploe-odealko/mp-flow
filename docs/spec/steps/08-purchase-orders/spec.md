@@ -196,7 +196,6 @@ Endpoints:
 - `GET /api/procurement/purchase-orders/:id`;
 - `PATCH /api/procurement/purchase-orders/:id`;
 - `POST /api/procurement/purchase-orders/:id/post`;
-- `POST /api/procurement/purchase-orders/:id/cancel`.
 
 Commands/services:
 

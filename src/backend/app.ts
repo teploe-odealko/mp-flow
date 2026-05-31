@@ -9,6 +9,8 @@ import { createEmptyState, DomainError, id, nowIso, resetIds, runWithIdSequence 
 import type { RuntimePersistence } from "../infra/db/runtime-store";
 import { pluginRegistry } from "../plugins/registry";
 import { createPluginSecretApi, createPluginStateApi, pluginStateKey } from "../plugins/runtime";
+import { buildMediaKey, createPresignedUpload, headObject, isAllowedImageType, isStorageConfigured } from "../infra/storage/s3";
+import { getCardStudioPlaybook } from "./card-studio";
 import { classifyChannelFinancePayload } from "../shared/channel-finance";
 import { AuthService, createAuthMiddleware, ensureAppUser, publicUser } from "./auth";
 import { initHttpMetrics, metricsMiddleware, renderMetrics } from "./metrics";
@@ -294,14 +296,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = organizationPatchSchema.parse(await c.req.json());
     return c.json({ ok: true, data: scopedApp.updateOrganization(body) });
   });
-  api.post("/api/periods/:id/reopen", async (c) => {
-    const body = z.object({ reason: z.string().optional() }).parse(await c.req.json().catch(() => ({})));
-    return c.json({ ok: true, data: scopedApp.reopenPeriod(c.req.param("id"), body.reason) });
-  });
-  api.post("/api/accounting-periods/:id/reopen", async (c) => {
-    const body = z.object({ reason: z.string().optional() }).parse(await c.req.json().catch(() => ({})));
-    return c.json({ ok: true, data: scopedApp.reopenPeriod(c.req.param("id"), body.reason) });
-  });
 
   api.get("/api/accounts", (c) => c.json({ ok: true, data: scopedApp.state.chartAccounts }));
   api.get("/api/accounting/accounts", (c) => c.json({ ok: true, data: scopedApp.state.chartAccounts }));
@@ -336,10 +330,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/documents/:id/post", async (c) => {
     const body = documentPostSchema.parse(await c.req.json().catch(() => ({})));
     return c.json({ ok: true, data: scopedApp.postExistingDocument(c.req.param("id"), body.journalLines) });
-  });
-  api.post("/api/documents/:id/cancel", async (c) => {
-    const body = cancelSchema.parse(await c.req.json().catch(() => ({})));
-    return c.json({ ok: true, data: cancelDocumentWithDomainRules(scopedApp, c.req.param("id"), body.reason) });
   });
   api.delete("/api/documents/:id", (c) => {
     return c.json({ ok: true, data: scopedApp.deleteDraftDocument(c.req.param("id")) });
@@ -388,6 +378,107 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: scopedApp.setProductImage(c.req.param("id"), body.url) });
   });
   api.delete("/api/products/:id/images/:imageId", (c) => c.json({ ok: true, data: scopedApp.deleteProductImage(c.req.param("id")) }));
+
+  // --- Фотостудия карточки: медиа товара (исходники + сгенерированные слайды) ---
+  api.get("/api/products/:id/card", (c) => {
+    const productId = c.req.param("id");
+    const product = scopedApp.state.products.find((candidate) => candidate.id === productId);
+    if (!product) throw new DomainError("product_not_found", "Товар не найден");
+    const channels = scopedApp.state.productExternalLinks
+      .filter((link) => link.productId === productId && link.status === "active")
+      .map((link) => ({
+        link,
+        external: scopedApp.state.externalProducts.find((external) => external.id === link.externalProductId),
+        channel: scopedApp.state.salesChannels.find((channel) => channel.id === link.channelId)
+      }))
+      .filter((row) => row.external && row.channel);
+    return c.json({ ok: true, data: { product, assets: scopedApp.listProductAssets(productId), channels, plan: readCardStudioPlan(scopedApp, productId), storageReady: isStorageConfigured() } });
+  });
+  // Бриф для агента: товар + привязанная карточка + медиа + план + серверный playbook и правила Ozon.
+  api.get("/api/products/:id/card/brief", (c) => {
+    const productId = c.req.param("id");
+    const product = scopedApp.state.products.find((candidate) => candidate.id === productId);
+    if (!product) throw new DomainError("product_not_found", "Товар не найден");
+    const link = scopedApp.state.productExternalLinks.find((candidate) => candidate.productId === productId && candidate.status === "active");
+    const external = link ? scopedApp.state.externalProducts.find((candidate) => candidate.id === link.externalProductId) : undefined;
+    const channel = link ? scopedApp.state.salesChannels.find((candidate) => candidate.id === link.channelId) : undefined;
+    const ozon = pluginRegistry.get("ozon");
+    return c.json({ ok: true, data: {
+      product: {
+        id: product.id, sku: product.sku, name: product.name, brand: product.brand, category: product.category,
+        description: product.description, weightGrams: product.weightGrams,
+        lengthMm: product.lengthMm, widthMm: product.widthMm, heightMm: product.heightMm, imageUrl: product.imageUrl
+      },
+      marketplace: "ozon",
+      linkedCard: external ? { channelId: channel?.id, channelName: channel?.name, offerId: external.externalSku, externalName: external.externalName } : null,
+      assets: scopedApp.listProductAssets(productId),
+      plan: readCardStudioPlan(scopedApp, productId),
+      guidelines: ozon.card?.guidelines() ?? null,
+      playbook: getCardStudioPlaybook()
+    } });
+  });
+  api.put("/api/products/:id/card/plan", async (c) => {
+    const productId = c.req.param("id");
+    const product = scopedApp.state.products.find((candidate) => candidate.id === productId);
+    if (!product) throw new DomainError("product_not_found", "Товар не найден");
+    const body = cardPlanSchema.parse(await c.req.json());
+    const pluginState = cardStudioPlanState(scopedApp);
+    const existing = pluginState.get({ namespace: "card_studio", scopeType: "flow_session", scopeId: productId, stateKey: "plan" });
+    const saved = pluginState.put({
+      namespace: "card_studio",
+      scopeType: "flow_session",
+      scopeId: productId,
+      stateKey: "plan",
+      expectedRevision: existing?.revision,
+      payload: { ...body, updatedAt: nowIso(), updatedBy: c.get("authAgent") ? "agent" : "user" }
+    });
+    return c.json({ ok: true, data: { ...saved.payload, revision: saved.revision } });
+  });
+  api.post("/api/products/:id/card/uploads", async (c) => {
+    const productId = c.req.param("id");
+    const product = scopedApp.state.products.find((candidate) => candidate.id === productId);
+    if (!product) throw new DomainError("product_not_found", "Товар не найден");
+    if (!isStorageConfigured()) throw new DomainError("storage_not_configured", "Хранилище медиа не настроено: задайте S3_* переменные");
+    const body = cardUploadSchema.parse(await c.req.json());
+    if (!isAllowedImageType(body.contentType)) throw new DomainError("unsupported_media_type", "Поддерживаются только изображения: png, jpg, webp");
+    const key = buildMediaKey({ productId, role: body.role, contentType: body.contentType });
+    const { uploadUrl, publicUrl } = await createPresignedUpload({ key, contentType: body.contentType });
+    const asset = scopedApp.createProductAsset({
+      productId,
+      role: body.role,
+      storageKey: key,
+      url: publicUrl,
+      slideType: body.slideType,
+      mimeType: body.contentType,
+      status: "pending",
+      createdBy: c.get("authAgent") ? "agent" : "user",
+      meta: body.meta
+    });
+    return c.json({ ok: true, data: { asset, uploadUrl } });
+  });
+  api.post("/api/products/:id/card/assets/:assetId/confirm", async (c) => {
+    const assetId = c.req.param("assetId");
+    const asset = scopedApp.state.productAssets.find((candidate) => candidate.id === assetId);
+    if (!asset) throw new DomainError("product_asset_not_found", "Медиа не найдено");
+    const body = cardConfirmSchema.parse(await c.req.json().catch(() => ({})));
+    if (isStorageConfigured()) {
+      const head = await headObject(asset.storageKey);
+      if (!head) throw new DomainError("asset_not_uploaded", "Файл не найден в хранилище — загрузка не завершена");
+      if (!body.mimeType && head.contentType) body.mimeType = head.contentType;
+    }
+    return c.json({ ok: true, data: scopedApp.confirmProductAsset(assetId, body) });
+  });
+  api.post("/api/products/:id/card/assets/:assetId/approve", (c) => {
+    return c.json({ ok: true, data: scopedApp.updateProductAsset(c.req.param("assetId"), { role: "approved", status: "ready" }) });
+  });
+  api.patch("/api/products/:id/card/assets/:assetId", async (c) => {
+    const body = cardAssetPatchSchema.parse(await c.req.json());
+    return c.json({ ok: true, data: scopedApp.updateProductAsset(c.req.param("assetId"), body) });
+  });
+  api.delete("/api/products/:id/card/assets/:assetId", (c) => {
+    return c.json({ ok: true, data: scopedApp.deleteProductAsset(c.req.param("assetId")) });
+  });
+
   api.get("/api/warehouses", (c) => c.json({ ok: true, data: scopedApp.state.warehouses }));
   api.post("/api/warehouses", async (c) => {
     const body = warehouseSchema.parse(await c.req.json());
@@ -432,10 +523,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: scopedApp.updatePurchaseOrderDraft(c.req.param("id"), body) });
   });
   api.post("/api/procurement/purchase-orders/:id/post", (c) => c.json({ ok: true, data: scopedApp.postPurchaseOrder(c.req.param("id")) }));
-  api.post("/api/procurement/purchase-orders/:id/cancel", async (c) => {
-    const body = cancelSchema.parse(await c.req.json().catch(() => ({})));
-    return c.json({ ok: true, data: scopedApp.cancelPurchaseOrder(c.req.param("id"), body.reason) });
-  });
   api.post("/api/procurement/purchase-orders/:id/payments", async (c) => {
     const body = supplierPaymentSchema.parse(await c.req.json());
     return c.json({ ok: true, data: scopedApp.recordSupplierPayment({ ...body, purchaseOrderId: c.req.param("id") }) });
@@ -471,6 +558,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/procurement/purchase-orders/:id/receipts", (c) => c.json({ ok: true, data: scopedApp.state.goodsReceipts.filter((receipt) => receipt.purchaseOrderId === c.req.param("id")) }));
   api.get("/api/procurement/receipts/:id", (c) => c.json({ ok: true, data: scopedApp.receiptDetails(c.req.param("id")) }));
   api.post("/api/procurement/receipts/:id/post", (c) => c.json({ ok: true, data: scopedApp.postGoodsReceipt(c.req.param("id")) }));
+  api.get("/api/procurement/receipts/:id/delete-preview", (c) => c.json({ ok: true, data: scopedApp.goodsReceiptRollbackPreview(c.req.param("id")) }));
+  api.delete("/api/procurement/receipts/:id", (c) => c.json({ ok: true, data: scopedApp.deleteGoodsReceipt(c.req.param("id")) }));
   api.get("/api/procurement/receipts/:id/dispatch-context", (c) => {
     const channelId = c.req.query("channelId");
     const context = scopedApp.receiptDispatchContext(c.req.param("id"), channelId);
@@ -714,10 +803,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: cost });
   });
   api.post("/api/procurement/costs/:id/post", (c) => c.json({ ok: true, data: scopedApp.postProcurementCost(c.req.param("id")) }));
-  api.post("/api/procurement/costs/:id/reverse", async (c) => {
-    const body = cancelSchema.parse(await c.req.json().catch(() => ({})));
-    return c.json({ ok: true, data: scopedApp.reverseProcurementCost(c.req.param("id"), body.reason) });
-  });
+  api.get("/api/procurement/costs/:id/delete-preview", (c) => c.json({ ok: true, data: scopedApp.procurementCostRollbackPreview(c.req.param("id")) }));
+  api.delete("/api/procurement/costs/:id", (c) => c.json({ ok: true, data: scopedApp.deleteProcurementCost(c.req.param("id")) }));
   api.post("/api/procurement/purchase-orders/:id/shortages", async (c) => {
     const body = shortageSchema.parse(await c.req.json());
     return c.json({ ok: true, data: scopedApp.resolveShortage({ ...body, purchaseOrderId: c.req.param("id") }) });
@@ -725,10 +812,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/procurement/purchase-orders/:id/shortages/preview", (c) => c.json({ ok: true, data: scopedApp.shortagePreview(c.req.param("id")) }));
   api.get("/api/procurement/shortages/:id", (c) => c.json({ ok: true, data: scopedApp.shortageDetails(c.req.param("id")) }));
   api.post("/api/procurement/shortages/:id/post", (c) => c.json({ ok: true, data: scopedApp.postShortage(c.req.param("id")) }));
-  api.post("/api/procurement/shortages/:id/reverse", async (c) => {
-    const body = cancelSchema.parse(await c.req.json().catch(() => ({})));
-    return c.json({ ok: true, data: scopedApp.reverseShortage(c.req.param("id"), body.reason) });
-  });
 
   api.post("/api/money/owner-contributions", async (c) => {
     const body = ownerContributionSchema.parse(await c.req.json());
@@ -749,6 +832,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.get("/api/money/payments", (c) => c.json({ ok: true, data: { cashAccounts: scopedApp.state.cashAccounts, payments: scopedApp.state.payments, allocations: scopedApp.state.paymentAllocations } }));
   api.post("/api/payments/:id/post", (c) => c.json({ ok: true, data: scopedApp.postPayment(c.req.param("id")) }));
+  api.get("/api/payments/:id/delete-preview", (c) => c.json({ ok: true, data: scopedApp.paymentRollbackPreview(c.req.param("id")) }));
+  api.delete("/api/payments/:id", (c) => c.json({ ok: true, data: scopedApp.deletePayment(c.req.param("id")) }));
 
   api.get("/api/inventory/transfer-preview", (c) => c.json({ ok: true, data: { stock: scopedApp.stockByProduct(), lots: scopedApp.state.inventoryLots } }));
   api.post("/api/inventory/transfers", async (c) => {
@@ -1171,17 +1256,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/sales/:id/post", (c) => {
     return c.json({ ok: true, data: scopedApp.postSale(c.req.param("id")) });
   });
-  api.post("/api/sales/:id/reverse", async (c) => {
-    const body = cancelSchema.parse(await c.req.json().catch(() => ({})));
-    const sale = scopedApp.state.sales.find((candidate) => candidate.id === c.req.param("id"));
-    if (!sale) throw new DomainError("sale_not_found", "Продажа не найдена");
-    if (sale.financialDocumentId) {
-      scopedApp.cancelDocument(sale.financialDocumentId, body.reason);
-    }
-    scopedApp.cancelDocument(sale.documentId, body.reason);
-    sale.status = "reversed";
-    return c.json({ ok: true, data: sale });
-  });
+  api.delete("/api/sales/:id", (c) => c.json({ ok: true, data: scopedApp.deleteSaleForResync(c.req.param("id")) }));
   api.post("/api/integrations/events/:id/materialize-sale", (c) => {
     const event = scopedApp.state.externalEvents.find((candidate) => candidate.id === c.req.param("id"));
     if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
@@ -1231,13 +1306,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/returns/:id/post", (c) => {
     return c.json({ ok: true, data: scopedApp.postReturn(c.req.param("id")) });
   });
-  api.post("/api/returns/:id/reverse", async (c) => {
-    const body = cancelSchema.parse(await c.req.json().catch(() => ({})));
-    const salesReturn = scopedApp.state.salesReturns.find((candidate) => candidate.id === c.req.param("id"));
-    if (!salesReturn) throw new DomainError("return_not_found", "Возврат не найден");
-    scopedApp.cancelDocument(salesReturn.documentId, body.reason);
-    return c.json({ ok: true, data: salesReturn });
-  });
+  api.delete("/api/returns/:id", (c) => c.json({ ok: true, data: scopedApp.deleteReturnForResync(c.req.param("id")) }));
   api.post("/api/integrations/events/:id/materialize-return", (c) => {
     const event = scopedApp.state.externalEvents.find((candidate) => candidate.id === c.req.param("id"));
     if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
@@ -1363,15 +1432,13 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = z.object({
       comment: z.string().optional(),
       amountRub: z.number().optional(),
-      counterpartyId: z.string().optional(),
-      paymentMode: z.enum(["paid_now", "pay_later", "without_payment"]).optional()
+      counterpartyId: z.string().optional()
     }).parse(await c.req.json());
     const expense = scopedApp.state.operatingExpenses.find((candidate) => candidate.id === c.req.param("id"));
     if (!expense) throw new DomainError("expense_not_found", "Расход не найден");
     if (body.comment !== undefined) expense.comment = body.comment;
     if (body.amountRub !== undefined) expense.amountRub = body.amountRub;
     if (body.counterpartyId !== undefined) expense.counterpartyId = body.counterpartyId || undefined;
-    if (body.paymentMode !== undefined) expense.paymentMode = body.paymentMode;
     return c.json({ ok: true, data: expense });
   });
   api.post("/api/finance/expenses/:id/post", (c) => {
@@ -1628,10 +1695,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = correctionPreviewSchema.parse(await c.req.json());
     return c.json({ ok: true, data: scopedApp.applyDocumentCorrection(c.req.param("id"), body.patch, body.reason ?? "Исправление документа") });
   });
-  api.post("/api/documents/:id/reverse", async (c) => {
-    const body = cancelSchema.parse(await c.req.json().catch(() => ({})));
-    return c.json({ ok: true, data: cancelDocumentWithDomainRules(scopedApp, c.req.param("id"), body.reason) });
-  });
   api.get("/api/recalculation-jobs", (c) => c.json({ ok: true, data: scopedApp.state.recalculationJobs }));
   api.post("/api/recalculation-jobs", async (c) => {
     const body = recalculationJobSchema.parse(await c.req.json());
@@ -1647,31 +1710,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: scopedApp.applyReceiptQuantityCorrection({ goodsReceiptId: c.req.param("id"), ...body }) });
   });
 
-  api.post("/api/periods/:id/close", (c) => c.json({ ok: true, data: scopedApp.closePeriod(c.req.param("id")) }));
-  api.post("/api/accounting-periods/:id/close", (c) => c.json({ ok: true, data: scopedApp.closePeriod(c.req.param("id")) }));
-  api.get("/api/accounting-periods/:id/closing", (c) => {
-    const periodId = c.req.param("id");
-    return c.json({ ok: true, data: scopedApp.state.periodClosingRuns.filter((run) => run.periodId === periodId).at(-1) ?? { periodId, status: "draft", checks: [] } });
-  });
-  api.post("/api/accounting-periods/:id/closing/run-checks", (c) => c.json({ ok: true, data: scopedApp.runPeriodClosingChecks(c.req.param("id"), false) }));
-  api.post("/api/accounting-periods/:id/closing/generate-reports", (c) => {
-    const periodId = c.req.param("id");
-    const reports = scopedApp.reports();
-    const snapshots = (["profit-and-loss", "balance-sheet", "cash-flow", "inventory", "unit-economics"] as const).map((reportType) => {
-      const payload = reportType === "profit-and-loss" ? reports.pnl :
-        reportType === "balance-sheet" ? reports.balanceSheet :
-          reportType === "cash-flow" ? reports.cashFlow :
-            reportType === "inventory" ? reports.inventory : reports.unitEconomics;
-      const snapshot = { id: id("report_snapshot"), organizationId: scopedApp.currentOrgId(), periodId, reportType, payload, createdAt: nowIso() };
-      scopedApp.state.reportSnapshots.push(snapshot);
-      return snapshot;
-    });
-    return c.json({ ok: true, data: snapshots });
-  });
-  api.get("/api/accounting-periods/:id/closing-report", (c) => {
-    const periodId = c.req.param("id");
-    return c.json({ ok: true, data: { run: scopedApp.state.periodClosingRuns.filter((run) => run.periodId === periodId).at(-1), snapshots: scopedApp.state.reportSnapshots.filter((snapshot) => snapshot.periodId === periodId) } });
-  });
   api.get("/api/mcp/config", (c) => {
     return c.json({ ok: true, data: mcpSettingsPayload(scopedApp, publicMcpEndpoint(c)) });
   });
@@ -1887,6 +1925,69 @@ const MCP_TOOL_DEFINITIONS = [
     name: "mpflow_api_catalog",
     description: "Показывает основные API-зоны и примеры путей, доступные через mpflow_api_request.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "card_studio_get_brief",
+    description: "Фотостудия: бриф по товару — данные товара, привязанная карточка Ozon (offer_id), текущие медиа и план, плюс серверный playbook (методика) и правила Ozon (форматы, safe-zones, таксономия слайдов). НАЧИНАЙ оформление карточки с этого инструмента.",
+    inputSchema: {
+      type: "object",
+      properties: { productId: { type: "string", description: "ID товара в MPFlow" } },
+      required: ["productId"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "card_studio_save_plan",
+    description: "Фотостудия: сохраняет план карточки (research + единый стиль + последовательность слайдов). Отобразится в интерфейсе пользователя. Структуру плана определяешь сам.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        productId: { type: "string" },
+        plan: { type: "object", description: "JSON плана: research, style, slides[] и любые нужные поля" }
+      },
+      required: ["productId", "plan"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "card_studio_create_upload",
+    description: "Фотостудия: выдаёт presigned-URL для загрузки готового изображения. Затем сделай HTTP PUT байтов на uploadUrl (с тем же Content-Type) и вызови card_studio_confirm_asset.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        productId: { type: "string" },
+        role: { type: "string", enum: ["source", "generated", "approved"], default: "generated" },
+        slideType: { type: "string", description: "Тип слайда из плана: hero/benefits/lifestyle/…" },
+        contentType: { type: "string", default: "image/png", description: "image/png, image/jpeg или image/webp" }
+      },
+      required: ["productId"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "card_studio_confirm_asset",
+    description: "Фотостудия: подтверждает, что изображение загружено в хранилище (после PUT). Помечает медиа готовым.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        productId: { type: "string" },
+        assetId: { type: "string" },
+        width: { type: "number" },
+        height: { type: "number" }
+      },
+      required: ["productId", "assetId"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "card_studio_list_assets",
+    description: "Фотостудия: возвращает медиа товара (исходники и сгенерированные слайды) с публичными URL.",
+    inputSchema: {
+      type: "object",
+      properties: { productId: { type: "string" } },
+      required: ["productId"],
+      additionalProperties: false
+    }
   }
 ];
 
@@ -2097,7 +2198,7 @@ async function handleMcpJsonRpc(
         protocolVersion: MCP_PROTOCOL_VERSION,
         capabilities: { tools: {}, resources: {} },
         serverInfo: { name: "mpflow", version: MCP_SERVER_VERSION },
-        instructions: "Используйте tools/list, затем tools/call. Все вызовы выполняются в личном кабинете, привязанном к MCP-ключу."
+        instructions: "Используйте tools/list, затем tools/call. Все вызовы выполняются в личном кабинете, привязанном к MCP-ключу. Для оформления фото карточки товара начните с card_studio_get_brief(productId) — он вернёт товар, правила Ozon и playbook (методику исследования, единого стиля и промптов)."
       });
     }
     if (message.method === "ping") {
@@ -2118,12 +2219,22 @@ async function handleMcpJsonRpc(
       return mcpResult(c, message.id, {
         resources: [
           { uri: "mpflow://dashboard", name: "Дашборд MPFlow", mimeType: "application/json" },
-          { uri: "mpflow://reports", name: "Отчеты MPFlow", mimeType: "application/json" }
+          { uri: "mpflow://reports", name: "Отчеты MPFlow", mimeType: "application/json" },
+          { uri: "mpflow://ozon/card-playbook", name: "Card Studio Playbook (Ozon)", mimeType: "text/markdown" },
+          { uri: "mpflow://ozon/card-guidelines", name: "Правила карточек Ozon", mimeType: "application/json" }
         ]
       });
     }
     if (message.method === "resources/read") {
       const params = z.object({ uri: z.string() }).parse(message.params ?? {});
+      if (params.uri === "mpflow://ozon/card-playbook") {
+        const playbook = getCardStudioPlaybook();
+        return mcpResult(c, message.id, { contents: [{ uri: params.uri, mimeType: "text/markdown", text: playbook.markdown }] });
+      }
+      if (params.uri === "mpflow://ozon/card-guidelines") {
+        const guidelines = pluginRegistry.get("ozon").card?.guidelines() ?? null;
+        return mcpResult(c, message.id, { contents: [{ uri: params.uri, mimeType: "application/json", text: JSON.stringify(guidelines, null, 2) }] });
+      }
       const path = params.uri === "mpflow://dashboard" ? "/api/dashboard" : params.uri === "mpflow://reports" ? "/api/reports" : "";
       if (!path) return mcpError(c, message.id, -32602, "Неизвестный MCP resource");
       const data = await callMpflowApi(api, rawKey, agent, { method: "GET", path });
@@ -2185,6 +2296,42 @@ async function callMcpTool(
       body: z.unknown().optional()
     }).parse(args);
     const data = await callMpflowApi(api, rawKey, agent, { method: input.method ?? "GET", path: input.path, query: input.query, body: input.body });
+    return mcpToolData(data, !data.ok);
+  }
+  if (name === "card_studio_get_brief") {
+    const input = z.object({ productId: z.string() }).parse(args);
+    return mcpToolData(await callMpflowApi(api, rawKey, agent, { method: "GET", path: `/api/products/${encodeURIComponent(input.productId)}/card/brief` }));
+  }
+  if (name === "card_studio_list_assets") {
+    const input = z.object({ productId: z.string() }).parse(args);
+    return mcpToolData(await callMpflowApi(api, rawKey, agent, { method: "GET", path: `/api/products/${encodeURIComponent(input.productId)}/card` }));
+  }
+  if (name === "card_studio_save_plan") {
+    const input = z.object({ productId: z.string(), plan: z.record(z.string(), z.unknown()) }).parse(args);
+    const data = await callMpflowApi(api, rawKey, agent, { method: "PUT", path: `/api/products/${encodeURIComponent(input.productId)}/card/plan`, body: input.plan });
+    return mcpToolData(data, !data.ok);
+  }
+  if (name === "card_studio_create_upload") {
+    const input = z.object({
+      productId: z.string(),
+      role: z.enum(["source", "generated", "approved"]).optional(),
+      slideType: z.string().optional(),
+      contentType: z.string().optional()
+    }).parse(args);
+    const data = await callMpflowApi(api, rawKey, agent, {
+      method: "POST",
+      path: `/api/products/${encodeURIComponent(input.productId)}/card/uploads`,
+      body: { role: input.role ?? "generated", slideType: input.slideType, contentType: input.contentType ?? "image/png" }
+    });
+    return mcpToolData(data, !data.ok);
+  }
+  if (name === "card_studio_confirm_asset") {
+    const input = z.object({ productId: z.string(), assetId: z.string(), width: z.number().optional(), height: z.number().optional() }).parse(args);
+    const data = await callMpflowApi(api, rawKey, agent, {
+      method: "POST",
+      path: `/api/products/${encodeURIComponent(input.productId)}/card/assets/${encodeURIComponent(input.assetId)}/confirm`,
+      body: { width: input.width, height: input.height }
+    });
     return mcpToolData(data, !data.ok);
   }
   throw new DomainError("mcp_tool_not_found", `Инструмент MCP не найден: ${name}`);
@@ -2261,6 +2408,20 @@ function mcpError(c: any, id: string | number | null | undefined, code: number, 
   return c.json({ jsonrpc: "2.0", id, error: { code, message, data } }, code === -32601 ? 404 : 200);
 }
 
+function cardStudioPlanState(app: AccountingApp) {
+  return createPluginStateApi(app, pluginRegistry.get("ozon"));
+}
+
+function readCardStudioPlan(app: AccountingApp, productId: string) {
+  const record = cardStudioPlanState(app).get({
+    namespace: "card_studio",
+    scopeType: "flow_session",
+    scopeId: productId,
+    stateKey: "plan"
+  });
+  return record ? { ...record.payload, revision: record.revision } : null;
+}
+
 const bootstrapSchema = z.object({
   displayName: z.string().min(1),
   accountingStartDate: z.string(),
@@ -2312,7 +2473,6 @@ const documentPatchSchema = z.object({
   changeReason: z.string().optional()
 });
 const documentPostSchema = z.object({ journalLines: z.array(journalLineSchema).optional() });
-const cancelSchema = z.object({ reason: z.string().min(1).default("Отмена документа") });
 
 const productSchema = z.object({
   sku: z.string().min(1),
@@ -2331,6 +2491,26 @@ const productSchema = z.object({
   imageUrl: z.string().optional()
 });
 const imageSchema = z.object({ url: z.string().min(1) });
+const cardUploadSchema = z.object({
+  role: z.enum(["source", "generated", "approved"]),
+  slideType: z.string().trim().min(1).optional(),
+  contentType: z.string().trim().min(1),
+  meta: z.record(z.string(), z.unknown()).optional()
+});
+const cardConfirmSchema = z.object({
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
+  mimeType: z.string().trim().min(1).optional()
+});
+const cardAssetPatchSchema = z.object({
+  role: z.enum(["source", "generated", "approved"]).optional(),
+  status: z.enum(["pending", "ready", "archived"]).optional(),
+  slideType: z.string().trim().min(1).optional(),
+  sortOrder: z.number().int().min(0).optional(),
+  meta: z.record(z.string(), z.unknown()).optional()
+});
+// План карточки — структуру определяет агент; храним как есть.
+const cardPlanSchema = z.record(z.string(), z.unknown());
 
 const warehouseSchema = z.object({
   name: z.string().min(1),
@@ -2550,7 +2730,6 @@ const operatingExpenseSchema = z.object({
   expenseDate: z.string(),
   amountRub: z.number(),
   cashAccountId: z.string().optional(),
-  paymentMode: z.enum(["paid_now", "pay_later", "without_payment"]).optional(),
   comment: z.string().optional(),
   post: z.boolean().optional()
 });
@@ -3468,45 +3647,6 @@ function syncBackfillProjectStatus(app: AccountingApp, project: any) {
   if (project.status === "applied" || project.status === "completed") return project;
   project.status = summary.totalItems === 0 || summary.unmatched > 0 || summary.missingCost > 0 ? "needs_review" : "ready";
   return project;
-}
-
-function cancelDocumentWithDomainRules(app: AccountingApp, documentId: string, reason: string) {
-  const document = app.state.documents.find((candidate) => candidate.id === documentId);
-  if (!document) {
-    throw new DomainError("document_not_found", "Документ не найден");
-  }
-  app.assertDocumentHasNoDescendants(document.id, "Нельзя изменить документ, пока от него зависят другие документы");
-  if (document.documentType === "purchase_order") {
-    const order = app.state.purchaseOrders.find((candidate) => candidate.documentId === document.id);
-    if (!order) throw new DomainError("purchase_order_not_found", "Заказ поставщику не найден");
-    return app.cancelPurchaseOrder(order.id, reason);
-  }
-  if (document.documentType === "goods_receipt") {
-    const receipt = app.state.goodsReceipts.find((candidate) => candidate.documentId === document.id);
-    if (!receipt) throw new DomainError("receipt_not_found", "Приемка товара не найдена");
-    return app.reverseGoodsReceipt(receipt.id, reason);
-  }
-  if (document.documentType === "procurement_cost") {
-    const cost = app.state.procurementCosts.find((candidate) => candidate.documentId === document.id);
-    if (!cost) throw new DomainError("procurement_cost_not_found", "Расход закупки не найден");
-    return app.reverseProcurementCost(cost.id, reason);
-  }
-  if (document.documentType === "shortage_resolution") {
-    const shortage = app.state.shortageResolutions.find((candidate) => candidate.documentId === document.id);
-    if (!shortage) throw new DomainError("shortage_not_found", "Решение по недопоставке не найдено");
-    return app.reverseShortage(shortage.id, reason);
-  }
-  if (document.documentType === "sale" || document.documentType === "sale_accrual") {
-    const sale = app.state.sales.find((candidate) => candidate.documentId === document.id || candidate.financialDocumentId === document.id);
-    if (!sale) throw new DomainError("sale_not_found", "Продажа не найдена");
-    if (sale.financialDocumentId) {
-      app.cancelDocument(sale.financialDocumentId, reason);
-    }
-    app.cancelDocument(sale.documentId, reason);
-    sale.status = "reversed";
-    return sale;
-  }
-  return app.cancelDocument(document.id, reason);
 }
 
 function captureSyncRunBaseline(app: AccountingApp, channelId: string) {

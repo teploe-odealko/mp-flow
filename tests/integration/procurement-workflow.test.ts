@@ -212,7 +212,7 @@ describe("procurement workflow api", () => {
     expect(app.shortagePreview(order.id).lines).toHaveLength(0);
   });
 
-  it("cancels receipt with linked procurement cost and reopens receipt preview without duplicating stock", async () => {
+  it("deletes receipt only after removing its linked procurement cost", async () => {
     resetIds();
     const app = new AccountingApp();
     app.bootstrap({ displayName: "PO Re-receive", accountingStartDate: "2026-06-01" });
@@ -249,13 +249,20 @@ describe("procurement workflow api", () => {
     expect(stockBeforeCancel?.costRub).toBe(10_500);
 
     const api = createApi(app);
-    const cancelled = await post<any>(api, `/api/documents/${receipt.documentId}/cancel`, { reason: "Перепринять товар на другой склад" });
-    expect(cancelled.status).toBe("cancelled");
-    expect(app.state.goodsReceipts.find((candidate) => candidate.id === receipt.id)?.status).toBe("cancelled");
-    expect(app.state.documents.find((document) => document.id === receipt.documentId)?.status).toBe("cancelled");
-    expect(app.state.procurementCosts.find((candidate) => candidate.id === procurementCost.id)?.status).toBe("cancelled");
-    expect(app.state.documents.find((document) => document.id === costDocument.id)?.status).toBe("cancelled");
-    expect(app.state.inventoryLots.filter((lot) => lot.sourceDocumentId === receipt.documentId).every((lot) => lot.status === "reversed")).toBe(true);
+    // Приёмку нельзя удалить, пока на её партии висит расход закупки.
+    const blocked = await deleteRaw(api, `/api/procurement/receipts/${receipt.id}`);
+    expect(blocked.ok).toBe(false);
+    expect(blocked.error?.code).toBe("goods_receipt_has_procurement_costs");
+
+    // Сначала удаляем расход закупки, затем приёмку.
+    expect((await deleteRaw(api, `/api/procurement/costs/${procurementCost.id}`)).ok).toBe(true);
+    expect(app.state.procurementCosts.find((candidate) => candidate.id === procurementCost.id)).toBeUndefined();
+    expect(app.state.documents.find((document) => document.id === costDocument.id)).toBeUndefined();
+
+    expect((await deleteRaw(api, `/api/procurement/receipts/${receipt.id}`)).ok).toBe(true);
+    expect(app.state.goodsReceipts.find((candidate) => candidate.id === receipt.id)).toBeUndefined();
+    expect(app.state.documents.find((document) => document.id === receipt.documentId)).toBeUndefined();
+    expect(app.state.inventoryLots.filter((lot) => lot.sourceDocumentId === receipt.documentId)).toHaveLength(0);
     const stockAfterCancel = app.state.stockStates.find((stock) => stock.productId === product.id && stock.warehouseId === warehouseId);
     expect(stockAfterCancel?.qty ?? 0).toBe(0);
     expect(stockAfterCancel?.costRub ?? 0).toBe(0);

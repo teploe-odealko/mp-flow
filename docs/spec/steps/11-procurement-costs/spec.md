@@ -109,7 +109,6 @@ Endpoints:
 - `GET /api/procurement/costs/:id`;
 - `PATCH /api/procurement/costs/:id`;
 - `POST /api/procurement/costs/:id/post`;
-- `POST /api/procurement/costs/:id/reverse`;
 
 Commands/services:
 

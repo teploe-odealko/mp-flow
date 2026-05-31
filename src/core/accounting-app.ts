@@ -32,6 +32,9 @@ import type {
   ProcurementCostLine,
   PluginStateScopeType,
   Product,
+  ProductAsset,
+  ProductAssetRole,
+  ProductAssetStatus,
   ProductExternalLink,
   PurchaseOrder,
   PurchaseOrderLine,
@@ -151,7 +154,7 @@ export interface EntityRollbackEffectsSummary {
 }
 
 export interface EntityRollbackPreview {
-  entityType: "sale" | "stock_transfer";
+  entityType: "sale" | "stock_transfer" | "payment" | "goods_receipt" | "procurement_cost";
   entityId: ID;
   documentId: ID;
   documentNumber: string;
@@ -2617,6 +2620,264 @@ export class AccountingApp {
     };
   }
 
+  // --- Безопасное удаление сущностей (оплаты, приёмки, расходы закупки) ---
+  // Удаляем физически, но только если от сущности ничего не зависит дальше.
+
+  private emptyRollbackEffects(): EntityRollbackEffectsSummary {
+    return {
+      documents: 0, journalEntries: 0, journalLines: 0, settlementEntries: 0,
+      stockMovements: 0, inventoryLots: 0, costApplications: 0, saleLines: 0,
+      financeEvents: 0, stockTransfers: 0, payments: 0, paymentAllocations: 0,
+      externalEventsToReset: 0
+    };
+  }
+
+  private rollbackRelatedFromDescendants(descendants: DocumentDescendantSummary[]): RollbackRelatedDocumentSummary[] {
+    return descendants.map((descendant) => ({
+      documentId: descendant.documentId,
+      number: descendant.number,
+      title: descendant.title,
+      documentType: descendant.documentType,
+      documentTypeName: descendant.documentTypeName,
+      status: descendant.status,
+      accountingDate: descendant.accountingDate
+    }));
+  }
+
+  // Снимает проводки, settlements, links, строки и сам документ.
+  private removeDocumentGraph(documentId: ID) {
+    const journalEntryIds = new Set(
+      this.state.journalEntries.filter((entry) => entry.documentId === documentId).map((entry) => entry.id)
+    );
+    this.state.journalEntries = this.state.journalEntries.filter((entry) => entry.documentId !== documentId);
+    this.state.journalLines = this.state.journalLines.filter((line) => !journalEntryIds.has(line.journalEntryId));
+    this.state.settlementEntries = this.state.settlementEntries.filter((entry) => entry.documentId !== documentId);
+    this.state.documentLines = this.state.documentLines.filter((line) => line.documentId !== documentId);
+    this.state.documentVersions = this.state.documentVersions.filter((version) => version.documentId !== documentId);
+    this.state.documentLinks = this.state.documentLinks.filter((link) => link.fromDocumentId !== documentId && link.toDocumentId !== documentId);
+    this.state.documents = this.state.documents.filter((document) => document.id !== documentId);
+  }
+
+  paymentRollbackPreview(paymentId: ID): EntityRollbackPreview {
+    const payment = this.mustFind(this.state.payments, paymentId, "payment_not_found");
+    const document = this.mustFind(this.state.documents, payment.documentId, "document_not_found");
+    const blockers: EntityRollbackBlockerSummary[] = [];
+    const descendants = this.documentDescendants(document.id);
+    if (descendants.length > 0) {
+      blockers.push({
+        code: "document_has_descendants",
+        message: "Сначала удалите зависимые документы этой оплаты",
+        relatedDocuments: this.rollbackRelatedFromDescendants(descendants)
+      });
+    }
+    const allocation = this.state.paymentAllocations.find((candidate) => candidate.paymentId === payment.id && candidate.allocationPurpose === "goods_purchase");
+    if (allocation?.purchaseOrderId) {
+      const postedReceipts = this.state.goodsReceipts.filter((receipt) =>
+        receipt.purchaseOrderId === allocation.purchaseOrderId && receipt.status === "posted" && this.isDocumentPosted(receipt.documentId)
+      );
+      if (postedReceipts.length > 0) {
+        blockers.push({
+          code: "payment_consumed_by_receipt",
+          message: "Нельзя удалить оплату: по заказу уже проведена приёмка, которая зачла этот аванс. Сначала удалите приёмку.",
+          relatedDocuments: postedReceipts.map((receipt) => this.findRollbackDocumentSummary(receipt.documentId)).filter((item): item is RollbackRelatedDocumentSummary => Boolean(item))
+        });
+      }
+    }
+    if (payment.paymentType === "channel_payout" && this.state.payouts.some((payout) => payout.paymentId === payment.id)) {
+      blockers.push({
+        code: "payment_belongs_to_payout",
+        message: "Оплата относится к выплате маркетплейса — управляйте ею в разделе «Выплаты»."
+      });
+    }
+    const journalEntryIds = new Set(this.state.journalEntries.filter((entry) => entry.documentId === document.id).map((entry) => entry.id));
+    return {
+      entityType: "payment",
+      entityId: payment.id,
+      documentId: document.id,
+      documentNumber: document.number,
+      title: document.title,
+      status: this.isDocumentPosted(document.id) ? "posted" : document.status,
+      accountingDate: document.accountingDate,
+      canDelete: blockers.length === 0,
+      blockers,
+      descendants,
+      effects: {
+        ...this.emptyRollbackEffects(),
+        documents: 1,
+        payments: 1,
+        journalEntries: journalEntryIds.size,
+        journalLines: this.state.journalLines.filter((line) => journalEntryIds.has(line.journalEntryId)).length,
+        settlementEntries: this.state.settlementEntries.filter((entry) => entry.documentId === document.id).length,
+        paymentAllocations: this.state.paymentAllocations.filter((candidate) => candidate.paymentId === payment.id).length
+      }
+    };
+  }
+
+  deletePayment(paymentId: ID) {
+    const preview = this.paymentRollbackPreview(paymentId);
+    if (!preview.canDelete) {
+      const blocker = preview.blockers[0];
+      throw new DomainError(blocker.code, blocker.message, { blockers: preview.blockers });
+    }
+    const payment = this.mustFind(this.state.payments, paymentId, "payment_not_found");
+    const before = { ...payment };
+    const documentId = payment.documentId;
+    this.state.ownerTransactions = this.state.ownerTransactions.filter((transaction) => transaction.paymentId !== payment.id);
+    this.rollbackPaymentsForDocument(documentId); // касса + аллокации + сам платёж
+    this.removeDocumentGraph(documentId);
+    this.audit("payment", payment.id, "delete", before, undefined, "Удаление оплаты");
+    return { paymentId: payment.id, deleted: { payments: 1, documents: 1 } };
+  }
+
+  goodsReceiptRollbackPreview(receiptId: ID): EntityRollbackPreview {
+    const receipt = this.mustFind(this.state.goodsReceipts, receiptId, "receipt_not_found");
+    const document = this.mustFind(this.state.documents, receipt.documentId, "document_not_found");
+    const lots = this.state.inventoryLots.filter((lot) => lot.sourceDocumentId === document.id);
+    const lotIds = new Set(lots.map((lot) => lot.id));
+    const blockers: EntityRollbackBlockerSummary[] = [];
+    const descendants = this.documentDescendants(document.id);
+    const downstream = this.inventoryUsageDocuments(document.id);
+    if (downstream.length > 0) {
+      blockers.push({
+        code: "goods_receipt_has_downstream_usage",
+        message: "Нельзя удалить приёмку: товар из неё уже перемещён, продан или списан",
+        relatedDocuments: downstream
+      });
+    }
+    const costDocuments = Array.from(new Set(
+      this.state.procurementCostLines
+        .filter((line) => line.lotId && lotIds.has(line.lotId))
+        .map((line) => this.state.procurementCosts.find((cost) => cost.id === line.procurementCostId))
+        .filter((cost): cost is ProcurementCost => Boolean(cost && cost.status !== "cancelled"))
+        .map((cost) => cost.documentId)
+    ));
+    if (costDocuments.length > 0) {
+      blockers.push({
+        code: "goods_receipt_has_procurement_costs",
+        message: "Сначала удалите расходы закупки, отнесённые на партии этой приёмки",
+        relatedDocuments: costDocuments.map((documentId) => this.findRollbackDocumentSummary(documentId)).filter((item): item is RollbackRelatedDocumentSummary => Boolean(item))
+      });
+    }
+    if (descendants.length > 0) {
+      blockers.push({
+        code: "document_has_descendants",
+        message: "Сначала удалите зависимые документы этой приёмки",
+        relatedDocuments: this.rollbackRelatedFromDescendants(descendants)
+      });
+    }
+    const journalEntryIds = new Set(this.state.journalEntries.filter((entry) => entry.documentId === document.id).map((entry) => entry.id));
+    return {
+      entityType: "goods_receipt",
+      entityId: receipt.id,
+      documentId: document.id,
+      documentNumber: document.number,
+      title: document.title,
+      status: receipt.status,
+      accountingDate: document.accountingDate,
+      canDelete: blockers.length === 0,
+      blockers,
+      descendants,
+      effects: {
+        ...this.emptyRollbackEffects(),
+        documents: 1,
+        inventoryLots: lots.length,
+        stockMovements: this.state.stockMovements.filter((movement) => movement.documentId === document.id).length,
+        journalEntries: journalEntryIds.size,
+        journalLines: this.state.journalLines.filter((line) => journalEntryIds.has(line.journalEntryId)).length,
+        settlementEntries: this.state.settlementEntries.filter((entry) => entry.documentId === document.id).length
+      }
+    };
+  }
+
+  deleteGoodsReceipt(receiptId: ID) {
+    const preview = this.goodsReceiptRollbackPreview(receiptId);
+    if (!preview.canDelete) {
+      const blocker = preview.blockers[0];
+      throw new DomainError(blocker.code, blocker.message, { blockers: preview.blockers });
+    }
+    const receipt = this.mustFind(this.state.goodsReceipts, receiptId, "receipt_not_found");
+    const document = this.mustFind(this.state.documents, receipt.documentId, "document_not_found");
+    const before = { ...receipt };
+    const lots = this.state.inventoryLots.filter((lot) => lot.sourceDocumentId === document.id);
+    this.removeLotsFromStockStates(lots);
+    this.state.inventoryLots = this.state.inventoryLots.filter((lot) => lot.sourceDocumentId !== document.id);
+    this.state.stockMovements = this.state.stockMovements.filter((movement) => movement.documentId !== document.id);
+    this.state.goodsReceiptLines = this.state.goodsReceiptLines.filter((line) => line.goodsReceiptId !== receipt.id);
+    this.state.goodsReceipts = this.state.goodsReceipts.filter((candidate) => candidate.id !== receipt.id);
+    this.removeDocumentGraph(document.id);
+    this.compactZeroStockStates();
+    this.audit("goods_receipt", receipt.id, "delete", before, undefined, "Удаление приёмки");
+    return { receiptId: receipt.id, deleted: { goodsReceipts: 1, documents: 1, inventoryLots: lots.length } };
+  }
+
+  procurementCostRollbackPreview(costId: ID): EntityRollbackPreview {
+    const cost = this.mustFind(this.state.procurementCosts, costId, "procurement_cost_not_found");
+    const document = this.mustFind(this.state.documents, cost.documentId, "document_not_found");
+    const lines = this.state.procurementCostLines.filter((line) => line.procurementCostId === cost.id);
+    const blockers: EntityRollbackBlockerSummary[] = [];
+    if (lines.some((line) => (line.soldCostAmountRub ?? 0) > 0 || (line.qtySold ?? 0) > 0)) {
+      blockers.push({
+        code: "procurement_cost_has_downstream_usage",
+        message: "Нельзя удалить расход закупки: часть суммы уже отнесена на проданные товары"
+      });
+    }
+    const descendants = this.documentDescendants(document.id);
+    if (descendants.length > 0) {
+      blockers.push({
+        code: "document_has_descendants",
+        message: "Сначала удалите зависимые документы этого расхода",
+        relatedDocuments: this.rollbackRelatedFromDescendants(descendants)
+      });
+    }
+    const journalEntryIds = new Set(this.state.journalEntries.filter((entry) => entry.documentId === document.id).map((entry) => entry.id));
+    return {
+      entityType: "procurement_cost",
+      entityId: cost.id,
+      documentId: document.id,
+      documentNumber: document.number,
+      title: document.title,
+      status: cost.status,
+      accountingDate: document.accountingDate,
+      canDelete: blockers.length === 0,
+      blockers,
+      descendants,
+      effects: {
+        ...this.emptyRollbackEffects(),
+        documents: 1,
+        journalEntries: journalEntryIds.size,
+        journalLines: this.state.journalLines.filter((line) => journalEntryIds.has(line.journalEntryId)).length,
+        payments: this.state.payments.filter((payment) => payment.documentId === document.id).length
+      }
+    };
+  }
+
+  deleteProcurementCost(costId: ID) {
+    const preview = this.procurementCostRollbackPreview(costId);
+    if (!preview.canDelete) {
+      const blocker = preview.blockers[0];
+      throw new DomainError(blocker.code, blocker.message, { blockers: preview.blockers });
+    }
+    const cost = this.mustFind(this.state.procurementCosts, costId, "procurement_cost_not_found");
+    const document = this.mustFind(this.state.documents, cost.documentId, "document_not_found");
+    const before = { ...cost };
+    const lines = this.state.procurementCostLines.filter((line) => line.procurementCostId === cost.id);
+    for (const line of lines) {
+      const lot = line.lotId ? this.state.inventoryLots.find((candidate) => candidate.id === line.lotId) : undefined;
+      if (!lot || line.remainingInventoryAmountRub <= 0) continue;
+      lot.costInitialRub = round2(Math.max(0, lot.costInitialRub - line.allocatedAmountRub));
+      lot.costRemainingRub = round2(Math.max(0, lot.costRemainingRub - line.remainingInventoryAmountRub));
+      lot.unitCostRub = lot.qtyRemaining > 0 ? round6(lot.costRemainingRub / lot.qtyRemaining) : 0;
+      this.addStockState(lot.productId, lot.warehouseId, 0, -line.remainingInventoryAmountRub, lot.stockStateCode);
+    }
+    this.rollbackPaymentsForDocument(document.id);
+    this.state.procurementCostLines = this.state.procurementCostLines.filter((line) => line.procurementCostId !== cost.id);
+    this.state.procurementCosts = this.state.procurementCosts.filter((candidate) => candidate.id !== cost.id);
+    this.removeDocumentGraph(document.id);
+    this.compactZeroStockStates();
+    this.audit("procurement_cost", cost.id, "delete", before, undefined, "Удаление расхода закупки");
+    return { costId: cost.id, deleted: { procurementCosts: 1, documents: 1 } };
+  }
+
   deleteChannelFinanceEventForResync(financeEventId: ID) {
     const event = this.mustFind(this.state.channelFinanceEvents, financeEventId, "finance_event_not_found");
     const blockedByPayout = this.state.payoutLines.some((line) => line.sourceType === "finance_event" && line.sourceId === event.id);
@@ -3205,13 +3466,11 @@ export class AccountingApp {
     amountRub: number;
     counterpartyId?: ID;
     cashAccountId?: ID;
-    paymentMode?: "paid_now" | "pay_later" | "without_payment";
     comment?: string;
     post?: boolean;
   }): OperatingExpense {
     assertPositive(input.amountRub, "Сумма расхода должна быть положительной");
     const category = this.mustFind(this.state.expenseCategories, input.categoryId, "expense_category_not_found");
-    const paymentMode = input.paymentMode ?? "paid_now";
     const payment = this.createPayment({
       paymentDirection: "outgoing",
       paymentType: "operating_expense_payment",
@@ -3231,9 +3490,9 @@ export class AccountingApp {
       counterpartyId: input.counterpartyId,
       expenseDate: input.expenseDate,
       amountRub: input.amountRub,
-      amountPaidRub: 0,
-      paymentMode,
-      paymentStatus: "draft",
+      amountPaidRub: input.amountRub,
+      paymentMode: "paid_now",
+      paymentStatus: "paid",
       cashAccountId: payment.cashAccountId,
       comment: input.comment
     };
@@ -3244,6 +3503,7 @@ export class AccountingApp {
     return expense;
   }
 
+  // Расход всегда оплачивается сразу: Дт категории / Кт 51.
   postOperatingExpense(expenseId: ID): OperatingExpense {
     const expense = this.mustFind(this.state.operatingExpenses, expenseId, "expense_not_found");
     const category = this.mustFind(this.state.expenseCategories, expense.categoryId, "expense_category_not_found");
@@ -3251,43 +3511,18 @@ export class AccountingApp {
     const document = this.mustFind(this.state.documents, expense.documentId, "document_not_found");
 
     if (document.status === "posted") {
-      expense.paymentStatus = expense.paymentMode === "paid_now" ? "paid" : "unpaid";
-      expense.amountPaidRub = expense.paymentMode === "paid_now" ? expense.amountRub : 0;
+      expense.paymentStatus = "paid";
+      expense.amountPaidRub = expense.amountRub;
       return expense;
     }
 
-    const journalLines: JournalLineInput[] = [
-      { accountCode: category.accountCode, debit: expense.amountRub, memo: category.name }
-    ];
-
-    if (expense.paymentMode === "paid_now") {
-      journalLines.push({ accountCode: "51", credit: expense.amountRub, memo: "Оплата операционного расхода" });
-    } else {
-      journalLines.push({ accountCode: "60.01", credit: expense.amountRub, memo: "Кредиторская задолженность по операционному расходу" });
-    }
-
-    this.postDocument(document.id, journalLines);
-
-    if (expense.paymentMode === "paid_now") {
-      this.applyPaymentToCashAccount(payment);
-      expense.amountPaidRub = expense.amountRub;
-      expense.paymentStatus = "paid";
-    } else {
-      expense.amountPaidRub = 0;
-      expense.paymentStatus = "unpaid";
-      if (expense.counterpartyId) {
-        this.state.settlementEntries.push({
-          id: id("settlement"),
-          organizationId: this.currentOrgId(),
-          counterpartyId: expense.counterpartyId,
-          documentId: expense.documentId,
-          settlementType: "supplier_payable",
-          debitRub: 0,
-          creditRub: expense.amountRub,
-          createdAt: nowIso()
-        });
-      }
-    }
+    this.postDocument(document.id, [
+      { accountCode: category.accountCode, debit: expense.amountRub, memo: category.name },
+      { accountCode: "51", credit: expense.amountRub, memo: "Оплата операционного расхода" }
+    ]);
+    this.applyPaymentToCashAccount(payment);
+    expense.amountPaidRub = expense.amountRub;
+    expense.paymentStatus = "paid";
 
     return expense;
   }
@@ -4243,77 +4478,6 @@ export class AccountingApp {
     return { document, entry: this.postDocument(document.id, journalLines) };
   }
 
-  cancelDocument(documentId: ID, reason: string): Document {
-    const document = this.mustFind(this.state.documents, documentId, "document_not_found");
-    if (document.status === "cancelled") return document;
-    this.assertAccountingDateAllowed(document.accountingDate);
-    const before = { ...document };
-    const entries = this.state.journalEntries.filter((entry) => entry.documentId === document.id);
-    entries.forEach((entry) => this.createReversalEntry(document, entry, reason));
-    document.status = "cancelled";
-    document.cancelledAt = nowIso();
-    this.state.documentVersions.push({
-      id: id("doc_version"),
-      documentId: document.id,
-      versionNo: this.state.documentVersions.filter((version) => version.documentId === document.id).length + 1,
-      snapshot: before,
-      reason,
-      createdAt: nowIso()
-    });
-    this.audit("document", document.id, "cancel", before, document, reason);
-    return document;
-  }
-
-  reverseGoodsReceipt(receiptId: ID, reason = "Сторно приемки товара"): GoodsReceipt {
-    const receipt = this.mustFind(this.state.goodsReceipts, receiptId, "receipt_not_found");
-    const document = this.mustFind(this.state.documents, receipt.documentId, "document_not_found");
-    const lots = this.state.inventoryLots.filter((lot) => lot.sourceDocumentId === document.id);
-    const lotIds = new Set(lots.map((lot) => lot.id));
-    const outboundApplications = this.state.costApplications.filter((application) => application.sourceDocumentId === document.id);
-    if (outboundApplications.length > 0) {
-      throw new DomainError("goods_receipt_has_downstream_usage", "Нельзя отменить приемку: товар уже использован в перемещениях, продажах или корректировках");
-    }
-    const activeProcurementCosts = this.state.procurementCostLines.filter((line) => line.lotId && lotIds.has(line.lotId))
-      .map((line) => this.state.procurementCosts.find((cost) => cost.id === line.procurementCostId))
-      .filter((cost): cost is ProcurementCost => Boolean(cost && cost.status !== "cancelled"));
-    for (const cost of activeProcurementCosts) {
-      this.reverseProcurementCost(cost.id, `Автосторно расхода закупки перед отменой приемки ${document.number}`);
-    }
-
-    const alreadyCancelled = receipt.status === "cancelled" || document.status === "cancelled";
-    if (!alreadyCancelled) {
-      this.cancelDocument(document.id, reason);
-    }
-
-    for (const lot of lots) {
-      const qtyToReverse = round4(lot.qtyRemaining);
-      const costToReverse = round2(lot.costRemainingRub);
-      if (qtyToReverse > 0 || costToReverse > 0) {
-        this.addStockState(lot.productId, lot.warehouseId, -qtyToReverse, -costToReverse, lot.stockStateCode);
-        this.state.stockMovements.push({
-          id: id("stock_move"),
-          organizationId: this.currentOrgId(),
-          productId: lot.productId,
-          warehouseId: lot.warehouseId,
-          stockStateCode: lot.stockStateCode ?? "sellable",
-          documentId: document.id,
-          movementType: "correction",
-          qty: round4(-qtyToReverse),
-          costRub: round2(-costToReverse),
-          occurredAt: receipt.receiptDate,
-          lotId: lot.id
-        });
-      }
-      lot.qtyRemaining = 0;
-      lot.costRemainingRub = 0;
-      lot.status = "reversed";
-    }
-
-    receipt.status = "cancelled";
-    this.state.settlementEntries = this.state.settlementEntries.filter((entry) => entry.documentId !== document.id);
-    return receipt;
-  }
-
   deleteDraftDocument(documentId: ID): Document {
     const document = this.mustFind(this.state.documents, documentId, "document_not_found");
     if (document.status !== "draft") {
@@ -4538,6 +4702,88 @@ export class AccountingApp {
     return product;
   }
 
+  // --- Фотостудия: медиа товара (исходники + сгенерированные слайды) ---
+
+  listProductAssets(productId: ID): ProductAsset[] {
+    return this.state.productAssets
+      .filter((asset) => asset.productId === productId)
+      .sort((left, right) => left.sortOrder - right.sortOrder || left.createdAt.localeCompare(right.createdAt));
+  }
+
+  createProductAsset(input: {
+    productId: ID;
+    role: ProductAssetRole;
+    storageKey: string;
+    url: string;
+    slideType?: string;
+    mimeType?: string;
+    status?: ProductAssetStatus;
+    createdBy?: "user" | "agent";
+    sortOrder?: number;
+    meta?: Record<string, unknown>;
+  }): ProductAsset {
+    const organizationId = this.currentOrgId();
+    const product = this.mustFind(this.state.products, input.productId, "product_not_found");
+    const existing = this.state.productAssets.filter((asset) => asset.productId === product.id);
+    const sortOrder = input.sortOrder ?? existing.reduce((max, asset) => Math.max(max, asset.sortOrder + 1), 0);
+    const asset: ProductAsset = {
+      id: id("asset"),
+      organizationId,
+      productId: product.id,
+      role: input.role,
+      slideType: input.slideType,
+      storageKey: input.storageKey,
+      url: input.url,
+      mimeType: input.mimeType,
+      sortOrder,
+      status: input.status ?? "pending",
+      createdBy: input.createdBy ?? "user",
+      createdAt: nowIso(),
+      meta: input.meta
+    };
+    this.state.productAssets.push(asset);
+    this.audit("product_asset", asset.id, "create", undefined, asset);
+    return asset;
+  }
+
+  confirmProductAsset(
+    assetId: ID,
+    patch: { width?: number; height?: number; mimeType?: string } = {}
+  ): ProductAsset {
+    const asset = this.mustFind(this.state.productAssets, assetId, "product_asset_not_found");
+    const before = { ...asset };
+    asset.status = "ready";
+    if (patch.width !== undefined) asset.width = patch.width;
+    if (patch.height !== undefined) asset.height = patch.height;
+    if (patch.mimeType) asset.mimeType = patch.mimeType;
+    asset.updatedAt = nowIso();
+    this.audit("product_asset", asset.id, "confirm", before, asset);
+    return asset;
+  }
+
+  updateProductAsset(
+    assetId: ID,
+    patch: { role?: ProductAssetRole; status?: ProductAssetStatus; slideType?: string; sortOrder?: number; meta?: Record<string, unknown> }
+  ): ProductAsset {
+    const asset = this.mustFind(this.state.productAssets, assetId, "product_asset_not_found");
+    const before = { ...asset };
+    if (patch.role) asset.role = patch.role;
+    if (patch.status) asset.status = patch.status;
+    if (patch.slideType !== undefined) asset.slideType = patch.slideType;
+    if (patch.sortOrder !== undefined) asset.sortOrder = patch.sortOrder;
+    if (patch.meta) asset.meta = { ...(asset.meta ?? {}), ...patch.meta };
+    asset.updatedAt = nowIso();
+    this.audit("product_asset", asset.id, "update", before, asset);
+    return asset;
+  }
+
+  deleteProductAsset(assetId: ID): { id: ID; deleted: true } {
+    const asset = this.mustFind(this.state.productAssets, assetId, "product_asset_not_found");
+    this.state.productAssets = this.state.productAssets.filter((candidate) => candidate.id !== asset.id);
+    this.audit("product_asset", asset.id, "delete", asset, undefined);
+    return { id: asset.id, deleted: true };
+  }
+
   createCashAccount(input: { name: string; accountCode: "50" | "51"; openingBalanceRub?: number }): CashAccount {
     const organizationId = this.currentOrgId();
     const account: CashAccount = {
@@ -4736,18 +4982,6 @@ export class AccountingApp {
     document.status = "posted";
     document.postedAt = document.postedAt ?? nowIso();
     this.audit("document", document.id, "post", undefined, document, "Заказ не создает проводок");
-    return order;
-  }
-
-  cancelPurchaseOrder(purchaseOrderId: ID, reason = "Отмена заказа поставщику"): PurchaseOrder {
-    const order = this.mustFind(this.state.purchaseOrders, purchaseOrderId, "purchase_order_not_found");
-    if (this.paymentsForPurchaseOrder(order.id).length > 0 || this.state.goodsReceipts.some((receipt) => receipt.purchaseOrderId === order.id)) {
-      throw new DomainError("purchase_order_has_dependencies", "Нельзя отменить заказ с оплатами или приемками без отдельного исправления");
-    }
-    const before = { ...order };
-    order.status = "cancelled";
-    this.cancelDocument(order.documentId, reason);
-    this.audit("purchase_order", order.id, "cancel", before, order, reason);
     return order;
   }
 
@@ -4996,31 +5230,6 @@ export class AccountingApp {
     return cost;
   }
 
-  reverseProcurementCost(costId: ID, reason = "Сторно расхода закупки"): ProcurementCost {
-    const cost = this.mustFind(this.state.procurementCosts, costId, "procurement_cost_not_found");
-    const document = this.mustFind(this.state.documents, cost.documentId, "document_not_found");
-    const lines = this.state.procurementCostLines.filter((line) => line.procurementCostId === cost.id);
-    if (lines.some((line) => (line.soldCostAmountRub ?? 0) > 0 || (line.qtySold ?? 0) > 0)) {
-      throw new DomainError("procurement_cost_has_downstream_usage", "Нельзя отменить расход закупки: часть суммы уже отнесена на проданные товары");
-    }
-
-    for (const line of lines) {
-      const lot = line.lotId ? this.state.inventoryLots.find((candidate) => candidate.id === line.lotId) : undefined;
-      if (!lot || line.remainingInventoryAmountRub <= 0) continue;
-      lot.costInitialRub = round2(Math.max(0, lot.costInitialRub - line.allocatedAmountRub));
-      lot.costRemainingRub = round2(Math.max(0, lot.costRemainingRub - line.remainingInventoryAmountRub));
-      lot.unitCostRub = lot.qtyRemaining > 0 ? round6(lot.costRemainingRub / lot.qtyRemaining) : 0;
-      this.addStockState(lot.productId, lot.warehouseId, 0, -line.remainingInventoryAmountRub, lot.stockStateCode);
-    }
-
-    if (document.status !== "cancelled") {
-      this.cancelDocument(cost.documentId, reason);
-    }
-    this.rollbackPaymentsForDocument(cost.documentId);
-    cost.status = "cancelled";
-    return cost;
-  }
-
   shortagePreview(purchaseOrderId: ID) {
     const order = this.mustFind(this.state.purchaseOrders, purchaseOrderId, "purchase_order_not_found");
     const lines = this.state.purchaseOrderLines.filter((line) => line.purchaseOrderId === order.id).map((line) => {
@@ -5092,13 +5301,6 @@ export class AccountingApp {
     }
     this.ensureDocumentLink(order.documentId, document.id, "shortage");
     shortage.status = "posted";
-    return shortage;
-  }
-
-  reverseShortage(shortageId: ID, reason = "Сторно решения по недопоставке") {
-    const shortage = this.mustFind(this.state.shortageResolutions, shortageId, "shortage_not_found");
-    this.cancelDocument(shortage.documentId, reason);
-    shortage.status = "cancelled";
     return shortage;
   }
 
@@ -5369,32 +5571,6 @@ export class AccountingApp {
     document.status = "posted";
     document.postedAt = nowIso();
     this.audit("document", document.id, "post", undefined, document);
-    return entry;
-  }
-
-  private createReversalEntry(document: Document, originalEntry: { id: ID; accountingDate: string; memo: string }, reason: string) {
-    const originalLines = this.state.journalLines.filter((line) => line.journalEntryId === originalEntry.id);
-    if (originalLines.length === 0) return undefined;
-    const entry = {
-      id: id("je"),
-      organizationId: this.currentOrgId(),
-      documentId: document.id,
-      accountingDate: document.accountingDate,
-      memo: `Сторно: ${originalEntry.memo}`,
-      reversalOfEntryId: originalEntry.id,
-      createdAt: nowIso()
-    };
-    this.state.journalEntries.push(entry);
-    originalLines.forEach((line) => {
-      this.state.journalLines.push({
-        id: id("jl"),
-        journalEntryId: entry.id,
-        accountCode: line.accountCode,
-        debit: line.credit,
-        credit: line.debit,
-        memo: reason
-      });
-    });
     return entry;
   }
 
@@ -5959,9 +6135,6 @@ export class AccountingApp {
     const period = this.periodForDate(date);
     if (!period) {
       throw new DomainError("period_not_found", "Для даты нет учетного периода");
-    }
-    if (period.status === "closed") {
-      throw new DomainError("period_closed", "Период закрыт");
     }
   }
 

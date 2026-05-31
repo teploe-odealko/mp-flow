@@ -71,7 +71,6 @@ Endpoints:
 - `GET /api/sales/:id`;
 - `PATCH /api/sales/:id`;
 - `POST /api/sales/:id/post`;
-- `POST /api/sales/:id/reverse`;
 - `POST /api/integrations/events/:id/materialize-sale`;
 - `GET /api/sales/:id/cost-applications`.
 
