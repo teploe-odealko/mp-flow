@@ -100,14 +100,13 @@ export function PhotoStudioPanel({ productId }: { productId: string }) {
   const generated = data.assets.filter((asset) => asset.role === "generated" || asset.role === "approved");
   const linkedCard = data.channels[0];
 
-  const agentTask = `Оформи фотокарточку для товара «${data.product.name}» (productId=${productId}) в MPFlow.\n` +
-    `Через MCP получи бриф (card_studio_get_brief productId=${productId} или mpflow_api_get /api/products/${productId}/card/brief), изучи исходное фото как обязательный референс, конкурентов и отзывы.\n` +
-    `Сгенерируй слайды только на основе подтвержденных фактов из брифа, фото и моих указаний, затем загрузи их в фотостудию.`;
+  const agentTask = `Создай фото для карточки товара в MPFlow: productId=${productId}.\n` +
+    `Используй MCP-бриф фотостудии и встроенный image_gen для генерации изображений.`;
 
   const copyAgentTask = async () => {
     try {
       await navigator.clipboard.writeText(agentTask);
-      emitAppAlert({ tone: "success", title: "Скопировано", message: "Задание для агента в буфере обмена." });
+      emitAppAlert({ tone: "success", title: "Скопировано", message: "Задание для Codex в буфере обмена." });
     } catch {
       emitAppAlert({ tone: "danger", title: "Не удалось скопировать", message: "Скопируйте текст вручную." });
     }
@@ -129,12 +128,12 @@ export function PhotoStudioPanel({ productId }: { productId: string }) {
             <div>
               <div className="text-lg font-semibold">Фотостудия</div>
               <div className="text-sm text-[var(--color-muted-foreground)] max-w-xl">
-                Загрузите исходное фото, передайте задачу агенту — он соберёт план и сгенерирует слайды для карточки.
+                Загрузите исходное фото, передайте задачу в Codex — он соберёт план и сгенерирует слайды для карточки.
                 {linkedCard ? ` Привязанная карточка: ${linkedCard.channel?.name ?? "канал"} · ${linkedCard.external?.externalSku ?? ""}.` : " Карточка маркетплейса пока не привязана (вкладка «Каналы продаж»)."}
               </div>
             </div>
             <div className="flex gap-2">
-              <Button variant="secondary" onClick={copyAgentTask}>Скопировать задание агенту</Button>
+              <Button variant="secondary" onClick={copyAgentTask}>Скопировать задание для Codex</Button>
               <Button onClick={() => fileInputRef.current?.click()} disabled={!data.storageReady || busy}>
                 <UploadCloud size={14} /> {busy ? "Загрузка…" : "Загрузить исходник"}
               </Button>
