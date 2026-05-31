@@ -101,7 +101,7 @@ export function PhotoStudioPanel({ productId }: { productId: string }) {
   const linkedCard = data.channels[0];
 
   const agentTask = `Создай фото для карточки товара в MPFlow: productId=${productId}.\n` +
-    `Используй MCP-бриф фотостудии и встроенный image_gen для генерации изображений.`;
+    `Используй MCP-бриф фотостудии. Для финальных слайдов открой авторизованный ChatGPT через Browser, прикрепи исходное фото товара как референс, забери готовые PNG и загрузи их в MPFlow.`;
 
   const copyAgentTask = async () => {
     try {

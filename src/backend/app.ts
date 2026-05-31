@@ -2199,7 +2199,7 @@ async function handleMcpJsonRpc(
         protocolVersion: MCP_PROTOCOL_VERSION,
         capabilities: { tools: {}, resources: {} },
         serverInfo: { name: "mpflow", version: MCP_SERVER_VERSION },
-        instructions: "Используйте tools/list, затем tools/call. Все вызовы выполняются в личном кабинете, привязанном к MCP-ключу. Для оформления фото карточки товара начните с card_studio_get_brief(productId) — он вернёт товар, правила Ozon, обязательные требования генерации и playbook. Генерируйте каждый финальный слайд с исходным фото как референсом, сначала изучайте конкурентов/отзывы, а тексты на слайдах основывайте только на подтвержденных фактах."
+        instructions: "Используйте tools/list, затем tools/call. Все вызовы выполняются в личном кабинете, привязанном к MCP-ключу. Для оформления фото карточки товара начните с card_studio_get_brief(productId) — он вернёт товар, правила Ozon, обязательные требования генерации и playbook. Для финальных слайдов предпочтителен Browser-контур с авторизованным ChatGPT: прикрепите исходное фото товара как reference/attachment, отправьте промпты, заберите PNG из ответа и загрузите через card_studio_create_upload/confirm. Тексты на слайдах основывайте только на подтвержденных фактах."
       });
     }
     if (message.method === "ping") {
