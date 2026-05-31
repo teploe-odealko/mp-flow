@@ -435,6 +435,18 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     });
     return c.json({ ok: true, data: { ...saved.payload, revision: saved.revision } });
   });
+  api.delete("/api/products/:id/card/plan", (c) => {
+    const productId = c.req.param("id");
+    const product = scopedApp.state.products.find((candidate) => candidate.id === productId);
+    if (!product) throw new DomainError("product_not_found", "Товар не найден");
+    const deleted = cardStudioPlanState(scopedApp).delete({
+      namespace: "card_studio",
+      scopeType: "flow_session",
+      scopeId: productId,
+      stateKey: "plan"
+    });
+    return c.json({ ok: true, data: { deleted } });
+  });
   api.post("/api/products/:id/card/uploads", async (c) => {
     const productId = c.req.param("id");
     const product = scopedApp.state.products.find((candidate) => candidate.id === productId);

@@ -85,6 +85,16 @@ export function PhotoStudioPanel({ productId }: { productId: string }) {
     mutationFn: (assetId: string) => apiDelete(`/api/products/${productId}/card/assets/${assetId}`),
     onSuccess: refetch
   });
+  const resetPlan = useMutation({
+    mutationFn: () => apiDelete(`/api/products/${productId}/card/plan`),
+    onSuccess: async () => {
+      emitAppAlert({ tone: "success", title: "Контекст сброшен", message: "План и исследование фотостудии удалены." });
+      await refetch();
+    },
+    onError: (error) => {
+      emitAppAlert({ tone: "danger", title: "Не удалось сбросить контекст", message: error instanceof Error ? error.message : String(error) });
+    }
+  });
 
   if (isLoading || !data) {
     return (
@@ -153,7 +163,17 @@ export function PhotoStudioPanel({ productId }: { productId: string }) {
         </CardContent>
       </Card>
 
-      {data.plan && <PlanCard plan={data.plan} />}
+      {data.plan && (
+        <PlanCard
+          plan={data.plan}
+          onReset={() => {
+            if (window.confirm("Удалить план и исследование фотостудии для этого товара? Слайды и исходники останутся на месте.")) {
+              resetPlan.mutate();
+            }
+          }}
+          resetPending={resetPlan.isPending}
+        />
+      )}
 
       <AssetSection
         title="Исходники"
@@ -176,7 +196,7 @@ export function PhotoStudioPanel({ productId }: { productId: string }) {
   );
 }
 
-function PlanCard({ plan }: { plan: Record<string, any> }) {
+function PlanCard({ plan, onReset, resetPending }: { plan: Record<string, any>; onReset?: () => void; resetPending?: boolean }) {
   const slides: any[] = Array.isArray(plan?.slides) ? plan.slides : [];
   const style = plan?.style;
   const styleText = typeof style === "string" ? style : style ? (style.archetype ?? style.name ?? JSON.stringify(style)) : null;
@@ -184,11 +204,18 @@ function PlanCard({ plan }: { plan: Record<string, any> }) {
   return (
     <Card className="renderPanel">
       <CardContent className="py-5 flex flex-col gap-3">
-        <div className="flex items-center gap-2">
-          <ListChecks size={18} />
-          <div className="text-base font-semibold">План карточки</div>
-          {plan?.updatedBy === "agent" && <Badge tone="neutral">от агента</Badge>}
-          {slides.length > 0 && <Badge tone="neutral">{slides.length} слайдов</Badge>}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <ListChecks size={18} />
+            <div className="text-base font-semibold">План карточки</div>
+            {plan?.updatedBy === "agent" && <Badge tone="neutral">от агента</Badge>}
+            {slides.length > 0 && <Badge tone="neutral">{slides.length} слайдов</Badge>}
+          </div>
+          {onReset && (
+            <Button variant="ghost" size="sm" onClick={onReset} disabled={resetPending}>
+              <Trash2 size={14} /> {resetPending ? "Сбрасываем…" : "Сбросить контекст"}
+            </Button>
+          )}
         </div>
         {styleText && (
           <div className="text-sm"><span className="text-[var(--color-muted-foreground)]">Стиль: </span>{styleText}</div>
