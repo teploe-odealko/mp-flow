@@ -101,6 +101,11 @@ export function PurchaseOrderCardPage() {
     .sort((left: any, right: any) => String(right.accountingDate).localeCompare(String(left.accountingDate)));
 
   const [deleteTarget, setDeleteTarget] = useState<null | { kind: "payment" | "goods_receipt" | "procurement_cost"; id: string; label: string }>(null);
+  const [addOpOpen, setAddOpOpen] = useState(false);
+  const [opType, setOpType] = useState<"goods" | "delivery" | "packaging" | "customs" | "certification" | "other">("goods");
+  const [opAmount, setOpAmount] = useState("");
+  const [opDate, setOpDate] = useState(state.accountingPolicy?.accountingStartDate ?? new Date().toISOString().slice(0, 10));
+  const [opComment, setOpComment] = useState("");
   const [receiptCorrection, setReceiptCorrection] = useState<null | {
     receiptId: string;
     purchaseOrderLineId: string;
@@ -189,6 +194,26 @@ export function PurchaseOrderCardPage() {
     mutationFn: (shortageId: string) => apiPost(`/api/procurement/shortages/${shortageId}/post`),
     onSuccess: () => queryClient.invalidateQueries()
   });
+  const addOperation = useMutation({
+    mutationFn: () => {
+      const amountRub = Number(opAmount);
+      if (opType === "goods") {
+        return apiPost(`/api/procurement/purchase-orders/${id}/payments`, { amountRub, paidAt: opDate, comment: opComment || undefined });
+      }
+      return apiPost(`/api/procurement/purchase-orders/${id}/costs`, { costType: opType, allocationBasis: "by_cost", costDate: opDate, amountRub, paidImmediately: true, comment: opComment || undefined });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries();
+      setAddOpOpen(false);
+      setOpAmount("");
+      setOpComment("");
+    }
+  });
+  const spendRows = [
+    ...payments.map((payment: any) => ({ kind: "payment" as const, id: payment.id, date: payment.paidAt, typeLabel: "Оплата товара поставщику", amountRub: payment.amountRub, documentId: payment.documentId })),
+    ...procurementCosts.map((cost: any) => ({ kind: "procurement_cost" as const, id: cost.id, date: cost.costDate, typeLabel: procurementCostTypeLabel[cost.costType] ?? cost.costType, amountRub: cost.amountRub, documentId: cost.documentId }))
+  ].sort((left, right) => String(right.date).localeCompare(String(left.date)));
+  const canAddCosts = receipts.some((receipt: any) => receipt.status === "posted");
 
   return (
     <div className="flex flex-col gap-5">
@@ -245,9 +270,8 @@ export function PurchaseOrderCardPage() {
         <Tabs defaultValue="lines">
           <TabsList>
             <TabsTrigger value="lines">Состав {lines.length > 0 && <Badge tone="neutral" size="sm">{lines.length}</Badge>}</TabsTrigger>
-            <TabsTrigger value="payments">Оплаты {payments.length > 0 && <Badge tone="neutral" size="sm">{payments.length}</Badge>}</TabsTrigger>
+            <TabsTrigger value="costs">Затраты {(payments.length + procurementCosts.length) > 0 && <Badge tone="neutral" size="sm">{payments.length + procurementCosts.length}</Badge>}</TabsTrigger>
             <TabsTrigger value="receipts">Приемки {receipts.length > 0 && <Badge tone="neutral" size="sm">{receipts.length}</Badge>}</TabsTrigger>
-            <TabsTrigger value="costs">Расходы {procurementCosts.length > 0 && <Badge tone="neutral" size="sm">{procurementCosts.length}</Badge>}</TabsTrigger>
             <TabsTrigger value="costing">Себестоимость {costingRows.length > 0 && <Badge tone="neutral" size="sm">{costingRows.length}</Badge>}</TabsTrigger>
             <TabsTrigger value="shortages">Расхождения {(openShortageQuery.data?.lines?.length ?? shortages.length) > 0 && <Badge tone="neutral" size="sm">{openShortageQuery.data?.lines?.length ?? shortages.length}</Badge>}</TabsTrigger>
             <TabsTrigger value="documents">Документы {relatedDocuments.length > 0 && <Badge tone="neutral" size="sm">{relatedDocuments.length}</Badge>}</TabsTrigger>
@@ -281,68 +305,6 @@ export function PurchaseOrderCardPage() {
                     ))}
                   </TBody>
                 </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="payments">
-            <Card>
-              <CardHeader>
-                <div>
-                  <CardTitle>Оплаты поставщику</CardTitle>
-                  <CardDescription>Фактические денежные выплаты, которые формируют аванс и позже зачитываются в себестоимость приемок.</CardDescription>
-                </div>
-                {order.status !== "cancelled" ? (
-                  <Button size="sm" asChild><Link to={`/procurement/purchase-orders/${id}/payments/new`}><Plus size={14} /> Создать оплату</Link></Button>
-                ) : (
-                  <Button size="sm" disabled><Plus size={14} /> Создать оплату</Button>
-                )}
-              </CardHeader>
-              <CardContent className="p-0">
-                {payments.length === 0 ? (
-                  <EmptyState
-                    icon={<Wallet size={20} />}
-                    title="Оплат пока нет"
-                    description="Когда появится реальная выплата поставщику, она будет связана с этим заказом и начнет формировать аванс."
-                  />
-                ) : (
-                  <Table>
-                    <THead>
-                      <TR><TH>Дата</TH><TH>Документ</TH><TH numeric>Сумма</TH><TH>Статус</TH><TH numeric>Проводок</TH><TH>Действие</TH></TR>
-                    </THead>
-                    <TBody>
-                      {payments
-                        .slice()
-                        .sort((left: any, right: any) => String(right.paidAt).localeCompare(String(left.paidAt)))
-                        .map((payment: any) => {
-                          const document: any = docById.get(payment.documentId);
-                          return (
-                            <TR key={payment.id}>
-                              <TD muted className="numeric">{date(payment.paidAt)}</TD>
-                              <TD>
-                                {document ? <Link to={`/documents/${document.id}`} className="text-[var(--color-primary)] hover:underline">{document.number}</Link> : "—"}
-                              </TD>
-                              <TD numeric className="font-semibold">{rub(payment.amountRub)}</TD>
-                              <TD>{document ? <Badge tone={documentStatusTone[document.status] ?? "neutral"}>{documentStatusLabel[document.status] ?? document.status}</Badge> : "—"}</TD>
-                              <TD numeric>{journalEntries.filter((entry: any) => entry.documentId === payment.documentId).length}</TD>
-                              <TD>
-                                <div className="flex items-center gap-2">
-                                  {document?.status === "draft" && (
-                                    <Button size="sm" variant="secondary" onClick={() => postPayment.mutate(payment.id)} disabled={postPayment.isPending}>
-                                      Провести
-                                    </Button>
-                                  )}
-                                  <Button size="sm" variant="ghost" onClick={() => setDeleteTarget({ kind: "payment", id: payment.id, label: `оплату ${document?.number ?? ""}`.trim() })}>
-                                    <Trash2 size={14} /> Удалить
-                                  </Button>
-                                </div>
-                              </TD>
-                            </TR>
-                          );
-                        })}
-                    </TBody>
-                  </Table>
-                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -435,63 +397,59 @@ export function PurchaseOrderCardPage() {
             <Card>
               <CardHeader>
                 <div>
-                  <CardTitle>Дополнительные расходы закупки</CardTitle>
-                  <CardDescription>Доставка, упаковка и прочие затраты после приемки увеличивают себестоимость партий и уже проданных единиц.</CardDescription>
+                  <CardTitle>Затраты по заказу</CardTitle>
+                  <CardDescription>Оплата товара поставщику и дополнительные расходы (доставка, упаковка, растаможка) — всё, во что обошлась поставка. Тип операции определяет, как она учитывается. Итог по товарам — на вкладке «Себестоимость».</CardDescription>
                 </div>
                 {order.status !== "cancelled" ? (
-                  <Button size="sm" asChild><Link to={`/procurement/purchase-orders/${id}/costs/new`}><Plus size={14} /> Добавить расход</Link></Button>
+                  <Button size="sm" onClick={() => setAddOpOpen(true)}><Plus size={14} /> Добавить</Button>
                 ) : (
-                  <Button size="sm" disabled><Plus size={14} /> Добавить расход</Button>
+                  <Button size="sm" disabled><Plus size={14} /> Добавить</Button>
                 )}
               </CardHeader>
               <CardContent className="p-0">
-                {procurementCosts.length === 0 ? (
+                {spendRows.length === 0 ? (
                   <EmptyState
-                    icon={<AlertTriangle size={20} />}
-                    title="Расходов поставки пока нет"
-                    description="Добавьте доставку, упаковку или другие расходы, чтобы довести фактическую себестоимость партий до продажного состояния."
+                    icon={<Wallet size={20} />}
+                    title="Затрат пока нет"
+                    description="Добавьте оплату поставщику за товар или расход на доставку/упаковку — всё это формирует себестоимость поставки."
                   />
                 ) : (
                   <Table>
                     <THead>
-                      <TR><TH>Дата</TH><TH>Документ</TH><TH>Тип</TH><TH>База</TH><TH numeric>Сумма</TH><TH>Статус</TH><TH numeric>Проводок</TH><TH>Действие</TH></TR>
+                      <TR><TH>Дата</TH><TH>Тип</TH><TH>Документ</TH><TH numeric>Сумма</TH><TH>Статус</TH><TH>Действие</TH></TR>
                     </THead>
                     <TBody>
-                      {procurementCosts
-                        .slice()
-                        .sort((left: any, right: any) => String(right.costDate).localeCompare(String(left.costDate)))
-                        .map((cost: any) => {
-                          const document: any = docById.get(cost.documentId);
-                          return (
-                            <TR key={cost.id}>
-                              <TD muted className="numeric">{date(cost.costDate)}</TD>
-                              <TD>
-                                {document ? <Link to={`/documents/${document.id}`} className="text-[var(--color-primary)] hover:underline">{document.number}</Link> : "—"}
-                              </TD>
-                              <TD>{procurementCostTypeLabel[cost.costType] ?? cost.costType}</TD>
-                              <TD muted>{allocationBasisLabel[cost.allocationBasis] ?? cost.allocationBasis}</TD>
-                              <TD numeric className="font-semibold">{rub(cost.amountRub)}</TD>
-                              <TD>{document ? <Badge tone={documentStatusTone[document.status] ?? "neutral"}>{documentStatusLabel[document.status] ?? document.status}</Badge> : "—"}</TD>
-                              <TD numeric>{journalEntries.filter((entry: any) => entry.documentId === cost.documentId).length}</TD>
-                              <TD>
-                                <div className="flex items-center gap-2">
-                                  {document?.status === "draft" ? (
-                                    <Button size="sm" variant="secondary" onClick={() => postCost.mutate(cost.id)} disabled={postCost.isPending}>
-                                      Провести
-                                    </Button>
-                                  ) : (
-                                    <Button size="sm" variant="secondary" onClick={() => openCostCorrection(cost.id)}>
-                                      Исправить расход
-                                    </Button>
-                                  )}
-                                  <Button size="sm" variant="ghost" onClick={() => setDeleteTarget({ kind: "procurement_cost", id: cost.id, label: `расход ${document?.number ?? ""}`.trim() })}>
-                                    <Trash2 size={14} /> Удалить
+                      {spendRows.map((row) => {
+                        const document: any = docById.get(row.documentId);
+                        return (
+                          <TR key={`${row.kind}-${row.id}`}>
+                            <TD muted className="numeric">{date(row.date)}</TD>
+                            <TD>{row.typeLabel}</TD>
+                            <TD>
+                              {document ? <Link to={`/documents/${document.id}`} className="text-[var(--color-primary)] hover:underline">{document.number}</Link> : "—"}
+                            </TD>
+                            <TD numeric className="font-semibold">{rub(row.amountRub)}</TD>
+                            <TD>{document ? <Badge tone={documentStatusTone[document.status] ?? "neutral"}>{documentStatusLabel[document.status] ?? document.status}</Badge> : "—"}</TD>
+                            <TD>
+                              <div className="flex items-center gap-2">
+                                {document?.status === "draft" && (
+                                  <Button size="sm" variant="secondary" onClick={() => (row.kind === "payment" ? postPayment.mutate(row.id) : postCost.mutate(row.id))} disabled={postPayment.isPending || postCost.isPending}>
+                                    Провести
                                   </Button>
-                                </div>
-                              </TD>
-                            </TR>
-                          );
-                        })}
+                                )}
+                                {row.kind === "procurement_cost" && document?.status !== "draft" && (
+                                  <Button size="sm" variant="secondary" onClick={() => openCostCorrection(row.id)}>
+                                    Исправить
+                                  </Button>
+                                )}
+                                <Button size="sm" variant="ghost" onClick={() => setDeleteTarget({ kind: row.kind, id: row.id, label: `${row.typeLabel.toLowerCase()} ${document?.number ?? ""}`.trim() })}>
+                                  <Trash2 size={14} /> Удалить
+                                </Button>
+                              </div>
+                            </TD>
+                          </TR>
+                        );
+                      })}
                     </TBody>
                   </Table>
                 )}
@@ -746,6 +704,46 @@ export function PurchaseOrderCardPage() {
         confirmLabel="Удалить"
         confirmPending={deleteEntity.isPending}
       />
+
+      <Dialog open={addOpOpen} onOpenChange={(open) => !open && setAddOpOpen(false)}>
+        <DialogContent size="sm">
+          <DialogHeader>
+            <DialogTitle>Добавить затрату по заказу</DialogTitle>
+            <DialogDescription>Тип операции определяет, как она учитывается. Оплата проходит сразу.</DialogDescription>
+          </DialogHeader>
+          <DialogBody className="flex flex-col gap-4">
+            <Field label="Тип операции" required>
+              <Select value={opType} onChange={(event) => setOpType(event.target.value as typeof opType)}>
+                <option value="goods">Оплата товара поставщику</option>
+                <option value="delivery" disabled={!canAddCosts}>Доставка</option>
+                <option value="packaging" disabled={!canAddCosts}>Упаковка</option>
+                <option value="customs" disabled={!canAddCosts}>Растаможка</option>
+                <option value="certification" disabled={!canAddCosts}>Сертификация</option>
+                <option value="other" disabled={!canAddCosts}>Прочее</option>
+              </Select>
+            </Field>
+            <div className="text-xs text-[var(--color-muted-foreground)]">
+              {opType === "goods"
+                ? "Деньги за сам товар. Формируют аванс поставщику и зачитываются в себестоимость при приёмке."
+                : "Дополнительный расход закупки. Ложится на себестоимость партий сверху."}
+            </div>
+            {!canAddCosts && (
+              <div className="text-xs text-[var(--color-warning,#a16207)]">
+                Доп. расходы (доставка, упаковка, …) можно добавить только после проведённой приёмки — нужны партии для распределения.
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Сумма, ₽" required><Input type="number" value={opAmount} onChange={(event) => setOpAmount(event.target.value)} /></Field>
+              <Field label="Дата" required><Input type="date" value={opDate} onChange={(event) => setOpDate(event.target.value)} /></Field>
+            </div>
+            <Field label="Комментарий"><Textarea value={opComment} onChange={(event) => setOpComment(event.target.value)} /></Field>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setAddOpOpen(false)}>Отмена</Button>
+            <Button onClick={() => addOperation.mutate()} disabled={addOperation.isPending || !(Number(opAmount) > 0) || !opDate || (opType !== "goods" && !canAddCosts)}>Добавить</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(receiptCorrection)} onOpenChange={(open) => !open && setReceiptCorrection(null)}>
         <DialogContent size="md">
