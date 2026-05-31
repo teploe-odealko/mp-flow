@@ -101,7 +101,8 @@ export function PhotoStudioPanel({ productId }: { productId: string }) {
   const linkedCard = data.channels[0];
 
   const agentTask = `Оформи фотокарточку для товара «${data.product.name}» (productId=${productId}) в MPFlow.\n` +
-    `Через MCP получи бриф (mpflow_api_get /api/products/${productId}/card), затем сгенерируй слайды и загрузи их в фотостудию.`;
+    `Через MCP получи бриф (card_studio_get_brief productId=${productId} или mpflow_api_get /api/products/${productId}/card/brief), изучи исходное фото как обязательный референс, конкурентов и отзывы.\n` +
+    `Сгенерируй слайды только на основе подтвержденных фактов из брифа, фото и моих указаний, затем загрузи их в фотостудию.`;
 
   const copyAgentTask = async () => {
     try {

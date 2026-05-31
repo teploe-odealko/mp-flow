@@ -10,7 +10,7 @@ import type { RuntimePersistence } from "../infra/db/runtime-store";
 import { pluginRegistry } from "../plugins/registry";
 import { createPluginSecretApi, createPluginStateApi, pluginStateKey } from "../plugins/runtime";
 import { buildMediaKey, createPresignedUpload, headObject, isAllowedImageType, isStorageConfigured } from "../infra/storage/s3";
-import { getCardStudioPlaybook } from "./card-studio";
+import { getCardStudioGenerationRequirements, getCardStudioPlaybook } from "./card-studio";
 import { classifyChannelFinancePayload } from "../shared/channel-finance";
 import { AuthService, createAuthMiddleware, ensureAppUser, publicUser } from "./auth";
 import { initHttpMetrics, metricsMiddleware, renderMetrics } from "./metrics";
@@ -394,7 +394,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       .filter((row) => row.external && row.channel);
     return c.json({ ok: true, data: { product, assets: scopedApp.listProductAssets(productId), channels, plan: readCardStudioPlan(scopedApp, productId), storageReady: isStorageConfigured() } });
   });
-  // Бриф для агента: товар + привязанная карточка + медиа + план + серверный playbook и правила Ozon.
+  // Бриф для агента: товар + привязанная карточка + медиа + план + серверный playbook, требования генерации и правила Ozon.
   api.get("/api/products/:id/card/brief", (c) => {
     const productId = c.req.param("id");
     const product = scopedApp.state.products.find((candidate) => candidate.id === productId);
@@ -414,6 +414,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       assets: scopedApp.listProductAssets(productId),
       plan: readCardStudioPlan(scopedApp, productId),
       guidelines: ozon.card?.guidelines() ?? null,
+      generationRequirements: getCardStudioGenerationRequirements(),
       playbook: getCardStudioPlaybook()
     } });
   });
@@ -1928,7 +1929,7 @@ const MCP_TOOL_DEFINITIONS = [
   },
   {
     name: "card_studio_get_brief",
-    description: "Фотостудия: бриф по товару — данные товара, привязанная карточка Ozon (offer_id), текущие медиа и план, плюс серверный playbook (методика) и правила Ozon (форматы, safe-zones, таксономия слайдов). НАЧИНАЙ оформление карточки с этого инструмента.",
+    description: "Фотостудия: бриф по товару — данные товара, привязанная карточка Ozon (offer_id), текущие медиа и план, плюс серверный playbook, обязательные требования генерации и правила Ozon. НАЧИНАЙ оформление карточки с этого инструмента: используй исходное фото как референс, изучи конкурентов/отзывы и не придумывай неподтвержденные факты.",
     inputSchema: {
       type: "object",
       properties: { productId: { type: "string", description: "ID товара в MPFlow" } },
@@ -2198,7 +2199,7 @@ async function handleMcpJsonRpc(
         protocolVersion: MCP_PROTOCOL_VERSION,
         capabilities: { tools: {}, resources: {} },
         serverInfo: { name: "mpflow", version: MCP_SERVER_VERSION },
-        instructions: "Используйте tools/list, затем tools/call. Все вызовы выполняются в личном кабинете, привязанном к MCP-ключу. Для оформления фото карточки товара начните с card_studio_get_brief(productId) — он вернёт товар, правила Ozon и playbook (методику исследования, единого стиля и промптов)."
+        instructions: "Используйте tools/list, затем tools/call. Все вызовы выполняются в личном кабинете, привязанном к MCP-ключу. Для оформления фото карточки товара начните с card_studio_get_brief(productId) — он вернёт товар, правила Ozon, обязательные требования генерации и playbook. Генерируйте каждый финальный слайд с исходным фото как референсом, сначала изучайте конкурентов/отзывы, а тексты на слайдах основывайте только на подтвержденных фактах."
       });
     }
     if (message.method === "ping") {
