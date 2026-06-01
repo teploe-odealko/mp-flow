@@ -210,10 +210,9 @@ export function PurchaseOrderCardPage() {
     }
   });
   const spendRows = [
-    ...payments.map((payment: any) => ({ kind: "payment" as const, id: payment.id, date: payment.paidAt, typeLabel: "Оплата товара поставщику", amountRub: payment.amountRub, documentId: payment.documentId })),
-    ...procurementCosts.map((cost: any) => ({ kind: "procurement_cost" as const, id: cost.id, date: cost.costDate, typeLabel: procurementCostTypeLabel[cost.costType] ?? cost.costType, amountRub: cost.amountRub, documentId: cost.documentId }))
+    ...payments.map((payment: any) => ({ kind: "payment" as const, id: payment.id, date: payment.paidAt, typeLabel: "Оплата товара поставщику", amountRub: payment.amountRub, documentId: payment.documentId, pending: false })),
+    ...procurementCosts.map((cost: any) => ({ kind: "procurement_cost" as const, id: cost.id, date: cost.costDate, typeLabel: procurementCostTypeLabel[cost.costType] ?? cost.costType, amountRub: cost.amountRub, documentId: cost.documentId, pending: Boolean(cost.pendingAllocation) }))
   ].sort((left, right) => String(right.date).localeCompare(String(left.date)));
-  const canAddCosts = receipts.some((receipt: any) => receipt.status === "posted");
 
   return (
     <div className="flex flex-col gap-5">
@@ -429,7 +428,7 @@ export function PurchaseOrderCardPage() {
                               {document ? <Link to={`/documents/${document.id}`} className="text-[var(--color-primary)] hover:underline">{document.number}</Link> : "—"}
                             </TD>
                             <TD numeric className="font-semibold">{rub(row.amountRub)}</TD>
-                            <TD>{document ? <Badge tone={documentStatusTone[document.status] ?? "neutral"}>{documentStatusLabel[document.status] ?? document.status}</Badge> : "—"}</TD>
+                            <TD>{row.pending ? <Badge tone="info">В пути · к распределению</Badge> : document ? <Badge tone={documentStatusTone[document.status] ?? "neutral"}>{documentStatusLabel[document.status] ?? document.status}</Badge> : "—"}</TD>
                             <TD>
                               <div className="flex items-center gap-2">
                                 {document?.status === "draft" && (
@@ -715,23 +714,18 @@ export function PurchaseOrderCardPage() {
             <Field label="Тип операции" required>
               <Select value={opType} onChange={(event) => setOpType(event.target.value as typeof opType)}>
                 <option value="goods">Оплата товара поставщику</option>
-                <option value="delivery" disabled={!canAddCosts}>Доставка</option>
-                <option value="packaging" disabled={!canAddCosts}>Упаковка</option>
-                <option value="customs" disabled={!canAddCosts}>Растаможка</option>
-                <option value="certification" disabled={!canAddCosts}>Сертификация</option>
-                <option value="other" disabled={!canAddCosts}>Прочее</option>
+                <option value="delivery">Доставка</option>
+                <option value="packaging">Упаковка</option>
+                <option value="customs">Растаможка</option>
+                <option value="certification">Сертификация</option>
+                <option value="other">Прочее</option>
               </Select>
             </Field>
             <div className="text-xs text-[var(--color-muted-foreground)]">
               {opType === "goods"
                 ? "Деньги за сам товар. Формируют аванс поставщику и зачитываются в себестоимость при приёмке."
-                : "Дополнительный расход закупки. Ложится на себестоимость партий сверху."}
+                : "Дополнительный расход закупки. Если приёмки ещё нет — висит «в пути» и распределится на партии при приёмке."}
             </div>
-            {!canAddCosts && (
-              <div className="text-xs text-[var(--color-warning,#a16207)]">
-                Доп. расходы (доставка, упаковка, …) можно добавить только после проведённой приёмки — нужны партии для распределения.
-              </div>
-            )}
             <div className="grid grid-cols-2 gap-4">
               <Field label="Сумма, ₽" required><Input type="number" value={opAmount} onChange={(event) => setOpAmount(event.target.value)} /></Field>
               <Field label="Дата" required><Input type="date" value={opDate} onChange={(event) => setOpDate(event.target.value)} /></Field>
@@ -740,7 +734,7 @@ export function PurchaseOrderCardPage() {
           </DialogBody>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setAddOpOpen(false)}>Отмена</Button>
-            <Button onClick={() => addOperation.mutate()} disabled={addOperation.isPending || !(Number(opAmount) > 0) || !opDate || (opType !== "goods" && !canAddCosts)}>Добавить</Button>
+            <Button onClick={() => addOperation.mutate()} disabled={addOperation.isPending || !(Number(opAmount) > 0) || !opDate}>Добавить</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

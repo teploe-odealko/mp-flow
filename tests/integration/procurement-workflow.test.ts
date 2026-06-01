@@ -273,6 +273,51 @@ describe("procurement workflow api", () => {
     expect(preview.previousReceiptCostRub).toBe(0);
   });
 
+  it("allows a procurement cost before receipt and capitalizes it at receipt (41.02 -> 41.01)", async () => {
+    resetIds();
+    const app = new AccountingApp();
+    app.bootstrap({ displayName: "Cost before receipt", accountingStartDate: "2026-06-01" });
+    const warehouseId = app.state.warehouses.find((warehouse) => warehouse.warehouseType === "own")!.id;
+    const product = app.createProduct({ sku: "PO-COST", name: "Товар с доставкой" });
+    const supplier = app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
+    const order = app.createPurchaseOrder({
+      supplierId: supplier.id,
+      destinationWarehouseId: warehouseId,
+      supplierCurrency: "RUB",
+      orderedAt: "2026-06-02",
+      lines: [{ productId: product.id, qty: 10, supplierUnitPrice: 100 }],
+      post: true
+    });
+    const orderLine = app.state.purchaseOrderLines[0];
+    app.recordSupplierPayment({ purchaseOrderId: order.id, amountRub: 1000, paidAt: "2026-06-03" });
+
+    const api = createApi(app);
+    const bal = (ledger: Record<string, { debit: number; credit: number }>, code: string) =>
+      Math.round((((ledger[code]?.debit ?? 0) - (ledger[code]?.credit ?? 0)) * 100)) / 100;
+
+    // Расход ДО приёмки: партий ещё нет — висит «в пути» (41.02), раньше падал с procurement_cost_no_lots.
+    const cost = await post<any>(api, `/api/procurement/purchase-orders/${order.id}/costs`, {
+      costType: "delivery", allocationBasis: "by_cost", costDate: "2026-06-03", amountRub: 300, paidImmediately: true
+    });
+    expect(cost.pendingAllocation).toBe(true);
+    expect(cost.status).toBe("posted");
+    expect(app.state.inventoryLots.length).toBe(0);
+    const ledgerBefore = await get<Record<string, { debit: number; credit: number }>>(api, "/api/accounting/ledger");
+    expect(bal(ledgerBefore, "41.02")).toBe(300);
+
+    // Приёмка → расход капитализируется в партию (Дт 41.01 / Кт 41.02), товары в пути обнуляются.
+    await post(api, `/api/procurement/purchase-orders/${order.id}/receipts`, {
+      warehouseId, receiptDate: "2026-06-04", lines: [{ purchaseOrderLineId: orderLine.id, qtyReceived: 10 }], post: true
+    });
+    const receipt = app.state.goodsReceipts[0];
+    const lot = app.state.inventoryLots[0];
+    expect(Math.round(lot.costInitialRub * 100) / 100).toBe(Math.round((receipt.goodsCostRubTotal + 300) * 100) / 100);
+    expect(app.state.procurementCosts[0].pendingAllocation).toBeFalsy();
+    const ledgerAfter = await get<Record<string, { debit: number; credit: number }>>(api, "/api/accounting/ledger");
+    expect(bal(ledgerAfter, "41.02")).toBe(0);
+    expect(bal(ledgerAfter, "41.01")).toBe(Math.round((receipt.goodsCostRubTotal + 300) * 100) / 100);
+  });
+
   it("deletes a draft document only while it has no dependent links", async () => {
     resetIds();
     const app = new AccountingApp();

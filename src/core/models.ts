@@ -370,6 +370,8 @@ export interface ProcurementCost {
   amountRub: number;
   paidImmediately: boolean;
   comment?: string;
+  /** Расход добавлен до приёмки — висит в 41.02 «Товары в пути», ещё не распределён на партии. Распределяется при проведении приёмки. */
+  pendingAllocation?: boolean;
 }
 
 export interface ProcurementCostLine {
