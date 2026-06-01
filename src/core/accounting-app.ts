@@ -5262,6 +5262,9 @@ export class AccountingApp {
   private capitalizePendingProcurementCosts(purchaseOrderId: ID) {
     const pending = this.state.procurementCosts.filter((cost) => cost.purchaseOrderId === purchaseOrderId && cost.pendingAllocation && cost.status !== "cancelled");
     for (const cost of pending) {
+      // Если расход нельзя распределить (например «по весу» без заполненного веса товара) —
+      // не блокируем приёмку: расход остаётся «в пути», его можно распределить позже.
+      try {
       if (this.procurementCostTargets(purchaseOrderId, cost.allocationBasis).length === 0) continue;
       const document = this.mustFind(this.state.documents, cost.documentId, "document_not_found");
       const preview = this.previewProcurementCost({ purchaseOrderId, allocationBasis: cost.allocationBasis, amountRub: cost.amountRub });
@@ -5294,6 +5297,9 @@ export class AccountingApp {
       journalLines.push({ accountCode: "41.02", credit: cost.amountRub, memo: "Списание товаров в пути" });
       this.appendJournalEntry(document, journalLines);
       cost.pendingAllocation = undefined;
+      } catch {
+        // Расход остаётся «в пути» — пользователь дозаполнит данные (вес) или сменит базу распределения.
+      }
     }
   }
 
