@@ -379,12 +379,13 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.delete("/api/products/:id/images/:imageId", (c) => c.json({ ok: true, data: scopedApp.deleteProductImage(c.req.param("id")) }));
 
-  // --- Фотостудия карточки: медиа товара (исходники + сгенерированные слайды) ---
-  api.get("/api/products/:id/card", (c) => {
-    const productId = c.req.param("id");
+  const requireStudioProduct = (productId: string) => {
     const product = scopedApp.state.products.find((candidate) => candidate.id === productId);
     if (!product) throw new DomainError("product_not_found", "Товар не найден");
-    const channels = scopedApp.state.productExternalLinks
+    return product;
+  };
+  const studioChannelRows = (productId: string) => {
+    return scopedApp.state.productExternalLinks
       .filter((link) => link.productId === productId && link.status === "active")
       .map((link) => ({
         link,
@@ -392,105 +393,136 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
         channel: scopedApp.state.salesChannels.find((channel) => channel.id === link.channelId)
       }))
       .filter((row) => row.external && row.channel);
-    return c.json({ ok: true, data: { product, assets: scopedApp.listProductAssets(productId), channels, plan: readCardStudioPlan(scopedApp, productId), storageReady: isStorageConfigured() } });
-  });
-  // Бриф для агента: товар + привязанная карточка + медиа + план + серверный playbook, требования генерации и правила Ozon.
-  api.get("/api/products/:id/card/brief", (c) => {
-    const productId = c.req.param("id");
-    const product = scopedApp.state.products.find((candidate) => candidate.id === productId);
-    if (!product) throw new DomainError("product_not_found", "Товар не найден");
-    const link = scopedApp.state.productExternalLinks.find((candidate) => candidate.productId === productId && candidate.status === "active");
-    const external = link ? scopedApp.state.externalProducts.find((candidate) => candidate.id === link.externalProductId) : undefined;
-    const channel = link ? scopedApp.state.salesChannels.find((candidate) => candidate.id === link.channelId) : undefined;
-    const ozon = pluginRegistry.get("ozon");
-    return c.json({ ok: true, data: {
-      product: {
-        id: product.id, sku: product.sku, name: product.name, brand: product.brand, category: product.category,
-        description: product.description, weightGrams: product.weightGrams,
-        lengthMm: product.lengthMm, widthMm: product.widthMm, heightMm: product.heightMm, imageUrl: product.imageUrl
-      },
-      marketplace: "ozon",
-      linkedCard: external ? { channelId: channel?.id, channelName: channel?.name, offerId: external.externalSku, externalName: external.externalName } : null,
+  };
+  const buildStudioProductSummary = (productId: string) => {
+    const product = requireStudioProduct(productId);
+    return {
+      id: product.id,
+      sku: product.sku,
+      name: product.name,
+      brand: product.brand,
+      category: product.category,
+      description: product.description,
+      weightGrams: product.weightGrams,
+      lengthMm: product.lengthMm,
+      widthMm: product.widthMm,
+      heightMm: product.heightMm,
+      imageUrl: product.imageUrl
+    };
+  };
+  const buildStudioView = (productId: string) => {
+    const channels = studioChannelRows(productId);
+    const linkedRow = channels[0];
+    return {
+      product: buildStudioProductSummary(productId),
+      marketplace: linkedRow?.channel?.channelType === "marketplace" ? "ozon" : null,
+      linkedCard: linkedRow?.external ? {
+        channelId: linkedRow.channel?.id,
+        channelName: linkedRow.channel?.name,
+        offerId: linkedRow.external.externalSku,
+        externalName: linkedRow.external.externalName,
+        externalProductId: linkedRow.external.id
+      } : null,
       assets: scopedApp.listProductAssets(productId),
+      channels,
       plan: readCardStudioPlan(scopedApp, productId),
+      storageReady: isStorageConfigured()
+    };
+  };
+  const buildStudioBrief = (productId: string) => {
+    const ozon = pluginRegistry.get("ozon");
+    const studio = buildStudioView(productId);
+    return {
+      ...studio,
+      marketplace: studio.marketplace ?? "ozon",
       guidelines: ozon.card?.guidelines() ?? null,
       generationRequirements: getCardStudioGenerationRequirements(),
       playbook: getCardStudioPlaybook()
-    } });
-  });
-  api.put("/api/products/:id/card/plan", async (c) => {
-    const productId = c.req.param("id");
-    const product = scopedApp.state.products.find((candidate) => candidate.id === productId);
-    if (!product) throw new DomainError("product_not_found", "Товар не найден");
-    const body = cardPlanSchema.parse(await c.req.json());
-    const pluginState = cardStudioPlanState(scopedApp);
-    const existing = pluginState.get({ namespace: "card_studio", scopeType: "flow_session", scopeId: productId, stateKey: "plan" });
-    const saved = pluginState.put({
-      namespace: "card_studio",
-      scopeType: "flow_session",
-      scopeId: productId,
-      stateKey: "plan",
-      expectedRevision: existing?.revision,
-      payload: { ...body, updatedAt: nowIso(), updatedBy: c.get("authAgent") ? "agent" : "user" }
+    };
+  };
+
+  // --- Студия карточки: исходники, план и слайды (card/* сохранен как alias для совместимости) ---
+  const studioRouteBases = ["/api/products/:id/card", "/api/products/:id/studio"] as const;
+  for (const basePath of studioRouteBases) {
+    api.get(basePath, (c) => {
+      const productId = c.req.param("id");
+      return c.json({ ok: true, data: buildStudioView(productId) });
     });
-    return c.json({ ok: true, data: { ...saved.payload, revision: saved.revision } });
-  });
-  api.delete("/api/products/:id/card/plan", (c) => {
-    const productId = c.req.param("id");
-    const product = scopedApp.state.products.find((candidate) => candidate.id === productId);
-    if (!product) throw new DomainError("product_not_found", "Товар не найден");
-    const deleted = cardStudioPlanState(scopedApp).delete({
-      namespace: "card_studio",
-      scopeType: "flow_session",
-      scopeId: productId,
-      stateKey: "plan"
+    api.get(`${basePath}/brief`, (c) => {
+      const productId = c.req.param("id");
+      return c.json({ ok: true, data: buildStudioBrief(productId) });
     });
-    return c.json({ ok: true, data: { deleted } });
-  });
-  api.post("/api/products/:id/card/uploads", async (c) => {
-    const productId = c.req.param("id");
-    const product = scopedApp.state.products.find((candidate) => candidate.id === productId);
-    if (!product) throw new DomainError("product_not_found", "Товар не найден");
-    if (!isStorageConfigured()) throw new DomainError("storage_not_configured", "Хранилище медиа не настроено: задайте S3_* переменные");
-    const body = cardUploadSchema.parse(await c.req.json());
-    if (!isAllowedImageType(body.contentType)) throw new DomainError("unsupported_media_type", "Поддерживаются только изображения: png, jpg, webp");
-    const key = buildMediaKey({ productId, role: body.role, contentType: body.contentType });
-    const { uploadUrl, publicUrl } = await createPresignedUpload({ key, contentType: body.contentType });
-    const asset = scopedApp.createProductAsset({
-      productId,
-      role: body.role,
-      storageKey: key,
-      url: publicUrl,
-      slideType: body.slideType,
-      mimeType: body.contentType,
-      status: "pending",
-      createdBy: c.get("authAgent") ? "agent" : "user",
-      meta: body.meta
+    api.put(`${basePath}/plan`, async (c) => {
+      const productId = c.req.param("id");
+      requireStudioProduct(productId);
+      const body = cardPlanSchema.parse(await c.req.json());
+      const pluginState = cardStudioPlanState(scopedApp);
+      const existing = pluginState.get({ namespace: "card_studio", scopeType: "flow_session", scopeId: productId, stateKey: "plan" });
+      const saved = pluginState.put({
+        namespace: "card_studio",
+        scopeType: "flow_session",
+        scopeId: productId,
+        stateKey: "plan",
+        expectedRevision: existing?.revision,
+        payload: { ...body, updatedAt: nowIso(), updatedBy: c.get("authAgent") ? "agent" : "user" }
+      });
+      return c.json({ ok: true, data: { ...saved.payload, revision: saved.revision } });
     });
-    return c.json({ ok: true, data: { asset, uploadUrl } });
-  });
-  api.post("/api/products/:id/card/assets/:assetId/confirm", async (c) => {
-    const assetId = c.req.param("assetId");
-    const asset = scopedApp.state.productAssets.find((candidate) => candidate.id === assetId);
-    if (!asset) throw new DomainError("product_asset_not_found", "Медиа не найдено");
-    const body = cardConfirmSchema.parse(await c.req.json().catch(() => ({})));
-    if (isStorageConfigured()) {
-      const head = await headObject(asset.storageKey);
-      if (!head) throw new DomainError("asset_not_uploaded", "Файл не найден в хранилище — загрузка не завершена");
-      if (!body.mimeType && head.contentType) body.mimeType = head.contentType;
-    }
-    return c.json({ ok: true, data: scopedApp.confirmProductAsset(assetId, body) });
-  });
-  api.post("/api/products/:id/card/assets/:assetId/approve", (c) => {
-    return c.json({ ok: true, data: scopedApp.updateProductAsset(c.req.param("assetId"), { role: "approved", status: "ready" }) });
-  });
-  api.patch("/api/products/:id/card/assets/:assetId", async (c) => {
-    const body = cardAssetPatchSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.updateProductAsset(c.req.param("assetId"), body) });
-  });
-  api.delete("/api/products/:id/card/assets/:assetId", (c) => {
-    return c.json({ ok: true, data: scopedApp.deleteProductAsset(c.req.param("assetId")) });
-  });
+    api.delete(`${basePath}/plan`, (c) => {
+      const productId = c.req.param("id");
+      requireStudioProduct(productId);
+      const deleted = cardStudioPlanState(scopedApp).delete({
+        namespace: "card_studio",
+        scopeType: "flow_session",
+        scopeId: productId,
+        stateKey: "plan"
+      });
+      return c.json({ ok: true, data: { deleted } });
+    });
+    api.post(`${basePath}/uploads`, async (c) => {
+      const productId = c.req.param("id");
+      requireStudioProduct(productId);
+      if (!isStorageConfigured()) throw new DomainError("storage_not_configured", "Хранилище медиа не настроено: задайте S3_* переменные");
+      const body = cardUploadSchema.parse(await c.req.json());
+      if (!isAllowedImageType(body.contentType)) throw new DomainError("unsupported_media_type", "Поддерживаются только изображения: png, jpg, webp");
+      const key = buildMediaKey({ productId, role: body.role, contentType: body.contentType });
+      const { uploadUrl, publicUrl } = await createPresignedUpload({ key, contentType: body.contentType });
+      const asset = scopedApp.createProductAsset({
+        productId,
+        role: body.role,
+        storageKey: key,
+        url: publicUrl,
+        slideType: body.slideType,
+        mimeType: body.contentType,
+        status: "pending",
+        createdBy: c.get("authAgent") ? "agent" : "user",
+        meta: body.meta
+      });
+      return c.json({ ok: true, data: { asset, uploadUrl } });
+    });
+    api.post(`${basePath}/assets/:assetId/confirm`, async (c) => {
+      const assetId = c.req.param("assetId");
+      const asset = scopedApp.state.productAssets.find((candidate) => candidate.id === assetId);
+      if (!asset) throw new DomainError("product_asset_not_found", "Медиа не найдено");
+      const body = cardConfirmSchema.parse(await c.req.json().catch(() => ({})));
+      if (isStorageConfigured()) {
+        const head = await headObject(asset.storageKey);
+        if (!head) throw new DomainError("asset_not_uploaded", "Файл не найден в хранилище — загрузка не завершена");
+        if (!body.mimeType && head.contentType) body.mimeType = head.contentType;
+      }
+      return c.json({ ok: true, data: scopedApp.confirmProductAsset(assetId, body) });
+    });
+    api.post(`${basePath}/assets/:assetId/approve`, (c) => {
+      return c.json({ ok: true, data: scopedApp.updateProductAsset(c.req.param("assetId"), { role: "approved", status: "ready" }) });
+    });
+    api.patch(`${basePath}/assets/:assetId`, async (c) => {
+      const body = cardAssetPatchSchema.parse(await c.req.json());
+      return c.json({ ok: true, data: scopedApp.updateProductAsset(c.req.param("assetId"), body) });
+    });
+    api.delete(`${basePath}/assets/:assetId`, (c) => {
+      return c.json({ ok: true, data: scopedApp.deleteProductAsset(c.req.param("assetId")) });
+    });
+  }
 
   api.get("/api/warehouses", (c) => c.json({ ok: true, data: scopedApp.state.warehouses }));
   api.post("/api/warehouses", async (c) => {
@@ -1941,7 +1973,7 @@ const MCP_TOOL_DEFINITIONS = [
   },
   {
     name: "card_studio_get_brief",
-    description: "Фотостудия: бриф по товару — данные товара, привязанная карточка Ozon (offer_id), текущие медиа и план, плюс серверный playbook, обязательные требования генерации и правила Ozon. НАЧИНАЙ оформление карточки с этого инструмента: используй исходное фото как референс, изучи конкурентов/отзывы и не придумывай неподтвержденные факты.",
+    description: "Студия: бриф по товару — данные товара, привязанная карточка Ozon (offer_id), текущие медиа и план, плюс серверный playbook, обязательные требования генерации и правила Ozon. НАЧИНАЙ оформление карточки с этого инструмента: используй исходное фото как референс, изучи конкурентов/отзывы и не придумывай неподтвержденные факты.",
     inputSchema: {
       type: "object",
       properties: { productId: { type: "string", description: "ID товара в MPFlow" } },
@@ -1951,7 +1983,7 @@ const MCP_TOOL_DEFINITIONS = [
   },
   {
     name: "card_studio_save_plan",
-    description: "Фотостудия: сохраняет план карточки (research + единый стиль + последовательность слайдов). Отобразится в интерфейсе пользователя. Структуру плана определяешь сам.",
+    description: "Студия: сохраняет план карточки (research + единый стиль + последовательность слайдов). Отобразится в интерфейсе пользователя. Структуру плана определяешь сам.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1964,7 +1996,7 @@ const MCP_TOOL_DEFINITIONS = [
   },
   {
     name: "card_studio_create_upload",
-    description: "Фотостудия: выдаёт presigned-URL для загрузки готового изображения. Затем сделай HTTP PUT байтов на uploadUrl (с тем же Content-Type) и вызови card_studio_confirm_asset.",
+    description: "Студия: выдаёт presigned-URL для загрузки готового изображения. Затем сделай HTTP PUT байтов на uploadUrl (с тем же Content-Type) и вызови card_studio_confirm_asset.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1979,7 +2011,7 @@ const MCP_TOOL_DEFINITIONS = [
   },
   {
     name: "card_studio_confirm_asset",
-    description: "Фотостудия: подтверждает, что изображение загружено в хранилище (после PUT). Помечает медиа готовым.",
+    description: "Студия: подтверждает, что изображение загружено в хранилище (после PUT). Помечает медиа готовым.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1994,7 +2026,70 @@ const MCP_TOOL_DEFINITIONS = [
   },
   {
     name: "card_studio_list_assets",
-    description: "Фотостудия: возвращает медиа товара (исходники и сгенерированные слайды) с публичными URL.",
+    description: "Студия: возвращает медиа товара (исходники и сгенерированные слайды) с публичными URL.",
+    inputSchema: {
+      type: "object",
+      properties: { productId: { type: "string" } },
+      required: ["productId"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "studio_get_working_package",
+    description: "Студия: рабочий пакет по товару — данные товара, привязанная карточка, текущие медиа и план, плюс серверный playbook, обязательные требования генерации и правила Ozon.",
+    inputSchema: {
+      type: "object",
+      properties: { productId: { type: "string", description: "ID товара в MPFlow" } },
+      required: ["productId"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "studio_save_plan",
+    description: "Студия: сохраняет план карточки (research + единый стиль + последовательность слайдов).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        productId: { type: "string" },
+        plan: { type: "object", description: "JSON плана: research, style, slides[] и любые нужные поля" }
+      },
+      required: ["productId", "plan"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "studio_create_upload",
+    description: "Студия: выдаёт presigned-URL для загрузки готового изображения. Затем сделай HTTP PUT байтов на uploadUrl и вызови studio_confirm_asset.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        productId: { type: "string" },
+        role: { type: "string", enum: ["source", "generated", "approved"], default: "generated" },
+        slideType: { type: "string", description: "Тип слайда из плана: hero/benefits/lifestyle/…" },
+        contentType: { type: "string", default: "image/png", description: "image/png, image/jpeg или image/webp" }
+      },
+      required: ["productId"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "studio_confirm_asset",
+    description: "Студия: подтверждает, что изображение загружено в хранилище (после PUT). Помечает медиа готовым.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        productId: { type: "string" },
+        assetId: { type: "string" },
+        width: { type: "number" },
+        height: { type: "number" }
+      },
+      required: ["productId", "assetId"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "studio_list_assets",
+    description: "Студия: возвращает медиа товара, план и привязанную карточку с публичными URL изображений.",
     inputSchema: {
       type: "object",
       properties: { productId: { type: "string" } },
@@ -2211,7 +2306,7 @@ async function handleMcpJsonRpc(
         protocolVersion: MCP_PROTOCOL_VERSION,
         capabilities: { tools: {}, resources: {} },
         serverInfo: { name: "mpflow", version: MCP_SERVER_VERSION },
-        instructions: "Используйте tools/list, затем tools/call. Все вызовы выполняются в личном кабинете, привязанном к MCP-ключу. Для оформления фото карточки товара начните с card_studio_get_brief(productId) — он вернёт товар, правила Ozon, обязательные требования генерации и playbook. Всю генерацию изображений выполняйте через @Браузер/Browser-контур с авторизованным ChatGPT: прикрепите исходное фото товара как reference/attachment, отправьте промпты, заберите PNG из ответа и загрузите через card_studio_create_upload/confirm. Тексты на слайдах основывайте только на подтвержденных фактах."
+        instructions: "Используйте tools/list, затем tools/call. Все вызовы выполняются в личном кабинете, привязанном к MCP-ключу. Для оформления карточки товара начните с studio_get_working_package(productId) — он вернёт товар, правила Ozon, обязательные требования генерации и playbook. Всю генерацию изображений выполняйте через @Браузер/Browser-контур с авторизованным ChatGPT: прикрепите исходное фото товара как reference/attachment, отправьте промпты, заберите PNG из ответа и загрузите через studio_create_upload/confirm. Тексты на слайдах основывайте только на подтвержденных фактах."
       });
     }
     if (message.method === "ping") {
@@ -2311,20 +2406,20 @@ async function callMcpTool(
     const data = await callMpflowApi(api, rawKey, agent, { method: input.method ?? "GET", path: input.path, query: input.query, body: input.body });
     return mcpToolData(data, !data.ok);
   }
-  if (name === "card_studio_get_brief") {
+  if (name === "card_studio_get_brief" || name === "studio_get_working_package") {
     const input = z.object({ productId: z.string() }).parse(args);
-    return mcpToolData(await callMpflowApi(api, rawKey, agent, { method: "GET", path: `/api/products/${encodeURIComponent(input.productId)}/card/brief` }));
+    return mcpToolData(await callMpflowApi(api, rawKey, agent, { method: "GET", path: `/api/products/${encodeURIComponent(input.productId)}/studio/brief` }));
   }
-  if (name === "card_studio_list_assets") {
+  if (name === "card_studio_list_assets" || name === "studio_list_assets") {
     const input = z.object({ productId: z.string() }).parse(args);
-    return mcpToolData(await callMpflowApi(api, rawKey, agent, { method: "GET", path: `/api/products/${encodeURIComponent(input.productId)}/card` }));
+    return mcpToolData(await callMpflowApi(api, rawKey, agent, { method: "GET", path: `/api/products/${encodeURIComponent(input.productId)}/studio` }));
   }
-  if (name === "card_studio_save_plan") {
+  if (name === "card_studio_save_plan" || name === "studio_save_plan") {
     const input = z.object({ productId: z.string(), plan: z.record(z.string(), z.unknown()) }).parse(args);
-    const data = await callMpflowApi(api, rawKey, agent, { method: "PUT", path: `/api/products/${encodeURIComponent(input.productId)}/card/plan`, body: input.plan });
+    const data = await callMpflowApi(api, rawKey, agent, { method: "PUT", path: `/api/products/${encodeURIComponent(input.productId)}/studio/plan`, body: input.plan });
     return mcpToolData(data, !data.ok);
   }
-  if (name === "card_studio_create_upload") {
+  if (name === "card_studio_create_upload" || name === "studio_create_upload") {
     const input = z.object({
       productId: z.string(),
       role: z.enum(["source", "generated", "approved"]).optional(),
@@ -2333,16 +2428,16 @@ async function callMcpTool(
     }).parse(args);
     const data = await callMpflowApi(api, rawKey, agent, {
       method: "POST",
-      path: `/api/products/${encodeURIComponent(input.productId)}/card/uploads`,
+      path: `/api/products/${encodeURIComponent(input.productId)}/studio/uploads`,
       body: { role: input.role ?? "generated", slideType: input.slideType, contentType: input.contentType ?? "image/png" }
     });
     return mcpToolData(data, !data.ok);
   }
-  if (name === "card_studio_confirm_asset") {
+  if (name === "card_studio_confirm_asset" || name === "studio_confirm_asset") {
     const input = z.object({ productId: z.string(), assetId: z.string(), width: z.number().optional(), height: z.number().optional() }).parse(args);
     const data = await callMpflowApi(api, rawKey, agent, {
       method: "POST",
-      path: `/api/products/${encodeURIComponent(input.productId)}/card/assets/${encodeURIComponent(input.assetId)}/confirm`,
+      path: `/api/products/${encodeURIComponent(input.productId)}/studio/assets/${encodeURIComponent(input.assetId)}/confirm`,
       body: { width: input.width, height: input.height }
     });
     return mcpToolData(data, !data.ok);

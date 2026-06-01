@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, ImagePlus, ListChecks, Sparkles, Trash2, UploadCloud } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ImagePlus, Link2, ListChecks, Sparkles, Trash2, UploadCloud } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -19,12 +20,49 @@ interface ProductAssetView {
   createdBy: "user" | "agent";
 }
 
-interface CardStudioView {
-  product: { id: string; name: string };
+interface StudioProductView {
+  id: string;
+  sku?: string;
+  name: string;
+  brand?: string;
+  category?: string;
+  description?: string;
+  weightGrams?: number;
+  lengthMm?: number;
+  widthMm?: number;
+  heightMm?: number;
+  imageUrl?: string;
+}
+
+interface StudioChannelRow {
+  link?: { id: string };
+  external?: { id?: string; externalName?: string; externalSku?: string };
+  channel?: { id?: string; name?: string; channelType?: string };
+}
+
+interface StudioLinkedCard {
+  channelId?: string;
+  channelName?: string;
+  offerId?: string;
+  externalName?: string;
+  externalProductId?: string;
+}
+
+interface StudioView {
+  product: StudioProductView;
   assets: ProductAssetView[];
-  channels: Array<{ external?: { externalName?: string; externalSku?: string }; channel?: { name?: string } }>;
+  channels: StudioChannelRow[];
+  linkedCard?: StudioLinkedCard | null;
+  marketplace?: string | null;
   plan?: Record<string, any> | null;
   storageReady: boolean;
+}
+
+interface StudioCheck {
+  label: string;
+  ok: boolean;
+  description: string;
+  required?: boolean;
 }
 
 const ACCEPT = "image/png,image/jpeg,image/webp";
@@ -45,30 +83,30 @@ function readImageSize(file: File): Promise<{ width?: number; height?: number }>
   });
 }
 
-export function PhotoStudioPanel({ productId }: { productId: string }) {
+export function StudioPanel({ productId }: { productId: string }) {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
 
-  const { data, isLoading } = useQuery<CardStudioView>({
-    queryKey: ["product-card", productId],
-    queryFn: () => apiGet<CardStudioView>(`/api/products/${productId}/card`)
+  const { data, isLoading } = useQuery<StudioView>({
+    queryKey: ["product-studio", productId],
+    queryFn: () => apiGet<StudioView>(`/api/products/${productId}/studio`)
   });
 
-  const refetch = () => queryClient.invalidateQueries({ queryKey: ["product-card", productId] });
+  const refetch = () => queryClient.invalidateQueries({ queryKey: ["product-studio", productId] });
 
   async function uploadSource(file: File) {
     setBusy(true);
     try {
       const { asset, uploadUrl } = await apiPost<{ asset: ProductAssetView; uploadUrl: string }>(
-        `/api/products/${productId}/card/uploads`,
+        `/api/products/${productId}/studio/uploads`,
         { role: "source", contentType: file.type || "image/png" }
       );
       const put = await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type || "image/png" } });
       if (!put.ok) throw new Error(`Хранилище отклонило загрузку (HTTP ${put.status})`);
       const size = await readImageSize(file);
-      await apiPost(`/api/products/${productId}/card/assets/${asset.id}/confirm`, size);
-      emitAppAlert({ tone: "success", title: "Фото загружено", message: "Исходник добавлен в фотостудию." });
+      await apiPost(`/api/products/${productId}/studio/assets/${asset.id}/confirm`, size);
+      emitAppAlert({ tone: "success", title: "Фото загружено", message: "Исходник добавлен в студию." });
       await refetch();
     } catch (error) {
       emitAppAlert({ tone: "danger", title: "Не удалось загрузить фото", message: error instanceof Error ? error.message : String(error) });
@@ -78,17 +116,17 @@ export function PhotoStudioPanel({ productId }: { productId: string }) {
   }
 
   const approve = useMutation({
-    mutationFn: (assetId: string) => apiPost(`/api/products/${productId}/card/assets/${assetId}/approve`),
+    mutationFn: (assetId: string) => apiPost(`/api/products/${productId}/studio/assets/${assetId}/approve`),
     onSuccess: refetch
   });
   const remove = useMutation({
-    mutationFn: (assetId: string) => apiDelete(`/api/products/${productId}/card/assets/${assetId}`),
+    mutationFn: (assetId: string) => apiDelete(`/api/products/${productId}/studio/assets/${assetId}`),
     onSuccess: refetch
   });
   const resetPlan = useMutation({
-    mutationFn: () => apiDelete(`/api/products/${productId}/card/plan`),
+    mutationFn: () => apiDelete(`/api/products/${productId}/studio/plan`),
     onSuccess: async () => {
-      emitAppAlert({ tone: "success", title: "Контекст сброшен", message: "План и исследование фотостудии удалены." });
+      emitAppAlert({ tone: "success", title: "Контекст сброшен", message: "План и исследование студии удалены." });
       await refetch();
     },
     onError: (error) => {
@@ -100,18 +138,79 @@ export function PhotoStudioPanel({ productId }: { productId: string }) {
     return (
       <Card className="renderPanel">
         <CardContent className="py-10">
-          <EmptyState icon={<Sparkles size={20} />} title="Загружаем фотостудию…" />
+          <EmptyState icon={<Sparkles size={20} />} title="Загружаем студию…" />
         </CardContent>
       </Card>
     );
   }
 
   const sources = data.assets.filter((asset) => asset.role === "source");
+  const approved = data.assets.filter((asset) => asset.role === "approved");
   const generated = data.assets.filter((asset) => asset.role === "generated" || asset.role === "approved");
-  const linkedCard = data.channels[0];
+  const slides: any[] = Array.isArray(data.plan?.slides) ? data.plan.slides : [];
+  const linkedCard = data.linkedCard ?? (data.channels[0]?.external
+    ? {
+        channelName: data.channels[0]?.channel?.name,
+        offerId: data.channels[0]?.external?.externalSku,
+        externalName: data.channels[0]?.external?.externalName,
+        externalProductId: data.channels[0]?.external?.id
+      }
+    : null);
 
-  const agentTask = `Создай фото для карточки товара в MPFlow: productId=${productId}.\n` +
-    `Используй MCP-бриф фотостудии. Всю генерацию изображений выполняй через [@Браузер](plugin://browser@openai-bundled): открой авторизованный ChatGPT, прикрепи исходное фото товара как референс, забери готовые PNG и загрузи их в MPFlow.`;
+  const identityChecks: StudioCheck[] = [
+    {
+      label: "Связь с каналом",
+      ok: Boolean(linkedCard?.offerId),
+      required: true,
+      description: linkedCard?.offerId
+        ? `${linkedCard.channelName ?? "Канал"} · ${linkedCard.offerId}`
+        : "Карточка маркетплейса пока не привязана."
+    },
+    {
+      label: "Описание товара",
+      ok: Boolean(data.product.description?.trim()),
+      required: true,
+      description: data.product.description?.trim() ? "Описание в карточке товара заполнено." : "Описание товара в MPFlow пока пустое."
+    },
+    {
+      label: "Логистика",
+      ok: Boolean(data.product.weightGrams && data.product.lengthMm && data.product.widthMm && data.product.heightMm),
+      required: true,
+      description:
+        data.product.weightGrams && data.product.lengthMm && data.product.widthMm && data.product.heightMm
+          ? `${data.product.weightGrams} г · ${data.product.lengthMm} × ${data.product.widthMm} × ${data.product.heightMm} мм`
+          : "Не хватает веса или габаритов."
+    },
+    {
+      label: "Исходники",
+      ok: sources.length > 0,
+      required: true,
+      description: sources.length > 0 ? `Загружено ${sources.length} фото.` : "Исходное фото для генерации еще не загружено."
+    },
+    {
+      label: "План студии",
+      ok: Boolean(data.plan),
+      required: true,
+      description: data.plan ? "План и исследование сохранены." : "План карточки пока не сохранен."
+    },
+    {
+      label: "Слайды серии",
+      ok: generated.length > 0,
+      required: true,
+      description: generated.length > 0 ? `Готово ${generated.length} слайдов, одобрено ${approved.length}.` : "Слайды серии пока не загружены."
+    }
+  ];
+
+  const readyCount = identityChecks.filter((item) => item.ok).length;
+  const blockers = identityChecks.filter((item) => item.required && !item.ok);
+  const logisticsFilled = [data.product.weightGrams, data.product.lengthMm, data.product.widthMm, data.product.heightMm].filter(Boolean).length;
+  const baseFilled = [data.product.name, data.product.brand, data.product.category].filter((value) => String(value ?? "").trim().length > 0).length;
+  const channelMappingHref = linkedCard?.externalProductId
+    ? `/products/channel-mapping?externalProductId=${linkedCard.externalProductId}`
+    : "/products/channel-mapping";
+
+  const agentTask = `Создай карточку товара в MPFlow: productId=${productId}.\n` +
+    `Используй MCP-бриф студии. Собери план карточки и серию слайдов, а всю генерацию изображений выполняй через [@Браузер](plugin://browser@openai-bundled): открой авторизованный ChatGPT, прикрепи исходное фото товара как референс, забери готовые PNG и загрузи их в MPFlow.`;
 
   const copyAgentTask = async () => {
     try {
@@ -135,14 +234,19 @@ export function PhotoStudioPanel({ productId }: { productId: string }) {
       <Card>
         <CardContent className="py-5 flex flex-col gap-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div className="text-lg font-semibold">Фотостудия</div>
-              <div className="text-sm text-[var(--color-muted-foreground)] max-w-xl">
-                Загрузите исходное фото, передайте задачу в Codex — он соберёт план и сгенерирует слайды для карточки.
-                {linkedCard ? ` Привязанная карточка: ${linkedCard.channel?.name ?? "канал"} · ${linkedCard.external?.externalSku ?? ""}.` : " Карточка маркетплейса пока не привязана (вкладка «Каналы продаж»)."}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="text-lg font-semibold">Студия</div>
+                <Badge tone={blockers.length === 0 ? "success" : "warning"}>
+                  {readyCount}/{identityChecks.length}
+                </Badge>
+              </div>
+              <div className="text-sm text-[var(--color-muted-foreground)] max-w-3xl">
+                Рабочее место карточки товара: здесь живут исходники, план и слайды, которые готовит агент.
+                Сейчас Студия использует данные товара MPFlow и привязанную карточку канала; отдельный канальный draft и отправка карточки на маркетплейс через эту вкладку пока не реализованы.
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button variant="secondary" onClick={copyAgentTask}>Скопировать задание для Codex</Button>
               <Button onClick={() => fileInputRef.current?.click()} disabled={!data.storageReady || busy}>
                 <UploadCloud size={14} /> {busy ? "Загрузка…" : "Загрузить исходник"}
@@ -163,79 +267,179 @@ export function PhotoStudioPanel({ productId }: { productId: string }) {
         </CardContent>
       </Card>
 
-      {data.plan && (
-        <PlanCard
-          plan={data.plan}
-          onReset={() => {
-            if (window.confirm("Удалить план и исследование фотостудии для этого товара? Слайды и исходники останутся на месте.")) {
-              resetPlan.mutate();
-            }
-          }}
-          resetPending={resetPlan.isPending}
-        />
-      )}
+      <Card className="renderPanel">
+        <CardContent className="py-5 flex flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Link2 size={18} />
+              <div className="text-base font-semibold">Канал</div>
+            </div>
+            <Button variant="secondary" size="sm" asChild>
+              <Link to={channelMappingHref}>Открыть связь</Link>
+            </Button>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <MetricTile label="Маркетплейс" value={data.marketplace?.toUpperCase() ?? "Не выбран"} hint={linkedCard?.channelName ?? "Привязки пока нет"} />
+            <MetricTile label="Карточка канала" value={linkedCard?.offerId ?? "Не привязана"} hint={linkedCard?.externalName ?? "Сначала свяжите внешний SKU с товаром"} />
+            <MetricTile label="Текущее состояние" value={blockers.length === 0 ? "Можно продолжать" : `${blockers.length} блок.`} hint={blockers.length === 0 ? "Базовые данные собраны." : "Проверьте блок проверки ниже."} />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="renderPanel">
+        <CardContent className="py-5 flex flex-col gap-4">
+          <div className="flex items-center gap-2">
+            <ListChecks size={18} />
+            <div className="text-base font-semibold">Карточка</div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <MetricTile label="Основа" value={`${baseFilled}/3`} hint={`${data.product.name}${data.product.brand ? ` · ${data.product.brand}` : ""}${data.product.category ? ` · ${data.product.category}` : ""}`} />
+            <MetricTile label="Описание" value={data.product.description?.trim() ? "Есть" : "Пусто"} hint={data.product.description?.trim() ? "Студия использует текущее описание товара." : "Добавьте описание на вкладке «Обзор»."} />
+            <MetricTile label="Логистика" value={`${logisticsFilled}/4`} hint={logisticsFilled === 4 ? "Вес и габариты заполнены." : "Не хватает части данных для карточки."} />
+            <MetricTile label="План серии" value={data.plan ? `${slides.length || "—"} слайдов` : "Нет"} hint={data.plan ? "План сохранен в контексте студии." : "Агент еще не сохранил план карточки."} />
+          </div>
+          {data.plan && (
+            <ProjectPlanCard
+              plan={data.plan}
+              onReset={() => {
+                if (window.confirm("Удалить план и исследование студии для этого товара? Слайды и исходники останутся на месте.")) {
+                  resetPlan.mutate();
+                }
+              }}
+              resetPending={resetPlan.isPending}
+            />
+          )}
+        </CardContent>
+      </Card>
 
       <AssetSection
-        title="Исходники"
-        hint="Фото, с которых работает агент."
+        title="Медиа: исходники"
+        hint="Фото, с которых работает агент. Для Browser + ChatGPT нужен хотя бы один исходник."
         icon={<ImagePlus size={18} />}
         assets={sources}
         onDelete={(assetId) => remove.mutate(assetId)}
       />
 
       <AssetSection
-        title="Слайды карточки"
-        hint="Сгенерированные агентом изображения. Одобренные пойдут на экспорт."
+        title="Медиа: слайды карточки"
+        hint="Сгенерированные агентом изображения. Одобренные слайды можно использовать как финальную серию."
         icon={<Sparkles size={18} />}
         assets={generated}
         emptyText="Слайдов пока нет. Передайте задачу агенту — результат появится здесь."
         onApprove={(assetId) => approve.mutate(assetId)}
         onDelete={(assetId) => remove.mutate(assetId)}
       />
+
+      <Card className="renderPanel">
+        <CardContent className="py-5 flex flex-col gap-4">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={18} />
+            <div className="text-base font-semibold">Проверка</div>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Готово</div>
+              <ul className="space-y-2 text-sm">
+                {identityChecks.filter((item) => item.ok).map((item) => (
+                  <li key={item.label} className="flex items-start gap-2">
+                    <CheckCircle2 size={15} className="mt-0.5 text-[var(--color-success)]" />
+                    <span>
+                      <span className="font-medium">{item.label}.</span> {item.description}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Требует внимания</div>
+              {blockers.length === 0 ? (
+                <EmptyState icon={<CheckCircle2 size={20} />} title="Критичных блокеров нет" description="Можно продолжать работу с планом и слайдами." />
+              ) : (
+                <ul className="space-y-2 text-sm">
+                  {blockers.map((item) => (
+                    <li key={item.label} className="flex items-start gap-2">
+                      <AlertTriangle size={15} className="mt-0.5 text-[var(--color-warning)]" />
+                      <span>
+                        <span className="font-medium">{item.label}.</span> {item.description}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="renderPanel">
+        <CardContent className="py-5 flex flex-col gap-4">
+          <div className="flex items-center gap-2">
+            <Sparkles size={18} />
+            <div className="text-base font-semibold">Экспорт</div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <MetricTile label="Одобрено" value={`${approved.length}`} hint="Столько слайдов уже помечены как финальные." />
+            <MetricTile label="План" value={slides.length > 0 ? `${slides.length}` : "—"} hint="Количество слайдов в сохраненном плане." />
+            <MetricTile label="Связь" value={linkedCard?.offerId ?? "Нет"} hint="Экспорт на маркетплейс возможен только для привязанной карточки." />
+          </div>
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] p-4 text-sm text-[var(--color-muted-foreground)]">
+            В этой версии Студия отвечает за исходники, план и слайды. Отправка карточки на маркетплейс через эту вкладку еще не реализована, поэтому финальная публикация и обновление связанной карточки выполняются вне этого экрана.
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
-function PlanCard({ plan, onReset, resetPending }: { plan: Record<string, any>; onReset?: () => void; resetPending?: boolean }) {
+export const PhotoStudioPanel = StudioPanel;
+
+function ProjectPlanCard({ plan, onReset, resetPending }: { plan: Record<string, any>; onReset?: () => void; resetPending?: boolean }) {
   const slides: any[] = Array.isArray(plan?.slides) ? plan.slides : [];
   const style = plan?.style;
   const styleText = typeof style === "string" ? style : style ? (style.archetype ?? style.name ?? JSON.stringify(style)) : null;
   const research = typeof plan?.research === "string" ? plan.research : null;
   return (
-    <Card className="renderPanel">
-      <CardContent className="py-5 flex flex-col gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <ListChecks size={18} />
-            <div className="text-base font-semibold">План карточки</div>
-            {plan?.updatedBy === "agent" && <Badge tone="neutral">от агента</Badge>}
-            {slides.length > 0 && <Badge tone="neutral">{slides.length} слайдов</Badge>}
-          </div>
-          {onReset && (
-            <Button variant="ghost" size="sm" onClick={onReset} disabled={resetPending}>
-              <Trash2 size={14} /> {resetPending ? "Сбрасываем…" : "Сбросить контекст"}
-            </Button>
-          )}
+    <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] p-4 flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <div className="text-sm font-semibold">План и исследование</div>
+          {plan?.updatedBy === "agent" && <Badge tone="neutral">от агента</Badge>}
+          {slides.length > 0 && <Badge tone="neutral">{slides.length} слайдов</Badge>}
         </div>
-        {styleText && (
-          <div className="text-sm"><span className="text-[var(--color-muted-foreground)]">Стиль: </span>{styleText}</div>
+        {onReset && (
+          <Button variant="ghost" size="sm" onClick={onReset} disabled={resetPending}>
+            <Trash2 size={14} /> {resetPending ? "Сбрасываем…" : "Сбросить контекст"}
+          </Button>
         )}
-        {research && <div className="text-sm text-[var(--color-muted-foreground)] line-clamp-3">{research}</div>}
-        {slides.length > 0 && (
-          <ol className="flex flex-col gap-1.5">
-            {slides.map((slide, index) => (
-              <li key={index} className="flex gap-2 text-sm">
-                <span className="text-[var(--color-muted-foreground)] w-5 shrink-0">{index + 1}.</span>
-                <span className="font-medium shrink-0">{slide?.type ?? slide?.title ?? "слайд"}</span>
-                {(slide?.idea ?? slide?.message ?? slide?.purpose) && (
-                  <span className="text-[var(--color-muted-foreground)] truncate">— {slide.idea ?? slide.message ?? slide.purpose}</span>
-                )}
-              </li>
-            ))}
-          </ol>
-        )}
-      </CardContent>
-    </Card>
+      </div>
+      {styleText && (
+        <div className="text-sm"><span className="text-[var(--color-muted-foreground)]">Стиль: </span>{styleText}</div>
+      )}
+      {research && <div className="text-sm text-[var(--color-muted-foreground)] line-clamp-3">{research}</div>}
+      {slides.length > 0 && (
+        <ol className="flex flex-col gap-1.5">
+          {slides.map((slide, index) => (
+            <li key={index} className="flex gap-2 text-sm">
+              <span className="text-[var(--color-muted-foreground)] w-5 shrink-0">{index + 1}.</span>
+              <span className="font-medium shrink-0">{slide?.type ?? slide?.title ?? "слайд"}</span>
+              {(slide?.idea ?? slide?.message ?? slide?.purpose) && (
+                <span className="text-[var(--color-muted-foreground)] truncate">— {slide.idea ?? slide.message ?? slide.purpose}</span>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+function MetricTile({ label, value, hint }: { label: string; value: string; hint: string }) {
+  return (
+    <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] p-3">
+      <div className="text-xs text-[var(--color-muted-foreground)] mb-1">{label}</div>
+      <div className="text-sm font-semibold mb-1 break-words">{value}</div>
+      <div className="text-xs text-[var(--color-muted-foreground)]">{hint}</div>
+    </div>
   );
 }
 

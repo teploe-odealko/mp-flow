@@ -515,4 +515,56 @@ describe("MPFlow api surface", () => {
       expect.arrayContaining([expect.objectContaining({ documentId: payment.documentId })])
     );
   });
+
+  it("keeps studio aliases available through HTTP and MCP", async () => {
+    const { api, app } = makeApi();
+    await post(api, "/api/dev/demo");
+
+    const product = app.state.products[0];
+    expect(product).toBeDefined();
+
+    const cardView = await get<any>(api, `/api/products/${product.id}/card`);
+    const studioView = await get<any>(api, `/api/products/${product.id}/studio`);
+    expect(studioView.product.id).toBe(product.id);
+    expect(studioView).toEqual(cardView);
+
+    const studioBrief = await get<any>(api, `/api/products/${product.id}/studio/brief`);
+    expect(studioBrief.product.id).toBe(product.id);
+    expect(studioBrief.playbook.version).toMatch(/^[a-f0-9]{12}$/);
+    expect(Array.isArray(studioBrief.generationRequirements.referencePolicy)).toBe(true);
+
+    const issued = await post<any>(api, "/api/mcp/keys", { name: "Studio agent", mode: "read_write" });
+    await mcpRequest<any>(api, issued.secret, "initialize", {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "vitest", version: "0.0.0" }
+    });
+
+    const tools = await mcpRequest<any>(api, issued.secret, "tools/list");
+    expect(tools.result.tools.some((tool: any) => tool.name === "studio_get_working_package")).toBe(true);
+    expect(tools.result.tools.some((tool: any) => tool.name === "studio_save_plan")).toBe(true);
+
+    const briefViaMcp = await mcpRequest<any>(api, issued.secret, "tools/call", {
+      name: "studio_get_working_package",
+      arguments: { productId: product.id }
+    });
+    expect(briefViaMcp.result.structuredContent.data.data.product.id).toBe(product.id);
+
+    const savedPlan = await mcpRequest<any>(api, issued.secret, "tools/call", {
+      name: "studio_save_plan",
+      arguments: {
+        productId: product.id,
+        plan: {
+          research: "Проверка studio alias",
+          style: { archetype: "Clean Editorial" },
+          slides: [{ type: "hero", idea: "Тестовый слайд" }]
+        }
+      }
+    });
+    expect(savedPlan.result.structuredContent.data.data.revision).toBeGreaterThan(0);
+
+    const updatedStudioView = await get<any>(api, `/api/products/${product.id}/studio`);
+    expect(updatedStudioView.plan.research).toBe("Проверка studio alias");
+    expect(updatedStudioView.plan.slides).toHaveLength(1);
+  });
 });
