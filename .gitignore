@@ -9,3 +9,4 @@ tmp-spec-audit.json
 .env
 .env.local
 .claude/
+.mpflow-card-studio/

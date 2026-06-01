@@ -142,11 +142,6 @@ export function PurchaseOrderFormPage() {
                   <option value="USD">USD · $</option>
                 </Select>
               </Field>
-              <Field label="Склад назначения" required>
-                <Select value={destinationWarehouseId} onChange={(e) => setDestinationWarehouseId(e.target.value)} disabled={!isEditable}>
-                  {warehouses.map((w: any) => <option key={w.id} value={w.id}>{w.name}</option>)}
-                </Select>
-              </Field>
               <div className="md:col-span-2">
                 <Field label="Комментарий для поставки"><Textarea value={comment} onChange={(e) => setComment(e.target.value)} disabled={!isEditable} /></Field>
               </div>

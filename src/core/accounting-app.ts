@@ -1081,11 +1081,8 @@ export class AccountingApp {
   }): ProcurementCost {
     assertPositive(input.amountRub, "Сумма расхода должна быть положительной");
     const allocationBasis = input.allocationBasis ?? "by_cost";
-    const preview = this.previewProcurementCost({
-      purchaseOrderId: input.purchaseOrderId,
-      allocationBasis,
-      amountRub: input.amountRub
-    });
+    // До приёмки партий ещё нет — расход висит «в пути» (41.02) и распределяется при приёмке.
+    const hasLots = this.procurementCostTargets(input.purchaseOrderId, allocationBasis).length > 0;
     const organizationId = this.currentOrgId();
     const document = this.createDocument({
       documentType: "procurement_cost",
@@ -1105,10 +1102,25 @@ export class AccountingApp {
       costDate: input.costDate,
       amountRub: input.amountRub,
       paidImmediately: input.paidImmediately,
-      comment: input.comment
+      comment: input.comment,
+      pendingAllocation: hasLots ? undefined : true
     };
     this.state.procurementCosts.push(cost);
 
+    if (hasLots) {
+      this.buildProcurementCostLines(cost, document, this.previewProcurementCost({
+        purchaseOrderId: input.purchaseOrderId,
+        allocationBasis,
+        amountRub: input.amountRub
+      }));
+    }
+    if (input.post !== false) {
+      this.postProcurementCost(cost.id);
+    }
+    return cost;
+  }
+
+  private buildProcurementCostLines(cost: ProcurementCost, document: Document, preview: ProcurementCostPreview) {
     preview.lines.forEach((line) => {
       this.state.procurementCostLines.push({
         id: id("proc_cost_line"),
@@ -1139,10 +1151,6 @@ export class AccountingApp {
         }
       });
     });
-    if (input.post !== false) {
-      this.postProcurementCost(cost.id);
-    }
-    return cost;
   }
 
   previewProcurementCost(input: {
@@ -5139,6 +5147,8 @@ export class AccountingApp {
         createdAt: nowIso()
       });
     }
+    // Распределяем расходы закупки, добавленные до этой приёмки («товары в пути»), на новые партии.
+    this.capitalizePendingProcurementCosts(order.id);
     receipt.status = "posted";
     return receipt;
   }
@@ -5158,6 +5168,21 @@ export class AccountingApp {
     if (document.status === "posted" && cost.status === "posted") return cost;
     if (document.status === "cancelled") {
       throw new DomainError("document_cancelled", "Отмененный расход закупки нельзя провести повторно");
+    }
+    if (cost.pendingAllocation) {
+      // Расход до приёмки: деньги ушли, сумма висит в 41.02 «Товары в пути» до распределения на партии при приёмке.
+      const creditAccount = cost.paidImmediately ? "51" : "60.01";
+      this.postDocument(document.id, [
+        { accountCode: "41.02", debit: cost.amountRub, memo: "Расход закупки (товары в пути)" },
+        { accountCode: creditAccount, credit: cost.amountRub, memo: cost.paidImmediately ? "Оплачен расход закупки" : "Задолженность за расход закупки" }
+      ]);
+      this.ensurePaidProcurementCostPayment(cost, document);
+      if (cost.purchaseOrderId) {
+        const order = this.mustFind(this.state.purchaseOrders, cost.purchaseOrderId, "purchase_order_not_found");
+        this.ensureDocumentLink(order.documentId, document.id, "procurement_cost");
+      }
+      cost.status = "posted";
+      return cost;
     }
     const previewLines = this.state.procurementCostLines.filter((line) => line.procurementCostId === cost.id);
     previewLines.forEach((line) => {
@@ -5194,40 +5219,116 @@ export class AccountingApp {
     });
     this.postDocument(document.id, journalLines);
 
-    if (cost.paidImmediately) {
-      let payment = this.state.payments.find((candidate) => candidate.documentId === document.id && candidate.paymentType === "procurement_cost_payment");
-      if (!payment) {
-        const cashAccount = this.state.cashAccounts.find((account) => account.accountCode === "51" && account.isActive);
-        if (!cashAccount) throw new DomainError("cash_account_not_found", "Не найден расчетный счет");
-        payment = {
-          id: id("payment"),
-          organizationId: this.currentOrgId(),
-          documentId: document.id,
-          cashAccountId: cashAccount.id,
-          paymentDirection: "outgoing",
-          paymentType: "procurement_cost_payment",
-          amountRub: cost.amountRub,
-          paidAt: cost.costDate,
-          comment: cost.comment
-        };
-        this.state.payments.push(payment);
-        this.state.paymentAllocations.push({
-          id: id("payment_alloc"),
-          paymentId: payment.id,
-          allocationPurpose: "procurement_cost",
-          documentId: document.id,
-          purchaseOrderId: cost.purchaseOrderId,
-          amountRub: cost.amountRub
-        });
-      }
-      this.applyPaymentToCashAccount(payment);
-    }
+    this.ensurePaidProcurementCostPayment(cost, document);
     if (cost.purchaseOrderId) {
       const order = this.mustFind(this.state.purchaseOrders, cost.purchaseOrderId, "purchase_order_not_found");
       this.ensureDocumentLink(order.documentId, document.id, "procurement_cost");
     }
     cost.status = "posted";
     return cost;
+  }
+
+  private ensurePaidProcurementCostPayment(cost: ProcurementCost, document: Document) {
+    if (!cost.paidImmediately) return;
+    let payment = this.state.payments.find((candidate) => candidate.documentId === document.id && candidate.paymentType === "procurement_cost_payment");
+    if (!payment) {
+      const cashAccount = this.state.cashAccounts.find((account) => account.accountCode === "51" && account.isActive);
+      if (!cashAccount) throw new DomainError("cash_account_not_found", "Не найден расчетный счет");
+      payment = {
+        id: id("payment"),
+        organizationId: this.currentOrgId(),
+        documentId: document.id,
+        cashAccountId: cashAccount.id,
+        paymentDirection: "outgoing",
+        paymentType: "procurement_cost_payment",
+        amountRub: cost.amountRub,
+        paidAt: cost.costDate,
+        comment: cost.comment
+      };
+      this.state.payments.push(payment);
+      this.state.paymentAllocations.push({
+        id: id("payment_alloc"),
+        paymentId: payment.id,
+        allocationPurpose: "procurement_cost",
+        documentId: document.id,
+        purchaseOrderId: cost.purchaseOrderId,
+        amountRub: cost.amountRub
+      });
+    }
+    this.applyPaymentToCashAccount(payment);
+  }
+
+  // Распределяет «висящие» расходы заказа (41.02) на партии новой приёмки: Дт 41.0x / Кт 41.02.
+  private capitalizePendingProcurementCosts(purchaseOrderId: ID) {
+    const pending = this.state.procurementCosts.filter((cost) => cost.purchaseOrderId === purchaseOrderId && cost.pendingAllocation && cost.status !== "cancelled");
+    for (const cost of pending) {
+      if (this.procurementCostTargets(purchaseOrderId, cost.allocationBasis).length === 0) continue;
+      const document = this.mustFind(this.state.documents, cost.documentId, "document_not_found");
+      const preview = this.previewProcurementCost({ purchaseOrderId, allocationBasis: cost.allocationBasis, amountRub: cost.amountRub });
+      this.buildProcurementCostLines(cost, document, preview);
+      const remainingByAccount = new Map<string, number>();
+      preview.lines.forEach((line) => {
+        const lot = line.lotId ? this.state.inventoryLots.find((candidate) => candidate.id === line.lotId) : undefined;
+        if (lot) {
+          lot.costInitialRub = round2(lot.costInitialRub + line.allocatedAmountRub);
+          if (line.remainingInventoryAmountRub > 0 && lot.qtyRemaining > 0) {
+            lot.costRemainingRub = round2(lot.costRemainingRub + line.remainingInventoryAmountRub);
+            lot.unitCostRub = round6(lot.costRemainingRub / lot.qtyRemaining);
+            this.addStockState(lot.productId, lot.warehouseId, 0, line.remainingInventoryAmountRub);
+          }
+        }
+        if (line.warehouseId && line.remainingInventoryAmountRub > 0) {
+          const warehouse = this.mustFind(this.state.warehouses, line.warehouseId, "warehouse_not_found");
+          const accountCode = accountForWarehouse(warehouse);
+          remainingByAccount.set(accountCode, round2((remainingByAccount.get(accountCode) ?? 0) + line.remainingInventoryAmountRub));
+        }
+      });
+      const journalLines: JournalLineInput[] = [];
+      remainingByAccount.forEach((amount, accountCode) => {
+        if (amount > 0) journalLines.push({ accountCode, debit: amount, memo: "Капитализация расхода закупки" });
+      });
+      const soldCostAmountRub = round2(preview.lines.reduce((sum, line) => sum + (line.soldCostAmountRub ?? 0), 0));
+      if (soldCostAmountRub > 0) {
+        journalLines.push({ accountCode: "90.02", debit: soldCostAmountRub, memo: "Расход закупки по проданным товарам" });
+      }
+      journalLines.push({ accountCode: "41.02", credit: cost.amountRub, memo: "Списание товаров в пути" });
+      this.appendJournalEntry(document, journalLines);
+      cost.pendingAllocation = undefined;
+    }
+  }
+
+  // Добавляет дополнительную проводку к уже проведённому документу, не меняя его статус.
+  private appendJournalEntry(document: Document, lines: JournalLineInput[]) {
+    const debit = round2(lines.reduce((sum, line) => sum + (line.debit ?? 0), 0));
+    const credit = round2(lines.reduce((sum, line) => sum + (line.credit ?? 0), 0));
+    if (debit !== credit) {
+      throw new DomainError("unbalanced_journal_entry", "Проводка не сбалансирована", { debit, credit, lines });
+    }
+    lines.forEach((line) => {
+      if (!this.state.chartAccounts.some((account) => account.code === line.accountCode)) {
+        throw new DomainError("unknown_account", `Неизвестный счет ${line.accountCode}`);
+      }
+    });
+    const entry = {
+      id: id("je"),
+      organizationId: this.currentOrgId(),
+      documentId: document.id,
+      accountingDate: document.accountingDate,
+      memo: document.title,
+      createdAt: nowIso()
+    };
+    this.state.journalEntries.push(entry);
+    lines.forEach((line) => {
+      this.state.journalLines.push({
+        id: id("jl"),
+        journalEntryId: entry.id,
+        accountCode: line.accountCode,
+        debit: round2(line.debit ?? 0),
+        credit: round2(line.credit ?? 0),
+        memo: line.memo ?? document.title
+      });
+    });
+    return entry;
   }
 
   shortagePreview(purchaseOrderId: ID) {
