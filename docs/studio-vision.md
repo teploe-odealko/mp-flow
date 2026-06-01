@@ -392,6 +392,252 @@ interface MarketplaceStudioPlugin {
 
 Именно plugin знает, как разговаривать с конкретным маркетплейсом. Core знает только общий lifecycle.
 
+## Тонкая прослойка между агентом и Ozon API
+
+Здесь важна правильная граница. Пользователь прав в том, что intelligence и неопределенность должны жить на стороне агента, а ключ Ozon должен оставаться на стороне платформы.
+
+Но это не означает, что агенту нужен raw-доступ вида:
+
+```text
+POST arbitrary_path with arbitrary_body using platform credential
+```
+
+Такой подход слишком хрупкий:
+
+- пропадает стабильный plugin contract;
+- трудно делать review и audit;
+- нельзя гарантировать, что на экспорт уйдет именно просмотренный payload;
+- слишком сильно протекает вендорская API-модель в пользователя и в core.
+
+### Рекомендуемая модель
+
+Правильнее строить **execution proxy**, а не raw HTTP proxy.
+
+Граница должна быть такой:
+
+### Агент управляет
+
+- категоризацией и category hypothesis;
+- заполнением draft-полей;
+- выбором, что именно обновлять;
+- порядком и составом медиа;
+- текстами и rich content;
+- формированием export intent;
+- ревью изменений перед отправкой.
+
+### Платформа управляет
+
+- хранением Ozon credentials;
+- rate limiting / retries / backoff;
+- allowlist-ом допустимых операций;
+- построением точных Ozon payloads;
+- idempotency;
+- audit trail;
+- фактическим вызовом Ozon API;
+- polling статуса асинхронного импорта.
+
+### Ключевой принцип
+
+Агент должен передавать не "произвольный HTTP-запрос", а **структурированный mutation intent**.
+
+## Mutation intent и prepared export
+
+Нужен отдельный слой перед фактическим вызовом Ozon API:
+
+```ts
+interface StudioMutationIntent {
+  projectId: ID;
+  mode: "create" | "update";
+  target: {
+    channelId: ID;
+    externalProductId?: ID;
+    offerId?: string;
+  };
+  categoryId?: string;
+  applyFields: string[];
+  applyMedia: boolean;
+  notes?: string;
+}
+```
+
+А затем сервер и plugin собирают из draft и intent детерминированный prepared export:
+
+```ts
+interface StudioPreparedExport {
+  id: ID;
+  projectId: ID;
+  marketplace: "ozon";
+  operation: "create" | "update";
+  createdAt: string;
+  payloadHash: string;
+  requests: Array<{
+    method: "POST";
+    endpoint:
+      | "/v2/product/import"
+      | "/v1/product/pictures/import";
+    purpose: "content" | "media";
+    body: Record<string, unknown>;
+  }>;
+  warnings: string[];
+  blockingIssues: StudioValidationIssue[];
+}
+```
+
+Именно этот `prepared export`:
+
+- показывается в preview;
+- участвует в diff/review;
+- подписывается `payloadHash`;
+- только потом исполняется.
+
+## Почему это лучше raw-proxy
+
+Если агенту нужен контроль над параметрами, он получает его на уровне:
+
+- draft fields;
+- media order;
+- operation mode;
+- list of changed fields;
+- category selection;
+- export intent.
+
+Но платформе не нужно открывать произвольный сетевой туннель в Ozon.
+
+Это дает баланс:
+
+```text
+агент решает ЧТО отправить
+платформа решает КАК это безопасно и воспроизводимо отправить
+```
+
+## Preview -> Execute модель
+
+Рекомендуемый lifecycle такой:
+
+```mermaid
+flowchart LR
+    A["Агент / пользователь обновляет draft"] --> B["MPFlow + plugin строят prepared export"]
+    B --> C["Preview payload + diff + warnings"]
+    C --> D["Пользователь подтверждает экспорт"]
+    D --> E["MPFlow исполняет prepared export по payloadHash"]
+    E --> F["Ozon async processing"]
+    F --> G["MPFlow poll status и возвращает результат в Студию"]
+```
+
+### Что это решает
+
+1. Пользователь видит, **что именно уйдет** в Ozon.
+2. Можно показать `Показать payload` без раскрытия credentials.
+3. Можно исполнять **только просмотренную** версию запроса.
+4. Можно надежно логировать, что именно отправлялось.
+5. Plugin остается стабильным, даже если Ozon меняет детали тел запросов.
+
+## Какие tools нужны агенту
+
+Если переносить это в MCP/agent-контур, то агенту нужны не raw Ozon methods, а studio-tools:
+
+- `studio_get_working_package(projectId | productId, channelId)`
+- `studio_save_draft(projectId, draftPatch)`
+- `studio_preview_export(projectId, mutationIntent)`
+- `studio_execute_export(preparedExportId)`
+- `studio_poll_export(exportRunId)`
+
+Дополнительно можно дать:
+
+- `studio_show_prepared_payload(preparedExportId)`
+- `studio_list_validation_issues(projectId)`
+
+### Что важно
+
+`studio_execute_export` должен принимать не свободное body, а идентификатор подготовленного экспорта.  
+Это фиксирует связь:
+
+```text
+reviewed payload -> executed payload
+```
+
+И не дает тихо заменить запрос между preview и submit.
+
+## Когда raw-proxy все же допустим
+
+Иногда нужен техничный escape hatch для отладки. Например, внутренний tool:
+
+- `ozon_debug_call(path, body)`
+
+Но его стоит делать только:
+
+- для администраторского режима;
+- без пользовательского UI;
+- без зависимости продуктового сценария от него;
+- с полным audit log.
+
+Это не должен быть основной контур Студии.
+
+## Как это вырастает из текущей реализации MPFlow
+
+Сейчас в коде уже есть рабочая Phase 1 база:
+
+- `GET /api/products/:id/card`
+- `GET /api/products/:id/card/brief`
+- `PUT /api/products/:id/card/plan`
+- медиа-upload flow
+- MCP tools `card_studio_*`
+
+Правильная эволюция — не выкинуть это, а расширить до общей Студии.
+
+### Предлагаемый HTTP surface
+
+```text
+GET    /api/products/:id/studio
+POST   /api/products/:id/studio/projects
+GET    /api/studio/projects/:projectId
+PUT    /api/studio/projects/:projectId/draft
+POST   /api/studio/projects/:projectId/preview-export
+POST   /api/studio/prepared-exports/:preparedExportId/execute
+GET    /api/studio/export-runs/:exportRunId
+```
+
+Дополнительно:
+
+```text
+GET    /api/studio/projects/:projectId/requirements
+GET    /api/studio/projects/:projectId/external-snapshot
+GET    /api/studio/projects/:projectId/diff
+```
+
+### Предлагаемая эволюция MCP tools
+
+Текущие `card_studio_*` стоит постепенно перевести в `studio_*`:
+
+```text
+card_studio_get_brief        -> studio_get_working_package
+card_studio_save_plan        -> studio_save_project_notes
+card_studio_list_assets      -> studio_list_assets
+card_studio_create_upload    -> studio_create_upload
+card_studio_confirm_asset    -> studio_confirm_asset
+```
+
+И добавить:
+
+```text
+studio_save_draft
+studio_preview_export
+studio_execute_export
+studio_poll_export
+studio_get_diff
+```
+
+### Что это дает
+
+Phase 1 photo flow не теряется:
+
+- source photos;
+- generated slides;
+- approved assets;
+- Browser + ChatGPT generation через агента.
+
+Он просто становится одной секцией внутри более общего studio workflow.
+
 ## Ozon-first без толстого Ozon-core
 
 По актуальным публичным материалам Ozon Seller API, правильная логика для Ozon такая:
@@ -433,6 +679,70 @@ interface MarketplaceStudioPlugin {
 
 - `POST /v2/product/info/limit` — лимиты на загрузку/обновление;
 - `POST /v1/product/rating-by-sku` — контентный рейтинг как метрика качества карточки.
+
+## Что берем у зрелых сервисов
+
+При проектировании `Студии` полезно явно зафиксировать, какие идеи берем из зрелых PIM/listing-систем и зачем.
+
+### 1. Akeneo: completeness как first-class сущность
+
+У Akeneo сильная идея в том, что completeness считается не "вообще", а в контексте канала и набора обязательных атрибутов. Также они хорошо показывают missing required fields по группам.
+
+Что берем:
+
+- completeness в header;
+- missing required attributes panel;
+- counters по группам полей;
+- фокус на незаполненные обязательные поля;
+- раздельное понятие `complete` и `ready for export`.
+
+Что не берем:
+
+- тяжелый PIM-жаргон;
+- перегруженные семейства/локали в первом UI MPFlow.
+
+### 2. ChannelEngine: category mapping + required/conditional/optional split
+
+У ChannelEngine полезна другая идея: сначала категоризация, потом field mappings; плюс явное разделение на required, conditionally required и optional поля.
+
+Что берем:
+
+- отдельный шаг/секцию категоризации;
+- required / conditionally required / optional counters;
+- export blockers, если не закрыты обязательные поля;
+- возможность принять agent recommendation, но вручную переопределить category;
+- option mapping для dictionary fields.
+
+Что не берем:
+
+- spreadsheet-like grid на весь экран как основной режим работы;
+- необходимость руками маппить все колонки к колонкам.
+
+### 3. Ozon Seller UI: content score и async moderation feedback
+
+У Ozon полезна идея "предварительной оценки" контента и того, что после сохранения карточка уходит в модерацию/обработку.
+
+Что берем:
+
+- прогнозируемый прирост качества контента;
+- отдельный блок async export status;
+- возврат field-level ошибок после обработки;
+- distinction между `saved in MPFlow` и `accepted by marketplace`.
+
+### 4. Общий вывод по UX
+
+Если собрать эти принципы вместе, получается правильный интерфейс:
+
+- слева — navigation по этапам Студии;
+- в центре — grouped draft fields и diff;
+- справа — evidence, warnings, completeness и export status;
+- внизу — один явный CTA текущего этапа.
+
+Это лучше, чем:
+
+- отдельная фотостудия без связи с карточкой;
+- или giant raw form Ozon API;
+- или "магическая" кнопка публикации без review.
 
 ## Пайплайн работы агента
 
