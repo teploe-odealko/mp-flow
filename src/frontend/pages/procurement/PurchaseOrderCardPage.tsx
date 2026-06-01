@@ -106,6 +106,7 @@ export function PurchaseOrderCardPage() {
   const [opAmount, setOpAmount] = useState("");
   const [opDate, setOpDate] = useState(state.accountingPolicy?.accountingStartDate ?? new Date().toISOString().slice(0, 10));
   const [opComment, setOpComment] = useState("");
+  const [opBasis, setOpBasis] = useState<"by_cost" | "by_weight" | "by_unit">("by_cost");
   const [receiptCorrection, setReceiptCorrection] = useState<null | {
     receiptId: string;
     purchaseOrderLineId: string;
@@ -200,7 +201,7 @@ export function PurchaseOrderCardPage() {
       if (opType === "goods") {
         return apiPost(`/api/procurement/purchase-orders/${id}/payments`, { amountRub, paidAt: opDate, comment: opComment || undefined });
       }
-      return apiPost(`/api/procurement/purchase-orders/${id}/costs`, { costType: opType, allocationBasis: "by_cost", costDate: opDate, amountRub, paidImmediately: true, comment: opComment || undefined });
+      return apiPost(`/api/procurement/purchase-orders/${id}/costs`, { costType: opType, allocationBasis: opBasis, costDate: opDate, amountRub, paidImmediately: true, comment: opComment || undefined });
     },
     onSuccess: () => {
       queryClient.invalidateQueries();
@@ -726,6 +727,22 @@ export function PurchaseOrderCardPage() {
                 ? "Деньги за сам товар. Формируют аванс поставщику и зачитываются в себестоимость при приёмке."
                 : "Дополнительный расход закупки. Если приёмки ещё нет — висит «в пути» и распределится на партии при приёмке."}
             </div>
+            {opType !== "goods" && (
+              <Field label="Как распределить на себестоимость" required>
+                <Select value={opBasis} onChange={(event) => setOpBasis(event.target.value as typeof opBasis)}>
+                  <option value="by_cost">По стоимости</option>
+                  <option value="by_unit">По штукам (равномерно)</option>
+                  <option value="by_weight">По весу</option>
+                </Select>
+                <div className="mt-1 text-xs text-[var(--color-muted-foreground)]">
+                  {opBasis === "by_cost"
+                    ? "Дороже партия — больше расхода на неё."
+                    : opBasis === "by_unit"
+                      ? "Поровну на каждую единицу товара."
+                      : "Пропорционально весу (нужен заполненный вес товара)."}
+                </div>
+              </Field>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <Field label="Сумма, ₽" required><Input type="number" value={opAmount} onChange={(event) => setOpAmount(event.target.value)} /></Field>
               <Field label="Дата" required><Input type="date" value={opDate} onChange={(event) => setOpDate(event.target.value)} /></Field>
