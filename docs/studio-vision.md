@@ -797,3 +797,25 @@ MPFlow должен:
 на целевом канале продаж
 через агента, но под контролем платформы
 ```
+
+## Концепт-рендеры
+
+Ниже — три рабочие визуализации будущей `Студии` в текущем UI-тоне MPFlow.
+
+![Обзор Студии](renders/studio-vision/01-studio-overview.png)
+
+### `renders/studio-vision/01-studio-overview.png`
+
+Сценарий: пользователь открывает карточку товара и попадает во вкладку `Студия`, где сразу видит канал, готовность draft, медиа, предупреждения и экспортный CTA.
+
+![Редактор карточки](renders/studio-vision/02-studio-card-editor.png)
+
+### `renders/studio-vision/02-studio-card-editor.png`
+
+Сценарий: агент и пользователь работают с runtime-схемой полей для Ozon, grouped fields, evidence panel и статусами `Заполнено агентом` / `Нужно проверить`.
+
+![Проверка и экспорт](renders/studio-vision/03-studio-review-export.png)
+
+### `renders/studio-vision/03-studio-review-export.png`
+
+Сценарий: update-режим для уже связанной карточки с diff `Сейчас на Ozon` vs `Проект MPFlow`, summary валидации и асинхронным экспортом.
