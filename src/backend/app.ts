@@ -258,6 +258,14 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/reports/cash-flow", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).reports()).cashFlow }));
   api.get("/api/reports/unit-economics", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).reports()).unitEconomics }));
   api.get("/api/reports/inventory", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).reports()).inventory }));
+  api.get("/api/integrations/channels/:id/sync-runs", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).syncRuns.listByChannel(c.req.param("id")) }));
+  api.get("/api/integrations/sync-runs/:id", async (c) => {
+    const run = await (await readModelAppFor(c)).syncRuns.getById(c.req.param("id"));
+    if (!run) throw new DomainError("sync_run_not_found", "Запуск синхронизации не найден");
+    return c.json({ ok: true, data: run });
+  });
+  api.get("/api/integrations/observed-stock", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).observedStocks.list() }));
+  api.get("/api/controls/audit-events", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).repos.auditEvents.all() }));
 
   api.use("/api/*", async (c, next) => {
     const authUser = c.get("authUser") as PublicAuthUser | undefined;
@@ -1219,12 +1227,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     await scopedApp.syncRuns.upsert(syncRun);
     return c.json({ ok: true, data: syncRun });
   });
-  api.get("/api/integrations/channels/:id/sync-runs", async (c) => c.json({ ok: true, data: await scopedApp.syncRuns.listByChannel(c.req.param("id")) }));
-  api.get("/api/integrations/sync-runs/:id", async (c) => {
-    const run = await scopedApp.syncRuns.getById(c.req.param("id"));
-    if (!run) throw new DomainError("sync_run_not_found", "Запуск синхронизации не найден");
-    return c.json({ ok: true, data: run });
-  });
   api.post("/api/integrations/sync-runs/:id/cancel", async (c) => {
     const run = await scopedApp.syncRuns.getById(c.req.param("id"));
     if (!run) throw new DomainError("sync_run_not_found", "Запуск синхронизации не найден");
@@ -1305,8 +1307,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = z.object({ reason: z.string().min(3) }).parse(await c.req.json().catch(() => ({})));
     return c.json({ ok: true, data: await scopedApp.ignoreExternalEvent(c.req.param("id"), body.reason) });
   });
-  api.get("/api/integrations/observed-stock", async (c) => c.json({ ok: true, data: await scopedApp.observedStocks.list() }));
-
   api.get("/api/sales", (c) => c.json({ ok: true, data: { sales: scopedApp.state.sales, lines: scopedApp.state.saleLines } }));
   api.post("/api/sales", async (c) => {
     const body = saleSchema.parse(await c.req.json());
@@ -1892,8 +1892,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     user.invitedAt = nowIso();
     return c.json({ ok: true, data: user });
   });
-  api.get("/api/controls/audit-events", async (c) =>
-    c.json({ ok: true, data: postgresBacked() ? await new AuditEventRepository(getPool(), eventsWorkspaceId(c)).listAll() : scopedApp.state.auditEvents }));
   api.get("/api/agent-tokens", async (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
     return c.json({ ok: true, data: (await scopedApp.repos.agentTokens.all()).map(publicAgentToken) });
