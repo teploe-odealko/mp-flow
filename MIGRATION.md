@@ -106,10 +106,14 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
 ### Прогресс конверсии ядра (идёт)
 - ✅ Шаг 1: async-фасад `Repositories` ([repositories.ts](src/core/repositories.ts)) + `buildInMemoryRepositories`,
   инжектнут как `this.repos`, бэкается массивами `this.state` (поведение идентично, тесты зелёные).
-- ✅ Переведено методов: `retryRecalculationJob`, `accountByIdOrCode`, `journalEntryDetails`, `stockForSalesPoint`,
-  `stockByProduct`, `productDetails`, `setProductImage`, `deleteProductImage` (+ их вызовы в app.ts на `await`;
-  floating-promise в `c.json({data})` tsc НЕ ловит — каждый caller проверять вручную/grep'ом).
-- ⏳ Осталось ~129 методов (из 137). Порядок: листовые чтения/CRUD → постинг → AVCO/recalculate.
+- ✅ Переведено методов: **17/137** — `retryRecalculationJob`, `accountByIdOrCode`, `journalEntryDetails`,
+  `stockForSalesPoint`, `stockByProduct`, `productDetails`, `setProductImage`, `deleteProductImage`,
+  `updateProduct`, `archiveProduct`, `restoreProduct` (+ozon `ensureInternalProduct` async-каскад),
+  `createCashAccount`, `updateCashAccount`, `receiptDetails`, `procurementCostDetails`, `shortageDetails`,
+  `transferDetails` (+ их вызовы в app.ts/плагинах на `await`; floating-promise в `c.json({data})` tsc НЕ ловит
+  — каждый caller проверять grep'ом).
+- 📉 Остаток `this.state.` в домене: **586** (метрика прогресса; цель — 0).
+- ⏳ Осталось ~120 методов. Порядок: листовые чтения/CRUD → постинг → AVCO/recalculate.
   Каждый: `async` + `this.state.X` → `await this.repos.X.all()`/`.add`/`.upsert`/`.removeWhere`; `mustFind(this.state.X,…)`
   → `mustFind(await this.repos.X.all(),…)`; после мутации на месте — `await this.repos.X.upsert(entity)`; callers `await`.
   Общие sync-хелперы (`mustFind`, `ledgerBalances`, `audit`, `createDocument`/`postJournalEntry` пока) читают
