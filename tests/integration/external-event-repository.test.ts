@@ -32,7 +32,7 @@ describePostgres("ExternalEventRepository", () => {
 
     const app = new AccountingApp();
     app.bootstrap({ displayName: "Repo Test", accountingStartDate: "2026-01-01" });
-    const channel = app.createSalesChannel({ name: "Канал событий", channelType: "marketplace" });
+    const channel = await app.createSalesChannel({ name: "Канал событий", channelType: "marketplace" });
     await app.ingestExternalEvent({
       channelId: channel.id,
       eventType: "sale",

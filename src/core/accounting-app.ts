@@ -469,7 +469,7 @@ export class AccountingApp {
       return await this.dashboard();
     }
 
-    const productA = this.createProduct({
+    const productA = await this.createProduct({
       sku: "CASE-001",
       name: "Чехол MagSafe прозрачный",
       barcode: "4600000000011",
@@ -481,7 +481,7 @@ export class AccountingApp {
       heightMm: 20,
       imageUrl: "https://images.unsplash.com/photo-1603313011101-320f26a4f6f6?auto=format&fit=crop&w=160&q=80"
     });
-    const productB = this.createProduct({
+    const productB = await this.createProduct({
       sku: "CABLE-USB-C",
       name: "Кабель USB-C 1м",
       barcode: "4600000000028",
@@ -493,7 +493,7 @@ export class AccountingApp {
       heightMm: 20,
       imageUrl: "https://images.unsplash.com/photo-1612815154858-60aa4c59eaa6?auto=format&fit=crop&w=160&q=80"
     });
-    const supplier = this.createCounterparty({ name: "Shenzhen Good Supply", counterpartyType: "supplier", country: "CN" });
+    const supplier = await this.createCounterparty({ name: "Shenzhen Good Supply", counterpartyType: "supplier", country: "CN" });
     await this.recordOwnerContribution({ amountRub: 500_000, paidAt: "2026-06-01", comment: "Стартовый капитал" });
     const po = await this.createPurchaseOrder({
       supplierId: supplier.id,
@@ -529,7 +529,7 @@ export class AccountingApp {
       paidImmediately: true,
       comment: "Доставка до Москвы"
     });
-    const channel = this.createSalesChannel({ name: "Ozon FBO", channelType: "marketplace", pluginCode: "ozon", enabledStreams: ["products", "stocks", "sales", "returns", "finance_events", "payouts"] });
+    const channel = await this.createSalesChannel({ name: "Ozon FBO", channelType: "marketplace", pluginCode: "ozon", enabledStreams: ["products", "stocks", "sales", "returns", "finance_events", "payouts"] });
     channel.status = "active";
     await this.transferStock({
       fromWarehouseId: this.ownWarehouse().id,
@@ -564,12 +564,12 @@ export class AccountingApp {
     return await this.dashboard();
   }
 
-  createCounterparty(input: {
+  async createCounterparty(input: {
     name: string;
     counterpartyType: Counterparty["counterpartyType"];
     country?: string;
     inn?: string;
-  }): Counterparty {
+  }): Promise<Counterparty> {
     const organizationId = this.currentOrgId();
     const counterparty: Counterparty = {
       id: id("cp"),
@@ -580,12 +580,12 @@ export class AccountingApp {
       inn: input.inn,
       isActive: true
     };
-    this.state.counterparties.push(counterparty);
+    await this.repos.counterparties.add(counterparty);
     this.audit("counterparty", counterparty.id, "create", undefined, counterparty);
     return counterparty;
   }
 
-  createProduct(input: {
+  async createProduct(input: {
     sku: string;
     name: string;
     unit?: string;
@@ -600,9 +600,9 @@ export class AccountingApp {
     manufacturerArticle?: string;
     comment?: string;
     imageUrl?: string;
-  }): Product {
+  }): Promise<Product> {
     const organizationId = this.currentOrgId();
-    if (this.state.products.some((product) => product.organizationId === organizationId && product.sku === input.sku)) {
+    if ((await this.repos.products.all()).some((product) => product.organizationId === organizationId && product.sku === input.sku)) {
       throw new DomainError("duplicate_sku", "Товар с таким SKU уже есть");
     }
     const product: Product = {
@@ -625,7 +625,7 @@ export class AccountingApp {
       status: "active",
       createdAt: nowIso()
     };
-    this.state.products.push(product);
+    await this.repos.products.add(product);
     this.audit("product", product.id, "create", undefined, product);
     return product;
   }
@@ -692,7 +692,7 @@ export class AccountingApp {
     return product;
   }
 
-  createWarehouse(input: { name: string; warehouseType: Warehouse["warehouseType"]; channelId?: ID }): Warehouse {
+  async createWarehouse(input: { name: string; warehouseType: Warehouse["warehouseType"]; channelId?: ID }): Promise<Warehouse> {
     const organizationId = this.currentOrgId();
     const warehouse: Warehouse = {
       id: id("wh"),
@@ -702,7 +702,7 @@ export class AccountingApp {
       channelId: input.channelId,
       isActive: true
     };
-    this.state.warehouses.push(warehouse);
+    await this.repos.warehouses.add(warehouse);
     this.audit("warehouse", warehouse.id, "create", undefined, warehouse);
     return warehouse;
   }
@@ -1377,23 +1377,23 @@ export class AccountingApp {
     return transfer;
   }
 
-  createSalesChannel(input: {
+  async createSalesChannel(input: {
     name: string;
     channelType: SalesChannel["channelType"];
     pluginCode?: string;
     salesPointWarehouseId?: ID;
     enabledStreams?: SalesChannel["enabledStreams"];
-  }): SalesChannel {
+  }): Promise<SalesChannel> {
     const organizationId = this.currentOrgId();
     let warehouseId = input.salesPointWarehouseId;
     if (warehouseId) {
-      const found = this.state.warehouses.find((w) => w.id === warehouseId && w.warehouseType === "sales_point");
+      const found = (await this.repos.warehouses.all()).find((w) => w.id === warehouseId && w.warehouseType === "sales_point");
       if (!found) throw new DomainError("warehouse_not_found", "Точка продаж не найдена или не является точкой продаж");
     } else {
-      const warehouse = this.createWarehouse({ name: `${input.name} - точка продаж`, warehouseType: "sales_point" });
+      const warehouse = await this.createWarehouse({ name: `${input.name} - точка продаж`, warehouseType: "sales_point" });
       warehouseId = warehouse.id;
     }
-    const plugin = input.pluginCode ? this.state.integrationPlugins.find((candidate) => candidate.code === input.pluginCode) : undefined;
+    const plugin = input.pluginCode ? (await this.repos.integrationPlugins.all()).find((candidate) => candidate.code === input.pluginCode) : undefined;
     const channel: SalesChannel = {
       id: id("channel"),
       organizationId,
@@ -1405,49 +1405,58 @@ export class AccountingApp {
       status: input.pluginCode ? "needs_setup" : "active",
       enabledStreams: input.enabledStreams
     };
-    const linkedWarehouse = this.state.warehouses.find((w) => w.id === warehouseId);
-    if (linkedWarehouse && !linkedWarehouse.channelId) linkedWarehouse.channelId = channel.id;
-    this.state.salesChannels.push(channel);
+    const linkedWarehouse = (await this.repos.warehouses.all()).find((w) => w.id === warehouseId);
+    if (linkedWarehouse && !linkedWarehouse.channelId) {
+      linkedWarehouse.channelId = channel.id;
+      await this.repos.warehouses.upsert(linkedWarehouse);
+    }
+    await this.repos.salesChannels.add(channel);
     this.audit("sales_channel", channel.id, "create", undefined, channel);
     return channel;
   }
 
-  updateSalesChannel(channelId: ID, patch: Partial<Pick<SalesChannel, "name" | "channelType" | "salesPointWarehouseId" | "enabledStreams" | "status">> & { pluginCode?: string }) {
-    const channel = this.mustFind(this.state.salesChannels, channelId, "channel_not_found");
+  async updateSalesChannel(channelId: ID, patch: Partial<Pick<SalesChannel, "name" | "channelType" | "salesPointWarehouseId" | "enabledStreams" | "status">> & { pluginCode?: string }) {
+    const channel = this.mustFind(await this.repos.salesChannels.all(), channelId, "channel_not_found");
     if (patch.name !== undefined) channel.name = patch.name;
     if (patch.channelType !== undefined) channel.channelType = patch.channelType;
     if (patch.enabledStreams !== undefined) channel.enabledStreams = patch.enabledStreams;
     if (patch.status !== undefined) channel.status = patch.status;
     if (patch.salesPointWarehouseId !== undefined) {
-      const warehouse = this.state.warehouses.find((w) => w.id === patch.salesPointWarehouseId && w.warehouseType === "sales_point");
+      const warehouse = (await this.repos.warehouses.all()).find((w) => w.id === patch.salesPointWarehouseId && w.warehouseType === "sales_point");
       if (!warehouse) throw new DomainError("warehouse_not_found", "Точка продаж не найдена");
       channel.salesPointWarehouseId = patch.salesPointWarehouseId;
-      if (!warehouse.channelId) warehouse.channelId = channel.id;
-      this.state.observedStocks
-        .filter((candidate) => candidate.channelId === channel.id)
-        .forEach((candidate) => {
-          candidate.warehouseId = patch.salesPointWarehouseId;
-          candidate.locationStatus = "mapped";
-        });
+      if (!warehouse.channelId) {
+        warehouse.channelId = channel.id;
+        await this.repos.warehouses.upsert(warehouse);
+      }
+      for (const observed of await this.observedStocks.list({ channelId: channel.id })) {
+        observed.warehouseId = patch.salesPointWarehouseId;
+        observed.locationStatus = "mapped";
+        await this.observedStocks.upsert(observed);
+      }
     }
     if (patch.pluginCode !== undefined) {
-      const plugin = this.state.integrationPlugins.find((candidate) => candidate.code === patch.pluginCode);
+      const plugin = (await this.repos.integrationPlugins.all()).find((candidate) => candidate.code === patch.pluginCode);
       channel.pluginId = plugin?.id;
     }
+    await this.repos.salesChannels.upsert(channel);
     this.audit("sales_channel", channel.id, "update", undefined, channel);
     return channel;
   }
 
-  createExternalProduct(input: {
+  async createExternalProduct(input: {
     channelId: ID;
     externalSku: string;
     externalName: string;
     imageUrl?: string;
-  }): ExternalProduct {
-    const existing = this.findExternalProduct(input.channelId, input.externalSku);
+  }): Promise<ExternalProduct> {
+    const existing = (await this.repos.externalProducts.all()).find((product) =>
+      this.externalProductKey(product.channelId, product.externalSku) === this.externalProductKey(input.channelId, input.externalSku)
+    );
     if (existing) {
       existing.externalName = input.externalName;
       if (input.imageUrl) existing.imageUrl = input.imageUrl;
+      await this.repos.externalProducts.upsert(existing);
       return existing;
     }
     const externalProduct: ExternalProduct = {
@@ -1459,15 +1468,16 @@ export class AccountingApp {
       imageUrl: input.imageUrl,
       status: "active"
     };
-    this.state.externalProducts.push(externalProduct);
+    await this.repos.externalProducts.add(externalProduct);
     this.ensureExternalProductIndex().set(this.externalProductKey(externalProduct.channelId, externalProduct.externalSku), externalProduct);
     return externalProduct;
   }
 
-  linkExternalProduct(input: { productId: ID; externalProductId: ID }): ProductExternalLink {
-    const externalProduct = this.mustFind(this.state.externalProducts, input.externalProductId, "external_product_not_found");
-    this.mustFind(this.state.products, input.productId, "product_not_found");
-    const linkedElsewhere = this.state.productExternalLinks.find((link) =>
+  async linkExternalProduct(input: { productId: ID; externalProductId: ID }): Promise<ProductExternalLink> {
+    const externalProduct = this.mustFind(await this.repos.externalProducts.all(), input.externalProductId, "external_product_not_found");
+    this.mustFind(await this.repos.products.all(), input.productId, "product_not_found");
+    const links = await this.repos.productExternalLinks.all();
+    const linkedElsewhere = links.find((link) =>
       link.externalProductId === input.externalProductId &&
       link.status === "active" &&
       link.productId !== input.productId
@@ -1475,7 +1485,7 @@ export class AccountingApp {
     if (linkedElsewhere) {
       throw new DomainError("external_product_already_linked", "Внешняя карточка уже связана с другим товаром");
     }
-    const existing = this.state.productExternalLinks.find((link) =>
+    const existing = links.find((link) =>
       link.productId === input.productId &&
       link.externalProductId === input.externalProductId &&
       link.status === "active"
@@ -1489,10 +1499,13 @@ export class AccountingApp {
       channelId: externalProduct.channelId,
       status: "active"
     };
-    this.state.productExternalLinks.push(link);
+    await this.repos.productExternalLinks.add(link);
     this.ensureActiveLinkIndex().set(link.externalProductId, link);
-    if (externalProduct.status === "ignored") externalProduct.status = "active";
-    this.refreshExternalReferencesForProduct(externalProduct.id);
+    if (externalProduct.status === "ignored") {
+      externalProduct.status = "active";
+      await this.repos.externalProducts.upsert(externalProduct);
+    }
+    await this.refreshExternalReferencesForProduct(externalProduct.id);
     return link;
   }
 
@@ -1762,7 +1775,7 @@ export class AccountingApp {
       if (!existing.materializedDocumentId && existing.status !== "processed" && existing.status !== "ignored") {
         existing.eventType = input.eventType;
         existing.status = "new";
-        this.applyExternalEventState(existing);
+        await this.applyExternalEventState(existing);
       }
       existing.updatedAt = nowIso();
       await this.externalEvents.upsert(existing);
@@ -1784,7 +1797,7 @@ export class AccountingApp {
       createdAt,
       updatedAt: createdAt
     };
-    this.applyExternalEventState(event);
+    await this.applyExternalEventState(event);
     await this.externalEvents.upsert(event);
     return event;
   }
@@ -1796,7 +1809,7 @@ export class AccountingApp {
     event.lastError = undefined;
     event.reason = undefined;
     event.status = "new";
-    this.applyExternalEventState(event);
+    await this.applyExternalEventState(event);
     event.updatedAt = nowIso();
     await this.externalEvents.upsert(event);
     return event;
@@ -1844,22 +1857,24 @@ export class AccountingApp {
     return observed;
   }
 
-  private refreshExternalReferencesForProduct(externalProductId: ID) {
-    const link = this.findActiveLink(externalProductId);
-    const externalProduct = this.state.externalProducts.find((candidate) => candidate.id === externalProductId);
+  private async refreshExternalReferencesForProduct(externalProductId: ID) {
+    const link = (await this.repos.productExternalLinks.all()).find((candidate) => candidate.externalProductId === externalProductId && candidate.status === "active");
+    const externalProduct = await this.repos.externalProducts.getById(externalProductId);
     if (!externalProduct) return;
-    const channel = this.state.salesChannels.find((candidate) => candidate.id === externalProduct.channelId);
-    for (const observed of this.state.observedStocks.filter((candidate) => candidate.externalProductId === externalProductId)) {
+    const channel = await this.repos.salesChannels.getById(externalProduct.channelId);
+    for (const observed of await this.observedStocks.list({ externalProductId })) {
       observed.productId = link?.productId;
       observed.warehouseId = channel?.salesPointWarehouseId;
       observed.locationStatus = channel?.salesPointWarehouseId ? "mapped" : "needs_location";
+      await this.observedStocks.upsert(observed);
     }
-    for (const event of this.state.externalEvents.filter((candidate) => candidate.channelId === externalProduct.channelId)) {
-      this.applyExternalEventState(event);
+    for (const event of await this.externalEvents.list({ channelId: externalProduct.channelId })) {
+      await this.applyExternalEventState(event);
+      await this.externalEvents.upsert(event);
     }
   }
 
-  private applyExternalEventState(event: ExternalEvent) {
+  private async applyExternalEventState(event: ExternalEvent) {
     const payload = event.normalizedPayload as Record<string, unknown>;
     const now = nowIso();
     event.updatedAt = now;
@@ -1890,14 +1905,18 @@ export class AccountingApp {
     const missing: string[] = [];
     const linkedProductIds = new Set<ID>();
 
+    const externalProducts = await this.repos.externalProducts.all();
+    const activeLinks = await this.repos.productExternalLinks.all();
     for (const sku of skuList) {
-      const externalProduct = this.findExternalProduct(event.channelId, sku);
+      const externalProduct = externalProducts.find((product) =>
+        this.externalProductKey(product.channelId, product.externalSku) === this.externalProductKey(event.channelId, sku)
+      );
       if (!externalProduct) {
         missing.push(sku);
         continue;
       }
       if (!event.externalProductId) event.externalProductId = externalProduct.id;
-      const link = this.findActiveLink(externalProduct.id);
+      const link = activeLinks.find((candidate) => candidate.externalProductId === externalProduct.id && candidate.status === "active");
       if (!link) {
         missing.push(sku);
         continue;

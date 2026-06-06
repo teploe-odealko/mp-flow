@@ -40,8 +40,8 @@ describe("procurement workflow api", () => {
     resetIds();
     const app = new AccountingApp();
     app.bootstrap({ displayName: "PO Edit", accountingStartDate: "2026-06-01" });
-    const product = app.createProduct({ sku: "PO-1", name: "Товар для заказа" });
-    const supplier = app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
+    const product = await app.createProduct({ sku: "PO-1", name: "Товар для заказа" });
+    const supplier = await app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
     const order = await app.createPurchaseOrder({
       supplierId: supplier.id,
       destinationWarehouseId: app.state.warehouses[0].id,
@@ -78,8 +78,8 @@ describe("procurement workflow api", () => {
     resetIds();
     const app = new AccountingApp();
     app.bootstrap({ displayName: "PO Corrections", accountingStartDate: "2026-06-01" });
-    const product = app.createProduct({ sku: "PO-2", name: "Товар с корректировкой" });
-    const supplier = app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
+    const product = await app.createProduct({ sku: "PO-2", name: "Товар с корректировкой" });
+    const supplier = await app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
     const order = await app.createPurchaseOrder({
       supplierId: supplier.id,
       destinationWarehouseId: app.state.warehouses[0].id,
@@ -140,8 +140,8 @@ describe("procurement workflow api", () => {
     resetIds();
     const app = new AccountingApp();
     app.bootstrap({ displayName: "PO Drafts", accountingStartDate: "2026-06-01" });
-    const product = app.createProduct({ sku: "PO-3", name: "Товар с черновиками", weightGrams: 100 });
-    const supplier = app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
+    const product = await app.createProduct({ sku: "PO-3", name: "Товар с черновиками", weightGrams: 100 });
+    const supplier = await app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
     const order = await app.createPurchaseOrder({
       supplierId: supplier.id,
       destinationWarehouseId: app.state.warehouses[0].id,
@@ -217,8 +217,8 @@ describe("procurement workflow api", () => {
     const app = new AccountingApp();
     app.bootstrap({ displayName: "PO Re-receive", accountingStartDate: "2026-06-01" });
     const warehouseId = app.state.warehouses.find((warehouse) => warehouse.warehouseType === "own")!.id;
-    const product = app.createProduct({ sku: "PO-4", name: "Товар для переприемки" });
-    const supplier = app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
+    const product = await app.createProduct({ sku: "PO-4", name: "Товар для переприемки" });
+    const supplier = await app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
     const order = await app.createPurchaseOrder({
       supplierId: supplier.id,
       destinationWarehouseId: warehouseId,
@@ -278,8 +278,8 @@ describe("procurement workflow api", () => {
     const app = new AccountingApp();
     app.bootstrap({ displayName: "Cost before receipt", accountingStartDate: "2026-06-01" });
     const warehouseId = app.state.warehouses.find((warehouse) => warehouse.warehouseType === "own")!.id;
-    const product = app.createProduct({ sku: "PO-COST", name: "Товар с доставкой" });
-    const supplier = app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
+    const product = await app.createProduct({ sku: "PO-COST", name: "Товар с доставкой" });
+    const supplier = await app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
     const order = await app.createPurchaseOrder({
       supplierId: supplier.id,
       destinationWarehouseId: warehouseId,
@@ -323,8 +323,8 @@ describe("procurement workflow api", () => {
     const app = new AccountingApp();
     app.bootstrap({ displayName: "PO Delete Draft", accountingStartDate: "2026-06-01" });
     const warehouseId = app.state.warehouses.find((warehouse) => warehouse.warehouseType === "own")!.id;
-    const product = app.createProduct({ sku: "PO-5", name: "Черновик к удалению" });
-    const supplier = app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
+    const product = await app.createProduct({ sku: "PO-5", name: "Черновик к удалению" });
+    const supplier = await app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
     const order = await app.createPurchaseOrder({
       supplierId: supplier.id,
       destinationWarehouseId: warehouseId,

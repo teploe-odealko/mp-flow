@@ -71,7 +71,7 @@ describe("channel finance classification", () => {
     resetIds();
     const app = new AccountingApp();
     app.bootstrap({ displayName: "QA", accountingStartDate: "2026-01-01" });
-    const channel = app.createSalesChannel({ name: "Marketplace", channelType: "marketplace" });
+    const channel = await app.createSalesChannel({ name: "Marketplace", channelType: "marketplace" });
     const sale = await app.recordSale({
       channelId: channel.id,
       saleDate: "2026-01-02",
@@ -95,7 +95,7 @@ describe("channel finance classification", () => {
     resetIds();
     const app = new AccountingApp();
     app.bootstrap({ displayName: "QA", accountingStartDate: "2026-01-01" });
-    const channel = app.createSalesChannel({ name: "Marketplace", channelType: "marketplace" });
+    const channel = await app.createSalesChannel({ name: "Marketplace", channelType: "marketplace" });
 
     const event = await app.recordChannelFee({
       channelId: channel.id,

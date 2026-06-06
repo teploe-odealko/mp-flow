@@ -219,7 +219,7 @@ async function syncRealOzon({ app, channelId, syncRunId, since, credentials, str
       for (const productInfo of products) {
         const offerId = normalizeSku(productInfo.offer_id);
         if (!offerId) continue;
-        const externalProduct = ensureExternalProduct(app, channelId, productInfo);
+        const externalProduct = await ensureExternalProduct(app, channelId, productInfo);
         externalByOfferId.set(offerId, externalProduct);
         if (wantProducts) {
           stats.products += 1;
@@ -337,11 +337,11 @@ async function ensureInternalProduct(app: SyncContext["app"], externalProduct: E
       imageUrl: patch.imageUrl ?? product.imageUrl,
       comment: patch.comment ?? product.comment
     });
-    if (!existingLink) app.linkExternalProduct({ externalProductId: externalProduct.id, productId: product.id });
+    if (!existingLink) await app.linkExternalProduct({ externalProductId: externalProduct.id, productId: product.id });
     return product;
   }
-  const created = app.createProduct(patch);
-  app.linkExternalProduct({ externalProductId: externalProduct.id, productId: created.id });
+  const created = await app.createProduct(patch);
+  await app.linkExternalProduct({ externalProductId: externalProduct.id, productId: created.id });
   return created;
 }
 
@@ -494,7 +494,7 @@ async function ozonRequest<T>(credentials: PluginCredentials, path: string, body
   return payload;
 }
 
-function ensureExternalProduct(app: SyncContext["app"], channelId: ID, productInfo: OzonProductInfo): ExternalProduct {
+async function ensureExternalProduct(app: SyncContext["app"], channelId: ID, productInfo: OzonProductInfo): Promise<ExternalProduct> {
   const externalSku = normalizeSku(productInfo.offer_id) || String(productInfo.sku ?? productInfo.id ?? "unknown");
   const existing = app.state.externalProducts.find((product) => product.channelId === channelId && product.externalSku === externalSku);
   if (existing) {
@@ -503,7 +503,7 @@ function ensureExternalProduct(app: SyncContext["app"], channelId: ID, productIn
     existing.status = "active";
     return existing;
   }
-  return app.createExternalProduct({
+  return await app.createExternalProduct({
     channelId,
     externalSku,
     externalName: productInfo.name ?? externalSku,
@@ -792,7 +792,7 @@ async function syncDemo({ app, channelId, syncRunId, streams, autoLinkProducts }
     return { pluginCode: "ozon", channelId, status: "completed", stats: { products: 0, events: 0, stocks: 0, sales: 0, finance_events: 0, payouts: 0 }, errors: [] };
   }
   const existing = app.state.externalProducts.find((candidate) => candidate.channelId === channelId && candidate.externalSku === `OZON-${product.sku}`);
-  const external = existing ?? app.createExternalProduct({
+  const external = existing ?? await app.createExternalProduct({
     channelId,
     externalSku: `OZON-${product.sku}`,
     externalName: `${product.name} / карточка Ozon`
@@ -800,7 +800,7 @@ async function syncDemo({ app, channelId, syncRunId, streams, autoLinkProducts }
   // Onboarding import passes autoLinkProducts:false — observe the card/stock but leave mapping
   // to an explicit user decision. Ongoing syncs (undefined/true) keep auto-linking.
   if (autoLinkProducts !== false && !app.state.productExternalLinks.some((link) => link.externalProductId === external.id && link.productId === product.id && link.status === "active")) {
-    app.linkExternalProduct({ externalProductId: external.id, productId: product.id });
+    await app.linkExternalProduct({ externalProductId: external.id, productId: product.id });
   }
   await app.recordObservedStock({
     channelId,

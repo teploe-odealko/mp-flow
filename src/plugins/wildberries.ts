@@ -15,12 +15,12 @@ export const wildberriesPlugin: MarketplacePlugin = {
     if (!product) {
       return { pluginCode: "wildberries", channelId, status: "completed", stats: { products: 0, events: 0, stocks: 0 }, errors: [] };
     }
-    const external = app.createExternalProduct({
+    const external = await app.createExternalProduct({
       channelId,
       externalSku: `WB-${product.sku}`,
       externalName: `${product.name} / карточка WB`
     });
-    app.linkExternalProduct({ externalProductId: external.id, productId: product.id });
+    await app.linkExternalProduct({ externalProductId: external.id, productId: product.id });
     await app.recordObservedStock({
       channelId,
       externalProductId: external.id,

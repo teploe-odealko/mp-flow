@@ -140,7 +140,7 @@ describe("prod-ready contracts", () => {
     resetIds();
     const app = new AccountingApp();
     app.bootstrap({ displayName: "Creds", accountingStartDate: "2026-01-01" });
-    const channel = app.createSalesChannel({ name: "Ozon", channelType: "marketplace", pluginCode: "ozon" });
+    const channel = await app.createSalesChannel({ name: "Ozon", channelType: "marketplace", pluginCode: "ozon" });
     app.saveChannelCredentials(channel.id, { clientId: "client", apiKey: "key" });
 
     const restored = new AccountingApp(app.state);
@@ -162,7 +162,7 @@ describe("prod-ready contracts", () => {
       warehouseId: warehouse?.id,
       lines: [{ productId: product.id, qty: 2, costRub: 500 }]
     });
-    const channel = app.createSalesChannel({ name: "Ozon DB", channelType: "marketplace", pluginCode: "ozon" });
+    const channel = await app.createSalesChannel({ name: "Ozon DB", channelType: "marketplace", pluginCode: "ozon" });
     app.saveChannelCredentials(channel.id, { clientId: "client-secret", apiKey: "api-secret" });
 
     const rows = exportRuntimeEntities(app.state);

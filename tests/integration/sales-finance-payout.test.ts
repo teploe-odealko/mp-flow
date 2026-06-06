@@ -130,8 +130,8 @@ describe("sales, returns, finance events and payouts", () => {
       lines: [{ productId: product.id, qty: 5 }]
     });
 
-    const externalProduct = app.createExternalProduct({ channelId: channel.id, externalSku: "EXT-SALE-DEL-1", externalName: "Внешний товар" });
-    app.linkExternalProduct({ externalProductId: externalProduct.id, productId: product.id });
+    const externalProduct = await app.createExternalProduct({ channelId: channel.id, externalSku: "EXT-SALE-DEL-1", externalName: "Внешний товар" });
+    await app.linkExternalProduct({ externalProductId: externalProduct.id, productId: product.id });
 
     const saleEvent = await app.ingestExternalEvent({
       channelId: channel.id,
@@ -219,8 +219,8 @@ describe("sales, returns, finance events and payouts", () => {
       lines: [{ productId: product.id, qty: 5 }]
     });
 
-    const externalProduct = app.createExternalProduct({ channelId: channel.id, externalSku: "EXT-RET-DEL-1", externalName: "Внешний товар" });
-    app.linkExternalProduct({ externalProductId: externalProduct.id, productId: product.id });
+    const externalProduct = await app.createExternalProduct({ channelId: channel.id, externalSku: "EXT-RET-DEL-1", externalName: "Внешний товар" });
+    await app.linkExternalProduct({ externalProductId: externalProduct.id, productId: product.id });
 
     const saleEvent = await app.ingestExternalEvent({
       channelId: channel.id,
@@ -294,8 +294,8 @@ describe("sales, returns, finance events and payouts", () => {
       lines: [{ productId: product.id, qty: 5 }]
     });
 
-    const externalProduct = app.createExternalProduct({ channelId: channel.id, externalSku: "EXT-RET-PNL-1", externalName: "Внешний товар" });
-    app.linkExternalProduct({ externalProductId: externalProduct.id, productId: product.id });
+    const externalProduct = await app.createExternalProduct({ channelId: channel.id, externalSku: "EXT-RET-PNL-1", externalName: "Внешний товар" });
+    await app.linkExternalProduct({ externalProductId: externalProduct.id, productId: product.id });
 
     const saleEvent = await app.ingestExternalEvent({
       channelId: channel.id,

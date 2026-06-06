@@ -6,8 +6,8 @@ async function setupPurchase() {
   resetIds();
   const app = new AccountingApp();
   app.bootstrap({ displayName: "Тест", accountingStartDate: "2026-06-01" });
-  const product = app.createProduct({ sku: "SKU-1", name: "Товар" });
-  const supplier = app.createCounterparty({ name: "Supplier", counterpartyType: "supplier" });
+  const product = await app.createProduct({ sku: "SKU-1", name: "Товар" });
+  const supplier = await app.createCounterparty({ name: "Supplier", counterpartyType: "supplier" });
   await app.recordOwnerContribution({ amountRub: 200_000, paidAt: "2026-06-01" });
   const po = await app.createPurchaseOrder({
     supplierId: supplier.id,

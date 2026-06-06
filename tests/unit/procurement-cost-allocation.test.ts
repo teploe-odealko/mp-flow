@@ -6,9 +6,9 @@ async function setupTwoProductReceipt() {
   resetIds();
   const app = new AccountingApp();
   app.bootstrap({ displayName: "Landed cost", accountingStartDate: "2026-01-01" });
-  const light = app.createProduct({ sku: "LIGHT", name: "Легкий товар", weightGrams: 100 });
-  const heavy = app.createProduct({ sku: "HEAVY", name: "Тяжелый товар", weightGrams: 300 });
-  const supplier = app.createCounterparty({ name: "Supplier", counterpartyType: "supplier" });
+  const light = await app.createProduct({ sku: "LIGHT", name: "Легкий товар", weightGrams: 100 });
+  const heavy = await app.createProduct({ sku: "HEAVY", name: "Тяжелый товар", weightGrams: 300 });
+  const supplier = await app.createCounterparty({ name: "Supplier", counterpartyType: "supplier" });
   await app.recordOwnerContribution({ amountRub: 100_000, paidAt: "2026-01-01" });
   const order = await app.createPurchaseOrder({
     supplierId: supplier.id,
@@ -73,8 +73,8 @@ describe("procurement landed cost allocation", () => {
     resetIds();
     const app = new AccountingApp();
     app.bootstrap({ displayName: "No weight", accountingStartDate: "2026-01-01" });
-    const product = app.createProduct({ sku: "NO-WEIGHT", name: "Без веса" });
-    const supplier = app.createCounterparty({ name: "Supplier", counterpartyType: "supplier" });
+    const product = await app.createProduct({ sku: "NO-WEIGHT", name: "Без веса" });
+    const supplier = await app.createCounterparty({ name: "Supplier", counterpartyType: "supplier" });
     const order = await app.createPurchaseOrder({
       supplierId: supplier.id,
       destinationWarehouseId: app.state.warehouses[0].id,

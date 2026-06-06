@@ -382,7 +382,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/products", (c) => c.json({ ok: true, data: scopedApp.state.products }));
   api.post("/api/products", async (c) => {
     const body = productSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.createProduct(body) });
+    return c.json({ ok: true, data: await scopedApp.createProduct(body) });
   });
   api.get("/api/products/channel-mapping", (c) => c.json({ ok: true, data: { externalProducts: scopedApp.state.externalProducts, links: scopedApp.state.productExternalLinks, products: scopedApp.state.products, channels: scopedApp.state.salesChannels } }));
   api.get("/api/products/:id", async (c) => c.json({ ok: true, data: await scopedApp.productDetails(c.req.param("id")) }));
@@ -553,7 +553,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/warehouses", (c) => c.json({ ok: true, data: scopedApp.state.warehouses }));
   api.post("/api/warehouses", async (c) => {
     const body = warehouseSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.createWarehouse(body) });
+    return c.json({ ok: true, data: await scopedApp.createWarehouse(body) });
   });
   api.get("/api/inventory", async (c) => c.json({ ok: true, data: { stock: await scopedApp.stockByProduct(), lots: scopedApp.state.inventoryLots, movements: scopedApp.state.stockMovements } }));
   api.get("/api/stock-states", (c) => c.json({ ok: true, data: scopedApp.state.stockStates }));
@@ -573,14 +573,14 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/counterparties", (c) => c.json({ ok: true, data: scopedApp.state.counterparties }));
   api.post("/api/counterparties", async (c) => {
     const body = counterpartySchema.parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.createCounterparty(body) });
+    return c.json({ ok: true, data: await scopedApp.createCounterparty(body) });
   });
 
   api.get("/api/procurement/purchase-orders", (c) => c.json({ ok: true, data: { orders: scopedApp.state.purchaseOrders, lines: scopedApp.state.purchaseOrderLines } }));
   api.post("/api/procurement/purchase-orders", async (c) => {
     const body = purchaseOrderSchema.parse(await c.req.json());
     const supplierId = body.supplierId ?? (body.supplierName?.trim()
-      ? scopedApp.createCounterparty({ name: body.supplierName.trim(), counterpartyType: "supplier" }).id
+      ? (await scopedApp.createCounterparty({ name: body.supplierName.trim(), counterpartyType: "supplier" })).id
       : undefined);
     if (!supplierId) {
       throw new DomainError("supplier_required", "Выберите поставщика или укажите название нового поставщика");
@@ -970,12 +970,12 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.post("/api/channels", async (c) => {
     const body = channelSchema.parse(await c.req.json());
-    const channel = scopedApp.createSalesChannel(body);
+    const channel = await scopedApp.createSalesChannel(body);
     return c.json({ ok: true, data: channel });
   });
   api.post("/api/integrations/channels", async (c) => {
     const body = channelSchema.parse(await c.req.json());
-    const channel = scopedApp.createSalesChannel(body);
+    const channel = await scopedApp.createSalesChannel(body);
     return c.json({ ok: true, data: channel });
   });
   api.get("/api/integrations/channels/:id", async (c) => {
@@ -1035,7 +1035,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.patch("/api/integrations/channels/:id", async (c) => {
     const body = channelPatchSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.updateSalesChannel(c.req.param("id"), body) });
+    return c.json({ ok: true, data: await scopedApp.updateSalesChannel(c.req.param("id"), body) });
   });
   api.post("/api/integrations/channels/:id/check", async (c) => {
     const channel = scopedApp.state.salesChannels.find((candidate) => candidate.id === c.req.param("id"));
@@ -1238,16 +1238,16 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.post("/api/channels/:id/external-products", async (c) => {
     const body = externalProductSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.createExternalProduct({ ...body, channelId: c.req.param("id") }) });
+    return c.json({ ok: true, data: await scopedApp.createExternalProduct({ ...body, channelId: c.req.param("id") }) });
   });
   api.get("/api/channels/:id/external-products", (c) => c.json({ ok: true, data: scopedApp.state.externalProducts.filter((product) => product.channelId === c.req.param("id")) }));
   api.post("/api/external-products/:id/link", async (c) => {
     const body = z.object({ productId: z.string() }).parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.linkExternalProduct({ externalProductId: c.req.param("id"), productId: body.productId }) });
+    return c.json({ ok: true, data: await scopedApp.linkExternalProduct({ externalProductId: c.req.param("id"), productId: body.productId }) });
   });
   api.post("/api/products/:productId/external-links", async (c) => {
     const body = z.object({ externalProductId: z.string() }).parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.linkExternalProduct({ externalProductId: body.externalProductId, productId: c.req.param("productId") }) });
+    return c.json({ ok: true, data: await scopedApp.linkExternalProduct({ externalProductId: body.externalProductId, productId: c.req.param("productId") }) });
   });
   api.delete("/api/products/:productId/external-links/:linkId", (c) => {
     const link = scopedApp.state.productExternalLinks.find((candidate) => candidate.id === c.req.param("linkId") && candidate.productId === c.req.param("productId"));
@@ -1255,11 +1255,11 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     link.status = "unlinked";
     return c.json({ ok: true, data: link });
   });
-  api.post("/api/external-products/:id/create-internal-product", (c) => {
+  api.post("/api/external-products/:id/create-internal-product", async (c) => {
     const externalProduct = scopedApp.state.externalProducts.find((candidate) => candidate.id === c.req.param("id"));
     if (!externalProduct) throw new DomainError("external_product_not_found", "Внешний товар не найден");
-    const product = scopedApp.createProduct({ sku: externalProduct.externalSku, name: externalProduct.externalName, imageUrl: externalProduct.imageUrl, unit: "шт" });
-    const link = scopedApp.linkExternalProduct({ externalProductId: externalProduct.id, productId: product.id });
+    const product = await scopedApp.createProduct({ sku: externalProduct.externalSku, name: externalProduct.externalName, imageUrl: externalProduct.imageUrl, unit: "шт" });
+    const link = await scopedApp.linkExternalProduct({ externalProductId: externalProduct.id, productId: product.id });
     return c.json({ ok: true, data: { product, link } });
   });
   api.post("/api/external-products/:id/ignore", (c) => {
@@ -1476,7 +1476,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/finance/expenses", async (c) => {
     const body = operatingExpenseSchema.parse(await c.req.json());
     const counterpartyId = body.counterpartyId ?? (body.counterpartyName?.trim()
-      ? scopedApp.createCounterparty({ name: body.counterpartyName.trim(), counterpartyType: "other" }).id
+      ? (await scopedApp.createCounterparty({ name: body.counterpartyName.trim(), counterpartyType: "other" })).id
       : undefined);
     const { counterpartyName: _counterpartyName, ...payload } = body;
     return c.json({ ok: true, data: await scopedApp.recordOperatingExpense({ ...payload, counterpartyId }) });
@@ -1484,7 +1484,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/expenses", async (c) => {
     const body = operatingExpenseSchema.parse(await c.req.json());
     const counterpartyId = body.counterpartyId ?? (body.counterpartyName?.trim()
-      ? scopedApp.createCounterparty({ name: body.counterpartyName.trim(), counterpartyType: "other" }).id
+      ? (await scopedApp.createCounterparty({ name: body.counterpartyName.trim(), counterpartyType: "other" })).id
       : undefined);
     const { counterpartyName: _counterpartyName, ...payload } = body;
     return c.json({ ok: true, data: await scopedApp.recordOperatingExpense({ ...payload, counterpartyId }) });

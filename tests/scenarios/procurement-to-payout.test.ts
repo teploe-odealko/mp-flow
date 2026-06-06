@@ -8,8 +8,8 @@ describe("full reseller accounting scenario", () => {
     const app = new AccountingApp();
     app.bootstrap({ displayName: "Reseller", accountingStartDate: "2026-06-01" });
 
-    const product = app.createProduct({ sku: "CASE", name: "Чехол", imageUrl: "https://example.test/case.png" });
-    const supplier = app.createCounterparty({ name: "China Supplier", counterpartyType: "supplier", country: "CN" });
+    const product = await app.createProduct({ sku: "CASE", name: "Чехол", imageUrl: "https://example.test/case.png" });
+    const supplier = await app.createCounterparty({ name: "China Supplier", counterpartyType: "supplier", country: "CN" });
     await app.recordOwnerContribution({ amountRub: 300_000, paidAt: "2026-06-01" });
 
     const po = await app.createPurchaseOrder({
@@ -48,7 +48,7 @@ describe("full reseller accounting scenario", () => {
       paidImmediately: true
     });
 
-    const channel = app.createSalesChannel({ name: "Ozon FBO", channelType: "marketplace", pluginCode: "ozon" });
+    const channel = await app.createSalesChannel({ name: "Ozon FBO", channelType: "marketplace", pluginCode: "ozon" });
     await app.transferStock({
       fromWarehouseId: app.state.warehouses[0].id,
       toWarehouseId: channel.salesPointWarehouseId,

@@ -28,7 +28,7 @@ describe("stock transfer workflow api", () => {
     resetIds();
     const app = new AccountingApp();
     app.bootstrap({ displayName: "Transfers", accountingStartDate: "2026-06-01" });
-    const product = app.createProduct({ sku: "TR-1", name: "Товар для перемещения" });
+    const product = await app.createProduct({ sku: "TR-1", name: "Товар для перемещения" });
     const ownWarehouse = app.state.warehouses.find((warehouse) => warehouse.warehouseType === "own");
     const salesPointWarehouse = app.state.warehouses.find((warehouse) => warehouse.warehouseType === "sales_point");
     if (!ownWarehouse || !salesPointWarehouse) throw new Error("warehouses_not_seeded");

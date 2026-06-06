@@ -20,8 +20,8 @@ describe("channel dispatch from goods receipt", () => {
     const ownWarehouse = app.state.warehouses.find((warehouse) => warehouse.warehouseType === "own");
     if (!ownWarehouse) throw new Error("own_warehouse_missing");
 
-    const product = app.createProduct({ sku: "DSP-1", name: "Товар для Ozon", weightGrams: 100 });
-    const supplier = app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
+    const product = await app.createProduct({ sku: "DSP-1", name: "Товар для Ozon", weightGrams: 100 });
+    const supplier = await app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
     const order = await app.createPurchaseOrder({
       supplierId: supplier.id,
       destinationWarehouseId: ownWarehouse.id,
@@ -39,9 +39,9 @@ describe("channel dispatch from goods receipt", () => {
       lines: [{ purchaseOrderLineId: orderLine.id, qtyReceived: 10 }]
     });
     const receiptLine = app.state.goodsReceiptLines.find((line) => line.goodsReceiptId === receipt.id)!;
-    const channel = app.createSalesChannel({ name: "Ozon FBO", channelType: "marketplace", pluginCode: "ozon" });
-    const external = app.createExternalProduct({ channelId: channel.id, externalSku: "OZON-DSP-1", externalName: "Товар Ozon" });
-    app.linkExternalProduct({ externalProductId: external.id, productId: product.id });
+    const channel = await app.createSalesChannel({ name: "Ozon FBO", channelType: "marketplace", pluginCode: "ozon" });
+    const external = await app.createExternalProduct({ channelId: channel.id, externalSku: "OZON-DSP-1", externalName: "Товар Ozon" });
+    await app.linkExternalProduct({ externalProductId: external.id, productId: product.id });
 
     const api = createApi(app);
     const planResponse = await request<any>(api, "POST", `/api/procurement/receipts/${receipt.id}/channel-dispatch/plan`, {

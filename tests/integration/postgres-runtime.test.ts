@@ -177,8 +177,8 @@ describePostgres("postgres runtime store", () => {
       const workspaceA = await store.openWriteSession?.("workspace_a");
       try {
         if (!workspaceA) throw new Error("workspace_a_session_missing");
-        workspaceA.app.bootstrap({ displayName: "Tenant A", accountingStartDate: "2026-01-01" });
-        workspaceA.app.createProduct({ sku: "A-001", name: "Товар A" });
+        await workspaceA.app.bootstrap({ displayName: "Tenant A", accountingStartDate: "2026-01-01" });
+        await workspaceA.app.createProduct({ sku: "A-001", name: "Товар A" });
         await workspaceA.commit?.();
       } finally {
         await workspaceA?.close?.();
@@ -187,8 +187,8 @@ describePostgres("postgres runtime store", () => {
       const workspaceB = await store.openWriteSession?.("workspace_b");
       try {
         if (!workspaceB) throw new Error("workspace_b_session_missing");
-        workspaceB.app.bootstrap({ displayName: "Tenant B", accountingStartDate: "2026-01-01" });
-        workspaceB.app.createProduct({ sku: "B-001", name: "Товар B" });
+        await workspaceB.app.bootstrap({ displayName: "Tenant B", accountingStartDate: "2026-01-01" });
+        await workspaceB.app.createProduct({ sku: "B-001", name: "Товар B" });
         await workspaceB.commit?.();
       } finally {
         await workspaceB?.close?.();

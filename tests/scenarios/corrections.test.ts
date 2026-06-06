@@ -58,8 +58,8 @@ describe("corrections", () => {
     resetIds();
     const app = new AccountingApp();
     app.bootstrap({ displayName: "Коррекции", accountingStartDate: "2026-06-01" });
-    const product = app.createProduct({ sku: "A", name: "A" });
-    const supplier = app.createCounterparty({ name: "Supplier", counterpartyType: "supplier" });
+    const product = await app.createProduct({ sku: "A", name: "A" });
+    const supplier = await app.createCounterparty({ name: "Supplier", counterpartyType: "supplier" });
     await app.recordOwnerContribution({ amountRub: 200_000, paidAt: "2026-06-01" });
     const po = await app.createPurchaseOrder({
       supplierId: supplier.id,

@@ -142,7 +142,7 @@ describe("MPFlow api surface", () => {
   it("lets documented-flow onboarding finish without cost or stock postings", async () => {
     const { app, api } = makeApi();
     await post(api, "/api/setup", { displayName: "ИП Документы", accountingStartDate: "2026-05-01", confirmHistoricalStart: true });
-    const product = app.createProduct({ sku: "DOC-FLOW-1", name: "Товар под документы" });
+    const product = await app.createProduct({ sku: "DOC-FLOW-1", name: "Товар под документы" });
 
     const project = await post<any>(api, "/api/onboarding/existing-store/projects", {
       name: "QA полный документооборот",
@@ -178,8 +178,8 @@ describe("MPFlow api surface", () => {
     const { app, api } = makeApi();
     await post(api, "/api/setup", { displayName: "ИП Снимок", accountingStartDate: "2026-05-01", confirmHistoricalStart: true });
 
-    const channel = app.createSalesChannel({ name: "Канал снимков", channelType: "marketplace" });
-    const external = app.createExternalProduct({ channelId: channel.id, externalSku: "SNAP-1", externalName: "Товар со снимком" });
+    const channel = await app.createSalesChannel({ name: "Канал снимков", channelType: "marketplace" });
+    const external = await app.createExternalProduct({ channelId: channel.id, externalSku: "SNAP-1", externalName: "Товар со снимком" });
 
     // Observed stock is a point-in-time LEVEL, not a flow. Two syncs of the same external
     // product / warehouse write two snapshots; the import must take the latest, never the sum.
@@ -202,9 +202,9 @@ describe("MPFlow api surface", () => {
     const { app, api } = makeApi();
     await post(api, "/api/setup", { displayName: "ИП История", accountingStartDate: "2026-05-01", confirmHistoricalStart: true });
 
-    const product = app.createProduct({ sku: "HIST-SKU-1", name: "Товар с историей" });
-    const channel = app.createSalesChannel({ name: "Ozon история", channelType: "marketplace" });
-    const external = app.createExternalProduct({ channelId: channel.id, externalSku: "HIST-SKU-1", externalName: "Карточка Ozon" });
+    const product = await app.createProduct({ sku: "HIST-SKU-1", name: "Товар с историей" });
+    const channel = await app.createSalesChannel({ name: "Ozon история", channelType: "marketplace" });
+    const external = await app.createExternalProduct({ channelId: channel.id, externalSku: "HIST-SKU-1", externalName: "Карточка Ozon" });
     const syncRunId = "sync_historical_january";
     await app.recordObservedStock({
       channelId: channel.id,
@@ -460,8 +460,8 @@ describe("MPFlow api surface", () => {
   it("returns descendants and blocks document changes while dependents exist", async () => {
     const { app, api } = makeApi();
     app.bootstrap({ displayName: "Document descendants", accountingStartDate: "2026-06-01" });
-    const product = app.createProduct({ sku: "DESC-1", name: "Товар для связей" });
-    const supplier = app.createCounterparty({ name: "Поставщик связей", counterpartyType: "supplier" });
+    const product = await app.createProduct({ sku: "DESC-1", name: "Товар для связей" });
+    const supplier = await app.createCounterparty({ name: "Поставщик связей", counterpartyType: "supplier" });
     const order = await app.createPurchaseOrder({
       supplierId: supplier.id,
       destinationWarehouseId: app.state.warehouses[0].id,

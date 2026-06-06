@@ -11,7 +11,7 @@ describe("FIFO ledger", () => {
       accountingStartDate: "2026-06-01"
     });
 
-    const product = app.createProduct({ sku: "FIFO-001", name: "FIFO товар", unit: "шт" });
+    const product = await app.createProduct({ sku: "FIFO-001", name: "FIFO товар", unit: "шт" });
     const warehouseId = app.state.warehouses.find((warehouse) => warehouse.warehouseType === "own")!.id;
 
     await app.createOpeningBalance({
@@ -55,7 +55,7 @@ describe("FIFO ledger", () => {
       accountingStartDate: "2026-06-01"
     });
 
-    const product = app.createProduct({ sku: "FIFO-001", name: "FIFO товар", unit: "шт" });
+    const product = await app.createProduct({ sku: "FIFO-001", name: "FIFO товар", unit: "шт" });
     const warehouseId = app.state.warehouses.find((warehouse) => warehouse.warehouseType === "own")!.id;
 
     await app.createOpeningBalance({

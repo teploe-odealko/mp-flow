@@ -26,9 +26,9 @@ describe("channel mapping api", () => {
     resetIds();
     const app = new AccountingApp();
     app.bootstrap({ displayName: "Mapping", accountingStartDate: "2026-06-01" });
-    const internal = app.createProduct({ sku: "MAP-1", name: "Ручной товар" });
-    const channel = app.createSalesChannel({ name: "Ozon", channelType: "marketplace" });
-    const external = app.createExternalProduct({
+    const internal = await app.createProduct({ sku: "MAP-1", name: "Ручной товар" });
+    const channel = await app.createSalesChannel({ name: "Ozon", channelType: "marketplace" });
+    const external = await app.createExternalProduct({
       channelId: channel.id,
       externalSku: "MAP-1",
       externalName: "Внешний товар",
@@ -40,7 +40,7 @@ describe("channel mapping api", () => {
     expect(link.productId).toBe(internal.id);
     expect(app.state.productExternalLinks).toHaveLength(1);
 
-    const secondExternal = app.createExternalProduct({
+    const secondExternal = await app.createExternalProduct({
       channelId: channel.id,
       externalSku: "MAP-2",
       externalName: "Новый товар из канала",
