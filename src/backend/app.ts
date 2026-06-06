@@ -196,6 +196,12 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   // Классические репозитории (getPool) доступны только при реальном Postgres (DATABASE_URL).
   // В тестах без БД — fallback на in-memory snapshot. Переходный признак на время переезда.
   const postgresBacked = () => Boolean(process.env.DATABASE_URL);
+  const readModelAppFor = async (c: Context) => {
+    const workspaceId = eventsWorkspaceId(c);
+    if (options.persistence?.openReadModelApp) return await options.persistence.openReadModelApp(workspaceId);
+    if (postgresBacked()) return await openPostgresReadModelApp(getPool(), workspaceId);
+    return app;
+  };
   api.get("/api/integrations/events", async (c) => {
     const channelId = c.req.query("channelId");
     const status = c.req.query("status");
@@ -244,14 +250,14 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
 
   api.get("/api/dashboard", async (c) => {
-    const workspaceId = eventsWorkspaceId(c);
-    const readModelApp = options.persistence?.openReadModelApp
-      ? await options.persistence.openReadModelApp(workspaceId)
-      : postgresBacked()
-        ? await openPostgresReadModelApp(getPool(), workspaceId)
-        : app;
-    return c.json({ ok: true, data: await readModelApp.dashboard() });
+    return c.json({ ok: true, data: await (await readModelAppFor(c)).dashboard() });
   });
+  api.get("/api/reports", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).reports() }));
+  api.get("/api/reports/profit-and-loss", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).reports()).pnl }));
+  api.get("/api/reports/balance-sheet", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).reports()).balanceSheet }));
+  api.get("/api/reports/cash-flow", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).reports()).cashFlow }));
+  api.get("/api/reports/unit-economics", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).reports()).unitEconomics }));
+  api.get("/api/reports/inventory", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).reports()).inventory }));
 
   api.use("/api/*", async (c, next) => {
     const authUser = c.get("authUser") as PublicAuthUser | undefined;
@@ -303,12 +309,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.get("/api/meta/navigation", (c) => c.json({ ok: true, data: navigationMeta }));
 
-  api.get("/api/reports", async (c) => c.json({ ok: true, data: await scopedApp.reports() }));
-  api.get("/api/reports/profit-and-loss", async (c) => c.json({ ok: true, data: (await scopedApp.reports()).pnl }));
-  api.get("/api/reports/balance-sheet", async (c) => c.json({ ok: true, data: (await scopedApp.reports()).balanceSheet }));
-  api.get("/api/reports/cash-flow", async (c) => c.json({ ok: true, data: (await scopedApp.reports()).cashFlow }));
-  api.get("/api/reports/unit-economics", async (c) => c.json({ ok: true, data: (await scopedApp.reports()).unitEconomics }));
-  api.get("/api/reports/inventory", async (c) => c.json({ ok: true, data: (await scopedApp.reports()).inventory }));
   api.get("/api/reports/drilldown", (c) => {
     const documentId = c.req.query("documentId");
     return c.json({ ok: true, data: { document: scopedApp.state.documents.find((document) => document.id === documentId), journalEntries: scopedApp.state.journalEntries.filter((entry) => entry.documentId === documentId), stockMovements: scopedApp.state.stockMovements.filter((movement) => movement.documentId === documentId) } });

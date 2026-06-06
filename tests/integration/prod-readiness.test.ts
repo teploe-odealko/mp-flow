@@ -131,11 +131,13 @@ describe("prod-ready contracts", () => {
 
     const organization = await get<any>(api, "/api/collections/organization");
     const dashboard = await get<any>(api, "/api/dashboard");
+    const reports = await get<any>(api, "/api/reports");
 
     expect(organization.displayName).toBe("ИП Иванов");
     expect(dashboard.configured).toBe(true);
+    expect(reports.pnl.revenue).toBeGreaterThan(0);
     expect(collectionReads).toBe(1);
-    expect(readModelApps).toBe(1);
+    expect(readModelApps).toBe(2);
     expect(readSessions).toBe(0);
   });
 
