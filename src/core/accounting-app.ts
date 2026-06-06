@@ -3069,7 +3069,7 @@ export class AccountingApp {
     }
     const warehouse = this.mustFind(this.state.warehouses, salesReturn.warehouseId, "warehouse_not_found");
     const saleLines = (await this.repos.saleLines.all()).filter((line) => line.saleId === sale.id);
-    const returnDocumentLines = this.returnDocumentLines(salesReturn.id);
+    const returnDocumentLines = await this.returnDocumentLines(salesReturn.id);
     if (returnDocumentLines.length === 0) {
       throw new DomainError("return_lines_not_found", "Для возврата не найдены строки");
     }
@@ -5876,9 +5876,9 @@ export class AccountingApp {
     }).filter((target) => target.basisValue > 0);
   }
 
-  private returnDocumentLines(returnId: ID) {
-    const salesReturn = this.mustFind(this.state.salesReturns, returnId, "return_not_found");
-    return this.state.documentLines.filter((line) => line.documentId === salesReturn.documentId && line.lineType === "sales_return_line");
+  private async returnDocumentLines(returnId: ID) {
+    const salesReturn = this.mustFind(await this.repos.salesReturns.all(), returnId, "return_not_found");
+    return (await this.repos.documentLines.all()).filter((line) => line.documentId === salesReturn.documentId && line.lineType === "sales_return_line");
   }
 
   private returnedQtyForSaleLine(saleLineId: ID, excludeReturnId?: ID): number {
