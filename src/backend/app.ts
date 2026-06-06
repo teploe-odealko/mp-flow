@@ -1264,7 +1264,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.post("/api/channels/:id/observed-stock", async (c) => {
     const body = observedStockSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.recordObservedStock({ ...body, channelId: c.req.param("id") }) });
+    return c.json({ ok: true, data: await scopedApp.recordObservedStock({ ...body, channelId: c.req.param("id") }) });
   });
   api.post("/api/integrations/events/:id/reprocess", async (c) => {
     return c.json({ ok: true, data: await scopedApp.reprocessExternalEvent(c.req.param("id")) });

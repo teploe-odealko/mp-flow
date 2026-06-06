@@ -54,6 +54,7 @@ import type {
 } from "./models";
 import { assertNonNegative, assertPositive, createEmptyState, DomainError, id, monthPeriods, nowIso, round2, round4, round6 } from "./utils";
 import { InMemoryExternalEventStore, type ExternalEventStore } from "./external-event-store";
+import { InMemoryObservedStockStore, type ObservedStockStore } from "./observed-stock-store";
 
 export interface BootstrapInput {
   displayName: string;
@@ -181,6 +182,7 @@ export class AccountingApp {
    * в Postgres-рантайме сюда инжектится репозиторий, и события не живут в snapshot.
    */
   externalEvents: ExternalEventStore;
+  observedStocks: ObservedStockStore;
   private pendingExternalEventUpdates = new Map<ID, Partial<ExternalEvent>>();
   private saleLookup?: {
     exact: Map<string, Sale>;
@@ -190,6 +192,7 @@ export class AccountingApp {
   constructor(state: AccountingState = createEmptyState()) {
     this.state = state;
     this.externalEvents = new InMemoryExternalEventStore(this.state.externalEvents);
+    this.observedStocks = new InMemoryObservedStockStore(this.state.observedStocks);
     this.ensureRequiredSystemMetadata();
   }
 
@@ -1792,7 +1795,7 @@ export class AccountingApp {
     return event;
   }
 
-  recordObservedStock(input: {
+  async recordObservedStock(input: {
     channelId: ID;
     externalProductId: ID;
     observedAt: string;
@@ -1801,16 +1804,12 @@ export class AccountingApp {
     const link = this.findActiveLink(input.externalProductId);
     const channel = this.mustFind(this.state.salesChannels, input.channelId, "channel_not_found");
     const warehouseId = channel.salesPointWarehouseId;
-    const existing = this.state.observedStocks.find((candidate) =>
-      candidate.channelId === input.channelId &&
-      candidate.externalProductId === input.externalProductId &&
-      candidate.warehouseId === warehouseId &&
-      candidate.observedAt === input.observedAt
-    );
+    const existing = await this.observedStocks.findByKey(input.channelId, input.externalProductId, warehouseId, input.observedAt);
     if (existing) {
       existing.productId = link?.productId;
       existing.qtyObserved = input.qtyObserved;
       existing.locationStatus = warehouseId ? "mapped" : "needs_location";
+      await this.observedStocks.upsert(existing);
       return existing;
     }
     const observed = {
@@ -1824,7 +1823,7 @@ export class AccountingApp {
       qtyObserved: input.qtyObserved,
       locationStatus: warehouseId ? "mapped" as const : "needs_location" as const
     };
-    this.state.observedStocks.push(observed);
+    await this.observedStocks.upsert(observed);
     return observed;
   }
 

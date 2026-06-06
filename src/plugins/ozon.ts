@@ -233,7 +233,7 @@ async function syncRealOzon({ app, channelId, syncRunId, since, credentials, str
         if (wantStocks) {
           for (const stock of productInfo.stocks?.stocks ?? []) {
             const qtyObserved = Number(stock.present ?? 0) - Number(stock.reserved ?? 0);
-            app.recordObservedStock({
+            await app.recordObservedStock({
               channelId,
               externalProductId: externalProduct.id,
               observedAt: finishedAt.toISOString(),
@@ -802,7 +802,7 @@ async function syncDemo({ app, channelId, syncRunId, streams, autoLinkProducts }
   if (autoLinkProducts !== false && !app.state.productExternalLinks.some((link) => link.externalProductId === external.id && link.productId === product.id && link.status === "active")) {
     app.linkExternalProduct({ externalProductId: external.id, productId: product.id });
   }
-  app.recordObservedStock({
+  await app.recordObservedStock({
     channelId,
     externalProductId: external.id,
     observedAt: "2026-06-19T12:00:00.000Z",

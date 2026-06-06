@@ -21,7 +21,7 @@ export const wildberriesPlugin: MarketplacePlugin = {
       externalName: `${product.name} / карточка WB`
     });
     app.linkExternalProduct({ externalProductId: external.id, productId: product.id });
-    app.recordObservedStock({
+    await app.recordObservedStock({
       channelId,
       externalProductId: external.id,
       observedAt: "2026-06-19T12:05:00.000Z",
