@@ -10,8 +10,14 @@
 - ✅ Эндпоинты событий на репозитории, мимо снэпшота — `4736022`.
 - ✅ `auditEvents` полностью вне снэпшота (append-only) — `5b9e9ed`.
 - ✅ `externalEvents`: доменный доступ через async `ExternalEventStore` (find/ingest/
-  reprocess/ignore/saleLookup/reset) + весь pipeline/плагины/роуты на `await` — `23f5c31`
-  (поведение сохранено: in-memory стор оборачивает `state.externalEvents`; всё зелёное).
+  reprocess/ignore/saleLookup/reset) + весь pipeline/плагины/роуты на `await` — `23f5c31`.
+- ✅ **`externalEvents` ВЫНЕСЕН из снэпшота** — Postgres-флип `391225a` + PG-тест: `PostgresExternalEventStore`
+  владеет таблицей `external_event`, инжектится в openRead/WriteSession, `flush` на commit,
+  `externalEvents` в `SNAPSHOT_APPEND_ONLY` (snapshot не грузит/не сохраняет). PG-тест: событие в таблице,
+  `openReadSession().app.state.externalEvents == []`. Перф: не-событийные write больше не грузят 9887 событий.
+  Остаток-полиш — 4 edge-чтения (`historicalEventQty`/`resetOutOfScope`/`refreshExternalReferencesForProduct`/
+  `saleResetExternalEventIds`): мягко деградируют в Postgres (возвращают пусто, не падают), in-memory тесты ок;
+  каждое — небольшой async-каскад (детали ниже в «Остаток»).
 
 ### Остаток по `externalEvents` (механический хвост → выпил из снэпшота)
 - ✅ materialize/payout-роуты читают через `getById` (коммит после `23f5c31`).
