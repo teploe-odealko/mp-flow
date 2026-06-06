@@ -362,7 +362,9 @@ export function SaleCardPage() {
   const journalEntry = (state.journalEntries ?? []).find((candidate: any) => candidate.documentId === sale.documentId);
   const financialDocument = sale.financialDocumentId ? (state.documents ?? []).find((candidate: any) => candidate.id === sale.financialDocumentId) : undefined;
   const financialJournalEntry = sale.financialDocumentId ? (state.journalEntries ?? []).find((candidate: any) => candidate.documentId === sale.financialDocumentId) : undefined;
-  const externalEvent = (state.externalEvents ?? []).find((candidate: any) => candidate.id === sale.externalEventId);
+  const eventsQuery = useQuery({ queryKey: ["events"], queryFn: () => apiGet<any[]>("/api/integrations/events") });
+  const externalEvents = eventsQuery.data ?? [];
+  const externalEvent = externalEvents.find((candidate: any) => candidate.id === sale.externalEventId);
   const financeEvents = (state.channelFinanceEvents ?? [])
     .filter((candidate: any) => channelFinanceAllocatedAmountForSale(candidate, sale.id) > 0)
     .map((candidate: any) => ({
@@ -372,7 +374,6 @@ export function SaleCardPage() {
     }));
   const postedFinanceEvents = financeEvents.filter((candidate: any) => candidate.status === "posted");
   const hasLinkedExpenses = postedFinanceEvents.some((candidate: any) => isExpenseFinanceTreatment(candidate.treatment));
-  const externalEvents = state.externalEvents ?? [];
   const externalEventById = new Map(externalEvents.map((candidate: any) => [candidate.id, candidate]));
   const costApplications = (state.costApplications ?? []).filter((candidate: any) => candidate.outboundDocumentId === sale.documentId);
   const lots = state.inventoryLots ?? [];

@@ -631,8 +631,10 @@ export function SyncInboxPage() {
   const { state } = useAppState();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const events = state.externalEvents ?? [];
-  const observed = state.observedStocks ?? [];
+  const eventsQuery = useQuery({ queryKey: ["events"], queryFn: () => apiGet<any[]>("/api/integrations/events") });
+  const events = eventsQuery.data ?? [];
+  const observedQuery = useQuery({ queryKey: ["observed-stock"], queryFn: () => apiGet<any[]>("/api/integrations/observed-stock") });
+  const observed = observedQuery.data ?? [];
   const channels = state.salesChannels ?? [];
   const externalProducts = state.externalProducts ?? [];
   const products = state.products ?? [];
@@ -905,7 +907,8 @@ export function ChannelFinancePage() {
   const returns = state.salesReturns ?? [];
   const payouts = state.payouts ?? [];
   const documents = state.documents ?? [];
-  const externalEvents = state.externalEvents ?? [];
+  const externalEventsQuery = useQuery({ queryKey: ["events", id], queryFn: () => apiGet<any[]>(`/api/integrations/events?channelId=${id}`), enabled: Boolean(id) });
+  const externalEvents = externalEventsQuery.data ?? [];
   const [eventKind, setEventKind] = useState("");
   const [status, setStatus] = useState("");
   const [linkedSaleOnly, setLinkedSaleOnly] = useState("");
@@ -1121,7 +1124,8 @@ export function FinanceEventCardPage() {
   const returns = state.salesReturns ?? [];
   const payouts = state.payouts ?? [];
   const documents = state.documents ?? [];
-  const externalEvent = (state.externalEvents ?? []).find((candidate: any) => candidate.id === event?.externalEventId);
+  const externalEventQuery = useQuery({ queryKey: ["event", event?.externalEventId], queryFn: () => apiGet<any>(`/api/integrations/events/${event?.externalEventId}`), enabled: Boolean(event?.externalEventId) });
+  const externalEvent = externalEventQuery.data;
   const linkedSale = sales.find((candidate: any) => candidate.id === event?.linkedSaleId);
   const linkedSales = channelFinanceSaleAllocations(event ?? {}).map((allocation) => ({
     allocation,

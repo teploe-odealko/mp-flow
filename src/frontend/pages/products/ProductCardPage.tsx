@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, FileText, ListTree, Package, Pencil, Search, Truck } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ProductCell, ProductThumb } from "@/components/product-thumb";
 import { useAppState } from "@/lib/use-app-state";
-import { apiDelete } from "@/api";
+import { apiDelete, apiGet } from "@/api";
 import { date, qty, rub } from "@/lib/format";
 import { documentStatusLabel, documentStatusTone, movementTypeLabel, stockStateLabel, warehouseTypeLabel } from "@/lib/i18n";
 import { Input } from "@/components/ui/input";
@@ -32,7 +32,8 @@ export function ProductCardPage() {
   const externalProducts = state.externalProducts ?? [];
   const externalLinks = state.productExternalLinks ?? [];
   const salesChannels = state.salesChannels ?? [];
-  const externalEvents = state.externalEvents ?? [];
+  const eventsQuery = useQuery({ queryKey: ["events"], queryFn: () => apiGet<any[]>("/api/integrations/events") });
+  const externalEvents = eventsQuery.data ?? [];
   const queryClient = useQueryClient();
 
   const lots = useMemo(

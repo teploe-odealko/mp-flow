@@ -940,7 +940,8 @@ export function InventoryReconciliationPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
-  const rows = useMemo(() => buildReconciliationRows(state), [state]);
+  const observedStocksQuery = useQuery({ queryKey: ["observed-stock"], queryFn: () => apiGet<any[]>("/api/integrations/observed-stock") });
+  const rows = useMemo(() => buildReconciliationRows({ ...state, observedStocks: observedStocksQuery.data ?? [] }), [state, observedStocksQuery.data]);
   const warehouses = state.warehouses ?? [];
   const filtered = rows.filter((row) => {
     if (warehouseId && row.warehouseId !== warehouseId) return false;
@@ -1116,7 +1117,8 @@ export function StockAdjustmentPage() {
   const { state } = useAppState();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const rows = useMemo(() => buildReconciliationRows(state), [state]);
+  const observedStocksQuery = useQuery({ queryKey: ["observed-stock"], queryFn: () => apiGet<any[]>("/api/integrations/observed-stock") });
+  const rows = useMemo(() => buildReconciliationRows({ ...state, observedStocks: observedStocksQuery.data ?? [] }), [state, observedStocksQuery.data]);
   const row = rows.find((candidate) => candidate.id === id);
   const [accountingDate, setAccountingDate] = useState(row?.observedAt?.slice(0, 10) ?? today());
   const [action, setAction] = useState<"writeoff" | "receipt" | "ignore">(row && row.diffQty > 0 ? "receipt" : "writeoff");

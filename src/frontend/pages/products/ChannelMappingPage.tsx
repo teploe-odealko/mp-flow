@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link2, Plus, RefreshCcw, ShieldOff } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { ProductCell } from "@/components/product-thumb";
 import { useAppState } from "@/lib/use-app-state";
-import { apiDelete, apiPost } from "@/api";
+import { apiDelete, apiGet, apiPost } from "@/api";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 
@@ -22,7 +22,8 @@ export function ChannelMappingPage() {
   const links = state.productExternalLinks ?? [];
   const channels = state.salesChannels ?? [];
   const products = state.products ?? [];
-  const externalEvents = state.externalEvents ?? [];
+  const eventsQuery = useQuery({ queryKey: ["events"], queryFn: () => apiGet<any[]>("/api/integrations/events") });
+  const externalEvents = eventsQuery.data ?? [];
   const focusedExternalProductId = searchParams.get("externalProductId");
   const initialSearch = searchParams.get("search") ?? "";
   const [channelFilter, setChannelFilter] = useState("");
