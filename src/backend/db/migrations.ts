@@ -21,5 +21,17 @@ export const migrations: Migration[] = [
       create index if not exists external_event_channel_occurred_idx
         on external_event (workspace_id, channel_id, occurred_at);
     `
+  },
+  {
+    id: "0002",
+    name: "external_event_repository_json_indexes",
+    sql: `
+      create index if not exists external_event_ws_chan_ext_idx
+        on external_event (workspace_id, (state_json->>'channelId'), external_id);
+      create index if not exists external_event_ws_chan_status_idx
+        on external_event (workspace_id, (state_json->>'channelId'), status);
+      create index if not exists external_event_ws_id_idx
+        on external_event (workspace_id, (state_json->>'id'));
+    `
   }
 ];
