@@ -27,7 +27,7 @@ import { Select } from "@/components/ui/select";
 import { CheckLabel } from "@/components/ui/checkbox";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Pagination } from "@/components/ui/pagination";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { apiPost } from "@/api";
 import { rub, date } from "@/lib/format";
 import { cn } from "@/lib/cn";
@@ -43,7 +43,7 @@ import {
 
 export function ReportsWorkspace() {
   const { pathname } = useLocation();
-  const { state } = useAppState();
+  const state = { channelFinanceEvents: useCollection<any[]>("channelFinanceEvents") ?? [], chartAccounts: useCollection<any[]>("chartAccounts") ?? [], documents: useCollection<any[]>("documents") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], journalLines: useCollection<any[]>("journalLines") ?? [], operatingExpenses: useCollection<any[]>("operatingExpenses") ?? [], ownerTransactions: useCollection<any[]>("ownerTransactions") ?? [], products: useCollection<any[]>("products") ?? [], saleLines: useCollection<any[]>("saleLines") ?? [], sales: useCollection<any[]>("sales") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [] };
   const [dateFrom, setDateFrom] = useState(firstDayOfMonth(new Date()));
   const [dateTo, setDateTo] = useState(lastDayOfMonth(new Date()));
   const [balanceDate, setBalanceDate] = useState(lastDayOfMonth(new Date()));

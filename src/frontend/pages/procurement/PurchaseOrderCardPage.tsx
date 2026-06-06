@@ -14,7 +14,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Field, Input, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { ProductCell } from "@/components/product-thumb";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { apiDelete, apiGet, apiPost } from "@/api";
 import { rub, qty, date, dateTime } from "@/lib/format";
 import {
@@ -31,7 +31,7 @@ import { EntityDeleteDialog, type EntityRollbackPreview } from "@/components/ent
 export function PurchaseOrderCardPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { state } = useAppState();
+  const state = { accountingPolicy: useCollection<any>("accountingPolicy"), counterparties: useCollection<any[]>("counterparties") ?? [], documentVersions: useCollection<any[]>("documentVersions") ?? [], documents: useCollection<any[]>("documents") ?? [], goodsReceiptLines: useCollection<any[]>("goodsReceiptLines") ?? [], goodsReceipts: useCollection<any[]>("goodsReceipts") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], paymentAllocations: useCollection<any[]>("paymentAllocations") ?? [], payments: useCollection<any[]>("payments") ?? [], procurementCostLines: useCollection<any[]>("procurementCostLines") ?? [], procurementCosts: useCollection<any[]>("procurementCosts") ?? [], products: useCollection<any[]>("products") ?? [], purchaseOrderLines: useCollection<any[]>("purchaseOrderLines") ?? [], purchaseOrders: useCollection<any[]>("purchaseOrders") ?? [], shortageResolutionLines: useCollection<any[]>("shortageResolutionLines") ?? [], shortageResolutions: useCollection<any[]>("shortageResolutions") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
   const queryClient = useQueryClient();
   const order = (state.purchaseOrders ?? []).find((candidate: any) => candidate.id === id);
   if (!order) return null;
