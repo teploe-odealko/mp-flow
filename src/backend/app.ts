@@ -977,7 +977,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       credentialStatus: scopedApp.channelCredentialStatus(channel.id),
       warehouse: scopedApp.state.warehouses.find((warehouse) => warehouse.id === channel.salesPointWarehouseId),
       plugin: plugin ? serializePluginMeta(plugin) : null,
-      syncRuns: scopedApp.state.syncRuns.filter((run) => run.channelId === channel.id).slice(-20).reverse(),
+      syncRuns: (await scopedApp.syncRuns.listByChannel(channel.id)).slice(-20).reverse(),
       counts: {
         externalProducts: scopedApp.state.externalProducts.filter((ep) => ep.channelId === channel.id).length,
         observedStocks: observedStocksCount,
@@ -1121,7 +1121,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       streamRuns: []
     };
     syncRun.streamRuns = initSyncRunStreams(syncRun.id, selectedStreams, startedAt);
-    scopedApp.state.syncRuns.push(syncRun);
+    await scopedApp.syncRuns.upsert(syncRun);
     const baseline = await captureSyncRunBaseline(scopedApp, channel.id);
     const plugin = pluginRegistry.get(installedPlugin.code);
     const credentials = body.credentials ?? scopedApp.credentialsForChannel(channel.id);
@@ -1190,16 +1190,17 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       channel.status = "error";
       channel.lastError = message;
     }
+    await scopedApp.syncRuns.upsert(syncRun);
     return c.json({ ok: true, data: syncRun });
   });
-  api.get("/api/integrations/channels/:id/sync-runs", (c) => c.json({ ok: true, data: scopedApp.state.syncRuns.filter((run) => run.channelId === c.req.param("id")) }));
-  api.get("/api/integrations/sync-runs/:id", (c) => {
-    const run = scopedApp.state.syncRuns.find((candidate) => candidate.id === c.req.param("id"));
+  api.get("/api/integrations/channels/:id/sync-runs", async (c) => c.json({ ok: true, data: await scopedApp.syncRuns.listByChannel(c.req.param("id")) }));
+  api.get("/api/integrations/sync-runs/:id", async (c) => {
+    const run = await scopedApp.syncRuns.getById(c.req.param("id"));
     if (!run) throw new DomainError("sync_run_not_found", "Запуск синхронизации не найден");
     return c.json({ ok: true, data: run });
   });
-  api.post("/api/integrations/sync-runs/:id/cancel", (c) => {
-    const run = scopedApp.state.syncRuns.find((candidate) => candidate.id === c.req.param("id"));
+  api.post("/api/integrations/sync-runs/:id/cancel", async (c) => {
+    const run = await scopedApp.syncRuns.getById(c.req.param("id"));
     if (!run) throw new DomainError("sync_run_not_found", "Запуск синхронизации не найден");
     run.status = "cancelled";
     run.finishedAt = nowIso();
@@ -1220,6 +1221,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       errors: run.streamRuns?.reduce((sum, item) => sum + item.errorCount, 0) ?? 0,
       durationMs: durationMs(run.startedAt, run.finishedAt)
     };
+    await scopedApp.syncRuns.upsert(run);
     return c.json({ ok: true, data: run });
   });
   api.post("/api/channels/:id/external-products", async (c) => {

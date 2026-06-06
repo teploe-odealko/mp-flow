@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -32,7 +32,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Kpi } from "@/components/ui/kpi";
 import { Pagination } from "@/components/ui/pagination";
 import { useAppState } from "@/lib/use-app-state";
-import { apiDelete, apiPost } from "@/api";
+import { apiDelete, apiGet, apiPost } from "@/api";
 import { channelTypeLabel, eventKindLabel, eventStatusLabel, observedLocationStatusLabel } from "@/lib/i18n";
 import { rub, date, dateTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
@@ -379,8 +379,12 @@ export function ChannelSyncPage() {
   const { state } = useAppState();
   const queryClient = useQueryClient();
   const channel = (state.salesChannels ?? []).find((candidate: any) => candidate.id === id);
-  const runs = (state.syncRuns ?? [])
-    .filter((candidate: any) => candidate.channelId === id)
+  const runsQuery = useQuery({
+    queryKey: ["sync-runs", id],
+    queryFn: () => apiGet<any[]>(`/api/integrations/channels/${id}/sync-runs`),
+    enabled: Boolean(id)
+  });
+  const runs = (runsQuery.data ?? [])
     .slice()
     .sort((left: any, right: any) => String(right.startedAt ?? "").localeCompare(String(left.startedAt ?? "")));
   const [mode, setMode] = useState<"incremental" | "full" | "backfill">("incremental");

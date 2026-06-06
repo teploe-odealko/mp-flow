@@ -183,8 +183,8 @@ describe("MPFlow api surface", () => {
 
     // Observed stock is a point-in-time LEVEL, not a flow. Two syncs of the same external
     // product / warehouse write two snapshots; the import must take the latest, never the sum.
-    app.recordObservedStock({ channelId: channel.id, externalProductId: external.id, observedAt: "2026-05-01T10:00:00.000Z", qtyObserved: 10 });
-    app.recordObservedStock({ channelId: channel.id, externalProductId: external.id, observedAt: "2026-05-02T10:00:00.000Z", qtyObserved: 8 });
+    await app.recordObservedStock({ channelId: channel.id, externalProductId: external.id, observedAt: "2026-05-01T10:00:00.000Z", qtyObserved: 10 });
+    await app.recordObservedStock({ channelId: channel.id, externalProductId: external.id, observedAt: "2026-05-02T10:00:00.000Z", qtyObserved: 8 });
     expect(app.state.observedStocks).toHaveLength(2);
 
     const project = await post<any>(api, "/api/onboarding/existing-store/projects", {
@@ -206,7 +206,7 @@ describe("MPFlow api surface", () => {
     const channel = app.createSalesChannel({ name: "Ozon история", channelType: "marketplace" });
     const external = app.createExternalProduct({ channelId: channel.id, externalSku: "HIST-SKU-1", externalName: "Карточка Ozon" });
     const syncRunId = "sync_historical_january";
-    app.recordObservedStock({
+    await app.recordObservedStock({
       channelId: channel.id,
       externalProductId: external.id,
       observedAt: "2026-05-30T10:00:00.000Z",

@@ -55,6 +55,7 @@ import type {
 import { assertNonNegative, assertPositive, createEmptyState, DomainError, id, monthPeriods, nowIso, round2, round4, round6 } from "./utils";
 import { InMemoryExternalEventStore, type ExternalEventStore } from "./external-event-store";
 import { InMemoryObservedStockStore, type ObservedStockStore } from "./observed-stock-store";
+import { InMemorySyncRunStore, type SyncRunStore } from "./sync-run-store";
 
 export interface BootstrapInput {
   displayName: string;
@@ -183,6 +184,7 @@ export class AccountingApp {
    */
   externalEvents: ExternalEventStore;
   observedStocks: ObservedStockStore;
+  syncRuns: SyncRunStore;
   private pendingExternalEventUpdates = new Map<ID, Partial<ExternalEvent>>();
   private saleLookup?: {
     exact: Map<string, Sale>;
@@ -193,6 +195,7 @@ export class AccountingApp {
     this.state = state;
     this.externalEvents = new InMemoryExternalEventStore(this.state.externalEvents);
     this.observedStocks = new InMemoryObservedStockStore(this.state.observedStocks);
+    this.syncRuns = new InMemorySyncRunStore(this.state.syncRuns);
     this.ensureRequiredSystemMetadata();
   }
 

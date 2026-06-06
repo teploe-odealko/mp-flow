@@ -2,9 +2,10 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { readFile } from "node:fs/promises";
 import { Pool, type PoolClient } from "pg";
 import { AccountingApp } from "../../core/accounting-app";
-import type { AccountingState, ExternalEvent, ObservedStock, ID } from "../../core/models";
+import type { AccountingState, ExternalEvent, ObservedStock, SyncRun, ID } from "../../core/models";
 import type { ExternalEventStore, ExternalEventListFilter } from "../../core/external-event-store";
 import type { ObservedStockStore, ObservedStockListFilter } from "../../core/observed-stock-store";
+import type { SyncRunStore } from "../../core/sync-run-store";
 import { createEmptyState, currentIdSequence, restoreIdSequence } from "../../core/utils";
 
 export interface RuntimeSession {
@@ -82,7 +83,7 @@ const GLOBAL_REFERENCE_TABLES = new Set(["document_type_registry"]);
 // Коллекции, вынесенные из snapshot в классические репозитории: их НЕ грузим в state
 // на запрос и НЕ удаляем при сохранении. Append-only потоки (пишутся через loop-upsert,
 // читаются репозиторием напрямую). Это шаг переезда на controllers→services→repositories.
-const SNAPSHOT_APPEND_ONLY = new Set<RuntimeCollectionName>(["auditEvents", "externalEvents", "observedStocks"]);
+const SNAPSHOT_APPEND_ONLY = new Set<RuntimeCollectionName>(["auditEvents", "externalEvents", "observedStocks", "syncRuns"]);
 
 const COLLECTIONS: RuntimeCollectionName[] = [
   "periods",
@@ -1014,6 +1015,7 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     const snapshot = await this.loadSnapshot(this.pool, scope);
     snapshot.app.externalEvents = new PostgresExternalEventStore(this.pool, scope);
     snapshot.app.observedStocks = new PostgresObservedStockStore(this.pool, scope);
+    snapshot.app.syncRuns = new PostgresSyncRunStore(this.pool, scope);
     return {
       app: snapshot.app,
       nextId: snapshot.nextId,
@@ -1032,6 +1034,7 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     const app = snapshot.app;
     app.externalEvents = new PostgresExternalEventStore(client, scope);
     app.observedStocks = new PostgresObservedStockStore(client, scope);
+    app.syncRuns = new PostgresSyncRunStore(client, scope);
     const baseline = snapshot.baseline;
     let finished = false;
 
@@ -1732,6 +1735,45 @@ export class PostgresObservedStockStore implements ObservedStockStore {
   async deleteByIds(ids: ID[]): Promise<void> {
     if (ids.length === 0) return;
     await this.q.query("delete from observed_stock where workspace_id = $1 and state_json->>'id' = any($2)", [this.workspaceId, ids]);
+  }
+}
+
+const syncRunTableSpec = TABLES.find((table) => table.collection === "syncRuns")!;
+
+/** Postgres-реализация SyncRunStore: запуски синхронизации в таблице sync_run, вне snapshot. */
+export class PostgresSyncRunStore implements SyncRunStore {
+  constructor(private readonly q: Queryable, private readonly workspaceId: string) {}
+
+  async getById(id: ID): Promise<SyncRun | undefined> {
+    const result = await this.q.query<{ state_json: SyncRun }>(
+      "select state_json from sync_run where workspace_id = $1 and state_json->>'id' = $2 limit 1",
+      [this.workspaceId, id]
+    );
+    return result.rows[0]?.state_json;
+  }
+
+  async listByChannel(channelId: ID): Promise<SyncRun[]> {
+    const result = await this.q.query<{ state_json: SyncRun }>(
+      "select state_json from sync_run where workspace_id = $1 and state_json->>'channelId' = $2 order by started_at, id",
+      [this.workspaceId, channelId]
+    );
+    return result.rows.map((row) => row.state_json);
+  }
+
+  async upsert(run: SyncRun): Promise<void> {
+    const row = { ...syncRunTableSpec.serialize(run as unknown as RuntimeEntity), workspace_id: this.workspaceId } as RowRecord;
+    const columns = Object.keys(row);
+    const placeholders = columns.map((_, index) => `$${index + 1}`).join(", ");
+    const updates = columns.filter((column) => column !== "id").map((column) => `${column} = excluded.${column}`).join(", ");
+    await this.q.query(
+      `insert into sync_run (${columns.join(", ")}) values (${placeholders}) on conflict (id) do update set ${updates}`,
+      columns.map((column) => row[column])
+    );
+  }
+
+  async deleteByIds(ids: ID[]): Promise<void> {
+    if (ids.length === 0) return;
+    await this.q.query("delete from sync_run where workspace_id = $1 and state_json->>'id' = any($2)", [this.workspaceId, ids]);
   }
 }
 
