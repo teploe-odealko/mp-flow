@@ -16,6 +16,7 @@ export interface ExternalEventStore {
   getById(id: ID): Promise<ExternalEvent | undefined>;
   findByIdentity(channelId: ID, externalId: string, idempotencyKey?: string): Promise<ExternalEvent | undefined>;
   list(filter?: ExternalEventListFilter): Promise<ExternalEvent[]>;
+  count(filter?: { channelId?: ID; status?: string }): Promise<number>;
   upsert(event: ExternalEvent): Promise<void>;
   deleteByIds(ids: ID[]): Promise<void>;
 }
@@ -62,6 +63,10 @@ export class InMemoryExternalEventStore implements ExternalEventStore {
       (!filter.status || event.status === filter.status) &&
       (!filter.eventType || event.eventType === filter.eventType)
     );
+  }
+
+  async count(filter: { channelId?: ID; status?: string } = {}): Promise<number> {
+    return (await this.list({ channelId: filter.channelId, status: filter.status })).length;
   }
 
   async upsert(event: ExternalEvent): Promise<void> {
