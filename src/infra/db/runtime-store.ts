@@ -77,6 +77,11 @@ const WRITE_LOCK_SQL = "select pg_advisory_xact_lock(684201, 3)";
 const CREDENTIALS_AAD = Buffer.from("mpflow-channel-credentials");
 const GLOBAL_REFERENCE_TABLES = new Set(["document_type_registry"]);
 
+// Коллекции, вынесенные из snapshot в классические репозитории: их НЕ грузим в state
+// на запрос и НЕ удаляем при сохранении. Append-only потоки (пишутся через loop-upsert,
+// читаются репозиторием напрямую). Это шаг переезда на controllers→services→repositories.
+const SNAPSHOT_APPEND_ONLY = new Set<RuntimeCollectionName>(["auditEvents"]);
+
 const COLLECTIONS: RuntimeCollectionName[] = [
   "periods",
   "chartAccounts",
@@ -1115,6 +1120,7 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     state.accountingPolicy = await this.loadSingleton(source, workspaceId, "accounting_policy") as AccountingState["accountingPolicy"];
 
     for (const table of TABLES) {
+      if (SNAPSHOT_APPEND_ONLY.has(table.collection)) continue;
       const tableWorkspaceId = workspaceIdForTable(table, workspaceId);
       const rows = await source.query<{ state_json: unknown }>(
         `select state_json from ${table.table} where workspace_id = $1${table.orderBy ? ` order by ${table.orderBy}` : ""}`,
@@ -1165,6 +1171,7 @@ export class PostgresRuntimeStore implements RuntimePersistence {
       await this.saveChannelCredentials(client, workspaceId, credentials);
       await this.savePluginSecrets(client, workspaceId, undefined, pluginSecrets);
       for (const entry of [...prepared].reverse()) {
+        if (SNAPSHOT_APPEND_ONLY.has(entry.table.collection)) continue;
         await deleteObsoleteRows(client, workspaceId, entry.table, [], baseline?.tablesByCollection.get(entry.table.collection)?.rows);
       }
       if (!baseline || baseline.accountingPolicy) await this.saveSingleton(client, workspaceId, "accounting_policy", undefined);
@@ -1197,6 +1204,7 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     }
 
     for (const entry of [...prepared].reverse()) {
+      if (SNAPSHOT_APPEND_ONLY.has(entry.table.collection)) continue;
       await deleteObsoleteRows(client, workspaceId, entry.table, entry.rows, baseline?.tablesByCollection.get(entry.table.collection)?.rows);
     }
 

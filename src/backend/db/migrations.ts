@@ -33,5 +33,15 @@ export const migrations: Migration[] = [
       create index if not exists external_event_ws_id_idx
         on external_event (workspace_id, (state_json->>'id'));
     `
+  },
+  {
+    id: "0003",
+    name: "audit_event_repository_indexes",
+    sql: `
+      create index if not exists audit_event_ws_created_idx
+        on audit_event (workspace_id, created_at);
+      create index if not exists audit_event_ws_entity_idx
+        on audit_event (workspace_id, (state_json->>'entityId'));
+    `
   }
 ];

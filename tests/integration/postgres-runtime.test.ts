@@ -359,6 +359,34 @@ describePostgres("postgres runtime store", () => {
     }
   }, 30_000);
 
+  it("аудит хранится вне snapshot (append-only) и читается репозиторием", async () => {
+    await resetRuntimeTables();
+
+    const previousDatabaseUrl = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = connectionString;
+    const store = new PostgresRuntimeStore(new Pool({ connectionString: connectionString! }), "audit-append-secret");
+    const api = createApi(new AccountingApp(), { persistence: store });
+    try {
+      await request(api, "POST", "/api/setup", { displayName: "Audit Co", accountingStartDate: "2026-01-01" });
+
+      // bootstrap пишет audit-событие, но в snapshot его нет — он append-only вне state.
+      const session = await store.openReadSession?.();
+      try {
+        expect(session?.app.state.auditEvents).toEqual([]);
+      } finally {
+        await session?.close?.();
+      }
+
+      // ...при этом оно персистнуто и читается через репозиторий (ручка аудита).
+      const audit = await request<Array<{ eventType: string }>>(api, "GET", "/api/controls/audit-events");
+      expect(audit.length).toBeGreaterThan(0);
+      expect(audit.some((event) => event.eventType === "bootstrap")).toBe(true);
+    } finally {
+      await store.close();
+      restoreEnv("DATABASE_URL", previousDatabaseUrl);
+    }
+  }, 30_000);
+
   it("moves legacy default auth members to personal workspaces", async () => {
     await resetRuntimeTables();
 

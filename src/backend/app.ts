@@ -17,6 +17,7 @@ import { initHttpMetrics, metricsMiddleware, renderMetrics } from "./metrics";
 import { captureException } from "./observability";
 import { getPool } from "./db/pool";
 import { ExternalEventRepository } from "./repositories/external-event-repository";
+import { AuditEventRepository } from "./repositories/audit-event-repository";
 
 interface CreateApiOptions {
   persistence?: RuntimePersistence;
@@ -192,13 +193,16 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   // Эти роуты зарегистрированы ДО snapshot-middleware, поэтому не грузят весь state.
   // В тестах без persistence — fallback на in-memory app (переходный shim).
   const eventsWorkspaceId = (c: Context) => (c.get("authUser") as PublicAuthUser | undefined)?.workspaceId ?? "default";
+  // Классические репозитории (getPool) доступны только при реальном Postgres (DATABASE_URL).
+  // В тестах без БД — fallback на in-memory snapshot. Переходный признак на время переезда.
+  const postgresBacked = () => Boolean(process.env.DATABASE_URL);
   api.get("/api/integrations/events", async (c) => {
     const channelId = c.req.query("channelId");
     const status = c.req.query("status");
     const eventType = c.req.query("eventType");
     const limit = c.req.query("limit") ? Number(c.req.query("limit")) : undefined;
     const offset = c.req.query("offset") ? Number(c.req.query("offset")) : undefined;
-    if (options.persistence) {
+    if (postgresBacked()) {
       const repo = new ExternalEventRepository(getPool(), eventsWorkspaceId(c));
       return c.json({ ok: true, data: await repo.list({ channelId, status, eventType, limit, offset }) });
     }
@@ -211,7 +215,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: items });
   });
   api.get("/api/integrations/events/:id", async (c) => {
-    if (options.persistence) {
+    if (postgresBacked()) {
       const repo = new ExternalEventRepository(getPool(), eventsWorkspaceId(c));
       const event = await repo.getById(c.req.param("id"));
       if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
@@ -274,7 +278,13 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
 
 
   api.get("/api/dashboard", (c) => c.json({ ok: true, data: scopedApp.dashboard() }));
-  api.get("/api/state", (c) => c.json({ ok: true, data: publicAccountingState(scopedApp.state) }));
+  api.get("/api/state", async (c) => {
+    const data = publicAccountingState(scopedApp.state);
+    if (postgresBacked()) {
+      data.auditEvents = await new AuditEventRepository(getPool(), eventsWorkspaceId(c)).listAll();
+    }
+    return c.json({ ok: true, data });
+  });
   api.get("/api/reports", (c) => c.json({ ok: true, data: scopedApp.reports() }));
   api.get("/api/reports/profit-and-loss", (c) => c.json({ ok: true, data: scopedApp.reports().pnl }));
   api.get("/api/reports/balance-sheet", (c) => c.json({ ok: true, data: scopedApp.reports().balanceSheet }));
@@ -322,8 +332,11 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = documentCreateSchema.parse(await c.req.json());
     return c.json({ ok: true, data: scopedApp.createManualDocument(body) });
   });
-  api.get("/api/documents/:id", (c) => {
+  api.get("/api/documents/:id", async (c) => {
     const id = c.req.param("id");
+    const auditEvents = postgresBacked()
+      ? await new AuditEventRepository(getPool(), eventsWorkspaceId(c)).listByEntity(id)
+      : scopedApp.state.auditEvents.filter((event) => event.entityId === id);
     return c.json({
       ok: true,
       data: {
@@ -331,7 +344,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
         lines: scopedApp.state.documentLines.filter((line) => line.documentId === id),
         links: scopedApp.state.documentLinks.filter((link) => link.fromDocumentId === id || link.toDocumentId === id),
         journalEntries: scopedApp.state.journalEntries.filter((entry) => entry.documentId === id),
-        auditEvents: scopedApp.state.auditEvents.filter((event) => event.entityId === id)
+        auditEvents
       }
     });
   });
@@ -1784,9 +1797,12 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     token.revokedAt = nowIso();
     return c.json({ ok: true, data: publicAgentToken(token) });
   });
-  api.get("/api/users", (c) => {
+  api.get("/api/users", async (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
-    return c.json({ ok: true, data: { users: scopedApp.state.users, roles: scopedApp.state.roles, agentTokens: scopedApp.state.agentTokens.map(publicAgentToken), auditEvents: scopedApp.state.auditEvents } });
+    const auditEvents = postgresBacked()
+      ? await new AuditEventRepository(getPool(), eventsWorkspaceId(c)).listAll()
+      : scopedApp.state.auditEvents;
+    return c.json({ ok: true, data: { users: scopedApp.state.users, roles: scopedApp.state.roles, agentTokens: scopedApp.state.agentTokens.map(publicAgentToken), auditEvents } });
   });
   api.get("/api/settings/users", (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
@@ -1846,7 +1862,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     user.invitedAt = nowIso();
     return c.json({ ok: true, data: user });
   });
-  api.get("/api/controls/audit-events", (c) => c.json({ ok: true, data: scopedApp.state.auditEvents }));
+  api.get("/api/controls/audit-events", async (c) =>
+    c.json({ ok: true, data: postgresBacked() ? await new AuditEventRepository(getPool(), eventsWorkspaceId(c)).listAll() : scopedApp.state.auditEvents }));
   api.get("/api/agent-tokens", (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
     return c.json({ ok: true, data: scopedApp.state.agentTokens.map(publicAgentToken) });
