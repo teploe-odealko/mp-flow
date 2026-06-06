@@ -627,7 +627,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: scopedApp.receiveGoods({ ...body, purchaseOrderId: c.req.param("id") }) });
   });
   api.get("/api/procurement/purchase-orders/:id/receipts", (c) => c.json({ ok: true, data: scopedApp.state.goodsReceipts.filter((receipt) => receipt.purchaseOrderId === c.req.param("id")) }));
-  api.get("/api/procurement/receipts/:id", (c) => c.json({ ok: true, data: scopedApp.receiptDetails(c.req.param("id")) }));
+  api.get("/api/procurement/receipts/:id", async (c) => c.json({ ok: true, data: await scopedApp.receiptDetails(c.req.param("id")) }));
   api.post("/api/procurement/receipts/:id/post", (c) => c.json({ ok: true, data: scopedApp.postGoodsReceipt(c.req.param("id")) }));
   api.get("/api/procurement/receipts/:id/delete-preview", (c) => c.json({ ok: true, data: scopedApp.goodsReceiptRollbackPreview(c.req.param("id")) }));
   api.delete("/api/procurement/receipts/:id", (c) => c.json({ ok: true, data: scopedApp.deleteGoodsReceipt(c.req.param("id")) }));
@@ -864,7 +864,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = procurementCostSchema.omit({ purchaseOrderId: true }).parse(await c.req.json());
     return c.json({ ok: true, data: scopedApp.addProcurementCost({ ...body, purchaseOrderId: c.req.param("id") }) });
   });
-  api.get("/api/procurement/costs/:id", (c) => c.json({ ok: true, data: scopedApp.procurementCostDetails(c.req.param("id")) }));
+  api.get("/api/procurement/costs/:id", async (c) => c.json({ ok: true, data: await scopedApp.procurementCostDetails(c.req.param("id")) }));
   api.patch("/api/procurement/costs/:id", async (c) => {
     const body = z.object({ amountRub: z.number().optional(), comment: z.string().optional() }).parse(await c.req.json());
     const cost = scopedApp.state.procurementCosts.find((item) => item.id === c.req.param("id"));
@@ -881,7 +881,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: scopedApp.resolveShortage({ ...body, purchaseOrderId: c.req.param("id") }) });
   });
   api.get("/api/procurement/purchase-orders/:id/shortages/preview", (c) => c.json({ ok: true, data: scopedApp.shortagePreview(c.req.param("id")) }));
-  api.get("/api/procurement/shortages/:id", (c) => c.json({ ok: true, data: scopedApp.shortageDetails(c.req.param("id")) }));
+  api.get("/api/procurement/shortages/:id", async (c) => c.json({ ok: true, data: await scopedApp.shortageDetails(c.req.param("id")) }));
   api.post("/api/procurement/shortages/:id/post", (c) => c.json({ ok: true, data: scopedApp.postShortage(c.req.param("id")) }));
 
   api.post("/api/money/owner-contributions", async (c) => {
@@ -911,8 +911,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = transferSchema.parse(await c.req.json());
     return c.json({ ok: true, data: scopedApp.transferStock(body) });
   });
-  api.get("/api/inventory/transfers/:id", (c) => c.json({ ok: true, data: scopedApp.transferDetails(c.req.param("id")) }));
-  api.patch("/api/inventory/transfers/:id", (c) => c.json({ ok: true, data: scopedApp.transferDetails(c.req.param("id")) }));
+  api.get("/api/inventory/transfers/:id", async (c) => c.json({ ok: true, data: await scopedApp.transferDetails(c.req.param("id")) }));
+  api.patch("/api/inventory/transfers/:id", async (c) => c.json({ ok: true, data: await scopedApp.transferDetails(c.req.param("id")) }));
   api.get("/api/inventory/transfers/:id/delete-preview", (c) => c.json({ ok: true, data: scopedApp.stockTransferRollbackPreview(c.req.param("id")) }));
   api.delete("/api/inventory/transfers/:id", (c) => c.json({ ok: true, data: scopedApp.deleteStockTransfer(c.req.param("id")) }));
   api.post("/api/inventory/transfers/:id/post", (c) => c.json({ ok: true, data: scopedApp.postStockTransfer(c.req.param("id")) }));

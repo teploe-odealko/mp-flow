@@ -4806,13 +4806,13 @@ export class AccountingApp {
     return this.state.payments.filter((payment) => paymentIds.has(payment.id));
   }
 
-  receiptDetails(receiptId: ID) {
-    const receipt = this.mustFind(this.state.goodsReceipts, receiptId, "receipt_not_found");
+  async receiptDetails(receiptId: ID) {
+    const receipt = this.mustFind(await this.repos.goodsReceipts.all(), receiptId, "receipt_not_found");
     return {
       receipt,
-      document: this.state.documents.find((document) => document.id === receipt.documentId),
-      lines: this.state.goodsReceiptLines.filter((line) => line.goodsReceiptId === receipt.id),
-      lots: this.state.inventoryLots.filter((lot) => lot.sourceDocumentId === receipt.documentId)
+      document: (await this.repos.documents.all()).find((document) => document.id === receipt.documentId),
+      lines: (await this.repos.goodsReceiptLines.all()).filter((line) => line.goodsReceiptId === receipt.id),
+      lots: (await this.repos.inventoryLots.all()).filter((lot) => lot.sourceDocumentId === receipt.documentId)
     };
   }
 
@@ -4961,12 +4961,12 @@ export class AccountingApp {
     return receipt;
   }
 
-  procurementCostDetails(costId: ID) {
-    const cost = this.mustFind(this.state.procurementCosts, costId, "procurement_cost_not_found");
+  async procurementCostDetails(costId: ID) {
+    const cost = this.mustFind(await this.repos.procurementCosts.all(), costId, "procurement_cost_not_found");
     return {
       cost,
-      document: this.state.documents.find((document) => document.id === cost.documentId),
-      lines: this.state.procurementCostLines.filter((line) => line.procurementCostId === cost.id)
+      document: (await this.repos.documents.all()).find((document) => document.id === cost.documentId),
+      lines: (await this.repos.procurementCostLines.all()).filter((line) => line.procurementCostId === cost.id)
     };
   }
 
@@ -5162,13 +5162,14 @@ export class AccountingApp {
     return { purchaseOrderId: order.id, lines };
   }
 
-  shortageDetails(shortageId: ID) {
-    const shortage = this.mustFind(this.state.shortageResolutions, shortageId, "shortage_not_found");
+  async shortageDetails(shortageId: ID) {
+    const shortage = this.mustFind(await this.repos.shortageResolutions.all(), shortageId, "shortage_not_found");
+    const lines = await this.repos.shortageResolutionLines.all();
     return {
       shortage,
-      document: this.state.documents.find((document) => document.id === shortage.documentId),
-      lines: this.state.shortageResolutionLines.filter((line) => line.shortageResolutionId === shortage.id),
-      claims: this.state.supplierClaims.filter((claim) => this.state.shortageResolutionLines.some((line) => line.shortageResolutionId === shortage.id && line.id === claim.shortageResolutionLineId))
+      document: (await this.repos.documents.all()).find((document) => document.id === shortage.documentId),
+      lines: lines.filter((line) => line.shortageResolutionId === shortage.id),
+      claims: (await this.repos.supplierClaims.all()).filter((claim) => lines.some((line) => line.shortageResolutionId === shortage.id && line.id === claim.shortageResolutionLineId))
     };
   }
 
@@ -5219,12 +5220,12 @@ export class AccountingApp {
     return shortage;
   }
 
-  transferDetails(transferId: ID) {
-    const transfer = this.mustFind(this.state.stockTransfers, transferId, "transfer_not_found");
+  async transferDetails(transferId: ID) {
+    const transfer = this.mustFind(await this.repos.stockTransfers.all(), transferId, "transfer_not_found");
     return {
       transfer,
-      document: this.state.documents.find((document) => document.id === transfer.documentId),
-      lines: this.state.stockTransferLines.filter((line) => line.stockTransferId === transfer.id)
+      document: (await this.repos.documents.all()).find((document) => document.id === transfer.documentId),
+      lines: (await this.repos.stockTransferLines.all()).filter((line) => line.stockTransferId === transfer.id)
     };
   }
 
