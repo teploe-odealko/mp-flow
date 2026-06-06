@@ -11,7 +11,7 @@ import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Pagination } from "@/components/ui/pagination";
 import { ProductCell, ProductThumb } from "@/components/product-thumb";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { apiPost } from "@/api";
 import { date } from "@/lib/format";
 import { qty } from "@/lib/format";
@@ -20,9 +20,8 @@ import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTi
 import { paginateRows } from "@/lib/pagination";
 
 export function ProductsPage() {
-  const { state } = useAppState();
-  const products = state.products ?? [];
-  const stockStates = state.stockStates ?? [];
+  const products = useCollection<any[]>("products") ?? [];
+  const stockStates = useCollection<any[]>("stockStates") ?? [];
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 

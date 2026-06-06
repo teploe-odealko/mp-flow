@@ -7,15 +7,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, Input, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { apiPatch, apiPost } from "@/api";
 import { ProductThumb } from "@/components/product-thumb";
 import { Badge } from "@/components/ui/badge";
 
 export function ProductFormPage() {
   const { id } = useParams();
-  const { state } = useAppState();
-  const existing = id ? (state.products ?? []).find((p: any) => p.id === id) : null;
+  const products = useCollection<any[]>("products") ?? [];
+  const existing = id ? products.find((p: any) => p.id === id) : null;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 

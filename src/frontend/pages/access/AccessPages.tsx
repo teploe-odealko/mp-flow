@@ -9,14 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { dateTime } from "@/lib/format";
 
 export function AuditPage() {
-  const { state } = useAppState();
   const auditQuery = useQuery({ queryKey: ["audit-events"], queryFn: () => apiGet<any[]>("/api/controls/audit-events") });
   const auditEvents = auditQuery.data ?? [];
-  const users = state.users ?? [];
+  const users = useCollection<any[]>("users") ?? [];
   const [periodFilter, setPeriodFilter] = useState("");
   const [userFilter, setUserFilter] = useState("");
   const [actionFilter, setActionFilter] = useState("");

@@ -279,6 +279,16 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
 
   api.get("/api/dashboard", (c) => c.json({ ok: true, data: scopedApp.dashboard() }));
   api.get("/api/state", (c) => c.json({ ok: true, data: publicAccountingState(scopedApp.state) }));
+  // Классический пер-ресурсный доступ: фронт уходит от всесущего /api/state к точечным
+  // коллекциям (useCollection). Тот же public-шейпинг, что и /api/state (креды не утекают).
+  api.get("/api/collections/:name", (c) => {
+    const name = c.req.param("name");
+    const publicState = publicAccountingState(scopedApp.state) as unknown as Record<string, unknown>;
+    if (!Object.prototype.hasOwnProperty.call(publicState, name)) {
+      throw new DomainError("collection_not_found", `Неизвестная коллекция: ${name}`);
+    }
+    return c.json({ ok: true, data: publicState[name] });
+  });
   api.get("/api/reports", (c) => c.json({ ok: true, data: scopedApp.reports() }));
   api.get("/api/reports/profit-and-loss", (c) => c.json({ ok: true, data: scopedApp.reports().pnl }));
   api.get("/api/reports/balance-sheet", (c) => c.json({ ok: true, data: scopedApp.reports().balanceSheet }));

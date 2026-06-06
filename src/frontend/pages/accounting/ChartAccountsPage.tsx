@@ -9,13 +9,12 @@ import { CheckLabel } from "@/components/ui/checkbox";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { accountKindLabel } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 export function ChartAccountsPage() {
-  const { state } = useAppState();
-  const accounts = state.chartAccounts ?? [];
+  const accounts = useCollection<any[]>("chartAccounts") ?? [];
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState("");
   const [activeOnly, setActiveOnly] = useState(true);
@@ -32,7 +31,7 @@ export function ChartAccountsPage() {
     });
   }, [accounts, search, kind, activeOnly]);
 
-  const lines = state.journalLines ?? [];
+  const lines = useCollection<any[]>("journalLines") ?? [];
   const selected = filtered.find((a: any) => a.code === selectedCode) ?? filtered[0];
   const accountStats = useMemo(() => {
     if (!selected) return null;
