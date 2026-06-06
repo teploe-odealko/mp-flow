@@ -1118,7 +1118,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     };
     syncRun.streamRuns = initSyncRunStreams(syncRun.id, selectedStreams, startedAt);
     scopedApp.state.syncRuns.push(syncRun);
-    const baseline = captureSyncRunBaseline(scopedApp, channel.id);
+    const baseline = await captureSyncRunBaseline(scopedApp, channel.id);
     const plugin = pluginRegistry.get(installedPlugin.code);
     const credentials = body.credentials ?? scopedApp.credentialsForChannel(channel.id);
     const validation = plugin.validateCredentials(credentials ?? {});
@@ -1126,7 +1126,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       syncRun.status = "failed";
       syncRun.finishedAt = nowIso();
       syncRun.errors = [validation.message];
-      const telemetry = finalizeSyncRun(scopedApp, syncRun, baseline, selectedStreams, syncRun.errors);
+      const telemetry = await finalizeSyncRun(scopedApp, syncRun, baseline, selectedStreams, syncRun.errors);
       syncRun.streamRuns = telemetry.streamRuns;
       syncRun.summary = telemetry.summary;
       syncRun.lastError = telemetry.lastError;
@@ -1161,7 +1161,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       syncRun.status = result.status === "completed" ? "completed" : "failed";
       syncRun.finishedAt = nowIso();
       syncRun.errors = result.errors;
-      const telemetry = finalizeSyncRun(scopedApp, syncRun, baseline, selectedStreams, result.errors);
+      const telemetry = await finalizeSyncRun(scopedApp, syncRun, baseline, selectedStreams, result.errors);
       syncRun.streamRuns = telemetry.streamRuns;
       syncRun.summary = telemetry.summary;
       syncRun.lastError = telemetry.lastError;
@@ -1179,7 +1179,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       syncRun.finishedAt = nowIso();
       const message = error instanceof Error ? error.message : String(error);
       syncRun.errors = [message];
-      const telemetry = finalizeSyncRun(scopedApp, syncRun, baseline, selectedStreams, syncRun.errors);
+      const telemetry = await finalizeSyncRun(scopedApp, syncRun, baseline, selectedStreams, syncRun.errors);
       syncRun.streamRuns = telemetry.streamRuns;
       syncRun.summary = telemetry.summary;
       syncRun.lastError = telemetry.lastError;
@@ -3536,14 +3536,13 @@ function emptyAutoProcessingOutcome() {
 async function autoProcessChannelFacts(app: AccountingApp, channelId: string, syncRunId?: string) {
   const outcome = emptyAutoProcessingOutcome();
   const matchesCurrentRun = (event: ExternalEvent) => event.channelId === channelId && (!syncRunId || event.syncRunId === syncRunId);
+  const channelEvents = await app.externalEvents.list({ channelId });
   const currentRunEventIds = new Set(
-    app.state.externalEvents
-      .filter((event) => matchesCurrentRun(event))
-      .map((event) => event.id)
+    channelEvents.filter((event) => matchesCurrentRun(event)).map((event) => event.id)
   );
 
   const processableStatuses = new Set(["new", "ready_for_processing", "awaiting_sale", "needs_attention"]);
-  const currentRunEvents = app.state.externalEvents.filter((event) =>
+  const currentRunEvents = channelEvents.filter((event) =>
     matchesCurrentRun(event) && processableStatuses.has(event.status)
   );
   const sales = currentRunEvents.filter((event) => event.eventType === "sale").sort(compareExternalEventsByDate);
@@ -3716,11 +3715,11 @@ function syncBackfillProjectStatus(app: AccountingApp, project: any) {
   return project;
 }
 
-function captureSyncRunBaseline(app: AccountingApp, channelId: string) {
+async function captureSyncRunBaseline(app: AccountingApp, channelId: string) {
   return {
     externalProductIds: new Set(app.state.externalProducts.filter((item) => item.channelId === channelId).map((item) => item.id)),
     observedStockIds: new Set(app.state.observedStocks.filter((item) => item.channelId === channelId).map((item) => item.id)),
-    externalEventIds: new Set(app.state.externalEvents.filter((item) => item.channelId === channelId).map((item) => item.id))
+    externalEventIds: new Set((await app.externalEvents.list({ channelId })).map((item) => item.id))
   };
 }
 
@@ -3741,10 +3740,10 @@ function initSyncRunStreams(syncRunId: string, streams: ChannelStreamCode[], sta
   }));
 }
 
-function finalizeSyncRun(app: AccountingApp, syncRun: SyncRun, baseline: ReturnType<typeof captureSyncRunBaseline>, selectedStreams: ChannelStreamCode[], errors: string[]) {
+async function finalizeSyncRun(app: AccountingApp, syncRun: SyncRun, baseline: Awaited<ReturnType<typeof captureSyncRunBaseline>>, selectedStreams: ChannelStreamCode[], errors: string[]) {
   const createdProducts = app.state.externalProducts.filter((item) => item.channelId === syncRun.channelId && !baseline.externalProductIds.has(item.id)).length;
   const createdStocks = app.state.observedStocks.filter((item) => item.channelId === syncRun.channelId && !baseline.observedStockIds.has(item.id)).length;
-  const createdEvents = app.state.externalEvents.filter((item) => item.channelId === syncRun.channelId && !baseline.externalEventIds.has(item.id));
+  const createdEvents = (await app.externalEvents.list({ channelId: syncRun.channelId })).filter((item) => !baseline.externalEventIds.has(item.id));
   const createdEventsByType = {
     sale: createdEvents.filter((item) => item.eventType === "sale").length,
     sale_accrual: createdEvents.filter((item) => item.eventType === "sale_accrual").length,
