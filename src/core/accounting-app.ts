@@ -2389,17 +2389,17 @@ export class AccountingApp {
     return { saleId: sale.id, ...deletion };
   }
 
-  saleRollbackPreview(saleId: ID): EntityRollbackPreview {
-    const sale = this.mustFind(this.state.sales, saleId, "sale_not_found");
-    const document = this.mustFind(this.state.documents, sale.documentId, "document_not_found");
-    const linkedReturns = this.state.salesReturns.filter((candidate) => candidate.saleId === sale.id);
-    const linkedFinanceEvents = this.state.channelFinanceEvents.filter((event) =>
+  async saleRollbackPreview(saleId: ID): Promise<EntityRollbackPreview> {
+    const sale = this.mustFind(await this.repos.sales.all(), saleId, "sale_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), sale.documentId, "document_not_found");
+    const linkedReturns = (await this.repos.salesReturns.all()).filter((candidate) => candidate.saleId === sale.id);
+    const linkedFinanceEvents = (await this.repos.channelFinanceEvents.all()).filter((event) =>
       event.linkedSaleId === sale.id || Boolean(event.saleAllocations?.some((allocation) => allocation.saleId === sale.id))
     );
     const sharedFinanceEvents = linkedFinanceEvents.filter((event) =>
       Boolean(event.saleAllocations?.some((allocation) => allocation.saleId !== sale.id))
     );
-    const blockedByPayout = this.state.payoutLines.some((line) =>
+    const blockedByPayout = (await this.repos.payoutLines.all()).some((line) =>
       (line.sourceType === "sale" && line.sourceId === sale.id) ||
       (line.sourceType === "finance_event" && linkedFinanceEvents.some((event) => event.id === line.sourceId))
     );
@@ -2436,13 +2436,17 @@ export class AccountingApp {
       ...[sale.financialDocumentId].filter(Boolean) as ID[]
     ]);
     const journalEntryIds = new Set(
-      this.state.journalEntries
+      (await this.repos.journalEntries.all())
         .filter((entry) => removableDocumentIds.has(entry.documentId))
         .map((entry) => entry.id)
     );
-    const saleCostApplications = this.state.costApplications.filter((application) =>
+    const saleCostApplications = (await this.repos.costApplications.all()).filter((application) =>
       application.outboundDocumentId === sale.documentId && application.applicationType === "sale"
     );
+    const allJournalLines = await this.repos.journalLines.all();
+    const allSettlementEntries = await this.repos.settlementEntries.all();
+    const allStockMovements = await this.repos.stockMovements.all();
+    const allSaleLines = await this.repos.saleLines.all();
 
     return {
       entityType: "sale",
@@ -2458,12 +2462,12 @@ export class AccountingApp {
       effects: {
         documents: removableDocumentIds.size,
         journalEntries: journalEntryIds.size,
-        journalLines: this.state.journalLines.filter((line) => journalEntryIds.has(line.journalEntryId)).length,
-        settlementEntries: this.state.settlementEntries.filter((entry) => removableDocumentIds.has(entry.documentId)).length,
-        stockMovements: this.state.stockMovements.filter((movement) => movement.documentId === sale.documentId).length,
+        journalLines: allJournalLines.filter((line) => journalEntryIds.has(line.journalEntryId)).length,
+        settlementEntries: allSettlementEntries.filter((entry) => removableDocumentIds.has(entry.documentId)).length,
+        stockMovements: allStockMovements.filter((movement) => movement.documentId === sale.documentId).length,
         inventoryLots: 0,
         costApplications: saleCostApplications.length,
-        saleLines: this.state.saleLines.filter((line) => line.saleId === sale.id).length,
+        saleLines: allSaleLines.filter((line) => line.saleId === sale.id).length,
         financeEvents: linkedFinanceEvents.length,
         stockTransfers: 0,
         payments: 0,
@@ -2498,9 +2502,9 @@ export class AccountingApp {
     return { returnId: salesReturn.id, ...deletion };
   }
 
-  stockTransferRollbackPreview(transferId: ID): EntityRollbackPreview {
-    const transfer = this.mustFind(this.state.stockTransfers, transferId, "transfer_not_found");
-    const document = this.mustFind(this.state.documents, transfer.documentId, "document_not_found");
+  async stockTransferRollbackPreview(transferId: ID): Promise<EntityRollbackPreview> {
+    const transfer = this.mustFind(await this.repos.stockTransfers.all(), transferId, "transfer_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), transfer.documentId, "document_not_found");
     const descendants = this.documentDescendants(document.id);
     const downstreamDocuments = this.inventoryUsageDocuments(document.id);
     const blockers: EntityRollbackBlockerSummary[] = [];
@@ -2529,10 +2533,15 @@ export class AccountingApp {
 
     const removableDocumentIds = new Set<ID>([document.id]);
     const journalEntryIds = new Set(
-      this.state.journalEntries
+      (await this.repos.journalEntries.all())
         .filter((entry) => removableDocumentIds.has(entry.documentId))
         .map((entry) => entry.id)
     );
+    const allJournalLines = await this.repos.journalLines.all();
+    const allSettlementEntries = await this.repos.settlementEntries.all();
+    const allStockMovements = await this.repos.stockMovements.all();
+    const allInventoryLots = await this.repos.inventoryLots.all();
+    const allCostApplications = await this.repos.costApplications.all();
 
     return {
       entityType: "stock_transfer",
@@ -2548,11 +2557,11 @@ export class AccountingApp {
       effects: {
         documents: removableDocumentIds.size,
         journalEntries: journalEntryIds.size,
-        journalLines: this.state.journalLines.filter((line) => journalEntryIds.has(line.journalEntryId)).length,
-        settlementEntries: this.state.settlementEntries.filter((entry) => removableDocumentIds.has(entry.documentId)).length,
-        stockMovements: this.state.stockMovements.filter((movement) => movement.documentId === document.id).length,
-        inventoryLots: this.state.inventoryLots.filter((lot) => lot.sourceDocumentId === document.id).length,
-        costApplications: this.state.costApplications.filter((application) => application.outboundDocumentId === document.id).length,
+        journalLines: allJournalLines.filter((line) => journalEntryIds.has(line.journalEntryId)).length,
+        settlementEntries: allSettlementEntries.filter((entry) => removableDocumentIds.has(entry.documentId)).length,
+        stockMovements: allStockMovements.filter((movement) => movement.documentId === document.id).length,
+        inventoryLots: allInventoryLots.filter((lot) => lot.sourceDocumentId === document.id).length,
+        costApplications: allCostApplications.filter((application) => application.outboundDocumentId === document.id).length,
         saleLines: 0,
         financeEvents: 0,
         stockTransfers: 1,

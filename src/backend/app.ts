@@ -913,7 +913,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.get("/api/inventory/transfers/:id", async (c) => c.json({ ok: true, data: await scopedApp.transferDetails(c.req.param("id")) }));
   api.patch("/api/inventory/transfers/:id", async (c) => c.json({ ok: true, data: await scopedApp.transferDetails(c.req.param("id")) }));
-  api.get("/api/inventory/transfers/:id/delete-preview", (c) => c.json({ ok: true, data: scopedApp.stockTransferRollbackPreview(c.req.param("id")) }));
+  api.get("/api/inventory/transfers/:id/delete-preview", async (c) => c.json({ ok: true, data: await scopedApp.stockTransferRollbackPreview(c.req.param("id")) }));
   api.delete("/api/inventory/transfers/:id", (c) => c.json({ ok: true, data: scopedApp.deleteStockTransfer(c.req.param("id")) }));
   api.post("/api/inventory/transfers/:id/post", (c) => c.json({ ok: true, data: scopedApp.postStockTransfer(c.req.param("id")) }));
   api.get("/api/inventory/sales-points/:id/stock", async (c) => c.json({ ok: true, data: await scopedApp.stockForSalesPoint(c.req.param("id")) }));
@@ -1313,8 +1313,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       }
     });
   });
-  api.get("/api/sales/:id/delete-preview", (c) => {
-    return c.json({ ok: true, data: scopedApp.saleRollbackPreview(c.req.param("id")) });
+  api.get("/api/sales/:id/delete-preview", async (c) => {
+    return c.json({ ok: true, data: await scopedApp.saleRollbackPreview(c.req.param("id")) });
   });
   api.patch("/api/sales/:id", async (c) => {
     const body = z.object({ status: z.enum(["shipped", "posted", "reversed"]).optional() }).parse(await c.req.json());
