@@ -226,7 +226,7 @@ async function syncRealOzon({ app, channelId, syncRunId, since, credentials, str
           // Onboarding import passes autoLinkProducts:false so cards arrive unmapped and the
           // user maps/creates internal products explicitly. Ongoing syncs keep auto-linking.
           if (autoLinkProducts !== false) {
-            ensureInternalProduct(app, externalProduct, productInfo);
+            await ensureInternalProduct(app, externalProduct, productInfo);
           }
         }
 
@@ -319,14 +319,14 @@ async function checkOzonAccess(credentials: PluginCredentials): Promise<{ ok: tr
   }
 }
 
-function ensureInternalProduct(app: SyncContext["app"], externalProduct: ExternalProduct, productInfo: OzonProductInfo): Product {
+async function ensureInternalProduct(app: SyncContext["app"], externalProduct: ExternalProduct, productInfo: OzonProductInfo): Promise<Product> {
   const existingLink = app.state.productExternalLinks.find((link) => link.externalProductId === externalProduct.id && link.status === "active");
   const byLink = existingLink ? app.state.products.find((product) => product.id === existingLink.productId) : undefined;
   const offerId = normalizeSku(productInfo.offer_id || externalProduct.externalSku);
   const product = byLink ?? findInternalProduct(app.state.products, offerId, productInfo);
   const patch = productInputFromOzon(productInfo, externalProduct.externalSku);
   if (product) {
-    app.updateProduct(product.id, {
+    await app.updateProduct(product.id, {
       name: patch.name || product.name,
       barcode: patch.barcode ?? product.barcode,
       weightGrams: patch.weightGrams ?? product.weightGrams,

@@ -388,14 +388,14 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/products/:id", async (c) => c.json({ ok: true, data: await scopedApp.productDetails(c.req.param("id")) }));
   api.post("/api/products/:id/update", async (c) => {
     const body = productSchema.partial().parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.updateProduct(c.req.param("id"), body) });
+    return c.json({ ok: true, data: await scopedApp.updateProduct(c.req.param("id"), body) });
   });
   api.patch("/api/products/:id", async (c) => {
     const body = productSchema.partial().parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.updateProduct(c.req.param("id"), body) });
+    return c.json({ ok: true, data: await scopedApp.updateProduct(c.req.param("id"), body) });
   });
-  api.post("/api/products/:id/archive", (c) => c.json({ ok: true, data: scopedApp.archiveProduct(c.req.param("id")) }));
-  api.post("/api/products/:id/restore", (c) => c.json({ ok: true, data: scopedApp.restoreProduct(c.req.param("id")) }));
+  api.post("/api/products/:id/archive", async (c) => c.json({ ok: true, data: await scopedApp.archiveProduct(c.req.param("id")) }));
+  api.post("/api/products/:id/restore", async (c) => c.json({ ok: true, data: await scopedApp.restoreProduct(c.req.param("id")) }));
   api.get("/api/products/:id/lots", async (c) => c.json({ ok: true, data: (await scopedApp.productDetails(c.req.param("id"))).lots }));
   api.get("/api/products/:id/stock-movements", async (c) => c.json({ ok: true, data: (await scopedApp.productDetails(c.req.param("id"))).movements }));
   api.post("/api/products/:id/images", async (c) => {

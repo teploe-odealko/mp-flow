@@ -629,7 +629,7 @@ export class AccountingApp {
     return product;
   }
 
-  updateProduct(productId: ID, input: Partial<{
+  async updateProduct(productId: ID, input: Partial<{
     sku: string;
     name: string;
     unit?: string;
@@ -644,12 +644,13 @@ export class AccountingApp {
     manufacturerArticle?: string;
     comment?: string;
     imageUrl?: string;
-  }>): Product {
+  }>): Promise<Product> {
     const organizationId = this.currentOrgId();
-    const product = this.mustFind(this.state.products, productId, "product_not_found");
+    const products = await this.repos.products.all();
+    const product = this.mustFind(products, productId, "product_not_found");
     const before = { ...product };
     if (input.sku && input.sku !== product.sku) {
-      if (this.state.products.some((candidate) => candidate.organizationId === organizationId && candidate.id !== product.id && candidate.sku === input.sku)) {
+      if (products.some((candidate) => candidate.organizationId === organizationId && candidate.id !== product.id && candidate.sku === input.sku)) {
         throw new DomainError("duplicate_sku", "Товар с таким SKU уже есть");
       }
       product.sku = input.sku;
@@ -667,22 +668,25 @@ export class AccountingApp {
     if (input.manufacturerArticle !== undefined) product.manufacturerArticle = input.manufacturerArticle || undefined;
     if (input.comment !== undefined) product.comment = input.comment || undefined;
     if (input.imageUrl !== undefined) product.imageUrl = input.imageUrl || undefined;
+    await this.repos.products.upsert(product);
     this.audit("product", product.id, "update", before, product);
     return product;
   }
 
-  archiveProduct(productId: ID): Product {
-    const product = this.mustFind(this.state.products, productId, "product_not_found");
+  async archiveProduct(productId: ID): Promise<Product> {
+    const product = this.mustFind(await this.repos.products.all(), productId, "product_not_found");
     const before = { ...product };
     product.status = "archived";
+    await this.repos.products.upsert(product);
     this.audit("product", product.id, "archive", before, product);
     return product;
   }
 
-  restoreProduct(productId: ID): Product {
-    const product = this.mustFind(this.state.products, productId, "product_not_found");
+  async restoreProduct(productId: ID): Promise<Product> {
+    const product = this.mustFind(await this.repos.products.all(), productId, "product_not_found");
     const before = { ...product };
     product.status = "active";
+    await this.repos.products.upsert(product);
     this.audit("product", product.id, "restore", before, product);
     return product;
   }
