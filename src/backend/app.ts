@@ -276,6 +276,60 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       auditEvents: (await readModelApp.repos.auditEvents.all()).filter((event) => event.entityId === id)
     };
   };
+  const studioViewFor = async (readModelApp: AccountingApp, productId: string) => {
+    const product = await readModelApp.repos.products.getById(productId);
+    if (!product) throw new DomainError("product_not_found", "Товар не найден");
+    const productExternalLinks = await readModelApp.repos.productExternalLinks.all();
+    const externalProducts = await readModelApp.repos.externalProducts.all();
+    const salesChannels = await readModelApp.repos.salesChannels.all();
+    const channels = productExternalLinks
+      .filter((link) => link.productId === productId && link.status === "active")
+      .map((link) => ({
+        link,
+        external: externalProducts.find((external) => external.id === link.externalProductId),
+        channel: salesChannels.find((channel) => channel.id === link.channelId)
+      }))
+      .filter((row) => row.external && row.channel);
+    const linkedRow = channels[0];
+    return {
+      product: {
+        id: product.id,
+        sku: product.sku,
+        name: product.name,
+        brand: product.brand,
+        category: product.category,
+        description: product.description,
+        weightGrams: product.weightGrams,
+        lengthMm: product.lengthMm,
+        widthMm: product.widthMm,
+        heightMm: product.heightMm,
+        imageUrl: product.imageUrl
+      },
+      marketplace: linkedRow?.channel?.channelType === "marketplace" ? "ozon" : null,
+      linkedCard: linkedRow?.external ? {
+        channelId: linkedRow.channel?.id,
+        channelName: linkedRow.channel?.name,
+        offerId: linkedRow.external.externalSku,
+        externalName: linkedRow.external.externalName,
+        externalProductId: linkedRow.external.id
+      } : null,
+      assets: await readModelApp.listProductAssets(productId),
+      channels,
+      plan: await readCardStudioPlan(readModelApp, productId),
+      storageReady: isStorageConfigured()
+    };
+  };
+  const studioBriefFor = async (readModelApp: AccountingApp, productId: string) => {
+    const ozon = pluginRegistry.get("ozon");
+    const studio = await studioViewFor(readModelApp, productId);
+    return {
+      ...studio,
+      marketplace: studio.marketplace ?? "ozon",
+      guidelines: ozon.card?.guidelines() ?? null,
+      generationRequirements: getCardStudioGenerationRequirements(),
+      playbook: getCardStudioPlaybook()
+    };
+  };
   api.get("/api/integrations/events", async (c) => {
     const channelId = c.req.query("channelId");
     const status = c.req.query("status");
@@ -286,10 +340,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       const repo = new ExternalEventRepository(getPool(), eventsWorkspaceId(c));
       return c.json({ ok: true, data: await repo.list({ channelId, status, eventType, limit, offset }) });
     }
-    let items = scopedApp.state.externalEvents;
-    if (channelId) items = items.filter((event) => event.channelId === channelId);
-    if (status) items = items.filter((event) => event.status === status);
-    if (eventType) items = items.filter((event) => event.eventType === eventType);
+    let items = await app.externalEvents.list({ channelId, status, eventType });
     if (offset !== undefined) items = items.slice(offset);
     if (limit !== undefined) items = items.slice(0, limit);
     return c.json({ ok: true, data: items });
@@ -365,6 +416,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/products/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).productDetails(c.req.param("id")) }));
   api.get("/api/products/:id/lots", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).productDetails(c.req.param("id"))).lots }));
   api.get("/api/products/:id/stock-movements", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).productDetails(c.req.param("id"))).movements }));
+  api.get("/api/products/:id/card", async (c) => c.json({ ok: true, data: await studioViewFor(await readModelAppFor(c), c.req.param("id")) }));
+  api.get("/api/products/:id/card/brief", async (c) => c.json({ ok: true, data: await studioBriefFor(await readModelAppFor(c), c.req.param("id")) }));
   api.get("/api/warehouses", async (c) => c.json({ ok: true, data: await collectionFor(c, "warehouses") }));
   api.get("/api/inventory", async (c) => {
     const readModelApp = await readModelAppFor(c);
@@ -630,7 +683,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.put("/api/setup", async (c) => {
     const body = bootstrapSchema.parse(await c.req.json());
-    const data = scopedApp.state.organization ? await scopedApp.updateSetup(body) : await scopedApp.bootstrap(body);
+    const setup = await scopedApp.setupSnapshot();
+    const data = setup.organization ? await scopedApp.updateSetup(body) : await scopedApp.bootstrap(body);
     const authUser = c.get("authUser") as ReturnType<typeof publicUser> | undefined;
     if (authUser) ensureAppUser(scopedApp, { ...authUser, status: "active" });
     return c.json({ ok: true, data });
@@ -684,80 +738,16 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.delete("/api/products/:id/images/:imageId", async (c) => c.json({ ok: true, data: await scopedApp.deleteProductImage(c.req.param("id")) }));
 
-  const requireStudioProduct = (productId: string) => {
-    const product = scopedApp.state.products.find((candidate) => candidate.id === productId);
+  const requireStudioProduct = async (productId: string) => {
+    const product = await scopedApp.repos.products.getById(productId);
     if (!product) throw new DomainError("product_not_found", "Товар не найден");
     return product;
   };
-  const studioChannelRows = (productId: string) => {
-    return scopedApp.state.productExternalLinks
-      .filter((link) => link.productId === productId && link.status === "active")
-      .map((link) => ({
-        link,
-        external: scopedApp.state.externalProducts.find((external) => external.id === link.externalProductId),
-        channel: scopedApp.state.salesChannels.find((channel) => channel.id === link.channelId)
-      }))
-      .filter((row) => row.external && row.channel);
-  };
-  const buildStudioProductSummary = (productId: string) => {
-    const product = requireStudioProduct(productId);
-    return {
-      id: product.id,
-      sku: product.sku,
-      name: product.name,
-      brand: product.brand,
-      category: product.category,
-      description: product.description,
-      weightGrams: product.weightGrams,
-      lengthMm: product.lengthMm,
-      widthMm: product.widthMm,
-      heightMm: product.heightMm,
-      imageUrl: product.imageUrl
-    };
-  };
-  const buildStudioView = async (productId: string) => {
-    const channels = studioChannelRows(productId);
-    const linkedRow = channels[0];
-    return {
-      product: buildStudioProductSummary(productId),
-      marketplace: linkedRow?.channel?.channelType === "marketplace" ? "ozon" : null,
-      linkedCard: linkedRow?.external ? {
-        channelId: linkedRow.channel?.id,
-        channelName: linkedRow.channel?.name,
-        offerId: linkedRow.external.externalSku,
-        externalName: linkedRow.external.externalName,
-        externalProductId: linkedRow.external.id
-      } : null,
-      assets: await scopedApp.listProductAssets(productId),
-      channels,
-      plan: await readCardStudioPlan(scopedApp, productId),
-      storageReady: isStorageConfigured()
-    };
-  };
-  const buildStudioBrief = async (productId: string) => {
-    const ozon = pluginRegistry.get("ozon");
-    const studio = await buildStudioView(productId);
-    return {
-      ...studio,
-      marketplace: studio.marketplace ?? "ozon",
-      guidelines: ozon.card?.guidelines() ?? null,
-      generationRequirements: getCardStudioGenerationRequirements(),
-      playbook: getCardStudioPlaybook()
-    };
-  };
 
   // --- Фотостудия: исходники, план и слайды ---
-  api.get("/api/products/:id/card", async (c) => {
-    const productId = c.req.param("id");
-    return c.json({ ok: true, data: await buildStudioView(productId) });
-  });
-  api.get("/api/products/:id/card/brief", async (c) => {
-    const productId = c.req.param("id");
-    return c.json({ ok: true, data: await buildStudioBrief(productId) });
-  });
   api.put("/api/products/:id/card/plan", async (c) => {
     const productId = c.req.param("id");
-    requireStudioProduct(productId);
+    await requireStudioProduct(productId);
     const body = cardPlanSchema.parse(await c.req.json());
     const pluginState = cardStudioPlanState(scopedApp);
     const existing = await pluginState.get({ namespace: "card_studio", scopeType: "flow_session", scopeId: productId, stateKey: "plan" });
@@ -773,7 +763,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.delete("/api/products/:id/card/plan", async (c) => {
     const productId = c.req.param("id");
-    requireStudioProduct(productId);
+    await requireStudioProduct(productId);
     const deleted = await cardStudioPlanState(scopedApp).delete({
       namespace: "card_studio",
       scopeType: "flow_session",
@@ -784,7 +774,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.post("/api/products/:id/card/uploads", async (c) => {
     const productId = c.req.param("id");
-    requireStudioProduct(productId);
+    await requireStudioProduct(productId);
     if (!isStorageConfigured()) throw new DomainError("storage_not_configured", "Хранилище медиа не настроено: задайте S3_* переменные");
     const body = cardUploadSchema.parse(await c.req.json());
     if (!isAllowedImageType(body.contentType)) throw new DomainError("unsupported_media_type", "Поддерживаются только изображения: png, jpg, webp");
@@ -863,16 +853,18 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.get("/api/procurement/purchase-orders/:id/receipt-preview", async (c) => {
     const details = await scopedApp.purchaseOrderDetails(c.req.param("id"));
+    const documents = await scopedApp.repos.documents.all();
+    const receiptLines = await scopedApp.repos.goodsReceiptLines.all();
     const postedReceiptIds = new Set(
-      scopedApp.state.goodsReceipts
+      (await scopedApp.repos.goodsReceipts.all())
         .filter((receipt) => receipt.status === "posted")
-        .filter((receipt) => scopedApp.state.documents.find((document) => document.id === receipt.documentId)?.status === "posted")
+        .filter((receipt) => documents.find((document) => document.id === receipt.documentId)?.status === "posted")
         .map((receipt) => receipt.id)
     );
     const lines = details.lines
       .map((line) => ({
         purchaseOrderLineId: line.id,
-        qtyReceived: line.qtyOrdered - scopedApp.state.goodsReceiptLines
+        qtyReceived: line.qtyOrdered - receiptLines
           .filter((receiptLine) => receiptLine.purchaseOrderLineId === line.id && postedReceiptIds.has(receiptLine.goodsReceiptId))
           .reduce((sum, receiptLine) => sum + receiptLine.qtyReceived, 0)
       }))
@@ -1126,10 +1118,11 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.patch("/api/procurement/costs/:id", async (c) => {
     const body = z.object({ amountRub: z.number().optional(), comment: z.string().optional() }).parse(await c.req.json());
-    const cost = scopedApp.state.procurementCosts.find((item) => item.id === c.req.param("id"));
+    const cost = await scopedApp.repos.procurementCosts.getById(c.req.param("id"));
     if (!cost) throw new DomainError("procurement_cost_not_found", "Расход закупки не найден");
     if (body.amountRub !== undefined) cost.amountRub = body.amountRub;
     if (body.comment !== undefined) cost.comment = body.comment;
+    await scopedApp.repos.procurementCosts.upsert(cost);
     return c.json({ ok: true, data: cost });
   });
   api.post("/api/procurement/costs/:id/post", async (c) => c.json({ ok: true, data: await scopedApp.postProcurementCost(c.req.param("id")) }));
@@ -1182,8 +1175,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       post: z.boolean().optional(),
       lines: z.array(z.object({ productId: z.string(), observedQty: z.number(), unitCostRub: z.number().optional() })).optional()
     }).parse(await c.req.json().catch(() => ({})));
-    const stocktake = scopedApp.state.stocktakes.find((candidate) => candidate.id === c.req.param("id"));
-    if (stocktake) return c.json({ ok: true, data: { stocktake, lines: scopedApp.state.stocktakeLines.filter((line) => line.stocktakeId === stocktake.id) } });
+    const stocktake = await scopedApp.repos.stocktakes.getById(c.req.param("id"));
+    if (stocktake) return c.json({ ok: true, data: { stocktake, lines: (await scopedApp.repos.stocktakeLines.all()).filter((line) => line.stocktakeId === stocktake.id) } });
     if (!body.warehouseId || !body.stocktakeDate || !body.lines) throw new DomainError("stocktake_payload_required", "Для новой сверки нужны склад, дата и строки");
     return c.json({ ok: true, data: await scopedApp.runStocktake({ warehouseId: body.warehouseId, stocktakeDate: body.stocktakeDate, comment: body.comment, post: body.post, lines: body.lines }) });
   });
@@ -1220,17 +1213,18 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const channel = await scopedApp.createSalesChannel(body);
     return c.json({ ok: true, data: channel });
   });
-  api.delete("/api/integrations/channels/:id/credentials", (c) => {
-    const channel = scopedApp.state.salesChannels.find((candidate) => candidate.id === c.req.param("id"));
+  api.delete("/api/integrations/channels/:id/credentials", async (c) => {
+    const channel = await scopedApp.repos.salesChannels.getById(c.req.param("id"));
     if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
     const data = scopedApp.clearCredentialsForChannel(channel.id);
     if (channel.status === "active") channel.status = "needs_setup";
+    await scopedApp.repos.salesChannels.upsert(channel);
     return c.json({ ok: true, data });
   });
   api.post("/api/integrations/channels/:id/credentials", async (c) => {
-    const channel = scopedApp.state.salesChannels.find((candidate) => candidate.id === c.req.param("id"));
+    const channel = await scopedApp.repos.salesChannels.getById(c.req.param("id"));
     if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
-    const installedPlugin = scopedApp.state.integrationPlugins.find((plugin) => plugin.id === channel.pluginId);
+    const installedPlugin = channel.pluginId ? await scopedApp.repos.integrationPlugins.getById(channel.pluginId) : undefined;
     if (!installedPlugin) throw new DomainError("plugin_not_found", "У канала не выбран плагин");
     const body = pluginSyncSchema.parse(await c.req.json());
     const plugin = pluginRegistry.get(installedPlugin.code);
@@ -1247,11 +1241,13 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       } else {
         channel.status = "error";
         channel.lastError = online.message;
+        await scopedApp.repos.salesChannels.upsert(channel);
         return c.json({ ok: true, data: { ...saved, online } });
       }
     } else if (channel.status === "needs_setup") {
       channel.status = "active";
     }
+    await scopedApp.repos.salesChannels.upsert(channel);
     return c.json({ ok: true, data: { ...saved, online: { ok: true } } });
   });
   api.patch("/api/integrations/channels/:id", async (c) => {
@@ -1259,9 +1255,9 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: await scopedApp.updateSalesChannel(c.req.param("id"), body) });
   });
   api.post("/api/integrations/channels/:id/check", async (c) => {
-    const channel = scopedApp.state.salesChannels.find((candidate) => candidate.id === c.req.param("id"));
+    const channel = await scopedApp.repos.salesChannels.getById(c.req.param("id"));
     if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
-    const installedPlugin = scopedApp.state.integrationPlugins.find((plugin) => plugin.id === channel.pluginId);
+    const installedPlugin = channel.pluginId ? await scopedApp.repos.integrationPlugins.getById(channel.pluginId) : undefined;
     const body = pluginSyncSchema.parse(await c.req.json().catch(() => ({})));
     const credentials = body.credentials ?? scopedApp.credentialsForChannel(channel.id);
     if (!installedPlugin) {
@@ -1273,6 +1269,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       channel.status = "error";
       channel.lastError = shape.message;
       channel.lastCheckedAt = nowIso();
+      await scopedApp.repos.salesChannels.upsert(channel);
       return c.json({ ok: true, data: { channelId: channel.id, validation: shape } });
     }
     const online = plugin.checkAccess ? await plugin.checkAccess(credentials ?? {}) : { ok: true as const };
@@ -1284,24 +1281,26 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       channel.status = "error";
       channel.lastError = online.message;
     }
+    await scopedApp.repos.salesChannels.upsert(channel);
     return c.json({ ok: true, data: { channelId: channel.id, validation: online, status: channel.status } });
   });
-  api.post("/api/integrations/channels/:id/disable", (c) => {
-    const channel = scopedApp.state.salesChannels.find((candidate) => candidate.id === c.req.param("id"));
+  api.post("/api/integrations/channels/:id/disable", async (c) => {
+    const channel = await scopedApp.repos.salesChannels.getById(c.req.param("id"));
     if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
     channel.status = "disabled";
+    await scopedApp.repos.salesChannels.upsert(channel);
     return c.json({ ok: true, data: channel });
   });
   api.post("/api/integrations/channels/:id/reset-sales-data", async (c) => {
-    const channel = scopedApp.state.salesChannels.find((candidate) => candidate.id === c.req.param("id"));
+    const channel = await scopedApp.repos.salesChannels.getById(c.req.param("id"));
     if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
     const body = z.object({ includePayouts: z.boolean().optional() }).parse(await c.req.json().catch(() => ({})));
     return c.json({ ok: true, data: await scopedApp.resetChannelSalesData(channel.id, body) });
   });
   api.post("/api/channels/:id/sync", async (c) => {
-    const channel = scopedApp.state.salesChannels.find((candidate) => candidate.id === c.req.param("id"));
+    const channel = await scopedApp.repos.salesChannels.getById(c.req.param("id"));
     if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
-    const installedPlugin = scopedApp.state.integrationPlugins.find((plugin) => plugin.id === channel.pluginId);
+    const installedPlugin = channel.pluginId ? await scopedApp.repos.integrationPlugins.getById(channel.pluginId) : undefined;
     if (!installedPlugin) throw new DomainError("plugin_not_found", "У канала не выбран плагин");
     const body = pluginSyncSchema.parse(await c.req.json().catch(() => ({})));
     const plugin = pluginRegistry.get(installedPlugin.code);
@@ -1325,9 +1324,9 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     });
   });
   api.post("/api/integrations/channels/:id/sync-runs", async (c) => {
-    const channel = scopedApp.state.salesChannels.find((candidate) => candidate.id === c.req.param("id"));
+    const channel = await scopedApp.repos.salesChannels.getById(c.req.param("id"));
     if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
-    const installedPlugin = scopedApp.state.integrationPlugins.find((plugin) => plugin.id === channel.pluginId);
+    const installedPlugin = channel.pluginId ? await scopedApp.repos.integrationPlugins.getById(channel.pluginId) : undefined;
     if (!installedPlugin) throw new DomainError("plugin_not_found", "У канала не выбран плагин");
     if (channel.status === "disabled") throw new DomainError("channel_disabled", "Канал отключён, синхронизация недоступна");
     const body = pluginSyncSchema.parse(await c.req.json().catch(() => ({})));
@@ -1424,6 +1423,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       channel.lastError = message;
     }
     await scopedApp.syncRuns.upsert(syncRun);
+    await scopedApp.repos.salesChannels.upsert(channel);
     return c.json({ ok: true, data: syncRun });
   });
   api.post("/api/integrations/sync-runs/:id/cancel", async (c) => {
@@ -1463,27 +1463,32 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = z.object({ externalProductId: z.string() }).parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.linkExternalProduct({ externalProductId: body.externalProductId, productId: c.req.param("productId") }) });
   });
-  api.delete("/api/products/:productId/external-links/:linkId", (c) => {
-    const link = scopedApp.state.productExternalLinks.find((candidate) => candidate.id === c.req.param("linkId") && candidate.productId === c.req.param("productId"));
+  api.delete("/api/products/:productId/external-links/:linkId", async (c) => {
+    const link = await scopedApp.repos.productExternalLinks.getById(c.req.param("linkId"));
+    if (link?.productId !== c.req.param("productId")) {
+      throw new DomainError("external_link_not_found", "Связь товара не найдена");
+    }
     if (!link) throw new DomainError("external_link_not_found", "Связь товара не найдена");
     link.status = "unlinked";
+    await scopedApp.repos.productExternalLinks.upsert(link);
     return c.json({ ok: true, data: link });
   });
   api.post("/api/external-products/:id/create-internal-product", async (c) => {
-    const externalProduct = scopedApp.state.externalProducts.find((candidate) => candidate.id === c.req.param("id"));
+    const externalProduct = await scopedApp.repos.externalProducts.getById(c.req.param("id"));
     if (!externalProduct) throw new DomainError("external_product_not_found", "Внешний товар не найден");
     const product = await scopedApp.createProduct({ sku: externalProduct.externalSku, name: externalProduct.externalName, imageUrl: externalProduct.imageUrl, unit: "шт" });
     const link = await scopedApp.linkExternalProduct({ externalProductId: externalProduct.id, productId: product.id });
     return c.json({ ok: true, data: { product, link } });
   });
-  api.post("/api/external-products/:id/ignore", (c) => {
-    const externalProduct = scopedApp.state.externalProducts.find((candidate) => candidate.id === c.req.param("id"));
+  api.post("/api/external-products/:id/ignore", async (c) => {
+    const externalProduct = await scopedApp.repos.externalProducts.getById(c.req.param("id"));
     if (!externalProduct) throw new DomainError("external_product_not_found", "Внешний товар не найден");
     externalProduct.status = "ignored";
+    await scopedApp.repos.externalProducts.upsert(externalProduct);
     return c.json({ ok: true, data: externalProduct });
   });
   api.post("/api/external-products/:id/reprocess-events", async (c) => {
-    const externalProduct = scopedApp.state.externalProducts.find((candidate) => candidate.id === c.req.param("id"));
+    const externalProduct = await scopedApp.repos.externalProducts.getById(c.req.param("id"));
     if (!externalProduct) throw new DomainError("external_product_not_found", "Внешний товар не найден");
     const events = (await scopedApp.externalEvents.list({ channelId: externalProduct.channelId }))
       .filter((event) => JSON.stringify(event.rawPayload).includes(externalProduct.externalSku));
@@ -1514,9 +1519,10 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.patch("/api/sales/:id", async (c) => {
     const body = z.object({ status: z.enum(["shipped", "posted", "reversed"]).optional() }).parse(await c.req.json());
-    const sale = scopedApp.state.sales.find((candidate) => candidate.id === c.req.param("id"));
+    const sale = await scopedApp.repos.sales.getById(c.req.param("id"));
     if (!sale) throw new DomainError("sale_not_found", "Продажа не найдена");
     if (body.status) sale.status = body.status;
+    await scopedApp.repos.sales.upsert(sale);
     return c.json({ ok: true, data: sale });
   });
   api.delete("/api/sales/:id", async (c) => {
@@ -1546,9 +1552,10 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.patch("/api/returns/:id", async (c) => {
     const body = z.object({ refundRub: z.number().optional() }).parse(await c.req.json());
-    const salesReturn = scopedApp.state.salesReturns.find((candidate) => candidate.id === c.req.param("id"));
+    const salesReturn = await scopedApp.repos.salesReturns.getById(c.req.param("id"));
     if (!salesReturn) throw new DomainError("return_not_found", "Возврат не найден");
     if (body.refundRub !== undefined) salesReturn.refundRub = body.refundRub;
+    await scopedApp.repos.salesReturns.upsert(salesReturn);
     return c.json({ ok: true, data: salesReturn });
   });
   api.delete("/api/returns/:id", async (c) => {
@@ -1596,7 +1603,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: await scopedApp.postChannelFinanceEvent(c.req.param("id")) });
   });
   api.post("/api/integrations/finance-events/:id/reprocess", async (c) => {
-    const event = scopedApp.state.channelFinanceEvents.find((candidate) => candidate.id === c.req.param("id"));
+    const event = await scopedApp.repos.channelFinanceEvents.getById(c.req.param("id"));
     if (!event?.externalEventId) throw new DomainError("finance_event_not_found", "Финансовое событие не связано с исходным внешним событием");
     return c.json({ ok: true, data: await scopedApp.reprocessExternalEvent(event.externalEventId) });
   });
@@ -1613,7 +1620,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: await scopedApp.recordChannelPayout(body) });
   });
   api.delete("/api/finance/payouts/:id", async (c) => {
-    const payout = scopedApp.state.payouts.find((candidate) => candidate.id === c.req.param("id"));
+    const payout = await scopedApp.repos.payouts.getById(c.req.param("id"));
     if (!payout) throw new DomainError("payout_not_found", "Выплата не найдена");
     return c.json({ ok: true, data: await scopedApp.deleteDraftDocument(payout.documentId) });
   });
@@ -1658,11 +1665,12 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       amountRub: z.number().optional(),
       counterpartyId: z.string().optional()
     }).parse(await c.req.json());
-    const expense = scopedApp.state.operatingExpenses.find((candidate) => candidate.id === c.req.param("id"));
+    const expense = await scopedApp.repos.operatingExpenses.getById(c.req.param("id"));
     if (!expense) throw new DomainError("expense_not_found", "Расход не найден");
     if (body.comment !== undefined) expense.comment = body.comment;
     if (body.amountRub !== undefined) expense.amountRub = body.amountRub;
     if (body.counterpartyId !== undefined) expense.counterpartyId = body.counterpartyId || undefined;
+    await scopedApp.repos.operatingExpenses.upsert(expense);
     return c.json({ ok: true, data: expense });
   });
   api.post("/api/finance/expenses/:id/post", async (c) => {
@@ -1683,21 +1691,23 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       payload: body.payload ?? {},
       createdAt: nowIso()
     };
-    scopedApp.state.backfillProjects.push(project);
+    await scopedApp.repos.backfillProjects.add(project);
     return c.json({ ok: true, data: project });
   });
-  api.get("/api/onboarding/existing-store/projects/:id", (c) => {
-    const project = scopedApp.state.backfillProjects.find((candidate) => candidate.id === c.req.param("id"));
+  api.get("/api/onboarding/existing-store/projects/:id", async (c) => {
+    const project = await scopedApp.repos.backfillProjects.getById(c.req.param("id"));
     if (!project) throw new DomainError("backfill_project_not_found", "Проект импорта не найден");
-    const items = scopedApp.state.backfillItems
+    const items = (await scopedApp.repos.backfillItems.all())
       .filter((item) => item.backfillProjectId === project.id)
       .map((item) => evaluateBackfillItem(scopedApp, item));
     syncBackfillProjectStatus(scopedApp, project);
+    await scopedApp.repos.backfillProjects.upsert(project);
+    for (const item of items) await scopedApp.repos.backfillItems.upsert(item);
     return c.json({ ok: true, data: { project, items, summary: buildBackfillSummary(scopedApp, project.id) } });
   });
   api.post("/api/onboarding/existing-store/projects/:id/import", async (c) => {
     const body = backfillImportSchema.parse(await c.req.json().catch(() => ({})));
-    const project = scopedApp.state.backfillProjects.find((candidate) => candidate.id === c.req.param("id"));
+    const project = await scopedApp.repos.backfillProjects.getById(c.req.param("id"));
     if (!project) throw new DomainError("backfill_project_not_found", "Проект импорта не найден");
     project.status = "importing";
     if (body.syncRunId) {
@@ -1706,7 +1716,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const payload = project.payload ?? {};
     const salesChannelId = typeof payload.salesChannelId === "string" ? payload.salesChannelId : undefined;
 
-    scopedApp.state.backfillItems = scopedApp.state.backfillItems.filter((item) => item.backfillProjectId !== project.id);
+    await scopedApp.repos.backfillItems.replaceAll((await scopedApp.repos.backfillItems.all()).filter((item) => item.backfillProjectId !== project.id));
 
     const importedItems: any[] = [];
     if (body.product) {
@@ -1718,7 +1728,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
         status: "new" as const
       });
     } else if (salesChannelId) {
-      const externalProducts = scopedApp.state.externalProducts.filter((candidate) => candidate.channelId === salesChannelId);
+      const externalProducts = (await scopedApp.repos.externalProducts.all()).filter((candidate) => candidate.channelId === salesChannelId);
       const observedByExternal = await scopedApp.observedStocks.list({ channelId: salesChannelId });
       externalProducts.forEach((externalProduct) => {
         const rows = observedByExternal.filter((stock) => stock.externalProductId === externalProduct.id);
@@ -1757,21 +1767,24 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       });
     }
 
-    importedItems.forEach((item) => {
+    for (const item of importedItems) {
       evaluateBackfillItem(scopedApp, item);
-      scopedApp.state.backfillItems.push(item);
-    });
+      await scopedApp.repos.backfillItems.add(item);
+    }
     syncBackfillProjectStatus(scopedApp, project);
-    return c.json({ ok: true, data: { project, items: scopedApp.state.backfillItems.filter((candidate) => candidate.backfillProjectId === project.id), summary: buildBackfillSummary(scopedApp, project.id) } });
+    await scopedApp.repos.backfillProjects.upsert(project);
+    return c.json({ ok: true, data: { project, items: (await scopedApp.repos.backfillItems.all()).filter((candidate) => candidate.backfillProjectId === project.id), summary: buildBackfillSummary(scopedApp, project.id) } });
   });
-  api.post("/api/onboarding/existing-store/projects/:id/match-products", (c) => {
-    const project = scopedApp.state.backfillProjects.find((candidate) => candidate.id === c.req.param("id"));
+  api.post("/api/onboarding/existing-store/projects/:id/match-products", async (c) => {
+    const project = await scopedApp.repos.backfillProjects.getById(c.req.param("id"));
     if (!project) throw new DomainError("backfill_project_not_found", "Проект импорта не найден");
-    const items = scopedApp.state.backfillItems.filter((item) => item.backfillProjectId === project.id).map((item) => evaluateBackfillItem(scopedApp, item));
+    const items = (await scopedApp.repos.backfillItems.all()).filter((item) => item.backfillProjectId === project.id).map((item) => evaluateBackfillItem(scopedApp, item));
     items.forEach((item) => {
       if (item.status === "ready") item.status = "ready";
     });
     syncBackfillProjectStatus(scopedApp, project);
+    await scopedApp.repos.backfillProjects.upsert(project);
+    for (const item of items) await scopedApp.repos.backfillItems.upsert(item);
     return c.json({ ok: true, data: { project, items, summary: buildBackfillSummary(scopedApp, project.id) } });
   });
   api.patch("/api/onboarding/existing-store/projects/:id/items/:itemId", async (c) => {
@@ -1779,29 +1792,33 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       status: z.enum(["new", "matched", "ready", "created", "needs_mapping", "needs_cost", "applied"]).optional(),
       payload: z.record(z.string(), z.unknown()).optional()
     }).parse(await c.req.json());
-    const project = scopedApp.state.backfillProjects.find((candidate) => candidate.id === c.req.param("id"));
+    const project = await scopedApp.repos.backfillProjects.getById(c.req.param("id"));
     if (!project) throw new DomainError("backfill_project_not_found", "Проект импорта не найден");
-    const item = scopedApp.state.backfillItems.find((candidate) => candidate.id === c.req.param("itemId") && candidate.backfillProjectId === c.req.param("id"));
+    const item = (await scopedApp.repos.backfillItems.all()).find((candidate) => candidate.id === c.req.param("itemId") && candidate.backfillProjectId === c.req.param("id"));
     if (!item) throw new DomainError("backfill_item_not_found", "Строка импорта не найдена");
     if (body.status) item.status = body.status;
     if (body.payload) item.payload = { ...item.payload, ...body.payload };
     linkBackfillItemProduct(scopedApp, item);
     evaluateBackfillItem(scopedApp, item);
     syncBackfillProjectStatus(scopedApp, project);
+    await scopedApp.repos.backfillItems.upsert(item);
+    await scopedApp.repos.backfillProjects.upsert(project);
     return c.json({ ok: true, data: { item, project, summary: buildBackfillSummary(scopedApp, project.id) } });
   });
-  api.post("/api/onboarding/existing-store/projects/:id/review", (c) => {
-    const project = scopedApp.state.backfillProjects.find((candidate) => candidate.id === c.req.param("id"));
+  api.post("/api/onboarding/existing-store/projects/:id/review", async (c) => {
+    const project = await scopedApp.repos.backfillProjects.getById(c.req.param("id"));
     if (!project) throw new DomainError("backfill_project_not_found", "Проект импорта не найден");
-    const items = scopedApp.state.backfillItems.filter((item) => item.backfillProjectId === project.id).map((item) => evaluateBackfillItem(scopedApp, item));
+    const items = (await scopedApp.repos.backfillItems.all()).filter((item) => item.backfillProjectId === project.id).map((item) => evaluateBackfillItem(scopedApp, item));
     syncBackfillProjectStatus(scopedApp, project);
+    await scopedApp.repos.backfillProjects.upsert(project);
+    for (const item of items) await scopedApp.repos.backfillItems.upsert(item);
     return c.json({ ok: true, data: { project, items, summary: buildBackfillSummary(scopedApp, project.id) } });
   });
   api.post("/api/onboarding/existing-store/projects/:id/create-opening-balances", async (c) => {
     const body = z.object({ allowPartial: z.boolean().optional() }).parse(await c.req.json().catch(() => ({})));
-    const project = scopedApp.state.backfillProjects.find((candidate) => candidate.id === c.req.param("id"));
+    const project = await scopedApp.repos.backfillProjects.getById(c.req.param("id"));
     if (!project) throw new DomainError("backfill_project_not_found", "Проект импорта не найден");
-    const items = scopedApp.state.backfillItems.filter((item) => item.backfillProjectId === project.id).map((item) => evaluateBackfillItem(scopedApp, item));
+    const items = (await scopedApp.repos.backfillItems.all()).filter((item) => item.backfillProjectId === project.id).map((item) => evaluateBackfillItem(scopedApp, item));
     const documentedFlow = isDocumentedFlowBackfillProject(project);
     const blocking = items.filter((item) => !["ready", "applied"].includes(item.status));
     if (blocking.length > 0 && !body.allowPartial) {
@@ -1835,6 +1852,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
           summary: buildBackfillSummary(scopedApp, project.id)
         };
       }
+      await scopedApp.repos.backfillProjects.upsert(project);
+      for (const item of items) await scopedApp.repos.backfillItems.upsert(item);
       return c.json({ ok: true, data: { project, created: [], deferred: remaining.length, items, skippedOpeningBalances: true } });
     }
 
@@ -1874,7 +1893,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     for (const [warehouseId, lines] of linesByWarehouse.entries()) {
       const document = await scopedApp.createOpeningBalance({
         warehouseId,
-        date: historicalStartDate ?? scopedApp.state.accountingPolicy?.accountingStartDate ?? new Date().toISOString().slice(0, 10),
+        date: historicalStartDate ?? (await scopedApp.setupSnapshot()).accountingPolicy?.accountingStartDate ?? new Date().toISOString().slice(0, 10),
         comment: `Стартовые остатки по проекту ${project.name}`,
         lines
       });
@@ -1912,6 +1931,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       project.status = "applied";
       project.payload = { ...(project.payload ?? {}), createdDocumentIds, historyProcessing, summary: buildBackfillSummary(scopedApp, project.id) };
     }
+    await scopedApp.repos.backfillProjects.upsert(project);
+    for (const item of items) await scopedApp.repos.backfillItems.upsert(item);
     return c.json({ ok: true, data: { project, created, deferred: remaining.length, items, historyProcessing } });
   });
 
@@ -1966,38 +1987,43 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       status: "invited" as const,
       invitedAt: nowIso()
     };
-    scopedApp.state.users.push(user);
+    await scopedApp.repos.users.add(user);
     return c.json({ ok: true, data: user });
   });
   api.patch("/api/settings/users/:id/role", async (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
     const body = z.object({ roleCode: z.enum(["owner", "accountant", "operator", "viewer"]) }).parse(await c.req.json());
-    const user = scopedApp.state.users.find((candidate) => candidate.id === c.req.param("id"));
+    const users = await scopedApp.repos.users.all();
+    const user = users.find((candidate) => candidate.id === c.req.param("id"));
     if (!user) throw new DomainError("user_not_found", "Пользователь не найден");
-    const activeOwners = scopedApp.state.users.filter((candidate) => candidate.status !== "disabled" && candidate.roleCode === "owner");
+    const activeOwners = users.filter((candidate) => candidate.status !== "disabled" && candidate.roleCode === "owner");
     if (user.roleCode === "owner" && body.roleCode !== "owner" && activeOwners.length <= 1) {
       throw new DomainError("last_admin_required", "Нельзя снять роль владельца у последнего администратора");
     }
     user.roleCode = body.roleCode;
-    return c.json({ ok: true, data: { user, role: scopedApp.state.roles.find((role) => role.code === body.roleCode) } });
+    await scopedApp.repos.users.upsert(user);
+    return c.json({ ok: true, data: { user, role: (await scopedApp.repos.roles.all()).find((role) => role.code === body.roleCode) } });
   });
-  api.post("/api/settings/users/:id/disable", (c) => {
+  api.post("/api/settings/users/:id/disable", async (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
-    const user = scopedApp.state.users.find((candidate) => candidate.id === c.req.param("id"));
+    const users = await scopedApp.repos.users.all();
+    const user = users.find((candidate) => candidate.id === c.req.param("id"));
     if (!user) throw new DomainError("user_not_found", "Пользователь не найден");
-    const activeOwners = scopedApp.state.users.filter((candidate) => candidate.status !== "disabled" && candidate.roleCode === "owner");
+    const activeOwners = users.filter((candidate) => candidate.status !== "disabled" && candidate.roleCode === "owner");
     if (user.roleCode === "owner" && activeOwners.length <= 1) {
       throw new DomainError("last_admin_required", "Нельзя отключить последнего администратора");
     }
     user.status = "disabled";
+    await scopedApp.repos.users.upsert(user);
     return c.json({ ok: true, data: user });
   });
-  api.post("/api/settings/users/:id/resend", (c) => {
+  api.post("/api/settings/users/:id/resend", async (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
-    const user = scopedApp.state.users.find((candidate) => candidate.id === c.req.param("id"));
+    const user = await scopedApp.repos.users.getById(c.req.param("id"));
     if (!user) throw new DomainError("user_not_found", "Пользователь не найден");
     user.status = "invited";
     user.invitedAt = nowIso();
+    await scopedApp.repos.users.upsert(user);
     return c.json({ ok: true, data: user });
   });
   api.post("/api/agent-tokens", async (c) => {
@@ -2018,10 +2044,11 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/channels/:id/agent-permission", async (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
     const body = z.object({ agentTokenId: z.string(), permissionCode: z.string() }).parse(await c.req.json());
-    const existing = scopedApp.state.channelAgentPermissions.find((candidate) => candidate.agentTokenId === body.agentTokenId && candidate.channelId === c.req.param("id"));
+    const existing = (await scopedApp.repos.channelAgentPermissions.all()).find((candidate) => candidate.agentTokenId === body.agentTokenId && candidate.channelId === c.req.param("id"));
     const permission = existing ?? { id: id("channel_agent_permission"), agentTokenId: body.agentTokenId, channelId: c.req.param("id"), permissionCode: body.permissionCode };
     permission.permissionCode = body.permissionCode;
-    if (!existing) scopedApp.state.channelAgentPermissions.push(permission);
+    if (existing) await scopedApp.repos.channelAgentPermissions.upsert(permission);
+    else await scopedApp.repos.channelAgentPermissions.add(permission);
     return c.json({ ok: true, data: permission });
   });
   api.get("/mcp", (c) => {

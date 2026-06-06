@@ -142,6 +142,7 @@ describe("prod-ready contracts", () => {
     const receipt = app.state.goodsReceipts[0];
     const procurementCost = app.state.procurementCosts[0];
     const transfer = app.state.stockTransfers[0];
+    const product = app.state.products[0];
     const sale = app.state.sales[0];
     const financeEvent = app.state.channelFinanceEvents[0];
     const payout = app.state.payouts[0];
@@ -171,6 +172,8 @@ describe("prod-ready contracts", () => {
     const corrections = await get<any>(api, "/api/controls/corrections");
     const recalculationJobs = await get<any[]>(api, "/api/recalculation-jobs");
     const mcpConfig = await get<any>(api, "/api/mcp/config");
+    const card = await get<any>(api, `/api/products/${product.id}/card`);
+    const cardBrief = await get<any>(api, `/api/products/${product.id}/card/brief`);
     const usersResponse = await api.request("/api/users");
     const settingsUsersResponse = await api.request("/api/settings/users");
     const agentTokensResponse = await api.request("/api/agent-tokens");
@@ -208,6 +211,9 @@ describe("prod-ready contracts", () => {
     expect(corrections.corrections).toEqual(expect.any(Array));
     expect(recalculationJobs).toEqual(expect.any(Array));
     expect(mcpConfig.tools.length).toBeGreaterThan(0);
+    expect(card.product.id).toBe(product.id);
+    expect(cardBrief.product.id).toBe(product.id);
+    expect(cardBrief.generationRequirements).toBeTruthy();
     expect(usersResponse.status).toBe(404);
     expect(settingsUsersResponse.status).toBe(404);
     expect(agentTokensResponse.status).toBe(404);
