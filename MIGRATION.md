@@ -9,6 +9,19 @@
 - ✅ `ExternalEventRepository` (чтение) + индексы + PG-тест — `d6c2f54`.
 - ✅ Эндпоинты событий на репозитории, мимо снэпшота — `4736022`.
 - ✅ `auditEvents` полностью вне снэпшота (append-only) — `5b9e9ed`.
+- ✅ `externalEvents`: доменный доступ через async `ExternalEventStore` (find/ingest/
+  reprocess/ignore/saleLookup/reset) + весь pipeline/плагины/роуты на `await` — `23f5c31`
+  (поведение сохранено: in-memory стор оборачивает `state.externalEvents`; всё зелёное).
+
+### Остаток по `externalEvents` (механический хвост → выпил из снэпшота)
+1. Оставшиеся прямые чтения `state.externalEvents` → на стор (`await app.externalEvents.list/getById/count`):
+   - app.ts (async-контексты): 979 (count канала), 1317/1322/1367/1372/1452 (materialize/payout
+     роуты → getById), 3017/3437/3539/3545/3722/3746 (sync-pipeline aggregations).
+   - accounting-app.ts: 1840 (refresh — async), 2099/2179 (recordSale/Return — externalId
+     передавать из контроллера, не искать), 2910 (reset — list), 3731, 4387 (payout), 5858/5869.
+2. `PostgresExternalEventStore` (реализует `ExternalEventStore`) поверх таблицы `external_event`.
+3. Инъекция стора в сессии (`runtime-store` openRead/WriteSession).
+4. Исключить `external_event` из snapshot load/save. PG-тесты: события вне снэпшота, write ~50мс.
 
 ## Уточнение стратегии (важный вывод из кода)
 Домен — **синхронный in-memory движок**: почти каждая коллекция читается ПОСРЕДИ
