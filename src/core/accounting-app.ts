@@ -4458,11 +4458,13 @@ export class AccountingApp {
     return this.queueRecalculation(input.jobType, input.scope ?? {});
   }
 
-  retryRecalculationJob(jobId: ID) {
-    const job = this.mustFind(this.state.recalculationJobs, jobId, "recalculation_job_not_found");
+  async retryRecalculationJob(jobId: ID) {
+    const job = await this.repos.recalculationJobs.getById(jobId);
+    if (!job) throw new DomainError("recalculation_job_not_found", "Задание пересчёта не найдено");
     job.status = "completed";
     job.progress = 100;
     job.finishedAt = nowIso();
+    await this.repos.recalculationJobs.upsert(job);
     return job;
   }
 

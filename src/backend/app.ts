@@ -1773,7 +1773,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = recalculationJobSchema.parse(await c.req.json());
     return c.json({ ok: true, data: scopedApp.createRecalculationJob(body) });
   });
-  api.post("/api/recalculation-jobs/:id/retry", (c) => c.json({ ok: true, data: scopedApp.retryRecalculationJob(c.req.param("id")) }));
+  api.post("/api/recalculation-jobs/:id/retry", async (c) => c.json({ ok: true, data: await scopedApp.retryRecalculationJob(c.req.param("id")) }));
   api.post("/api/procurement-costs/:id/correct", async (c) => {
     const body = z.object({ newAmountRub: z.number(), reason: z.string().min(1) }).parse(await c.req.json());
     return c.json({ ok: true, data: scopedApp.applyProcurementCostCorrection({ procurementCostId: c.req.param("id"), ...body }) });
