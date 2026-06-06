@@ -4837,29 +4837,33 @@ export class AccountingApp {
     };
   }
 
-  receiptDispatchContext(receiptId: ID, channelId?: ID) {
-    const receipt = this.mustFind(this.state.goodsReceipts, receiptId, "receipt_not_found");
-    const document = this.mustFind(this.state.documents, receipt.documentId, "document_not_found");
+  async receiptDispatchContext(receiptId: ID, channelId?: ID) {
+    const receipt = this.mustFind(await this.repos.goodsReceipts.all(), receiptId, "receipt_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), receipt.documentId, "document_not_found");
     if (receipt.status !== "posted" || document.status !== "posted") {
       throw new DomainError("receipt_not_posted", "Отправка в канал доступна только после проведения приемки");
     }
-    const sourceWarehouse = this.mustFind(this.state.warehouses, receipt.warehouseId, "warehouse_not_found");
-    const channels = this.state.salesChannels.filter((candidate) => candidate.channelType === "marketplace" && candidate.status !== "disabled");
+    const warehouses = await this.repos.warehouses.all();
+    const sourceWarehouse = this.mustFind(warehouses, receipt.warehouseId, "warehouse_not_found");
+    const channels = (await this.repos.salesChannels.all()).filter((candidate) => candidate.channelType === "marketplace" && candidate.status !== "disabled");
     const channel = channelId ? this.mustFind(channels, channelId, "channel_not_found") : undefined;
     const salesPointWarehouse = channel
-      ? this.state.warehouses.find((warehouse) => warehouse.id === channel.salesPointWarehouseId)
+      ? warehouses.find((warehouse) => warehouse.id === channel.salesPointWarehouseId)
       : undefined;
-    const lines = this.state.goodsReceiptLines
+    const allProducts = await this.repos.products.all();
+    const allProductExternalLinks = await this.repos.productExternalLinks.all();
+    const allExternalProducts = await this.repos.externalProducts.all();
+    const lines = (await this.repos.goodsReceiptLines.all())
       .filter((line) => line.goodsReceiptId === receipt.id)
       .map((line) => {
-        const product = this.mustFind(this.state.products, line.productId, "product_not_found");
+        const product = this.mustFind(allProducts, line.productId, "product_not_found");
         const alreadyDispatchedQty = this.dispatchedQtyForReceiptLine(line.id, channel?.id);
         const qtyAvailableToDispatch = this.remainingQtyForReceiptLine(line.id, receipt.warehouseId, "sellable");
         const externalLinks = channel
-          ? this.state.productExternalLinks.filter((link) => link.productId === line.productId && link.channelId === channel.id && link.status === "active")
+          ? allProductExternalLinks.filter((link) => link.productId === line.productId && link.channelId === channel.id && link.status === "active")
           : [];
         const externalProducts = externalLinks
-          .map((link) => this.state.externalProducts.find((candidate) => candidate.id === link.externalProductId))
+          .map((link) => allExternalProducts.find((candidate) => candidate.id === link.externalProductId))
           .filter(Boolean);
         return {
           goodsReceiptLineId: line.id,

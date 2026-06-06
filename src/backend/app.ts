@@ -631,9 +631,9 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/procurement/receipts/:id/post", async (c) => c.json({ ok: true, data: await scopedApp.postGoodsReceipt(c.req.param("id")) }));
   api.get("/api/procurement/receipts/:id/delete-preview", async (c) => c.json({ ok: true, data: await scopedApp.goodsReceiptRollbackPreview(c.req.param("id")) }));
   api.delete("/api/procurement/receipts/:id", async (c) => c.json({ ok: true, data: await scopedApp.deleteGoodsReceipt(c.req.param("id")) }));
-  api.get("/api/procurement/receipts/:id/dispatch-context", (c) => {
+  api.get("/api/procurement/receipts/:id/dispatch-context", async (c) => {
     const channelId = c.req.query("channelId");
-    const context = scopedApp.receiptDispatchContext(c.req.param("id"), channelId);
+    const context = await scopedApp.receiptDispatchContext(c.req.param("id"), channelId);
     const plugin = context.channel ? resolveChannelPlugin(scopedApp, context.channel) : undefined;
     return c.json({ ok: true, data: { ...context, plugin: plugin ? serializePluginMeta(plugin) : null } });
   });
@@ -658,7 +658,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/procurement/receipts/:id/channel-dispatch/basic", async (c) => {
     const receiptId = c.req.param("id");
     const body = channelDispatchBasicSchema.parse(await c.req.json());
-    const context = scopedApp.receiptDispatchContext(receiptId, body.channelId);
+    const context = await scopedApp.receiptDispatchContext(receiptId, body.channelId);
     const channel = context.channel;
     const salesPointWarehouse = context.salesPointWarehouse;
     if (!channel || !salesPointWarehouse) {
@@ -688,7 +688,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (!plugin.fulfillment?.planDispatchFromReceipt) {
       throw new DomainError("channel_dispatch_not_supported", "Плагин не поддерживает расширенный flow распределения");
     }
-    const context = scopedApp.receiptDispatchContext(receiptId, channel.id);
+    const context = await scopedApp.receiptDispatchContext(receiptId, channel.id);
     const dispatchLines = buildDispatchPlanningLines(context, body.lines);
     const plan = await plugin.fulfillment.planDispatchFromReceipt({
       app: scopedApp,
@@ -780,7 +780,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = channelDispatchCommitSchema.parse(await c.req.json());
     const channel = mustFindChannel(scopedApp, body.channelId);
     const plugin = resolveChannelPlugin(scopedApp, channel);
-    const context = scopedApp.receiptDispatchContext(receiptId, channel.id);
+    const context = await scopedApp.receiptDispatchContext(receiptId, channel.id);
     const pluginState = plugin ? createPluginStateApi(scopedApp, plugin) : undefined;
     const existing = pluginState?.get({
       namespace: "dispatch_flow",
@@ -2876,7 +2876,7 @@ function requireChannelPlugin(app: AccountingApp, channel: SalesChannel) {
 }
 
 function buildReceiptDispatchTransferLines(
-  context: ReturnType<AccountingApp["receiptDispatchContext"]>,
+  context: Awaited<ReturnType<AccountingApp["receiptDispatchContext"]>>,
   lines: Array<{ goodsReceiptLineId: string; qty: number }>
 ) {
   return lines.map((line) => {
@@ -2901,7 +2901,7 @@ function buildReceiptDispatchTransferLines(
 }
 
 function buildDispatchPlanningLines(
-  context: ReturnType<AccountingApp["receiptDispatchContext"]>,
+  context: Awaited<ReturnType<AccountingApp["receiptDispatchContext"]>>,
   lines: Array<{ goodsReceiptLineId: string; qty: number }>
 ) {
   return buildReceiptDispatchTransferLines(context, lines).map((line) => {
