@@ -205,11 +205,11 @@ describe("procurement workflow api", () => {
       lines: [{ purchaseOrderLineId: orderLine.id, action: "supplier_claim", qtyShortage: 4 }]
     });
     expect(shortage.status).toBe("draft");
-    expect(app.shortagePreview(order.id).lines[0]?.qtyShortage).toBe(4);
+    expect((await app.shortagePreview(order.id)).lines[0]?.qtyShortage).toBe(4);
 
     await post(api, `/api/procurement/shortages/${shortage.id}/post`);
     expect(app.state.shortageResolutions.find((candidate) => candidate.id === shortage.id)?.status).toBe("posted");
-    expect(app.shortagePreview(order.id).lines).toHaveLength(0);
+    expect((await app.shortagePreview(order.id)).lines).toHaveLength(0);
   });
 
   it("deletes receipt only after removing its linked procurement cost", async () => {

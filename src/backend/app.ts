@@ -880,7 +880,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = shortageSchema.parse(await c.req.json());
     return c.json({ ok: true, data: scopedApp.resolveShortage({ ...body, purchaseOrderId: c.req.param("id") }) });
   });
-  api.get("/api/procurement/purchase-orders/:id/shortages/preview", (c) => c.json({ ok: true, data: scopedApp.shortagePreview(c.req.param("id")) }));
+  api.get("/api/procurement/purchase-orders/:id/shortages/preview", async (c) => c.json({ ok: true, data: await scopedApp.shortagePreview(c.req.param("id")) }));
   api.get("/api/procurement/shortages/:id", async (c) => c.json({ ok: true, data: await scopedApp.shortageDetails(c.req.param("id")) }));
   api.post("/api/procurement/shortages/:id/post", (c) => c.json({ ok: true, data: scopedApp.postShortage(c.req.param("id")) }));
 

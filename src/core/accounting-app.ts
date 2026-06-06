@@ -5154,9 +5154,9 @@ export class AccountingApp {
     return entry;
   }
 
-  shortagePreview(purchaseOrderId: ID) {
-    const order = this.mustFind(this.state.purchaseOrders, purchaseOrderId, "purchase_order_not_found");
-    const lines = this.state.purchaseOrderLines.filter((line) => line.purchaseOrderId === order.id).map((line) => {
+  async shortagePreview(purchaseOrderId: ID) {
+    const order = this.mustFind(await this.repos.purchaseOrders.all(), purchaseOrderId, "purchase_order_not_found");
+    const lines = (await this.repos.purchaseOrderLines.all()).filter((line) => line.purchaseOrderId === order.id).map((line) => {
       const qtyReceived = this.receivedQtyForLine(line.id);
       const qtyShortage = this.openShortageQtyForLine(order.id, line.id);
       return {
