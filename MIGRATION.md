@@ -89,9 +89,12 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   `useCollection("periods")`; `Topbar`/`App` берут organization через `useCollection`; `AppCtx` без `state`.
   Ни одна строка фронта не держит всесущий снимок. Дымовой тест (live): Home/Products/Reports/Procurement/
   Sales/Inventory/Inbox рендерятся, консоль чистая.
-- ℹ️ Бэкенд `/api/state` оставлен как есть — его используют ~20 интеграционных тестов (удобное полное чтение);
-  это тонкий сериализатор над внутренним снэпшотом, не god-объект на проводе для UI. Уберётся вместе с
-  ядром-снэпшотом (ниже).
+- ✅ Бэкенд `/api/state` удалён. Тесты переведены на чтение через `/api/collections/:name`, поэтому полного
+  публичного снимка состояния больше нет ни во фронте, ни в API-контракте.
+- ✅ Часть GET-ручек уже обслуживается read-model путём до snapshot-сессии: collections, dashboard, reports,
+  stream-чтения (sync-runs/observed-stock/audit), legacy-списки, channel detail и detail-чтения account/journal/product.
+- ⚠️ Это промежуточный слой: Postgres read-model сейчас читает те же таблицы `state_json` по коллекциям. Он убирает
+  большой API-snapshot и лишние read-session загрузки, но не заменяет финальный переход на нормализованные таблицы.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,
@@ -200,7 +203,7 @@ addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocument
 3. `app.ts`: все вызовы доменных методов → `await` (большинство handler'ов уже `async`).
 4. runtime-store: убрать `loadSnapshot`/`saveState` полностью; `openWrite/ReadSession` отдаёт `AccountingApp`
    с Postgres-репозиториями на `client`/`pool`; снять глобальный `pg_advisory_xact_lock` (транзакция на запрос
-   заменяет full-state-write-lock). Удалить `state_json`-снэпшот, `publicAccountingState`, `/api/state`.
+   заменяет full-state-write-lock). Удалить остатки `state_json`-снэпшота.
 5. Отчёты (`/api/reports*`) — в SQL (агрегаты), а не перебор state.
 6. Стыковка: `tsc` 0 → fast → PG → smoke (browser). Тесты, дергающие `/api/state`, перевести на `/api/collections`.
 
