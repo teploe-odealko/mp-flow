@@ -465,7 +465,7 @@ export class AccountingApp {
       accountingStartDate: "2026-06-01"
     });
 
-    if (this.state.products.length > 0) {
+    if ((await this.repos.products.all()).length > 0) {
       return await this.dashboard();
     }
 
@@ -517,8 +517,8 @@ export class AccountingApp {
       warehouseId: this.ownWarehouse().id,
       receiptDate: "2026-06-12",
       lines: [
-        { purchaseOrderLineId: this.state.purchaseOrderLines.find((line) => line.purchaseOrderId === po.id && line.productId === productA.id)!.id, qtyReceived: 990 },
-        { purchaseOrderLineId: this.state.purchaseOrderLines.find((line) => line.purchaseOrderId === po.id && line.productId === productB.id)!.id, qtyReceived: 500 }
+        { purchaseOrderLineId: (await this.repos.purchaseOrderLines.all()).find((line) => line.purchaseOrderId === po.id && line.productId === productA.id)!.id, qtyReceived: 990 },
+        { purchaseOrderLineId: (await this.repos.purchaseOrderLines.all()).find((line) => line.purchaseOrderId === po.id && line.productId === productB.id)!.id, qtyReceived: 500 }
       ]
     });
     await this.addProcurementCost({
@@ -893,7 +893,7 @@ export class AccountingApp {
 
   async recordOwnerContribution(input: { amountRub: number; paidAt: string; comment?: string; post?: boolean }) {
     assertPositive(input.amountRub, "Сумма пополнения должна быть положительной");
-    const owner = this.state.counterparties.find((counterparty) => counterparty.counterpartyType === "owner");
+    const owner = (await this.repos.counterparties.all()).find((counterparty) => counterparty.counterpartyType === "owner");
     const payment = await this.createPayment({
       paymentDirection: "incoming",
       paymentType: "owner_contribution",
@@ -1015,7 +1015,7 @@ export class AccountingApp {
     const allocationLines =
       goodsCostRubTotal === preview.suggestedGoodsCostRub
         ? preview.lines
-        : allocateReceiptLines(input.lines, this.state.purchaseOrderLines.filter((line) => line.purchaseOrderId === order.id), goodsCostRubTotal);
+        : allocateReceiptLines(input.lines, (await this.repos.purchaseOrderLines.all()).filter((line) => line.purchaseOrderId === order.id), goodsCostRubTotal);
 
     const document = await this.createDocument({
       documentType: "goods_receipt",
@@ -2004,7 +2004,7 @@ export class AccountingApp {
     externalEventId?: ID;
   }): Promise<SalesReturn> {
     const sale = this.mustFind(this.state.sales, input.saleId, "sale_not_found");
-    const saleLines = this.state.saleLines.filter((line) => line.saleId === sale.id);
+    const saleLines = (await this.repos.saleLines.all()).filter((line) => line.saleId === sale.id);
     const returnLines = input.lines ?? saleLines.map((line) => ({ saleLineId: line.id, qty: line.qty }));
     const warehouseId = input.warehouseId ?? sale.warehouseId;
     const stockStateCode = input.stockStateCode ?? "sellable";
@@ -2201,7 +2201,7 @@ export class AccountingApp {
     }
     this.assertAccountingDateAllowed(sale.saleDate);
     const warehouse = this.mustFind(this.state.warehouses, sale.warehouseId, "warehouse_not_found");
-    const saleLines = this.state.saleLines.filter((line) => line.saleId === sale.id);
+    const saleLines = (await this.repos.saleLines.all()).filter((line) => line.saleId === sale.id);
     const plannedQty = new Map<ID, number>();
     saleLines.forEach((line) => {
       plannedQty.set(line.productId, round4((plannedQty.get(line.productId) ?? 0) + line.qty));
@@ -2266,7 +2266,7 @@ export class AccountingApp {
           { accountCode: "90.02", debit: costRubTotal, memo: "Себестоимость продаж" },
           { accountCode: accountForWarehouse(warehouse), credit: costRubTotal, memo: "Списание товара с точки продаж" }
         ]);
-    if (!deferredRecognition && !this.state.settlementEntries.some((entry) => entry.documentId === document.id && entry.settlementType === "channel_receivable")) {
+    if (!deferredRecognition && !(await this.repos.settlementEntries.all()).some((entry) => entry.documentId === document.id && entry.settlementType === "channel_receivable")) {
       this.state.settlementEntries.push({
         id: id("settlement"),
         organizationId: this.currentOrgId(),
@@ -2333,7 +2333,7 @@ export class AccountingApp {
       { accountCode: "90.02", debit: sale.costAmountRub, memo: "Себестоимость признанной продажи" },
       { accountCode: MARKETPLACE_SHIPPED_ACCOUNT_CODE, credit: sale.costAmountRub, memo: "Списание отгруженного товара в себестоимость" }
     ]);
-    if (!this.state.settlementEntries.some((entry) => entry.documentId === financialDocument.id && entry.settlementType === "channel_receivable")) {
+    if (!(await this.repos.settlementEntries.all()).some((entry) => entry.documentId === financialDocument.id && entry.settlementType === "channel_receivable")) {
       this.state.settlementEntries.push({
         id: id("settlement"),
         organizationId: this.currentOrgId(),
@@ -2354,12 +2354,12 @@ export class AccountingApp {
 
   async deleteSaleForResync(saleId: ID) {
     const sale = this.mustFind(this.state.sales, saleId, "sale_not_found");
-    const linkedReturns = this.state.salesReturns.filter((candidate) => candidate.saleId === sale.id);
+    const linkedReturns = (await this.repos.salesReturns.all()).filter((candidate) => candidate.saleId === sale.id);
     if (linkedReturns.length > 0) {
       throw new DomainError("sale_has_returns", "Сначала удалите возвраты по этой продаже");
     }
 
-    const linkedFinanceEvents = this.state.channelFinanceEvents.filter((event) =>
+    const linkedFinanceEvents = (await this.repos.channelFinanceEvents.all()).filter((event) =>
       event.linkedSaleId === sale.id || Boolean(event.saleAllocations?.some((allocation) => allocation.saleId === sale.id))
     );
     const sharedFinanceEvents = linkedFinanceEvents.filter((event) =>
@@ -2372,7 +2372,7 @@ export class AccountingApp {
       );
     }
 
-    const blockedByPayout = this.state.payoutLines.some((line) =>
+    const blockedByPayout = (await this.repos.payoutLines.all()).some((line) =>
       (line.sourceType === "sale" && line.sourceId === sale.id) ||
       (line.sourceType === "finance_event" && linkedFinanceEvents.some((event) => event.id === line.sourceId))
     );
@@ -2480,8 +2480,8 @@ export class AccountingApp {
 
   async deleteReturnForResync(returnId: ID) {
     const salesReturn = this.mustFind(this.state.salesReturns, returnId, "return_not_found");
-    const linkedFinanceEvents = this.state.channelFinanceEvents.filter((event) => event.linkedReturnId === salesReturn.id);
-    const blockedByPayout = this.state.payoutLines.some((line) =>
+    const linkedFinanceEvents = (await this.repos.channelFinanceEvents.all()).filter((event) => event.linkedReturnId === salesReturn.id);
+    const blockedByPayout = (await this.repos.payoutLines.all()).some((line) =>
       (line.sourceType === "return" && line.sourceId === salesReturn.id) ||
       (line.sourceType === "finance_event" && linkedFinanceEvents.some((event) => event.id === line.sourceId))
     );
@@ -2586,10 +2586,10 @@ export class AccountingApp {
       );
     }
 
-    const outboundApplications = this.state.costApplications.filter((application) =>
+    const outboundApplications = (await this.repos.costApplications.all()).filter((application) =>
       application.outboundDocumentId === document.id && application.applicationType === "transfer"
     );
-    const inboundLots = this.state.inventoryLots.filter((lot) => lot.sourceDocumentId === document.id);
+    const inboundLots = (await this.repos.inventoryLots.all()).filter((lot) => lot.sourceDocumentId === document.id);
 
     this.restoreCostApplicationsToLots(outboundApplications);
     this.removeLotsFromStockStates(inboundLots);
@@ -2599,7 +2599,7 @@ export class AccountingApp {
     await this.repos.stockMovements.replaceAll((await this.repos.stockMovements.all()).filter((movement) => movement.documentId !== document.id));
     await this.repos.settlementEntries.replaceAll((await this.repos.settlementEntries.all()).filter((entry) => entry.documentId !== document.id));
     await this.repos.journalEntries.replaceAll((await this.repos.journalEntries.all()).filter((entry) => entry.documentId !== document.id));
-    const remainingJournalEntryIds = new Set(this.state.journalEntries.map((entry) => entry.id));
+    const remainingJournalEntryIds = new Set((await this.repos.journalEntries.all()).map((entry) => entry.id));
     await this.repos.journalLines.replaceAll((await this.repos.journalLines.all()).filter((line) => remainingJournalEntryIds.has(line.journalEntryId)));
     await this.repos.stockTransferLines.replaceAll((await this.repos.stockTransferLines.all()).filter((line) => line.stockTransferId !== transfer.id));
     await this.repos.stockTransfers.replaceAll((await this.repos.stockTransfers.all()).filter((candidate) => candidate.id !== transfer.id));
@@ -2647,7 +2647,7 @@ export class AccountingApp {
   // Снимает проводки, settlements, links, строки и сам документ.
   private async removeDocumentGraph(documentId: ID) {
     const journalEntryIds = new Set(
-      this.state.journalEntries.filter((entry) => entry.documentId === documentId).map((entry) => entry.id)
+      (await this.repos.journalEntries.all()).filter((entry) => entry.documentId === documentId).map((entry) => entry.id)
     );
     await this.repos.journalEntries.replaceAll((await this.repos.journalEntries.all()).filter((entry) => entry.documentId !== documentId));
     await this.repos.journalLines.replaceAll((await this.repos.journalLines.all()).filter((line) => !journalEntryIds.has(line.journalEntryId)));
@@ -2798,7 +2798,7 @@ export class AccountingApp {
     const receipt = this.mustFind(this.state.goodsReceipts, receiptId, "receipt_not_found");
     const document = this.mustFind(this.state.documents, receipt.documentId, "document_not_found");
     const before = { ...receipt };
-    const lots = this.state.inventoryLots.filter((lot) => lot.sourceDocumentId === document.id);
+    const lots = (await this.repos.inventoryLots.all()).filter((lot) => lot.sourceDocumentId === document.id);
     this.removeLotsFromStockStates(lots);
     await this.repos.inventoryLots.replaceAll((await this.repos.inventoryLots.all()).filter((lot) => lot.sourceDocumentId !== document.id));
     await this.repos.stockMovements.replaceAll((await this.repos.stockMovements.all()).filter((movement) => movement.documentId !== document.id));
@@ -2860,9 +2860,9 @@ export class AccountingApp {
     const cost = this.mustFind(this.state.procurementCosts, costId, "procurement_cost_not_found");
     const document = this.mustFind(this.state.documents, cost.documentId, "document_not_found");
     const before = { ...cost };
-    const lines = this.state.procurementCostLines.filter((line) => line.procurementCostId === cost.id);
+    const lines = (await this.repos.procurementCostLines.all()).filter((line) => line.procurementCostId === cost.id);
     for (const line of lines) {
-      const lot = line.lotId ? this.state.inventoryLots.find((candidate) => candidate.id === line.lotId) : undefined;
+      const lot = line.lotId ? (await this.repos.inventoryLots.all()).find((candidate) => candidate.id === line.lotId) : undefined;
       if (!lot || line.remainingInventoryAmountRub <= 0) continue;
       lot.costInitialRub = round2(Math.max(0, lot.costInitialRub - line.allocatedAmountRub));
       lot.costRemainingRub = round2(Math.max(0, lot.costRemainingRub - line.remainingInventoryAmountRub));
@@ -2880,7 +2880,7 @@ export class AccountingApp {
 
   async deleteChannelFinanceEventForResync(financeEventId: ID) {
     const event = this.mustFind(this.state.channelFinanceEvents, financeEventId, "finance_event_not_found");
-    const blockedByPayout = this.state.payoutLines.some((line) => line.sourceType === "finance_event" && line.sourceId === event.id);
+    const blockedByPayout = (await this.repos.payoutLines.all()).some((line) => line.sourceType === "finance_event" && line.sourceId === event.id);
     if (blockedByPayout || event.payoutId) {
       throw new DomainError("finance_event_in_payout", "Нельзя удалить финансовую операцию, которая уже вошла в выплату маркетплейса");
     }
@@ -2897,16 +2897,16 @@ export class AccountingApp {
 
   async resetChannelSalesData(channelId: ID, options?: { includePayouts?: boolean }) {
     const includePayouts = options?.includePayouts ?? false;
-    const sales = this.state.sales.filter((sale) => sale.channelId === channelId);
+    const sales = (await this.repos.sales.all()).filter((sale) => sale.channelId === channelId);
     const saleIds = new Set(sales.map((sale) => sale.id));
     const saleDocumentIds = new Set(sales.map((sale) => sale.documentId));
     const saleFinancialDocumentIds = new Set(sales.map((sale) => sale.financialDocumentId).filter(Boolean) as ID[]);
-    const salesReturns = this.state.salesReturns.filter((salesReturn) => salesReturn.channelId === channelId);
+    const salesReturns = (await this.repos.salesReturns.all()).filter((salesReturn) => salesReturn.channelId === channelId);
     const salesReturnIds = new Set(salesReturns.map((salesReturn) => salesReturn.id));
     const salesReturnDocumentIds = new Set(salesReturns.map((salesReturn) => salesReturn.documentId));
-    const channelFinanceEvents = this.state.channelFinanceEvents.filter((event) => event.channelId === channelId);
+    const channelFinanceEvents = (await this.repos.channelFinanceEvents.all()).filter((event) => event.channelId === channelId);
     const channelFinanceEventDocumentIds = new Set(channelFinanceEvents.map((event) => event.documentId));
-    const payouts = includePayouts ? this.state.payouts.filter((payout) => payout.channelId === channelId) : [];
+    const payouts = includePayouts ? (await this.repos.payouts.all()).filter((payout) => payout.channelId === channelId) : [];
     const payoutIds = new Set(payouts.map((payout) => payout.id));
     const payoutDocumentIds = new Set(payouts.map((payout) => payout.documentId));
     const payoutPaymentIds = new Set(payouts.map((payout) => payout.paymentId).filter(Boolean) as ID[]);
@@ -2928,12 +2928,12 @@ export class AccountingApp {
       ...payoutPaymentDocumentIds
     ]);
 
-    const saleCostApplications = this.state.costApplications.filter((application) =>
+    const saleCostApplications = (await this.repos.costApplications.all()).filter((application) =>
       saleDocumentIds.has(application.outboundDocumentId) && application.applicationType === "sale"
     );
     this.restoreCostApplicationsToLots(saleCostApplications);
 
-    const returnLots = this.state.inventoryLots.filter((lot) => salesReturnDocumentIds.has(lot.sourceDocumentId));
+    const returnLots = (await this.repos.inventoryLots.all()).filter((lot) => salesReturnDocumentIds.has(lot.sourceDocumentId));
     this.removeLotsFromStockStates(returnLots);
 
     for (const paymentDocumentId of payoutPaymentDocumentIds) {
@@ -2945,7 +2945,7 @@ export class AccountingApp {
     await this.repos.stockMovements.replaceAll((await this.repos.stockMovements.all()).filter((movement) => !saleDocumentIds.has(movement.documentId) && !salesReturnDocumentIds.has(movement.documentId)));
     await this.repos.settlementEntries.replaceAll((await this.repos.settlementEntries.all()).filter((entry) => !removableDocumentIds.has(entry.documentId)));
     await this.repos.journalEntries.replaceAll((await this.repos.journalEntries.all()).filter((entry) => !removableDocumentIds.has(entry.documentId)));
-    const remainingJournalEntryIds = new Set(this.state.journalEntries.map((entry) => entry.id));
+    const remainingJournalEntryIds = new Set((await this.repos.journalEntries.all()).map((entry) => entry.id));
     await this.repos.journalLines.replaceAll((await this.repos.journalLines.all()).filter((line) => remainingJournalEntryIds.has(line.journalEntryId)));
     await this.repos.documentLines.replaceAll((await this.repos.documentLines.all()).filter((line) => !removableDocumentIds.has(line.documentId)));
     await this.repos.documentVersions.replaceAll((await this.repos.documentVersions.all()).filter((version) => !removableDocumentIds.has(version.documentId)));
@@ -3000,12 +3000,12 @@ export class AccountingApp {
       ...financeEventDocumentIds
     ]);
 
-    const saleCostApplications = this.state.costApplications.filter((application) =>
+    const saleCostApplications = (await this.repos.costApplications.all()).filter((application) =>
       saleDocumentIds.has(application.outboundDocumentId) && application.applicationType === "sale"
     );
     this.restoreCostApplicationsToLots(saleCostApplications);
 
-    const returnLots = this.state.inventoryLots.filter((lot) => salesReturnDocumentIds.has(lot.sourceDocumentId));
+    const returnLots = (await this.repos.inventoryLots.all()).filter((lot) => salesReturnDocumentIds.has(lot.sourceDocumentId));
     this.removeLotsFromStockStates(returnLots);
 
     await this.repos.costApplications.replaceAll((await this.repos.costApplications.all()).filter((application) => !saleDocumentIds.has(application.outboundDocumentId)));
@@ -3013,7 +3013,7 @@ export class AccountingApp {
     await this.repos.stockMovements.replaceAll((await this.repos.stockMovements.all()).filter((movement) => !saleDocumentIds.has(movement.documentId) && !salesReturnDocumentIds.has(movement.documentId)));
     await this.repos.settlementEntries.replaceAll((await this.repos.settlementEntries.all()).filter((entry) => !removableDocumentIds.has(entry.documentId)));
     await this.repos.journalEntries.replaceAll((await this.repos.journalEntries.all()).filter((entry) => !removableDocumentIds.has(entry.documentId)));
-    const remainingJournalEntryIds = new Set(this.state.journalEntries.map((entry) => entry.id));
+    const remainingJournalEntryIds = new Set((await this.repos.journalEntries.all()).map((entry) => entry.id));
     await this.repos.journalLines.replaceAll((await this.repos.journalLines.all()).filter((line) => remainingJournalEntryIds.has(line.journalEntryId)));
     await this.repos.documentLines.replaceAll((await this.repos.documentLines.all()).filter((line) => !removableDocumentIds.has(line.documentId)));
     await this.repos.documentVersions.replaceAll((await this.repos.documentVersions.all()).filter((version) => !removableDocumentIds.has(version.documentId)));
@@ -3059,7 +3059,7 @@ export class AccountingApp {
       throw new DomainError("return_before_sale", "Дата возврата не может быть раньше даты продажи");
     }
     const warehouse = this.mustFind(this.state.warehouses, salesReturn.warehouseId, "warehouse_not_found");
-    const saleLines = this.state.saleLines.filter((line) => line.saleId === sale.id);
+    const saleLines = (await this.repos.saleLines.all()).filter((line) => line.saleId === sale.id);
     const returnDocumentLines = this.returnDocumentLines(salesReturn.id);
     if (returnDocumentLines.length === 0) {
       throw new DomainError("return_lines_not_found", "Для возврата не найдены строки");
@@ -3296,7 +3296,7 @@ export class AccountingApp {
     const payout = this.mustFind(this.state.payouts, input.payoutId, "payout_not_found");
     if (input.paymentId) {
       const payment = this.mustFind(this.state.payments, input.paymentId, "payment_not_found");
-      if (this.state.payouts.some((candidate) => candidate.id !== payout.id && candidate.paymentId === payment.id)) {
+      if ((await this.repos.payouts.all()).some((candidate) => candidate.id !== payout.id && candidate.paymentId === payment.id)) {
         throw new DomainError("payment_already_linked", "Это банковское поступление уже связано с другой выплатой");
       }
       payout.paymentId = payment.id;
@@ -3610,7 +3610,7 @@ export class AccountingApp {
     if (stocktake.status === "posted") return stocktake;
 
     const journalLines: JournalLineInput[] = [];
-    const lines = this.state.stocktakeLines.filter((line) => line.stocktakeId === stocktake.id);
+    const lines = (await this.repos.stocktakeLines.all()).filter((line) => line.stocktakeId === stocktake.id);
     const inventoryAccount = accountForWarehouse(this.mustFind(this.state.warehouses, stocktake.warehouseId, "warehouse_not_found"));
 
     lines.forEach((line) => {
@@ -3776,7 +3776,7 @@ export class AccountingApp {
     const sourceDocument = this.mustFind(this.state.documents, cost.documentId, "document_not_found");
     const beforeCost = { ...cost };
     const beforeDocument = { ...sourceDocument };
-    const currentLines = this.state.procurementCostLines.filter((line) => line.procurementCostId === cost.id);
+    const currentLines = (await this.repos.procurementCostLines.all()).filter((line) => line.procurementCostId === cost.id);
     const nextLines = this.reallocateProcurementCostLines(currentLines, nextAmountRub);
     const currentLineAmountRub = round2(currentLines.reduce((sum, line) => sum + Number(line.allocatedAmountRub ?? 0), 0));
     const allocationDelta = round2(nextAmountRub - currentLineAmountRub);
@@ -3794,7 +3794,7 @@ export class AccountingApp {
     this.state.documentVersions.push({
       id: id("doc_version"),
       documentId: sourceDocument.id,
-      versionNo: this.state.documentVersions.filter((version) => version.documentId === sourceDocument.id).length + 1,
+      versionNo: (await this.repos.documentVersions.all()).filter((version) => version.documentId === sourceDocument.id).length + 1,
       snapshot: { ...sourceDocument, procurementCost: { ...cost } },
       reason: input.reason,
       createdAt: nowIso()
@@ -4027,7 +4027,7 @@ export class AccountingApp {
     reason: string;
   }) {
     const receipt = this.mustFind(this.state.goodsReceipts, input.goodsReceiptId, "receipt_not_found");
-    const receiptLine = this.state.goodsReceiptLines.find((line) => line.goodsReceiptId === receipt.id && line.purchaseOrderLineId === input.purchaseOrderLineId);
+    const receiptLine = (await this.repos.goodsReceiptLines.all()).find((line) => line.goodsReceiptId === receipt.id && line.purchaseOrderLineId === input.purchaseOrderLineId);
     if (!receiptLine) throw new DomainError("receipt_line_not_found", "Строка приемки не найдена");
     if (input.newQtyReceived >= receiptLine.qtyReceived) {
       throw new DomainError("unsupported_correction", "Этот метод предназначен для уменьшения приемки");
@@ -4245,7 +4245,7 @@ export class AccountingApp {
     if (patch.accountingDate) this.assertAccountingDateAllowed(patch.accountingDate);
     const before = {
       document: { ...document },
-      lines: this.state.documentLines.filter((line) => line.documentId === document.id).map((line) => ({ ...line }))
+      lines: (await this.repos.documentLines.all()).filter((line) => line.documentId === document.id).map((line) => ({ ...line }))
     };
     if (patch.accountingDate !== undefined) document.accountingDate = patch.accountingDate;
     if (patch.title !== undefined) document.title = patch.title;
@@ -4268,7 +4268,7 @@ export class AccountingApp {
     this.state.documentVersions.push({
       id: id("doc_version"),
       documentId: document.id,
-      versionNo: this.state.documentVersions.filter((version) => version.documentId === document.id).length + 1,
+      versionNo: (await this.repos.documentVersions.all()).filter((version) => version.documentId === document.id).length + 1,
       snapshot: before,
       reason: patch.changeReason ?? "Редактирование черновика",
       createdAt: nowIso()
@@ -4280,12 +4280,12 @@ export class AccountingApp {
   async postExistingDocument(documentId: ID, journalLines?: JournalLineInput[]) {
     const document = this.mustFind(this.state.documents, documentId, "document_not_found");
     if (document.status === "posted") {
-      return { document, entry: this.state.journalEntries.find((entry) => entry.documentId === document.id) };
+      return { document, entry: (await this.repos.journalEntries.all()).find((entry) => entry.documentId === document.id) };
     }
     if (document.status === "cancelled") {
       throw new DomainError("document_cancelled", "Отмененный документ нельзя провести повторно");
     }
-    const registry = this.state.documentTypes.find((type) => type.code === document.documentType);
+    const registry = (await this.repos.documentTypes.all()).find((type) => type.code === document.documentType);
     if (!registry) throw new DomainError("unknown_document_type", `Неизвестный тип документа: ${document.documentType}`);
     this.assertAccountingDateAllowed(document.accountingDate);
     if (!registry.isPosting) {
@@ -4306,15 +4306,15 @@ export class AccountingApp {
       throw new DomainError("document_delete_not_allowed", "Удалять можно только черновики без проведённых последствий");
     }
     this.assertDocumentHasNoDescendants(document.id, "Нельзя удалить документ, пока от него зависят другие документы");
-    if (this.state.journalEntries.some((entry) => entry.documentId === document.id)) {
+    if ((await this.repos.journalEntries.all()).some((entry) => entry.documentId === document.id)) {
       throw new DomainError("document_has_postings", "Нельзя удалить документ с проводками");
     }
 
     switch (document.documentType) {
       case "purchase_order": {
-        const order = this.state.purchaseOrders.find((candidate) => candidate.documentId === document.id);
+        const order = (await this.repos.purchaseOrders.all()).find((candidate) => candidate.documentId === document.id);
         if (!order) break;
-        if (this.paymentsForPurchaseOrder(order.id).length > 0 || this.state.goodsReceipts.some((receipt) => receipt.purchaseOrderId === order.id)) {
+        if (this.paymentsForPurchaseOrder(order.id).length > 0 || (await this.repos.goodsReceipts.all()).some((receipt) => receipt.purchaseOrderId === order.id)) {
           throw new DomainError("purchase_order_has_dependencies", "Нельзя удалить заказ, по которому уже есть оплаты или приемки");
         }
         await this.repos.purchaseOrderLines.replaceAll((await this.repos.purchaseOrderLines.all()).filter((line) => line.purchaseOrderId !== order.id));
@@ -4322,39 +4322,39 @@ export class AccountingApp {
         break;
       }
       case "goods_receipt": {
-        const receipt = this.state.goodsReceipts.find((candidate) => candidate.documentId === document.id);
+        const receipt = (await this.repos.goodsReceipts.all()).find((candidate) => candidate.documentId === document.id);
         if (!receipt) break;
         await this.repos.goodsReceiptLines.replaceAll((await this.repos.goodsReceiptLines.all()).filter((line) => line.goodsReceiptId !== receipt.id));
         await this.repos.goodsReceipts.replaceAll((await this.repos.goodsReceipts.all()).filter((candidate) => candidate.id !== receipt.id));
         break;
       }
       case "procurement_cost": {
-        const cost = this.state.procurementCosts.find((candidate) => candidate.documentId === document.id);
+        const cost = (await this.repos.procurementCosts.all()).find((candidate) => candidate.documentId === document.id);
         if (!cost) break;
         await this.repos.procurementCostLines.replaceAll((await this.repos.procurementCostLines.all()).filter((line) => line.procurementCostId !== cost.id));
         await this.repos.procurementCosts.replaceAll((await this.repos.procurementCosts.all()).filter((candidate) => candidate.id !== cost.id));
         break;
       }
       case "shortage_resolution": {
-        const shortage = this.state.shortageResolutions.find((candidate) => candidate.documentId === document.id);
+        const shortage = (await this.repos.shortageResolutions.all()).find((candidate) => candidate.documentId === document.id);
         if (!shortage) break;
-        const shortageLineIds = new Set(this.state.shortageResolutionLines.filter((line) => line.shortageResolutionId === shortage.id).map((line) => line.id));
+        const shortageLineIds = new Set((await this.repos.shortageResolutionLines.all()).filter((line) => line.shortageResolutionId === shortage.id).map((line) => line.id));
         await this.repos.supplierClaims.replaceAll((await this.repos.supplierClaims.all()).filter((claim) => !shortageLineIds.has(claim.shortageResolutionLineId)));
         await this.repos.shortageResolutionLines.replaceAll((await this.repos.shortageResolutionLines.all()).filter((line) => line.shortageResolutionId !== shortage.id));
         await this.repos.shortageResolutions.replaceAll((await this.repos.shortageResolutions.all()).filter((candidate) => candidate.id !== shortage.id));
         break;
       }
       case "stock_transfer": {
-        const transfer = this.state.stockTransfers.find((candidate) => candidate.documentId === document.id);
+        const transfer = (await this.repos.stockTransfers.all()).find((candidate) => candidate.documentId === document.id);
         if (!transfer) break;
         await this.repos.stockTransferLines.replaceAll((await this.repos.stockTransferLines.all()).filter((line) => line.stockTransferId !== transfer.id));
         await this.repos.stockTransfers.replaceAll((await this.repos.stockTransfers.all()).filter((candidate) => candidate.id !== transfer.id));
         break;
       }
       case "sale": {
-        const sale = this.state.sales.find((candidate) => candidate.documentId === document.id);
+        const sale = (await this.repos.sales.all()).find((candidate) => candidate.documentId === document.id);
         if (!sale) break;
-        if (this.state.salesReturns.some((candidate) => candidate.saleId === sale.id)) {
+        if ((await this.repos.salesReturns.all()).some((candidate) => candidate.saleId === sale.id)) {
           throw new DomainError("sale_has_returns", "Нельзя удалить продажу, по которой уже есть возвраты");
         }
         await this.repos.saleLines.replaceAll((await this.repos.saleLines.all()).filter((line) => line.saleId !== sale.id));
@@ -4362,19 +4362,19 @@ export class AccountingApp {
         break;
       }
       case "sales_return": {
-        const salesReturn = this.state.salesReturns.find((candidate) => candidate.documentId === document.id);
+        const salesReturn = (await this.repos.salesReturns.all()).find((candidate) => candidate.documentId === document.id);
         if (!salesReturn) break;
         await this.repos.salesReturns.replaceAll((await this.repos.salesReturns.all()).filter((candidate) => candidate.id !== salesReturn.id));
         break;
       }
       case "channel_finance_event": {
-        const event = this.state.channelFinanceEvents.find((candidate) => candidate.documentId === document.id);
+        const event = (await this.repos.channelFinanceEvents.all()).find((candidate) => candidate.documentId === document.id);
         if (!event) break;
         await this.repos.channelFinanceEvents.replaceAll((await this.repos.channelFinanceEvents.all()).filter((candidate) => candidate.id !== event.id));
         break;
       }
       case "payout": {
-        const payout = this.state.payouts.find((candidate) => candidate.documentId === document.id);
+        const payout = (await this.repos.payouts.all()).find((candidate) => candidate.documentId === document.id);
         if (!payout) break;
         if (payout.paymentId) {
           const payment = this.mustFind(this.state.payments, payout.paymentId, "payment_not_found");
@@ -4382,7 +4382,7 @@ export class AccountingApp {
           if (paymentDocument.status !== "draft") {
             throw new DomainError("document_delete_not_allowed", "Удалять можно только черновики без проведённых последствий");
           }
-          if (this.state.paymentAllocations.some((allocation) => allocation.paymentId === payment.id)) {
+          if ((await this.repos.paymentAllocations.all()).some((allocation) => allocation.paymentId === payment.id)) {
             throw new DomainError("payment_has_allocations", "Нельзя удалить платеж, который уже распределен по другим документам");
           }
           await this.repos.payments.replaceAll((await this.repos.payments.all()).filter((candidate) => candidate.id !== payment.id));
@@ -4410,16 +4410,16 @@ export class AccountingApp {
         break;
       }
       case "stocktake": {
-        const stocktake = this.state.stocktakes.find((candidate) => candidate.documentId === document.id);
+        const stocktake = (await this.repos.stocktakes.all()).find((candidate) => candidate.documentId === document.id);
         if (!stocktake) break;
         await this.repos.stocktakeLines.replaceAll((await this.repos.stocktakeLines.all()).filter((line) => line.stocktakeId !== stocktake.id));
         await this.repos.stocktakes.replaceAll((await this.repos.stocktakes.all()).filter((candidate) => candidate.id !== stocktake.id));
         break;
       }
       case "payment": {
-        const payment = this.state.payments.find((candidate) => candidate.documentId === document.id);
+        const payment = (await this.repos.payments.all()).find((candidate) => candidate.documentId === document.id);
         if (!payment) break;
-        if (this.state.paymentAllocations.some((allocation) => allocation.paymentId === payment.id)) {
+        if ((await this.repos.paymentAllocations.all()).some((allocation) => allocation.paymentId === payment.id)) {
           throw new DomainError("payment_has_allocations", "Нельзя удалить платеж, который уже распределен по другим документам");
         }
         await this.repos.payments.replaceAll((await this.repos.payments.all()).filter((candidate) => candidate.id !== payment.id));
@@ -4444,7 +4444,7 @@ export class AccountingApp {
     this.state.documentVersions.push({
       id: id("doc_version"),
       documentId: document.id,
-      versionNo: this.state.documentVersions.filter((version) => version.documentId === document.id).length + 1,
+      versionNo: (await this.repos.documentVersions.all()).filter((version) => version.documentId === document.id).length + 1,
       snapshot: before,
       reason,
       createdAt: nowIso()
@@ -4658,7 +4658,7 @@ export class AccountingApp {
     if (payment.paymentType !== "supplier_payment") {
       throw new DomainError("payment_type_mismatch", "Это не оплата поставщику");
     }
-    const allocation = this.state.paymentAllocations.find((candidate) => candidate.paymentId === payment.id && candidate.allocationPurpose === "goods_purchase");
+    const allocation = (await this.repos.paymentAllocations.all()).find((candidate) => candidate.paymentId === payment.id && candidate.allocationPurpose === "goods_purchase");
     if (!allocation?.purchaseOrderId) {
       throw new DomainError("payment_allocation_not_found", "Для платежа не найден связанный заказ поставщику");
     }
@@ -4912,8 +4912,8 @@ export class AccountingApp {
       throw new DomainError("document_cancelled", "Отмененную приемку нельзя провести повторно");
     }
     const order = this.mustFind(this.state.purchaseOrders, receipt.purchaseOrderId, "purchase_order_not_found");
-    const receiptLines = this.state.goodsReceiptLines.filter((line) => line.goodsReceiptId === receipt.id);
-    const documentLines = this.state.documentLines.filter((line) => line.documentId === document.id);
+    const receiptLines = (await this.repos.goodsReceiptLines.all()).filter((line) => line.goodsReceiptId === receipt.id);
+    const documentLines = (await this.repos.documentLines.all()).filter((line) => line.documentId === document.id);
 
     receiptLines.forEach((receiptLine) => {
       const existingLine = documentLines.find((line) => (line.payload as Record<string, unknown>)?.receiptLineId === receiptLine.id);
@@ -5004,7 +5004,7 @@ export class AccountingApp {
       cost.status = "posted";
       return cost;
     }
-    const previewLines = this.state.procurementCostLines.filter((line) => line.procurementCostId === cost.id);
+    const previewLines = (await this.repos.procurementCostLines.all()).filter((line) => line.procurementCostId === cost.id);
     previewLines.forEach((line) => {
       const lot = line.lotId ? this.mustFind(this.state.inventoryLots, line.lotId, "lot_not_found") : undefined;
       if (!lot) return;
@@ -5193,7 +5193,7 @@ export class AccountingApp {
       throw new DomainError("document_cancelled", "Отмененное решение по недопоставке нельзя провести повторно");
     }
     const order = this.mustFind(this.state.purchaseOrders, shortage.purchaseOrderId, "purchase_order_not_found");
-    const shortageLines = this.state.shortageResolutionLines.filter((line) => line.shortageResolutionId === shortage.id);
+    const shortageLines = (await this.repos.shortageResolutionLines.all()).filter((line) => line.shortageResolutionId === shortage.id);
     const journalLines: JournalLineInput[] = [];
     shortageLines.forEach((line) => {
       if (line.action === "supplier_claim" && line.paidShareRub > 0) {
@@ -5248,7 +5248,7 @@ export class AccountingApp {
     if (document.status === "cancelled") {
       throw new DomainError("document_cancelled", "Отмененное перемещение нельзя провести повторно");
     }
-    const transferLines = this.state.stockTransferLines.filter((line) => line.stockTransferId === transfer.id);
+    const transferLines = (await this.repos.stockTransferLines.all()).filter((line) => line.stockTransferId === transfer.id);
     let totalCost = 0;
     transferLines.forEach((line) => {
       const applications = this.consumeFifo({
@@ -5709,7 +5709,7 @@ export class AccountingApp {
   }
 
   private async rollbackPaymentsForDocument(documentId: ID) {
-    const payments = this.state.payments.filter((candidate) => candidate.documentId === documentId);
+    const payments = (await this.repos.payments.all()).filter((candidate) => candidate.documentId === documentId);
     if (payments.length === 0) return;
     for (const payment of payments) {
       const cashAccount = this.mustFind(this.state.cashAccounts, payment.cashAccountId, "cash_account_not_found");
@@ -5743,7 +5743,7 @@ export class AccountingApp {
   }
 
   private async compactZeroStockStates() {
-    this.state.stockStates.forEach((stockState) => {
+    (await this.repos.stockStates.all()).forEach((stockState) => {
       if (Math.abs(Number(stockState.qty ?? 0)) <= 0.0001) {
         stockState.qty = 0;
         stockState.costRub = 0;
