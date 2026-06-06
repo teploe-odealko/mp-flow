@@ -53,6 +53,7 @@ import type {
   Warehouse
 } from "./models";
 import { assertNonNegative, assertPositive, createEmptyState, DomainError, id, monthPeriods, nowIso, round2, round4, round6 } from "./utils";
+import { InMemoryExternalEventStore, type ExternalEventStore } from "./external-event-store";
 
 export interface BootstrapInput {
   displayName: string;
@@ -175,8 +176,11 @@ export class AccountingApp {
   private readonly pluginSecrets = new Map<string, { revision: number; payload: Record<string, string | undefined> }>();
   private externalProductByChannelSku?: Map<string, ExternalProduct>;
   private activeLinkByExternalProductId?: Map<ID, ProductExternalLink>;
-  private externalEventIdentityIndex?: Map<string, ExternalEvent>;
-  private externalEventById?: Map<ID, ExternalEvent>;
+  /**
+   * Поток событий маркетплейса. По умолчанию in-memory (обёртка над state.externalEvents);
+   * в Postgres-рантайме сюда инжектится репозиторий, и события не живут в snapshot.
+   */
+  externalEvents: ExternalEventStore;
   private saleLookup?: {
     exact: Map<string, Sale>;
     parent: Map<string, Sale | null>;
@@ -184,6 +188,7 @@ export class AccountingApp {
 
   constructor(state: AccountingState = createEmptyState()) {
     this.state = state;
+    this.externalEvents = new InMemoryExternalEventStore(this.state.externalEvents);
     this.ensureRequiredSystemMetadata();
   }
 
@@ -217,35 +222,17 @@ export class AccountingApp {
     return this.activeLinkByExternalProductId;
   }
 
-  private ensureExternalEventIdentityIndex() {
-    if (this.externalEventIdentityIndex) return this.externalEventIdentityIndex;
-    const index = new Map<string, ExternalEvent>();
-    for (const event of this.state.externalEvents) {
-      index.set(this.externalEventIdentityKey(event.channelId, event.externalId), event);
-      index.set(this.externalEventIdentityKey(event.channelId, event.idempotencyKey), event);
-    }
-    this.externalEventIdentityIndex = index;
-    return index;
-  }
-
-  private ensureExternalEventById() {
-    if (this.externalEventById) return this.externalEventById;
-    this.externalEventById = new Map(this.state.externalEvents.map((event) => [event.id, event]));
-    return this.externalEventById;
-  }
-
   private invalidateSaleLookup() {
     this.saleLookup = undefined;
   }
 
-  private ensureSaleLookup() {
+  private async ensureSaleLookup() {
     if (this.saleLookup) return this.saleLookup;
     const exact = new Map<string, Sale>();
     const parent = new Map<string, Sale | null>();
-    const eventsById = this.ensureExternalEventById();
     for (const sale of this.state.sales) {
       if (!sale.externalEventId) continue;
-      const sourceEvent = eventsById.get(sale.externalEventId);
+      const sourceEvent = await this.externalEvents.getById(sale.externalEventId);
       if (!sourceEvent) continue;
       const payload = sourceEvent.normalizedPayload as Record<string, unknown> | undefined;
       const postingNumber = String(payload?.postingNumber ?? "").trim();
@@ -270,14 +257,11 @@ export class AccountingApp {
   }
 
   findExternalEventById(eventId: ID) {
-    return this.ensureExternalEventById().get(eventId);
+    return this.externalEvents.getById(eventId);
   }
 
   findExternalEventByIdentity(channelId: ID, externalId: string, idempotencyKey?: string) {
-    const index = this.ensureExternalEventIdentityIndex();
-    const byIdempotency = idempotencyKey ? index.get(this.externalEventIdentityKey(channelId, idempotencyKey)) : undefined;
-    if (byIdempotency) return byIdempotency;
-    return index.get(this.externalEventIdentityKey(channelId, externalId));
+    return this.externalEvents.findByIdentity(channelId, externalId, idempotencyKey);
   }
 
   findSaleByPostingNumber(channelId: ID, postingNumber: string) {
@@ -443,8 +427,7 @@ export class AccountingApp {
   }
 
   private invalidateExternalEventLookups() {
-    this.externalEventIdentityIndex = undefined;
-    this.externalEventById = undefined;
+    this.invalidateSaleLookup();
   }
 
   dashboard() {
@@ -1736,12 +1719,10 @@ export class AccountingApp {
   resetLookupCaches() {
     this.externalProductByChannelSku = undefined;
     this.activeLinkByExternalProductId = undefined;
-    this.externalEventIdentityIndex = undefined;
-    this.externalEventById = undefined;
     this.saleLookup = undefined;
   }
 
-  ingestExternalEvent(input: {
+  async ingestExternalEvent(input: {
     channelId: ID;
     eventType: ExternalEvent["eventType"];
     externalId: string;
@@ -1749,9 +1730,9 @@ export class AccountingApp {
     payload: Record<string, unknown>;
     syncRunId?: ID;
     idempotencyKey?: string;
-  }): ExternalEvent {
+  }): Promise<ExternalEvent> {
     const idempotencyKey = input.idempotencyKey ?? input.externalId;
-    const existing = this.findExternalEventByIdentity(input.channelId, input.externalId, idempotencyKey);
+    const existing = await this.findExternalEventByIdentity(input.channelId, input.externalId, idempotencyKey);
     if (existing) {
       existing.syncRunId = input.syncRunId ?? existing.syncRunId;
       existing.occurredAt = input.occurredAt;
@@ -1763,6 +1744,7 @@ export class AccountingApp {
         this.applyExternalEventState(existing);
       }
       existing.updatedAt = nowIso();
+      await this.externalEvents.upsert(existing);
       return existing;
     }
     const createdAt = nowIso();
@@ -1782,29 +1764,30 @@ export class AccountingApp {
       updatedAt: createdAt
     };
     this.applyExternalEventState(event);
-    this.state.externalEvents.push(event);
-    this.ensureExternalEventIdentityIndex().set(this.externalEventIdentityKey(event.channelId, event.externalId), event);
-    this.ensureExternalEventIdentityIndex().set(this.externalEventIdentityKey(event.channelId, event.idempotencyKey), event);
-    this.ensureExternalEventById().set(event.id, event);
+    await this.externalEvents.upsert(event);
     return event;
   }
 
-  reprocessExternalEvent(eventId: ID) {
-    const event = this.findExternalEventById(eventId) ?? this.mustFind(this.state.externalEvents, eventId, "external_event_not_found");
+  async reprocessExternalEvent(eventId: ID) {
+    const event = await this.externalEvents.getById(eventId);
+    if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
     event.materializedDocumentId = undefined;
     event.lastError = undefined;
     event.reason = undefined;
     event.status = "new";
     this.applyExternalEventState(event);
     event.updatedAt = nowIso();
+    await this.externalEvents.upsert(event);
     return event;
   }
 
-  ignoreExternalEvent(eventId: ID, reason: string) {
-    const event = this.findExternalEventById(eventId) ?? this.mustFind(this.state.externalEvents, eventId, "external_event_not_found");
+  async ignoreExternalEvent(eventId: ID, reason: string) {
+    const event = await this.externalEvents.getById(eventId);
+    if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
     event.status = "ignored";
     event.reason = reason;
     event.updatedAt = nowIso();
+    await this.externalEvents.upsert(event);
     return event;
   }
 
