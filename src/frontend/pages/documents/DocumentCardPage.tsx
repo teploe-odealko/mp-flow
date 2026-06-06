@@ -11,7 +11,7 @@ import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { DocumentStatusBadge } from "@/components/status-badge";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from "@/api";
 import { date, dateTime, rub } from "@/lib/format";
 import { cn } from "@/lib/cn";
@@ -38,7 +38,7 @@ type BlockedActionState = {
 
 export function DocumentCardPage() {
   const { id } = useParams();
-  const { state } = useAppState();
+  const state = { documents: useCollection<any[]>("documents") ?? [], documentLines: useCollection<any[]>("documentLines") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], journalLines: useCollection<any[]>("journalLines") ?? [], chartAccounts: useCollection<any[]>("chartAccounts") ?? [], periods: useCollection<any[]>("periods") ?? [], sales: useCollection<any[]>("sales") ?? [], salesReturns: useCollection<any[]>("salesReturns") ?? [], stockTransfers: useCollection<any[]>("stockTransfers") ?? [], channelFinanceEvents: useCollection<any[]>("channelFinanceEvents") ?? [] };
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();

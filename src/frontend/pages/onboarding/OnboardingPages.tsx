@@ -23,7 +23,7 @@ import { Kpi } from "@/components/ui/kpi";
 import { EmptyState } from "@/components/ui/empty-state";
 import { CheckLabel } from "@/components/ui/checkbox";
 import { ProductThumb } from "@/components/product-thumb";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { apiGet, apiPatch, apiPost } from "@/api";
 import { qty, rub } from "@/lib/format";
 
@@ -47,7 +47,7 @@ function inventoryStartModeFromPayload(payload?: Record<string, unknown> | null)
 }
 
 export function BackfillWizardPage() {
-  const { state } = useAppState();
+  const state = { salesChannels: useCollection<any[]>("salesChannels") ?? [], products: useCollection<any[]>("products") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [], backfillProjects: useCollection<any[]>("backfillProjects") ?? [], accountingPolicy: useCollection<any>("accountingPolicy"), organization: useCollection<any>("organization") };
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();

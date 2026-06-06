@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ProductCell, ProductThumb } from "@/components/product-thumb";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { apiDelete, apiGet } from "@/api";
 import { date, qty, rub } from "@/lib/format";
 import { documentStatusLabel, documentStatusTone, movementTypeLabel, stockStateLabel, warehouseTypeLabel } from "@/lib/i18n";
@@ -21,7 +21,7 @@ import { PhotoStudioPanel } from "./PhotoStudioPanel";
 export function ProductCardPage() {
   const { id } = useParams();
   const location = useLocation();
-  const { state } = useAppState();
+  const state = { products: useCollection<any[]>("products") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [], documents: useCollection<any[]>("documents") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], costApplications: useCollection<any[]>("costApplications") ?? [], externalProducts: useCollection<any[]>("externalProducts") ?? [], productExternalLinks: useCollection<any[]>("productExternalLinks") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], stockMovements: useCollection<any[]>("stockMovements") ?? [], stockStates: useCollection<any[]>("stockStates") ?? [], accountingPolicy: useCollection<any>("accountingPolicy") };
   const product = (state.products ?? []).find((candidate: any) => candidate.id === id);
   if (!product) return null;
 

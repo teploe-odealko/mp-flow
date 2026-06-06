@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Pagination } from "@/components/ui/pagination";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { apiPost } from "@/api";
 import { rub, date, dateTime } from "@/lib/format";
 import { paginateRows } from "@/lib/pagination";
@@ -22,7 +22,7 @@ import { paginateRows } from "@/lib/pagination";
 const today = () => new Date().toISOString().slice(0, 10);
 
 export function ExpensesWorkspace() {
-  const { state } = useAppState();
+  const state = { operatingExpenses: useCollection<any[]>("operatingExpenses") ?? [], expenseCategories: useCollection<any[]>("expenseCategories") ?? [], counterparties: useCollection<any[]>("counterparties") ?? [], ownerTransactions: useCollection<any[]>("ownerTransactions") ?? [], payments: useCollection<any[]>("payments") ?? [], documents: useCollection<any[]>("documents") ?? [], accountingPolicy: useCollection<any>("accountingPolicy") };
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const expenses = state.operatingExpenses ?? [];
@@ -223,7 +223,7 @@ export function ExpensesWorkspace() {
 }
 
 export function ExpenseFormPage() {
-  const { state } = useAppState();
+  const state = { expenseCategories: useCollection<any[]>("expenseCategories") ?? [], counterparties: useCollection<any[]>("counterparties") ?? [], cashAccounts: useCollection<any[]>("cashAccounts") ?? [], accountingPolicy: useCollection<any>("accountingPolicy") };
   const categories = state.expenseCategories ?? [];
   const counterparties = state.counterparties ?? [];
   const cashAccounts = (state.cashAccounts ?? []).filter((account: any) => account.isActive);
@@ -363,7 +363,7 @@ export function ExpenseFormPage() {
 
 export function ExpenseCardPage() {
   const { id } = useParams();
-  const { state } = useAppState();
+  const state = { operatingExpenses: useCollection<any[]>("operatingExpenses") ?? [], expenseCategories: useCollection<any[]>("expenseCategories") ?? [], counterparties: useCollection<any[]>("counterparties") ?? [], documents: useCollection<any[]>("documents") ?? [], payments: useCollection<any[]>("payments") ?? [] };
   const queryClient = useQueryClient();
   const expense = (state.operatingExpenses ?? []).find((candidate: any) => candidate.id === id);
   const categories = state.expenseCategories ?? [];

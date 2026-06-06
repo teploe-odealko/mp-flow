@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Kpi } from "@/components/ui/kpi";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { apiPost } from "@/api";
 import { rub, date } from "@/lib/format";
 import { paginateRows } from "@/lib/pagination";
@@ -25,7 +25,7 @@ export function MoneyWorkspace() {
 }
 
 export function OwnerContributionFormPage() {
-  const { state } = useAppState();
+  const state = { accountingPolicy: useCollection<any>("accountingPolicy") };
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [paidAt, setPaidAt] = useState(state.accountingPolicy?.accountingStartDate ?? today());
@@ -101,7 +101,7 @@ export function OwnerWithdrawalFormPage() {
 }
 
 export function PayoutFormPage() {
-  const { state } = useAppState();
+  const state = { salesChannels: useCollection<any[]>("salesChannels") ?? [] };
   const channels = state.salesChannels ?? [];
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -168,7 +168,7 @@ export function PayoutFormPage() {
 }
 
 export function PayoutsPage() {
-  const { state } = useAppState();
+  const state = { payouts: useCollection<any[]>("payouts") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], payoutLines: useCollection<any[]>("payoutLines") ?? [] };
   const payouts = state.payouts ?? [];
   const channels = state.salesChannels ?? [];
   const payoutLines = state.payoutLines ?? [];
@@ -293,7 +293,7 @@ export function PayoutsPage() {
 
 export function PayoutReconciliationPage() {
   const { id } = useParams();
-  const { state } = useAppState();
+  const state = { payouts: useCollection<any[]>("payouts") ?? [], payoutLines: useCollection<any[]>("payoutLines") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], sales: useCollection<any[]>("sales") ?? [], salesReturns: useCollection<any[]>("salesReturns") ?? [], channelFinanceEvents: useCollection<any[]>("channelFinanceEvents") ?? [], payments: useCollection<any[]>("payments") ?? [], documents: useCollection<any[]>("documents") ?? [] };
   const queryClient = useQueryClient();
   const payout = (state.payouts ?? []).find((candidate: any) => candidate.id === id);
   const payoutLines = (state.payoutLines ?? []).filter((candidate: any) => candidate.payoutId === id);
