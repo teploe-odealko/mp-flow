@@ -126,6 +126,16 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   Общие sync-хелперы (`mustFind`, `ledgerBalances`, `audit`, `createDocument`/`postJournalEntry` пока) читают
   `this.state` напрямую — валидно в in-memory фазе; конвертируются в свою очередь (каскад вверх).
 
+### ✅ ЭНТЭНГЛД-ЯДРО ПОСТИНГА переведено на async-репозитории (tsc 0, fast 72, PG 9)
+`createDocument`/`createPayment`/`postDocument` + все команды постинга (`createSale`/`receiveGoods`/
+`postPayment`/`recordReturn`/`postChannelFinanceEvent`/`postChannelPayout`/`recordOperatingExpense`/
+`applyDocumentCorrection`/`recordSale`/`postSale`/…) + AVCO/recalc + ~89 реассайнов `state.X=…filter()`
+→ `repos.X.replaceAll` (мутация на месте, ссылка цела) + delete-for-resync. app.ts-хендлеры (55 floating-
+promise в `c.json` починены) + пайплайн (`materializeSale/Payout/Return`) + тесты на `await`; sync test-
+коллбэки → async; async-throw → `rejects.toThrow`. **Двойная запись/AVCO/удаления корректны (тесты зелёные).**
+Остаток `this.state.` в домене: **464** (было 565) — в основном sync-хелперы (`ledgerBalances`, `audit`,
+`consumeFifo`, `addStockState`, `nextDocumentNumber`, index-хелперы, `findActiveLink`, остаточные чтения).
+
 ### План исполнения ядра (для отдельного захода, с чистым контекстом)
 1. Завести `Repositories`-фасад (как уже сделанные сторы) для оставшихся коллекций: `documents`, `documentLines`,
    `documentVersions`, `documentLinks`, `journalEntries`, `journalLines`, `sales`, `saleLines`, `salesReturns`,
