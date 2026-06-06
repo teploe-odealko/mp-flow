@@ -3414,30 +3414,31 @@ export class AccountingApp {
   }
 
   async rebuildPayout(payoutId: ID): Promise<Payout> {
-    const payout = this.mustFind(this.state.payouts, payoutId, "payout_not_found");
+    const payout = this.mustFind(await this.repos.payouts.all(), payoutId, "payout_not_found");
     const cutoff = payout.periodTo ?? payout.payoutDate;
-    const manualLines = this.state.payoutLines
+    const payoutLines = await this.repos.payoutLines.all();
+    const manualLines = payoutLines
       .filter((line) => line.payoutId === payout.id && line.sourceType === "manual_adjustment")
       .map((line) => ({ ...line }));
     const usedSaleIds = new Set(
-      this.state.payoutLines
+      payoutLines
         .filter((line) => line.payoutId !== payout.id && line.sourceType === "sale" && line.sourceId)
         .map((line) => String(line.sourceId))
     );
     const usedReturnIds = new Set(
-      this.state.payoutLines
+      payoutLines
         .filter((line) => line.payoutId !== payout.id && line.sourceType === "return" && line.sourceId)
         .map((line) => String(line.sourceId))
     );
     const usedFinanceIds = new Set(
-      this.state.payoutLines
+      payoutLines
         .filter((line) => line.payoutId !== payout.id && line.sourceType === "finance_event" && line.sourceId)
         .map((line) => String(line.sourceId))
     );
 
     const lines: PayoutLine[] = [];
     if (payout.compositionMode !== "manual") {
-      this.state.sales
+      (await this.repos.sales.all())
         .filter((sale) => sale.channelId === payout.channelId && sale.status === "posted" && sale.saleDate <= cutoff && !usedSaleIds.has(sale.id))
         .forEach((sale) => {
           lines.push({
@@ -3450,12 +3451,12 @@ export class AccountingApp {
             amountRub: saleFinancialAmountRub(sale)
           });
         });
-      this.state.salesReturns
+      (await this.repos.salesReturns.all())
         .filter((salesReturn) => salesReturn.channelId === payout.channelId && salesReturn.status === "posted" && salesReturn.returnDate <= cutoff && !usedReturnIds.has(salesReturn.id))
         .forEach((salesReturn) => {
           lines.push({ id: id("payout_line"), payoutId: payout.id, sourceType: "return", sourceId: salesReturn.id, lineGroup: "returns", amountRub: -salesReturn.refundRub });
         });
-      this.state.channelFinanceEvents
+      (await this.repos.channelFinanceEvents.all())
         .filter((event) =>
           event.channelId === payout.channelId &&
           event.status !== "ignored" &&
@@ -3494,6 +3495,7 @@ export class AccountingApp {
     if (payout.status !== "posted" && payout.status !== "reconciled") {
       payout.status = payout.differenceRub === 0 ? "ready" : "needs_reconciliation";
     }
+    await this.repos.payouts.upsert(payout);
     return payout;
   }
 
@@ -3507,7 +3509,7 @@ export class AccountingApp {
     post?: boolean;
   }): Promise<OperatingExpense> {
     assertPositive(input.amountRub, "Сумма расхода должна быть положительной");
-    const category = this.mustFind(this.state.expenseCategories, input.categoryId, "expense_category_not_found");
+    const category = this.mustFind(await this.repos.expenseCategories.all(), input.categoryId, "expense_category_not_found");
     const payment = await this.createPayment({
       paymentDirection: "outgoing",
       paymentType: "operating_expense_payment",
@@ -3533,7 +3535,7 @@ export class AccountingApp {
       cashAccountId: payment.cashAccountId,
       comment: input.comment
     };
-    this.state.operatingExpenses.push(expense);
+    await this.repos.operatingExpenses.add(expense);
     if (input.post !== false) {
       await this.postOperatingExpense(expense.id);
     }
@@ -3542,14 +3544,15 @@ export class AccountingApp {
 
   // Расход всегда оплачивается сразу: Дт категории / Кт 51.
   async postOperatingExpense(expenseId: ID): Promise<OperatingExpense> {
-    const expense = this.mustFind(this.state.operatingExpenses, expenseId, "expense_not_found");
-    const category = this.mustFind(this.state.expenseCategories, expense.categoryId, "expense_category_not_found");
-    const payment = this.mustFind(this.state.payments, expense.paymentId, "payment_not_found");
-    const document = this.mustFind(this.state.documents, expense.documentId, "document_not_found");
+    const expense = this.mustFind(await this.repos.operatingExpenses.all(), expenseId, "expense_not_found");
+    const category = this.mustFind(await this.repos.expenseCategories.all(), expense.categoryId, "expense_category_not_found");
+    const payment = this.mustFind(await this.repos.payments.all(), expense.paymentId, "payment_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), expense.documentId, "document_not_found");
 
     if (document.status === "posted") {
       expense.paymentStatus = "paid";
       expense.amountPaidRub = expense.amountRub;
+      await this.repos.operatingExpenses.upsert(expense);
       return expense;
     }
 
@@ -3558,8 +3561,10 @@ export class AccountingApp {
       { accountCode: "51", credit: expense.amountRub, memo: "Оплата операционного расхода" }
     ]);
     this.applyPaymentToCashAccount(payment);
+    await this.repos.payments.upsert(payment);
     expense.amountPaidRub = expense.amountRub;
     expense.paymentStatus = "paid";
+    await this.repos.operatingExpenses.upsert(expense);
 
     return expense;
   }
@@ -3573,7 +3578,7 @@ export class AccountingApp {
       title: "Изъятие средств владельцем",
       comment: input.comment
     });
-    this.state.ownerTransactions.push({
+    await this.repos.ownerTransactions.add({
       id: id("owner_tx"),
       organizationId: this.currentOrgId(),
       documentId: payment.documentId,
@@ -3586,6 +3591,7 @@ export class AccountingApp {
       { accountCode: "51", credit: input.amountRub, memo: "Выплата владельцу" }
     ]);
     this.applyPaymentToCashAccount(payment);
+    await this.repos.payments.upsert(payment);
     return payment;
   }
 
@@ -3611,14 +3617,14 @@ export class AccountingApp {
       stocktakeDate: input.stocktakeDate,
       status: input.post === false ? "draft" : "posted"
     };
-    this.state.stocktakes.push(stocktake);
-    input.lines.forEach((line) => {
+    await this.repos.stocktakes.add(stocktake);
+    for (const line of input.lines) {
       const book = this.stockState(line.productId, input.warehouseId);
       const diffQty = round4(line.observedQty - book.qty);
       const avgCost = book.qty > 0 ? book.costRub / book.qty : 0;
       const unitCostRub = diffQty > 0 ? (line.unitCostRub ?? avgCost) : avgCost;
       const adjustmentCostRub = round2(Math.abs(diffQty) * unitCostRub);
-      this.state.stocktakeLines.push({
+      await this.repos.stocktakeLines.add({
         id: id("stocktake_line"),
         stocktakeId: stocktake.id,
         productId: line.productId,
@@ -3628,7 +3634,7 @@ export class AccountingApp {
         bookCostRub: book.costRub,
         adjustmentCostRub
       });
-    });
+    }
 
     if (input.post !== false) {
       await this.postStocktake(stocktake.id);
@@ -3640,13 +3646,13 @@ export class AccountingApp {
   }
 
   async postStocktake(stocktakeId: ID) {
-    const stocktake = this.mustFind(this.state.stocktakes, stocktakeId, "stocktake_not_found");
-    const document = this.mustFind(this.state.documents, stocktake.documentId, "document_not_found");
+    const stocktake = this.mustFind(await this.repos.stocktakes.all(), stocktakeId, "stocktake_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), stocktake.documentId, "document_not_found");
     if (stocktake.status === "posted") return stocktake;
 
     const journalLines: JournalLineInput[] = [];
     const lines = (await this.repos.stocktakeLines.all()).filter((line) => line.stocktakeId === stocktake.id);
-    const inventoryAccount = accountForWarehouse(this.mustFind(this.state.warehouses, stocktake.warehouseId, "warehouse_not_found"));
+    const inventoryAccount = accountForWarehouse(this.mustFind(await this.repos.warehouses.all(), stocktake.warehouseId, "warehouse_not_found"));
 
     for (const line of lines) {
       if (line.differenceQty < 0) {
@@ -3690,8 +3696,10 @@ export class AccountingApp {
     } else {
       document.status = "posted";
       document.postedAt = nowIso();
+      await this.repos.documents.upsert(document);
     }
     stocktake.status = "posted";
+    await this.repos.stocktakes.upsert(stocktake);
     return stocktake;
   }
 
