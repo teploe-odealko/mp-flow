@@ -2196,16 +2196,16 @@ export class AccountingApp {
   }
 
   async postSale(saleId: ID): Promise<Sale> {
-    const sale = this.mustFind(this.state.sales, saleId, "sale_not_found");
-    const document = this.mustFind(this.state.documents, sale.documentId, "document_not_found");
-    const channel = this.mustFind(this.state.salesChannels, sale.channelId, "channel_not_found");
+    const sale = this.mustFind(await this.repos.sales.all(), saleId, "sale_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), sale.documentId, "document_not_found");
+    const channel = this.mustFind(await this.repos.salesChannels.all(), sale.channelId, "channel_not_found");
     const deferredRecognition = saleRequiresDeferredMarketplaceRecognition(sale, channel);
     if ((sale.status === "shipped" || sale.status === "posted") && document.status === "posted") return sale;
     if (sale.status === "reversed" || document.status === "cancelled") {
       throw new DomainError("sale_not_postable", "Сторнированную или отмененную продажу нельзя провести повторно");
     }
     this.assertAccountingDateAllowed(sale.saleDate);
-    const warehouse = this.mustFind(this.state.warehouses, sale.warehouseId, "warehouse_not_found");
+    const warehouse = this.mustFind(await this.repos.warehouses.all(), sale.warehouseId, "warehouse_not_found");
     const saleLines = (await this.repos.saleLines.all()).filter((line) => line.saleId === sale.id);
     const plannedQty = new Map<ID, number>();
     saleLines.forEach((line) => {
@@ -2216,6 +2216,7 @@ export class AccountingApp {
       if (availableQty + 0.0001 < qtyRequired) {
         const reason = "Недостаточно книжного остатка. Создайте перемещение, приемку или корректировку";
         sale.status = "needs_attention";
+        await this.repos.sales.upsert(sale);
         this.markExternalEventNeedsAttention(sale.externalEventId, sale.documentId, reason);
         if (sale.externalEventId) return sale;
         throw new DomainError("insufficient_stock", reason, { productId, warehouseId: sale.warehouseId, qtyRequired, availableQty });
@@ -2240,9 +2241,10 @@ export class AccountingApp {
       const costRub = round2(applications.reduce((sum, application) => sum + application.costRub, 0));
       line.costRub = costRub;
       line.grossProfitRub = round2(line.revenueRub - costRub);
+      await this.repos.saleLines.upsert(line);
       costRubTotal = round2(costRubTotal + costRub);
 
-      const documentLine = this.state.documentLines.find((candidate) =>
+      const documentLine = (await this.repos.documentLines.all()).find((candidate) =>
         candidate.documentId === document.id &&
         (candidate.payload as Record<string, unknown>)?.saleLineId === line.id
       );
@@ -2254,12 +2256,14 @@ export class AccountingApp {
           costRub: line.costRub,
           grossProfitRub: line.grossProfitRub
         };
+        await this.repos.documentLines.upsert(documentLine);
       }
     }
 
     sale.costAmountRub = round2(costRubTotal);
     sale.grossProfitRub = round2(sale.grossAmountRub - costRubTotal);
     sale.status = deferredRecognition ? "shipped" : "posted";
+    await this.repos.sales.upsert(sale);
     await this.postDocument(document.id, deferredRecognition
       ? [
           { accountCode: MARKETPLACE_SHIPPED_ACCOUNT_CODE, debit: costRubTotal, memo: "Продажа ждёт начисления маркетплейса" },
@@ -2272,7 +2276,7 @@ export class AccountingApp {
           { accountCode: accountForWarehouse(warehouse), credit: costRubTotal, memo: "Списание товара с точки продаж" }
         ]);
     if (!deferredRecognition && !(await this.repos.settlementEntries.all()).some((entry) => entry.documentId === document.id && entry.settlementType === "channel_receivable")) {
-      this.state.settlementEntries.push({
+      await this.repos.settlementEntries.add({
         id: id("settlement"),
         organizationId: this.currentOrgId(),
         channelId: sale.channelId,
@@ -2293,9 +2297,9 @@ export class AccountingApp {
     externalEventId?: ID;
     recognizedGrossAmountRub?: number;
   }): Promise<Sale> {
-    const sale = this.mustFind(this.state.sales, input.saleId, "sale_not_found");
-    const shipmentDocument = this.mustFind(this.state.documents, sale.documentId, "document_not_found");
-    const channel = this.mustFind(this.state.salesChannels, sale.channelId, "channel_not_found");
+    const sale = this.mustFind(await this.repos.sales.all(), input.saleId, "sale_not_found");
+    const shipmentDocument = this.mustFind(await this.repos.documents.all(), sale.documentId, "document_not_found");
+    const channel = this.mustFind(await this.repos.salesChannels.all(), sale.channelId, "channel_not_found");
     if (!saleRequiresDeferredMarketplaceRecognition(sale, channel)) {
       if (input.externalEventId) this.markExternalEventProcessed(input.externalEventId, sale.documentId);
       return sale.status === "draft" ? await this.postSale(sale.id) : sale;
@@ -2307,10 +2311,11 @@ export class AccountingApp {
       throw new DomainError("sale_not_shipped", "Сначала нужно провести операционную отгрузку продажи");
     }
     if (sale.financialDocumentId) {
-      const existingFinancialDocument = this.mustFind(this.state.documents, sale.financialDocumentId, "document_not_found");
+      const existingFinancialDocument = this.mustFind(await this.repos.documents.all(), sale.financialDocumentId, "document_not_found");
       if (existingFinancialDocument.status === "posted") {
         if (input.externalEventId) this.markExternalEventProcessed(input.externalEventId, existingFinancialDocument.id);
         sale.status = "posted";
+        await this.repos.sales.upsert(sale);
         return sale;
       }
     }
@@ -2332,6 +2337,7 @@ export class AccountingApp {
     sale.recognizedGrossAmountRub = recognizedGrossAmountRub;
     sale.grossProfitRub = round2(recognizedGrossAmountRub - sale.costAmountRub);
     sale.status = "posted";
+    await this.repos.sales.upsert(sale);
     await this.postDocument(financialDocument.id, [
       { accountCode: "76.ТП", debit: recognizedGrossAmountRub, memo: "Начисление продажи к получению от маркетплейса" },
       { accountCode: "90.01", credit: recognizedGrossAmountRub, memo: "Выручка по продаже маркетплейса" },
@@ -2339,7 +2345,7 @@ export class AccountingApp {
       { accountCode: MARKETPLACE_SHIPPED_ACCOUNT_CODE, credit: sale.costAmountRub, memo: "Списание отгруженного товара в себестоимость" }
     ]);
     if (!(await this.repos.settlementEntries.all()).some((entry) => entry.documentId === financialDocument.id && entry.settlementType === "channel_receivable")) {
-      this.state.settlementEntries.push({
+      await this.repos.settlementEntries.add({
         id: id("settlement"),
         organizationId: this.currentOrgId(),
         channelId: sale.channelId,
@@ -2358,7 +2364,7 @@ export class AccountingApp {
   }
 
   async deleteSaleForResync(saleId: ID) {
-    const sale = this.mustFind(this.state.sales, saleId, "sale_not_found");
+    const sale = this.mustFind(await this.repos.sales.all(), saleId, "sale_not_found");
     const linkedReturns = (await this.repos.salesReturns.all()).filter((candidate) => candidate.saleId === sale.id);
     if (linkedReturns.length > 0) {
       throw new DomainError("sale_has_returns", "Сначала удалите возвраты по этой продаже");
@@ -2484,7 +2490,7 @@ export class AccountingApp {
   }
 
   async deleteReturnForResync(returnId: ID) {
-    const salesReturn = this.mustFind(this.state.salesReturns, returnId, "return_not_found");
+    const salesReturn = this.mustFind(await this.repos.salesReturns.all(), returnId, "return_not_found");
     const linkedFinanceEvents = (await this.repos.channelFinanceEvents.all()).filter((event) => event.linkedReturnId === salesReturn.id);
     const blockedByPayout = (await this.repos.payoutLines.all()).some((line) =>
       (line.sourceType === "return" && line.sourceId === salesReturn.id) ||
@@ -2579,8 +2585,8 @@ export class AccountingApp {
   }
 
   async deleteStockTransfer(transferId: ID) {
-    const transfer = this.mustFind(this.state.stockTransfers, transferId, "transfer_not_found");
-    const document = this.mustFind(this.state.documents, transfer.documentId, "document_not_found");
+    const transfer = this.mustFind(await this.repos.stockTransfers.all(), transferId, "transfer_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), transfer.documentId, "document_not_found");
     this.assertDocumentHasNoDescendants(document.id, "Нельзя удалить перемещение, пока от него зависят другие документы");
     const downstreamDocuments = this.inventoryUsageDocuments(document.id);
     if (downstreamDocuments.length > 0) {
@@ -2807,8 +2813,8 @@ export class AccountingApp {
       const blocker = preview.blockers[0];
       throw new DomainError(blocker.code, blocker.message, { blockers: preview.blockers });
     }
-    const receipt = this.mustFind(this.state.goodsReceipts, receiptId, "receipt_not_found");
-    const document = this.mustFind(this.state.documents, receipt.documentId, "document_not_found");
+    const receipt = this.mustFind(await this.repos.goodsReceipts.all(), receiptId, "receipt_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), receipt.documentId, "document_not_found");
     const before = { ...receipt };
     const lots = (await this.repos.inventoryLots.all()).filter((lot) => lot.sourceDocumentId === document.id);
     await this.removeLotsFromStockStates(lots);
@@ -2871,8 +2877,8 @@ export class AccountingApp {
       const blocker = preview.blockers[0];
       throw new DomainError(blocker.code, blocker.message, { blockers: preview.blockers });
     }
-    const cost = this.mustFind(this.state.procurementCosts, costId, "procurement_cost_not_found");
-    const document = this.mustFind(this.state.documents, cost.documentId, "document_not_found");
+    const cost = this.mustFind(await this.repos.procurementCosts.all(), costId, "procurement_cost_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), cost.documentId, "document_not_found");
     const before = { ...cost };
     const lines = (await this.repos.procurementCostLines.all()).filter((line) => line.procurementCostId === cost.id);
     for (const line of lines) {
@@ -2893,7 +2899,7 @@ export class AccountingApp {
   }
 
   async deleteChannelFinanceEventForResync(financeEventId: ID) {
-    const event = this.mustFind(this.state.channelFinanceEvents, financeEventId, "finance_event_not_found");
+    const event = this.mustFind(await this.repos.channelFinanceEvents.all(), financeEventId, "finance_event_not_found");
     const blockedByPayout = (await this.repos.payoutLines.all()).some((line) => line.sourceType === "finance_event" && line.sourceId === event.id);
     if (blockedByPayout || event.payoutId) {
       throw new DomainError("finance_event_in_payout", "Нельзя удалить финансовую операцию, которая уже вошла в выплату маркетплейса");
@@ -2925,7 +2931,7 @@ export class AccountingApp {
     const payoutDocumentIds = new Set(payouts.map((payout) => payout.documentId));
     const payoutPaymentIds = new Set(payouts.map((payout) => payout.paymentId).filter(Boolean) as ID[]);
     const payoutPaymentDocumentIds = new Set(
-      this.state.payments
+      (await this.repos.payments.all())
         .filter((payment) => payoutPaymentIds.has(payment.id))
         .map((payment) => payment.documentId)
     );
@@ -3058,13 +3064,13 @@ export class AccountingApp {
   }
 
   async postReturn(returnId: ID): Promise<SalesReturn> {
-    const salesReturn = this.mustFind(this.state.salesReturns, returnId, "return_not_found");
-    const document = this.mustFind(this.state.documents, salesReturn.documentId, "document_not_found");
+    const salesReturn = this.mustFind(await this.repos.salesReturns.all(), returnId, "return_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), salesReturn.documentId, "document_not_found");
     if (salesReturn.status === "posted" && document.status === "posted") return salesReturn;
     if (salesReturn.status === "reversed" || document.status === "cancelled") {
       throw new DomainError("return_not_postable", "Сторнированный или отмененный возврат нельзя провести повторно");
     }
-    const sale = this.mustFind(this.state.sales, salesReturn.saleId, "sale_not_found");
+    const sale = this.mustFind(await this.repos.sales.all(), salesReturn.saleId, "sale_not_found");
     if (sale.status !== "posted") {
       throw new DomainError("sale_not_posted", "Возврат можно оформить только по проведенной продаже");
     }
@@ -3072,7 +3078,7 @@ export class AccountingApp {
     if (salesReturn.returnDate < sale.saleDate) {
       throw new DomainError("return_before_sale", "Дата возврата не может быть раньше даты продажи");
     }
-    const warehouse = this.mustFind(this.state.warehouses, salesReturn.warehouseId, "warehouse_not_found");
+    const warehouse = this.mustFind(await this.repos.warehouses.all(), salesReturn.warehouseId, "warehouse_not_found");
     const saleLines = (await this.repos.saleLines.all()).filter((line) => line.saleId === sale.id);
     const returnDocumentLines = await this.returnDocumentLines(salesReturn.id);
     if (returnDocumentLines.length === 0) {
@@ -3098,7 +3104,7 @@ export class AccountingApp {
         continue;
       }
 
-      const saleApplications = this.state.costApplications
+      const saleApplications = (await this.repos.costApplications.all())
         .filter((application) =>
           application.outboundDocumentId === sale.documentId &&
           application.applicationType === "sale" &&
@@ -3155,12 +3161,15 @@ export class AccountingApp {
         refundRub: lineRefundRub,
         restoredCostRub: normalizedRestoredCostRub
       };
+      await this.repos.documentLines.upsert(documentLine);
     }
 
     salesReturn.refundRub = round2(refundRub);
     salesReturn.restoredCostRub = round2(restoredCostRub);
     salesReturn.status = salesReturn.status === "needs_attention" ? "needs_attention" : "posted";
+    await this.repos.salesReturns.upsert(salesReturn);
     document.amountRub = salesReturn.refundRub;
+    await this.repos.documents.upsert(document);
     if (salesReturn.status !== "needs_attention") {
       await this.postDocument(document.id, [
         { accountCode: "90.01", debit: salesReturn.refundRub, memo: "Сторно выручки по возврату" },
@@ -3267,8 +3276,8 @@ export class AccountingApp {
   }
 
   async postChannelFinanceEvent(financeEventId: ID): Promise<ChannelFinanceEvent> {
-    const event = this.mustFind(this.state.channelFinanceEvents, financeEventId, "finance_event_not_found");
-    const document = this.mustFind(this.state.documents, event.documentId, "document_not_found");
+    const event = this.mustFind(await this.repos.channelFinanceEvents.all(), financeEventId, "finance_event_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), event.documentId, "document_not_found");
     if (event.status === "posted" && document.status === "posted") return event;
     if (document.status === "cancelled") {
       throw new DomainError("document_cancelled", "Отмененную финансовую операцию нельзя провести повторно");
@@ -3288,18 +3297,20 @@ export class AccountingApp {
         ];
     await this.postDocument(document.id, journalLines);
     event.status = "posted";
+    await this.repos.channelFinanceEvents.upsert(event);
     if (event.linkedSaleId) {
-      const sale = this.mustFind(this.state.sales, event.linkedSaleId, "sale_not_found");
+      const sale = this.mustFind(await this.repos.sales.all(), event.linkedSaleId, "sale_not_found");
       this.ensureDocumentLink(event.documentId, sale.documentId, "channel_fee");
     }
     if (event.saleAllocations?.length) {
-      event.saleAllocations.forEach((allocation) => {
-        const sale = this.mustFind(this.state.sales, allocation.saleId, "sale_not_found");
+      const sales = await this.repos.sales.all();
+      for (const allocation of event.saleAllocations) {
+        const sale = this.mustFind(sales, allocation.saleId, "sale_not_found");
         this.ensureDocumentLink(event.documentId, sale.documentId, "channel_fee");
-      });
+      }
     }
     if (event.linkedReturnId) {
-      const salesReturn = this.mustFind(this.state.salesReturns, event.linkedReturnId, "return_not_found");
+      const salesReturn = this.mustFind(await this.repos.salesReturns.all(), event.linkedReturnId, "return_not_found");
       this.ensureDocumentLink(event.documentId, salesReturn.documentId, "channel_fee");
     }
     this.markExternalEventProcessed(event.externalEventId, event.documentId);
@@ -3307,9 +3318,9 @@ export class AccountingApp {
   }
 
   async linkBankPaymentToPayout(input: { payoutId: ID; paymentId?: ID; bankReceiptRub?: number }): Promise<Payout> {
-    const payout = this.mustFind(this.state.payouts, input.payoutId, "payout_not_found");
+    const payout = this.mustFind(await this.repos.payouts.all(), input.payoutId, "payout_not_found");
     if (input.paymentId) {
-      const payment = this.mustFind(this.state.payments, input.paymentId, "payment_not_found");
+      const payment = this.mustFind(await this.repos.payments.all(), input.paymentId, "payment_not_found");
       if ((await this.repos.payouts.all()).some((candidate) => candidate.id !== payout.id && candidate.paymentId === payment.id)) {
         throw new DomainError("payment_already_linked", "Это банковское поступление уже связано с другой выплатой");
       }
@@ -3319,7 +3330,7 @@ export class AccountingApp {
     } else if (input.bankReceiptRub !== undefined) {
       const amountRub = round2(input.bankReceiptRub);
       if (amountRub < 0) throw new DomainError("payout_bank_amount_invalid", "Сумма банковского поступления не может быть отрицательной");
-      let payment = payout.paymentId ? this.mustFind(this.state.payments, payout.paymentId, "payment_not_found") : undefined;
+      let payment = payout.paymentId ? this.mustFind(await this.repos.payments.all(), payout.paymentId, "payment_not_found") : undefined;
       if (!payment && amountRub > 0) {
         payment = await this.createPayment({
           paymentDirection: "incoming",
@@ -3334,30 +3345,35 @@ export class AccountingApp {
       if (payment) {
         payment.amountRub = amountRub;
         payment.paidAt = payout.payoutDate;
-        const paymentDocument = this.mustFind(this.state.documents, payment.documentId, "document_not_found");
+        await this.repos.payments.upsert(payment);
+        const paymentDocument = this.mustFind(await this.repos.documents.all(), payment.documentId, "document_not_found");
         paymentDocument.amountRub = amountRub;
         paymentDocument.accountingDate = payout.payoutDate;
+        await this.repos.documents.upsert(paymentDocument);
       }
       payout.bankReceiptRub = amountRub;
     }
-    this.rebuildPayout(payout.id);
+    await this.repos.payouts.upsert(payout);
+    await this.rebuildPayout(payout.id);
     return payout;
   }
 
   async postChannelPayout(payoutId: ID): Promise<Payout> {
-    const payout = this.mustFind(this.state.payouts, payoutId, "payout_not_found");
-    const document = this.mustFind(this.state.documents, payout.documentId, "document_not_found");
+    const payout = this.mustFind(await this.repos.payouts.all(), payoutId, "payout_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), payout.documentId, "document_not_found");
     if (document.status === "posted" && (payout.status === "posted" || payout.status === "needs_reconciliation")) return payout;
     if (payout.differenceRub !== 0 && !payout.differenceAccepted) {
       throw new DomainError("payout_difference_unresolved", "Сначала укажите причину расхождения или добейтесь нулевой разницы");
     }
     if (payout.paymentId) {
-      const payment = this.mustFind(this.state.payments, payout.paymentId, "payment_not_found");
-      const paymentDocument = this.mustFind(this.state.documents, payment.documentId, "document_not_found");
+      const payment = this.mustFind(await this.repos.payments.all(), payout.paymentId, "payment_not_found");
+      const paymentDocument = this.mustFind(await this.repos.documents.all(), payment.documentId, "document_not_found");
       if (paymentDocument.status !== "posted") {
         paymentDocument.status = "posted";
         paymentDocument.postedAt = nowIso();
         this.applyPaymentToCashAccount(payment);
+        await this.repos.documents.upsert(paymentDocument);
+        await this.repos.payments.upsert(payment);
       }
     } else if (payout.bankReceiptRub > 0) {
       await this.linkBankPaymentToPayout({ payoutId: payout.id, bankReceiptRub: payout.bankReceiptRub });
@@ -3374,13 +3390,18 @@ export class AccountingApp {
       document.postedAt = nowIso();
     }
 
-    this.state.payoutLines
+    const financeEvents = await this.repos.channelFinanceEvents.all();
+    for (const line of (await this.repos.payoutLines.all())
       .filter((line) => line.payoutId === payout.id && line.sourceType === "finance_event" && line.sourceId)
-      .forEach((line) => {
-        const financeEvent = this.state.channelFinanceEvents.find((candidate) => candidate.id === line.sourceId);
-        if (financeEvent) financeEvent.payoutId = payout.id;
-      });
+    ) {
+      const financeEvent = financeEvents.find((candidate) => candidate.id === line.sourceId);
+      if (financeEvent) {
+        financeEvent.payoutId = payout.id;
+        await this.repos.channelFinanceEvents.upsert(financeEvent);
+      }
+    }
     payout.status = payout.differenceRub === 0 ? "posted" : "needs_reconciliation";
+    await this.repos.payouts.upsert(payout);
     return payout;
   }
 
