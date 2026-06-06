@@ -133,7 +133,7 @@ describe("sales, returns, finance events and payouts", () => {
     const externalProduct = app.createExternalProduct({ channelId: channel.id, externalSku: "EXT-SALE-DEL-1", externalName: "Внешний товар" });
     app.linkExternalProduct({ externalProductId: externalProduct.id, productId: product.id });
 
-    const saleEvent = app.ingestExternalEvent({
+    const saleEvent = await app.ingestExternalEvent({
       channelId: channel.id,
       eventType: "sale",
       externalId: "sale-del-ext-1",
@@ -145,7 +145,7 @@ describe("sales, returns, finance events and payouts", () => {
     });
     const sale = await post<any>(api, `/api/integrations/events/${saleEvent.id}/materialize-sale`);
 
-    const saleAccrualEvent = app.ingestExternalEvent({
+    const saleAccrualEvent = await app.ingestExternalEvent({
       channelId: channel.id,
       eventType: "sale_accrual",
       externalId: "sale-accrual-del-1",
@@ -154,7 +154,7 @@ describe("sales, returns, finance events and payouts", () => {
     });
     await post<any>(api, `/api/integrations/events/${saleAccrualEvent.id}/materialize-sale-accrual`);
 
-    const feeEvent = app.ingestExternalEvent({
+    const feeEvent = await app.ingestExternalEvent({
       channelId: channel.id,
       eventType: "fee",
       externalId: "fee-del-ext-1",
@@ -222,7 +222,7 @@ describe("sales, returns, finance events and payouts", () => {
     const externalProduct = app.createExternalProduct({ channelId: channel.id, externalSku: "EXT-RET-DEL-1", externalName: "Внешний товар" });
     app.linkExternalProduct({ externalProductId: externalProduct.id, productId: product.id });
 
-    const saleEvent = app.ingestExternalEvent({
+    const saleEvent = await app.ingestExternalEvent({
       channelId: channel.id,
       eventType: "sale",
       externalId: "sale-ret-del-ext-1",
@@ -233,7 +233,7 @@ describe("sales, returns, finance events and payouts", () => {
       }
     });
     const sale = await post<any>(api, `/api/integrations/events/${saleEvent.id}/materialize-sale`);
-    const saleAccrualEvent = app.ingestExternalEvent({
+    const saleAccrualEvent = await app.ingestExternalEvent({
       channelId: channel.id,
       eventType: "sale_accrual",
       externalId: "sale-ret-del-accrual-1",
@@ -242,7 +242,7 @@ describe("sales, returns, finance events and payouts", () => {
     });
     await post<any>(api, `/api/integrations/events/${saleAccrualEvent.id}/materialize-sale-accrual`);
 
-    const returnEvent = app.ingestExternalEvent({
+    const returnEvent = await app.ingestExternalEvent({
       channelId: channel.id,
       eventType: "return",
       externalId: "return-del-ext-1",
@@ -297,7 +297,7 @@ describe("sales, returns, finance events and payouts", () => {
     const externalProduct = app.createExternalProduct({ channelId: channel.id, externalSku: "EXT-RET-PNL-1", externalName: "Внешний товар" });
     app.linkExternalProduct({ externalProductId: externalProduct.id, productId: product.id });
 
-    const saleEvent = app.ingestExternalEvent({
+    const saleEvent = await app.ingestExternalEvent({
       channelId: channel.id,
       eventType: "sale",
       externalId: "sale-ret-pnl-ext-1",
@@ -308,7 +308,7 @@ describe("sales, returns, finance events and payouts", () => {
       }
     });
     const sale = await post<any>(api, `/api/integrations/events/${saleEvent.id}/materialize-sale`);
-    const saleAccrualEvent = app.ingestExternalEvent({
+    const saleAccrualEvent = await app.ingestExternalEvent({
       channelId: channel.id,
       eventType: "sale_accrual",
       externalId: "sale-ret-pnl-accrual-1",
@@ -317,7 +317,7 @@ describe("sales, returns, finance events and payouts", () => {
     });
     await post<any>(api, `/api/integrations/events/${saleAccrualEvent.id}/materialize-sale-accrual`);
 
-    const returnFeeEvent = app.ingestExternalEvent({
+    const returnFeeEvent = await app.ingestExternalEvent({
       channelId: channel.id,
       eventType: "fee",
       externalId: "return-fee-ret-pnl-1",
@@ -335,7 +335,7 @@ describe("sales, returns, finance events and payouts", () => {
     await post(api, `/api/integrations/finance-events/${returnFee.id}/post`);
     expect(app.state.channelFinanceEvents.find((candidate) => candidate.id === returnFee.id)?.linkedReturnId).toBeUndefined();
 
-    const returnEvent = app.ingestExternalEvent({
+    const returnEvent = await app.ingestExternalEvent({
       channelId: channel.id,
       eventType: "return",
       externalId: "return-ret-pnl-ext-1",
@@ -466,7 +466,7 @@ describe("sales, returns, finance events and payouts", () => {
     await post(api, "/api/setup", { displayName: "Payout delete QA", accountingStartDate: "2026-01-01" });
 
     const channel = await post<any>(api, "/api/integrations/channels", { name: "Ozon FBO", channelType: "marketplace" });
-    const externalEvent = app.ingestExternalEvent({
+    const externalEvent = await app.ingestExternalEvent({
       channelId: channel.id,
       eventType: "payout",
       externalId: "ozon-payout-delete-1",
@@ -546,7 +546,7 @@ describe("sales, returns, finance events and payouts", () => {
     await post(api, "/api/setup", { displayName: "Finance delete QA", accountingStartDate: "2026-01-01" });
 
     const channel = await post<any>(api, "/api/integrations/channels", { name: "Ozon QA", channelType: "marketplace" });
-    const feeEvent = app.ingestExternalEvent({
+    const feeEvent = await app.ingestExternalEvent({
       channelId: channel.id,
       eventType: "fee",
       externalId: "fee-delete-ext-1",

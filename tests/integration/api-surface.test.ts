@@ -212,7 +212,7 @@ describe("MPFlow api surface", () => {
       observedAt: "2026-05-30T10:00:00.000Z",
       qtyObserved: 15
     });
-    const saleEvent = app.ingestExternalEvent({
+    const saleEvent = await app.ingestExternalEvent({
       channelId: channel.id,
       syncRunId,
       eventType: "sale",
@@ -223,7 +223,7 @@ describe("MPFlow api surface", () => {
         lines: [{ sku: "HIST-SKU-1", qty: 50, amountRub: 200 }]
       }
     });
-    const returnEvent = app.ingestExternalEvent({
+    const returnEvent = await app.ingestExternalEvent({
       channelId: channel.id,
       syncRunId,
       eventType: "return",
@@ -234,7 +234,7 @@ describe("MPFlow api surface", () => {
         lines: [{ sku: "HIST-SKU-1", qty: 2 }]
       }
     });
-    const accrualEvent = app.ingestExternalEvent({
+    const accrualEvent = await app.ingestExternalEvent({
       channelId: channel.id,
       syncRunId,
       eventType: "sale_accrual",

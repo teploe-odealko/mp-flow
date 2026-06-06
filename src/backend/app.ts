@@ -1411,8 +1411,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (!event?.externalEventId) throw new DomainError("finance_event_not_found", "Финансовое событие не связано с исходным внешним событием");
     return c.json({ ok: true, data: await scopedApp.reprocessExternalEvent(event.externalEventId) });
   });
-  api.post("/api/integrations/channels/:id/finance-events/process-ready", (c) => {
-    const processed = processReadyFinanceEvents(scopedApp, c.req.param("id"), { post: false });
+  api.post("/api/integrations/channels/:id/finance-events/process-ready", async (c) => {
+    const processed = await processReadyFinanceEvents(scopedApp, c.req.param("id"), { post: false });
     return c.json({ ok: true, data: processed });
   });
   api.get("/api/finance/payouts", (c) => c.json({ ok: true, data: scopedApp.state.payouts }));
@@ -3327,14 +3327,18 @@ function materializePayoutEvent(app: AccountingApp, event: ExternalEvent): Payou
   });
 }
 
-function processReadyFinanceEvents(app: AccountingApp, channelId: string, options: { post: boolean }) {
-  return app.state.externalEvents
-    .filter((event) =>
-      event.channelId === channelId &&
-      (event.eventType === "fee" || event.eventType === "sale_accrual") &&
-      ["new", "ready_for_processing", "awaiting_sale", "needs_attention"].includes(event.status)
-    )
-    .map((event) => event.eventType === "sale_accrual" ? materializeSaleAccrualEvent(app, event) : materializeFinanceEvent(app, event, options));
+async function processReadyFinanceEvents(app: AccountingApp, channelId: string, options: { post: boolean }) {
+  const events = (await app.externalEvents.list({ channelId })).filter((event) =>
+    (event.eventType === "fee" || event.eventType === "sale_accrual") &&
+    ["new", "ready_for_processing", "awaiting_sale", "needs_attention"].includes(event.status)
+  );
+  const results: Array<Sale | ChannelFinanceEvent> = [];
+  for (const event of events) {
+    results.push(event.eventType === "sale_accrual"
+      ? await materializeSaleAccrualEvent(app, event)
+      : await materializeFinanceEvent(app, event, options));
+  }
+  return results;
 }
 
 function resolveSaleByPostingNumber(app: AccountingApp, channelId: string, postingNumber: string) {
@@ -3453,11 +3457,10 @@ function isBeforeAccountingStartError(error: unknown) {
   return error instanceof DomainError && error.code === "before_accounting_start";
 }
 
-function replayDeferredFinanceEvents(app: AccountingApp, channelId: string) {
+async function replayDeferredFinanceEvents(app: AccountingApp, channelId: string) {
   let posted = 0;
   let needsAttention = 0;
-  const deferred = app.state.externalEvents.filter((event) =>
-    event.channelId === channelId &&
+  const deferred = (await app.externalEvents.list({ channelId })).filter((event) =>
     (event.eventType === "fee" || event.eventType === "sale_accrual") &&
     ["awaiting_sale", "needs_attention"].includes(event.status)
   );
@@ -3465,9 +3468,9 @@ function replayDeferredFinanceEvents(app: AccountingApp, channelId: string) {
   for (const event of deferred) {
     try {
       if (event.eventType === "sale_accrual") {
-        materializeSaleAccrualEvent(app, event);
+        await materializeSaleAccrualEvent(app, event);
       } else {
-        materializeFinanceEvent(app, event, { post: true });
+        await materializeFinanceEvent(app, event, { post: true });
       }
       posted += 1;
     } catch (error) {
@@ -3566,7 +3569,7 @@ async function autoProcessChannelFacts(app: AccountingApp, channelId: string, sy
   const saleAccruals = currentRunEvents.filter((event) => event.eventType === "sale_accrual").sort(compareExternalEventsByDate);
   for (const event of saleAccruals) {
     try {
-      materializeSaleAccrualEvent(app, event);
+      await materializeSaleAccrualEvent(app, event);
       outcome.financePosted += 1;
     } catch (error) {
       if (isFinanceAwaitingSaleError(error)) {
@@ -3611,7 +3614,7 @@ async function autoProcessChannelFacts(app: AccountingApp, channelId: string, sy
   const fees = currentRunEvents.filter((event) => event.eventType === "fee");
   for (const event of fees) {
     try {
-      materializeFinanceEvent(app, event, { post: true });
+      await materializeFinanceEvent(app, event, { post: true });
       outcome.financePosted += 1;
     } catch (error) {
       if (isFinanceAwaitingSaleError(error)) {
@@ -3654,7 +3657,7 @@ async function autoProcessChannelFacts(app: AccountingApp, channelId: string, sy
     }
   }
 
-  const replayOutcome = replayDeferredFinanceEvents(app, channelId);
+  const replayOutcome = await replayDeferredFinanceEvents(app, channelId);
   outcome.financePosted += replayOutcome.posted;
   outcome.needsAttention += replayOutcome.needsAttention;
 
