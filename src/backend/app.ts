@@ -6,7 +6,7 @@ import { z } from "zod";
 import { AccountingApp } from "../core/accounting-app";
 import type { AgentToken, ChannelFinanceEvent, ChannelStreamCode, ExternalEvent, Payout, Sale, SalesChannel, SalesReturn, SyncRun } from "../core/models";
 import { DomainError, id, nowIso, runWithIdSequence } from "../core/utils";
-import type { RuntimePersistence } from "../infra/db/runtime-store";
+import { readRuntimeCollection, type RuntimePersistence } from "../infra/db/runtime-store";
 import { pluginRegistry } from "../plugins/registry";
 import { createPluginSecretApi, createPluginStateApi, pluginStateKey } from "../plugins/runtime";
 import { buildMediaKey, createPresignedUpload, headObject, isAllowedImageType, isStorageConfigured } from "../infra/storage/s3";
@@ -226,6 +226,23 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: event });
   });
 
+  api.get("/api/collections/:name", async (c) => {
+    const name = c.req.param("name");
+    const workspaceId = eventsWorkspaceId(c);
+    const persisted = options.persistence?.readCollection
+      ? await options.persistence.readCollection(workspaceId, name)
+      : postgresBacked()
+        ? await readRuntimeCollection(getPool(), workspaceId, name)
+        : undefined;
+    if (persisted) {
+      if (!persisted.found) throw new DomainError("collection_not_found", `Неизвестная коллекция: ${name}`);
+      return c.json({ ok: true, data: sanitizeCollectionPayload(name, persisted.data) });
+    }
+    return c.json({ ok: true, data: await collectionPayload(app, name, {
+      loadAuditEvents: () => app.repos.auditEvents.all()
+    }) });
+  });
+
   api.use("/api/*", async (c, next) => {
     const authUser = c.get("authUser") as PublicAuthUser | undefined;
     const authAgent = c.get("authAgent") as McpAgentPrincipal | undefined;
@@ -278,14 +295,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
 
 
   api.get("/api/dashboard", async (c) => c.json({ ok: true, data: await scopedApp.dashboard() }));
-  api.get("/api/collections/:name", async (c) => {
-    const name = c.req.param("name");
-    return c.json({ ok: true, data: await collectionPayload(scopedApp, name, {
-      loadAuditEvents: () => postgresBacked()
-        ? new AuditEventRepository(getPool(), eventsWorkspaceId(c)).listAll()
-        : scopedApp.repos.auditEvents.all()
-    }) });
-  });
   api.get("/api/reports", async (c) => c.json({ ok: true, data: await scopedApp.reports() }));
   api.get("/api/reports/profit-and-loss", async (c) => c.json({ ok: true, data: (await scopedApp.reports()).pnl }));
   api.get("/api/reports/balance-sheet", async (c) => c.json({ ok: true, data: (await scopedApp.reports()).balanceSheet }));
@@ -2186,6 +2195,11 @@ function publicAgentToken(token: AgentToken) {
   return publicToken;
 }
 
+function sanitizeCollectionPayload(name: string, data: unknown): unknown {
+  if (name === "agentTokens" && Array.isArray(data)) return (data as AgentToken[]).map(publicAgentToken);
+  return data;
+}
+
 async function collectionPayload(
   app: AccountingApp,
   name: string,
@@ -2201,8 +2215,7 @@ async function collectionPayload(
   const repo = (app.repos as Record<string, { all(): Promise<unknown[]> } | undefined>)[name];
   if (!repo) throw new DomainError("collection_not_found", `Неизвестная коллекция: ${name}`);
   const items = await repo.all();
-  if (name === "agentTokens") return (items as AgentToken[]).map(publicAgentToken);
-  return items;
+  return sanitizeCollectionPayload(name, items);
 }
 
 async function mcpSettingsPayload(app: AccountingApp, endpoint: string) {

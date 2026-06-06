@@ -18,6 +18,7 @@ export interface RuntimeSession {
 
 export interface RuntimePersistence {
   save?(app: AccountingApp, workspaceId?: string): Promise<void>;
+  readCollection?(workspaceId: string | undefined, name: string): Promise<{ found: boolean; data?: unknown }>;
   openReadSession?(workspaceId?: string): Promise<RuntimeSession>;
   openWriteSession?(workspaceId?: string): Promise<RuntimeSession>;
   checkReady?(): Promise<{ ok: boolean; schemaVersion?: number; message?: string }>;
@@ -1009,6 +1010,11 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     }
   }
 
+  async readCollection(workspaceId: string | undefined, name: string): Promise<{ found: boolean; data?: unknown }> {
+    await this.init();
+    return await readRuntimeCollection(this.pool, normalizeWorkspaceId(workspaceId), name);
+  }
+
   async openReadSession(workspaceId = DEFAULT_WORKSPACE_ID): Promise<RuntimeSession> {
     await this.init();
     const scope = normalizeWorkspaceId(workspaceId);
@@ -1794,6 +1800,33 @@ export function exportRuntimeEntities(state: AccountingState) {
       data: entity
     }));
   });
+}
+
+export async function readRuntimeCollection(source: Queryable, workspaceId: string | undefined, name: string): Promise<{ found: boolean; data?: unknown }> {
+  const scope = normalizeWorkspaceId(workspaceId);
+  if (name === "organization") {
+    return { found: true, data: await readRuntimeSingleton(source, scope, "organization") };
+  }
+  if (name === "accountingPolicy") {
+    return { found: true, data: await readRuntimeSingleton(source, scope, "accounting_policy") };
+  }
+
+  const table = TABLES.find((candidate) => candidate.collection === name);
+  if (!table) return { found: false };
+  const tableWorkspaceId = workspaceIdForTable(table, scope);
+  const result = await source.query<{ state_json: unknown }>(
+    `select state_json from ${table.table} where workspace_id = $1${table.orderBy ? ` order by ${table.orderBy}` : ""}`,
+    [tableWorkspaceId]
+  );
+  return { found: true, data: result.rows.map((row) => hydrateEntity(row.state_json)) };
+}
+
+async function readRuntimeSingleton(source: Queryable, workspaceId: string, table: "organization" | "accounting_policy") {
+  const result = await source.query<{ state_json: unknown }>(
+    `select state_json from ${table} where workspace_id = $1 order by id limit 1`,
+    [workspaceId]
+  );
+  return result.rows[0] ? hydrateEntity(result.rows[0].state_json) : undefined;
 }
 
 function spec(collection: RuntimeCollectionName, table: string, keyColumns: string[], serialize: (entity: RuntimeEntity) => RowRecord, orderBy?: string): TableSpec {
