@@ -202,6 +202,12 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (postgresBacked()) return await openPostgresReadModelApp(getPool(), workspaceId);
     return app;
   };
+  const collectionFor = async (c: Context, name: string) => {
+    const readModelApp = await readModelAppFor(c);
+    return await collectionPayload(readModelApp, name, {
+      loadAuditEvents: () => readModelApp.repos.auditEvents.all()
+    });
+  };
   api.get("/api/integrations/events", async (c) => {
     const channelId = c.req.query("channelId");
     const status = c.req.query("status");
@@ -266,6 +272,42 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.get("/api/integrations/observed-stock", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).observedStocks.list() }));
   api.get("/api/controls/audit-events", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).repos.auditEvents.all() }));
+  api.get("/api/setup", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).setupSnapshot() }));
+  api.get("/api/organization", async (c) => c.json({ ok: true, data: await collectionFor(c, "organization") }));
+  api.get("/api/periods", async (c) => c.json({ ok: true, data: await collectionFor(c, "periods") }));
+  api.get("/api/accounts", async (c) => c.json({ ok: true, data: await collectionFor(c, "chartAccounts") }));
+  api.get("/api/accounting/accounts", async (c) => c.json({ ok: true, data: await collectionFor(c, "chartAccounts") }));
+  api.get("/api/journal", async (c) => c.json({ ok: true, data: { entries: await collectionFor(c, "journalEntries"), lines: await collectionFor(c, "journalLines") } }));
+  api.get("/api/accounting/journal", async (c) => c.json({ ok: true, data: { entries: await collectionFor(c, "journalEntries"), lines: await collectionFor(c, "journalLines") } }));
+  api.get("/api/ledger", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).ledgerBalances() }));
+  api.get("/api/accounting/ledger", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).ledgerBalances() }));
+  api.get("/api/documents", async (c) => c.json({ ok: true, data: await collectionFor(c, "documents") }));
+  api.get("/api/products", async (c) => c.json({ ok: true, data: await collectionFor(c, "products") }));
+  api.get("/api/products/channel-mapping", async (c) => c.json({
+    ok: true,
+    data: {
+      externalProducts: await collectionFor(c, "externalProducts"),
+      links: await collectionFor(c, "productExternalLinks"),
+      products: await collectionFor(c, "products"),
+      channels: await collectionFor(c, "salesChannels")
+    }
+  }));
+  api.get("/api/warehouses", async (c) => c.json({ ok: true, data: await collectionFor(c, "warehouses") }));
+  api.get("/api/inventory", async (c) => {
+    const readModelApp = await readModelAppFor(c);
+    return c.json({ ok: true, data: { stock: await readModelApp.stockByProduct(), lots: await readModelApp.repos.inventoryLots.all(), movements: await readModelApp.repos.stockMovements.all() } });
+  });
+  api.get("/api/stock-states", async (c) => c.json({ ok: true, data: await collectionFor(c, "stockStates") }));
+  api.get("/api/inventory/balances", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).stockByProduct() }));
+  api.get("/api/inventory/lots", async (c) => c.json({ ok: true, data: await collectionFor(c, "inventoryLots") }));
+  api.get("/api/inventory/reconciliation", async (c) => {
+    const readModelApp = await readModelAppFor(c);
+    return c.json({ ok: true, data: { stocktakes: await readModelApp.repos.stocktakes.all(), lines: await readModelApp.repos.stocktakeLines.all(), observedStocks: await readModelApp.observedStocks.list() } });
+  });
+  api.get("/api/counterparties", async (c) => c.json({ ok: true, data: await collectionFor(c, "counterparties") }));
+  api.get("/api/procurement/purchase-orders", async (c) => c.json({ ok: true, data: { orders: await collectionFor(c, "purchaseOrders"), lines: await collectionFor(c, "purchaseOrderLines") } }));
+  api.get("/api/channels", async (c) => c.json({ ok: true, data: { plugins: await collectionFor(c, "integrationPlugins"), channels: await collectionFor(c, "salesChannels") } }));
+  api.get("/api/integrations/channels", async (c) => c.json({ ok: true, data: { plugins: await collectionFor(c, "integrationPlugins"), channels: await collectionFor(c, "salesChannels") } }));
 
   api.use("/api/*", async (c, next) => {
     const authUser = c.get("authUser") as PublicAuthUser | undefined;
@@ -322,10 +364,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: { document: scopedApp.state.documents.find((document) => document.id === documentId), journalEntries: scopedApp.state.journalEntries.filter((entry) => entry.documentId === documentId), stockMovements: scopedApp.state.stockMovements.filter((movement) => movement.documentId === documentId) } });
   });
   api.post("/api/reports/recalculate", (c) => c.json({ ok: true, data: scopedApp.createRecalculationJob({ jobType: "reports", scope: { requestedAt: nowIso() } }) }));
-  api.get("/api/setup", async (c) => c.json({ ok: true, data: await scopedApp.setupSnapshot() }));
-  api.get("/api/organization", (c) => c.json({ ok: true, data: scopedApp.state.organization }));
-  api.get("/api/periods", (c) => c.json({ ok: true, data: scopedApp.state.periods }));
-
   api.post("/api/setup", async (c) => {
     const body = bootstrapSchema.parse(await c.req.json());
     const data = await scopedApp.bootstrap(body);
@@ -345,15 +383,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: scopedApp.updateOrganization(body) });
   });
 
-  api.get("/api/accounts", (c) => c.json({ ok: true, data: scopedApp.state.chartAccounts }));
-  api.get("/api/accounting/accounts", (c) => c.json({ ok: true, data: scopedApp.state.chartAccounts }));
   api.get("/api/accounting/accounts/:id", async (c) => c.json({ ok: true, data: await scopedApp.accountByIdOrCode(c.req.param("id")) }));
-  api.get("/api/journal", (c) => c.json({ ok: true, data: { entries: scopedApp.state.journalEntries, lines: scopedApp.state.journalLines } }));
-  api.get("/api/accounting/journal", (c) => c.json({ ok: true, data: { entries: scopedApp.state.journalEntries, lines: scopedApp.state.journalLines } }));
   api.get("/api/accounting/journal/:id", async (c) => c.json({ ok: true, data: await scopedApp.journalEntryDetails(c.req.param("id")) }));
-  api.get("/api/ledger", async (c) => c.json({ ok: true, data: await scopedApp.ledgerBalances() }));
-  api.get("/api/accounting/ledger", async (c) => c.json({ ok: true, data: await scopedApp.ledgerBalances() }));
-  api.get("/api/documents", (c) => c.json({ ok: true, data: scopedApp.state.documents }));
   api.post("/api/documents", async (c) => {
     const body = documentCreateSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.createManualDocument(body) });
@@ -401,12 +432,10 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: scopedApp.previewCorrection(c.req.param("id"), body.patch, body.reason) });
   });
 
-  api.get("/api/products", (c) => c.json({ ok: true, data: scopedApp.state.products }));
   api.post("/api/products", async (c) => {
     const body = productSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.createProduct(body) });
   });
-  api.get("/api/products/channel-mapping", (c) => c.json({ ok: true, data: { externalProducts: scopedApp.state.externalProducts, links: scopedApp.state.productExternalLinks, products: scopedApp.state.products, channels: scopedApp.state.salesChannels } }));
   api.get("/api/products/:id", async (c) => c.json({ ok: true, data: await scopedApp.productDetails(c.req.param("id")) }));
   api.post("/api/products/:id/update", async (c) => {
     const body = productSchema.partial().parse(await c.req.json());
@@ -572,16 +601,10 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: await scopedApp.deleteProductAsset(c.req.param("assetId")) });
   });
 
-  api.get("/api/warehouses", (c) => c.json({ ok: true, data: scopedApp.state.warehouses }));
   api.post("/api/warehouses", async (c) => {
     const body = warehouseSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.createWarehouse(body) });
   });
-  api.get("/api/inventory", async (c) => c.json({ ok: true, data: { stock: await scopedApp.stockByProduct(), lots: scopedApp.state.inventoryLots, movements: scopedApp.state.stockMovements } }));
-  api.get("/api/stock-states", (c) => c.json({ ok: true, data: scopedApp.state.stockStates }));
-  api.get("/api/inventory/balances", async (c) => c.json({ ok: true, data: await scopedApp.stockByProduct() }));
-  api.get("/api/inventory/lots", (c) => c.json({ ok: true, data: scopedApp.state.inventoryLots }));
-  api.get("/api/inventory/reconciliation", async (c) => c.json({ ok: true, data: { stocktakes: scopedApp.state.stocktakes, lines: scopedApp.state.stocktakeLines, observedStocks: await scopedApp.observedStocks.list() } }));
   api.post("/api/inventory/opening-balances", async (c) => {
     const body = openingBalanceSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.createOpeningBalance(body) });
@@ -592,13 +615,11 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.post("/api/inventory/opening-balances/:id/post", async (c) => c.json({ ok: true, data: await scopedApp.postOpeningBalance(c.req.param("id")) }));
 
-  api.get("/api/counterparties", (c) => c.json({ ok: true, data: scopedApp.state.counterparties }));
   api.post("/api/counterparties", async (c) => {
     const body = counterpartySchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.createCounterparty(body) });
   });
 
-  api.get("/api/procurement/purchase-orders", (c) => c.json({ ok: true, data: { orders: scopedApp.state.purchaseOrders, lines: scopedApp.state.purchaseOrderLines } }));
   api.post("/api/procurement/purchase-orders", async (c) => {
     const body = purchaseOrderSchema.parse(await c.req.json());
     const supplierId = body.supplierId ?? (body.supplierName?.trim()
@@ -975,8 +996,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: observed ?? { id: c.req.param("id"), status: "ignored" } });
   });
 
-  api.get("/api/channels", (c) => c.json({ ok: true, data: { plugins: scopedApp.state.integrationPlugins, channels: scopedApp.state.salesChannels } }));
-  api.get("/api/integrations/channels", (c) => c.json({ ok: true, data: { plugins: scopedApp.state.integrationPlugins, channels: scopedApp.state.salesChannels } }));
   api.get("/api/plugins", (c) => c.json({ ok: true, data: pluginRegistry.all().map(serializePluginMeta) }));
   api.get("/api/integrations/plugins", (c) => c.json({ ok: true, data: pluginRegistry.all().map(serializePluginMeta) }));
   api.post("/api/integrations/channels/validate", async (c) => {
