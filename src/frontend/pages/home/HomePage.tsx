@@ -223,12 +223,6 @@ function HomeDashboard({ state }: { state: any }) {
               text="Привяжите Ozon/WB или ручной канал."
               to="/integrations/channels/new"
             />
-            <NextAction
-              done={false}
-              title="Закрыть период"
-              text="Контрольная точка с чеклистом."
-              to="/controls"
-            />
           </CardContent>
         </Card>
       </div>

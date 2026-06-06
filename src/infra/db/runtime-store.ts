@@ -135,7 +135,6 @@ const COLLECTIONS: RuntimeCollectionName[] = [
   "reportSnapshots",
   "backfillProjects",
   "backfillItems",
-  "periodClosingRuns",
   "users",
   "roles",
   "agentTokens",
@@ -202,7 +201,6 @@ const STATE_JSON_TABLES = [
   "report_snapshot",
   "backfill_project",
   "backfill_item",
-  "period_closing_run",
   "user_account",
   "role",
   "agent_token",
@@ -904,15 +902,6 @@ const TABLES: TableSpec[] = [
     status: requiredString(entity.status, "backfillItems.status"),
     state_json: entity
   }), "backfill_project_id, id"),
-  spec("periodClosingRuns", "period_closing_run", ["id"], (entity) => ({
-    id: entityUuid(requiredString(entity.id, "periodClosingRuns.id")),
-    organization_id: entityUuid(requiredString(entity.organizationId, "periodClosingRuns.organizationId")),
-    period_id: entityUuid(requiredString(entity.periodId, "periodClosingRuns.periodId")),
-    status: requiredString(entity.status, "periodClosingRuns.status"),
-    created_at: requiredString(entity.createdAt, "periodClosingRuns.createdAt"),
-    closed_at: optionalString(entity.closedAt),
-    state_json: entity
-  }), "created_at, id"),
   spec("users", "user_account", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "users.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "users.organizationId")),

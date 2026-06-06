@@ -26,7 +26,6 @@ import type {
   PaymentAllocation,
   Payout,
   PayoutLine,
-  PeriodClosingRun,
   PluginStateRecord,
   ProcurementCost,
   ProcurementCostLine,
@@ -4083,178 +4082,6 @@ export class AccountingApp {
     return correction;
   }
 
-  closePeriod(periodId: ID): PeriodClosingRun {
-    return this.runPeriodClosingChecks(periodId, true);
-  }
-
-  runPeriodClosingChecks(periodId: ID, closePeriod = false): PeriodClosingRun {
-    const period = this.mustFind(this.state.periods, periodId, "period_not_found");
-    const inPeriod = (date?: string) => Boolean(date && date >= period.startsOn && date <= period.endsOn);
-    const periodDocuments = this.state.documents.filter((document) => inPeriod(document.accountingDate));
-    const periodJournalEntries = this.state.journalEntries.filter((entry) => inPeriod(entry.accountingDate));
-    const unpostedDocuments = periodDocuments.filter((document) => document.status === "draft");
-    const unbalancedEntries = periodJournalEntries.filter((entry) => {
-      const lines = this.state.journalLines.filter((line) => line.journalEntryId === entry.id);
-      const debit = round2(lines.reduce((sum, line) => sum + line.debit, 0));
-      const credit = round2(lines.reduce((sum, line) => sum + line.credit, 0));
-      return Math.abs(debit - credit) > 0.01;
-    });
-    const salesMissingCost = this.state.sales.filter((sale) =>
-      inPeriod(sale.saleDate) &&
-      sale.status !== "reversed" &&
-      (sale.costAmountRub <= 0 || this.state.saleLines.filter((line) => line.saleId === sale.id).some((line) => line.qty > 0 && line.costRub <= 0))
-    );
-    const payoutsNeedingReconciliation = this.state.payouts.filter((payout) =>
-      inPeriod(payout.payoutDate) &&
-      payout.status !== "reconciled" &&
-      Math.abs(Number(payout.differenceRub ?? 0)) > 1
-    );
-    const criticalDiscrepancies = this.state.observedStocks.filter((stock) => {
-      if (!stock.productId || !stock.warehouseId) return false;
-      const bookQty = this.stockState(stock.productId, stock.warehouseId).qty;
-      return Math.abs(round4(bookQty - stock.qtyObserved)) > 0.0001;
-    });
-    const activeRecalculationJobs = this.state.recalculationJobs.filter((job) =>
-      ["queued", "running", "failed"].includes(job.status) &&
-      (!job.scope?.periodId || job.scope.periodId === periodId)
-    );
-    const latestSnapshotAt = this.state.reportSnapshots
-      .filter((snapshot) => snapshot.periodId === periodId)
-      .map((snapshot) => snapshot.createdAt)
-      .sort()
-      .at(-1);
-    const latestCorrectionAt = this.state.correctionCases
-      .filter((correction) => {
-        const source = this.state.documents.find((document) => document.id === correction.sourceDocumentId);
-        return source ? inPeriod(source.accountingDate) : false;
-      })
-      .map((correction) => correction.appliedAt ?? correction.createdAt)
-      .sort()
-      .at(-1);
-    const reportsStale = Boolean(latestCorrectionAt && (!latestSnapshotAt || latestSnapshotAt < latestCorrectionAt));
-    const periodSettlementRows = this.state.settlementEntries.filter((entry) => {
-      const document = this.state.documents.find((candidate) => candidate.id === entry.documentId);
-      return document ? inPeriod(document.accountingDate) : false;
-    });
-    const settlementBalances = new Map<string, number>();
-    periodSettlementRows.forEach((entry) => {
-      const key = `${entry.settlementType}:${entry.counterpartyId ?? entry.channelId ?? "common"}`;
-      settlementBalances.set(key, round2((settlementBalances.get(key) ?? 0) + entry.debitRub - entry.creditRub));
-    });
-    const openSettlements = Array.from(settlementBalances.values()).filter((balance) => Math.abs(balance) > 1);
-    const cashUnreconciled = this.state.cashAccounts.filter((account) => !Number.isFinite(account.balanceRub));
-
-    const checks = [
-      {
-        code: "unposted_documents",
-        area: "documents" as const,
-        title: "Нет черновиков, влияющих на учет",
-        severity: "required" as const,
-        status: unpostedDocuments.length === 0 ? "passed" as const : "failed" as const,
-        count: unpostedDocuments.length,
-        details: unpostedDocuments.length === 0 ? "Все документы периода проведены" : `Черновиков: ${unpostedDocuments.length}`,
-        drilldownPath: "/documents"
-      },
-      {
-        code: "journal_balanced",
-        area: "documents" as const,
-        title: "Все проводки сбалансированы",
-        severity: "required" as const,
-        status: unbalancedEntries.length === 0 ? "passed" as const : "failed" as const,
-        count: unbalancedEntries.length,
-        details: unbalancedEntries.length === 0 ? "Дебет равен кредиту" : `Несбалансированных проводок: ${unbalancedEntries.length}`,
-        drilldownPath: "/reports/journal"
-      },
-      {
-        code: "critical_inventory_discrepancies",
-        area: "inventory" as const,
-        title: "Нет критичных расхождений по складу",
-        severity: "required" as const,
-        status: criticalDiscrepancies.length === 0 ? "passed" as const : "failed" as const,
-        count: criticalDiscrepancies.length,
-        details: criticalDiscrepancies.length === 0 ? "Наблюдаемые остатки не расходятся с книжными" : `Открытых расхождений: ${criticalDiscrepancies.length}`,
-        drilldownPath: "/inventory/reconciliation"
-      },
-      {
-        code: "sales_missing_cost",
-        area: "channels" as const,
-        title: "Нет продаж без себестоимости",
-        severity: "required" as const,
-        status: salesMissingCost.length === 0 ? "passed" as const : "failed" as const,
-        count: salesMissingCost.length,
-        details: salesMissingCost.length === 0 ? "Все продажи имеют себестоимость" : `Продаж без себестоимости: ${salesMissingCost.length}`,
-        drilldownPath: "/sales"
-      },
-      {
-        code: "payout_differences",
-        area: "money" as const,
-        title: "Нет незакрытых расхождений по выплатам",
-        severity: "required" as const,
-        status: payoutsNeedingReconciliation.length === 0 ? "passed" as const : "failed" as const,
-        count: payoutsNeedingReconciliation.length,
-        details: payoutsNeedingReconciliation.length === 0 ? "Все выплаты сверены" : `Нужно сверить выплат: ${payoutsNeedingReconciliation.length}`,
-        drilldownPath: "/finance/payouts"
-      },
-      {
-        code: "cash_reconciled",
-        area: "money" as const,
-        title: "Денежные счета в корректном состоянии",
-        severity: "warning" as const,
-        status: cashUnreconciled.length === 0 ? "passed" as const : "failed" as const,
-        count: cashUnreconciled.length,
-        details: cashUnreconciled.length === 0 ? "Остатки денежных счетов валидны" : "Есть счета с некорректным остатком",
-        drilldownPath: "/money"
-      },
-      {
-        code: "settlements_open",
-        area: "settlements" as const,
-        title: "Нет необъясненных хвостов по взаиморасчетам",
-        severity: "warning" as const,
-        status: openSettlements.length === 0 ? "passed" as const : "failed" as const,
-        count: openSettlements.length,
-        details: openSettlements.length === 0 ? "Остатки расчетов в норме" : `Открытых остатков: ${openSettlements.length}`,
-        drilldownPath: "/money"
-      },
-      {
-        code: "reports_fresh",
-        area: "reports" as const,
-        title: "Отчеты сформированы после последних исправлений",
-        severity: "required" as const,
-        status: reportsStale ? "failed" as const : "passed" as const,
-        count: reportsStale ? 1 : 0,
-        details: reportsStale ? "Сформируйте финальные отчеты заново" : (latestSnapshotAt ? "Финальные отчеты актуальны" : "Отчеты еще не сформированы"),
-        drilldownPath: `/controls/period-closing/${periodId}/report`
-      },
-      {
-        code: "recalculations_clear",
-        area: "recalculations" as const,
-        title: "Нет зависших или упавших пересчетов",
-        severity: "required" as const,
-        status: activeRecalculationJobs.length === 0 ? "passed" as const : "failed" as const,
-        count: activeRecalculationJobs.length,
-        details: activeRecalculationJobs.length === 0 ? "Все пересчеты завершены" : `Незавершенных задач: ${activeRecalculationJobs.length}`,
-        drilldownPath: "/controls/corrections"
-      }
-    ];
-    const blocked = checks.some((check) => check.severity === "required" && check.status === "failed");
-    const run: PeriodClosingRun = {
-      id: id("closing"),
-      organizationId: this.currentOrgId(),
-      periodId,
-      status: blocked ? "blocked" : closePeriod ? "closed" : "draft",
-      checks,
-      createdAt: nowIso(),
-      closedAt: !blocked && closePeriod ? nowIso() : undefined
-    };
-    if (!blocked && closePeriod) {
-      const before = { ...period };
-      period.status = "closed";
-      period.closedAt = run.closedAt;
-      this.audit("accounting_period", period.id, "close", before, period, `Закрытие периода ${period.label}`);
-    }
-    this.state.periodClosingRuns.push(run);
-    return run;
-  }
 
   createAgentToken(input: { name: string; scopes?: string[]; mode?: "read_only" | "read_write"; maskedToken?: string; tokenHash?: string }): AgentToken {
     const mode = input.mode ?? (input.scopes?.some((scope) => /write|post|patch|delete|sync/i.test(scope)) ? "read_write" : "read_only");
@@ -4348,21 +4175,12 @@ export class AccountingApp {
     this.state.periods = monthPeriods(organization.id, accountingStartDate, months).map((period) => {
       const existing = existingPeriodsByStart.get(period.startsOn);
       return existing
-        ? { ...period, id: existing.id, status: existing.status, closedAt: existing.closedAt }
+        ? { ...period, id: existing.id }
         : period;
     });
 
     this.audit("accounting_policy", policy.id, "update", before, policy, reason);
     return policy;
-  }
-
-  reopenPeriod(periodId: ID, reason?: string): AccountingPeriod {
-    const period = this.mustFind(this.state.periods, periodId, "period_not_found");
-    const before = { ...period };
-    period.status = "open";
-    period.closedAt = undefined;
-    this.audit("accounting_period", period.id, "reopen", before, period, reason);
-    return period;
   }
 
   accountByIdOrCode(idOrCode: ID): ChartAccount {
@@ -4627,7 +4445,7 @@ export class AccountingApp {
     const document = this.mustFind(this.state.documents, documentId, "document_not_found");
     this.assertDocumentHasNoDescendants(document.id, "Нельзя изменить документ, пока от него зависят другие документы");
     const before = { ...document };
-    const correction = this.createCorrectionCase(document.id, this.periodForDate(document.accountingDate)?.status === "closed" ? "current_period_adjustment" : "open_period_edit", reason, { patch });
+    const correction = this.createCorrectionCase(document.id, "open_period_edit", reason, { patch });
     this.state.documentVersions.push({
       id: id("doc_version"),
       documentId: document.id,

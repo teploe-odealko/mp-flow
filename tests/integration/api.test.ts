@@ -19,9 +19,10 @@ async function get<T>(api: ReturnType<typeof createApi>, path: string): Promise<
 describe("hono api", () => {
   it("bootstraps demo data and exposes reports", async () => {
     resetIds();
-    const api = createApi(new AccountingApp());
+    const app = new AccountingApp();
+    const api = createApi(app);
 
-    await post(api, "/api/dev/demo");
+    app.setupDemo();
     const state = await get<any>(api, "/api/state");
     const reports = await get<any>(api, "/api/reports");
 

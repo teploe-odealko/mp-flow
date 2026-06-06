@@ -23,7 +23,7 @@ describe("sync inbox workflows", () => {
     resetIds();
     const app = new AccountingApp();
     const api = createApi(app);
-    await post(api, "/api/dev/demo");
+    app.setupDemo();
     const state = await get<any>(api, "/api/state");
     const channel = state.salesChannels.find((candidate: any) => candidate.name.includes("Ozon"));
     const baselinePayoutCount = state.payouts.length;
@@ -70,7 +70,7 @@ describe("sync inbox workflows", () => {
     resetIds();
     const app = new AccountingApp();
     const api = createApi(app);
-    await post(api, "/api/dev/demo");
+    app.setupDemo();
     const before = await get<any>(api, "/api/state");
     const channel = before.salesChannels.find((candidate: any) => candidate.name.includes("Ozon"));
 
@@ -548,7 +548,7 @@ describe("sync inbox workflows", () => {
     resetIds();
     const app = new AccountingApp();
     const api = createApi(app);
-    await post(api, "/api/dev/demo");
+    app.setupDemo();
     const seeded = await get<any>(api, "/api/state");
     const channel = seeded.salesChannels.find((candidate: any) => candidate.name.includes("Ozon"));
     const productCountBefore = seeded.products.length;

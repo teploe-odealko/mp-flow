@@ -81,7 +81,7 @@ describe("marketplace plugins", () => {
     resetIds();
     const app = new AccountingApp();
     const api = createApi(app);
-    await post(api, "/api/dev/demo");
+    app.setupDemo();
     const state = await get<any>(api, "/api/state");
     const channel = state.salesChannels.find((candidate: any) => candidate.name.includes("Ozon"));
 

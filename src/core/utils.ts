@@ -146,7 +146,6 @@ export function createEmptyState(): AccountingState {
     reportSnapshots: [],
     backfillProjects: [],
     backfillItems: [],
-    periodClosingRuns: [],
     users: [],
     roles: [],
     agentTokens: [],

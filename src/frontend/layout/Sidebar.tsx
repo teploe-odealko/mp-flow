@@ -68,7 +68,6 @@ const NAV: NavItem[] = [
     match: [
       { path: "/controls", end: true },
       { path: "/controls/corrections" },
-      { path: "/controls/period-closing" },
       { path: "/controls/audit" }
     ]
   },

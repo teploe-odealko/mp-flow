@@ -5,7 +5,7 @@ import { cors } from "hono/cors";
 import { z } from "zod";
 import { AccountingApp } from "../core/accounting-app";
 import type { AccountingState, AgentToken, ChannelFinanceEvent, ChannelStreamCode, ExternalEvent, Payout, Sale, SalesChannel, SalesReturn, SyncRun } from "../core/models";
-import { createEmptyState, DomainError, id, nowIso, resetIds, runWithIdSequence } from "../core/utils";
+import { DomainError, id, nowIso, runWithIdSequence } from "../core/utils";
 import type { RuntimePersistence } from "../infra/db/runtime-store";
 import { pluginRegistry } from "../plugins/registry";
 import { createPluginSecretApi, createPluginStateApi, pluginStateKey } from "../plugins/runtime";
@@ -235,31 +235,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.get("/api/meta/navigation", (c) => c.json({ ok: true, data: navigationMeta }));
 
-  api.post("/api/dev/reset", (c) => {
-    if (process.env.NODE_ENV === "production" && process.env.ENABLE_DEV_ENDPOINTS !== "true") {
-      throw new DomainError("not_found", "Endpoint недоступен");
-    }
-    resetIds();
-    const next = createEmptyState();
-    Object.assign(scopedApp.state, next);
-    scopedApp.resetLookupCaches();
-    scopedApp.clearChannelCredentials();
-    scopedApp.clearPluginSecrets();
-    return c.json({ ok: true, data: scopedApp.dashboard() });
-  });
-
-  api.post("/api/dev/demo", (c) => {
-    if (process.env.NODE_ENV === "production" && process.env.ENABLE_DEV_ENDPOINTS !== "true") {
-      throw new DomainError("not_found", "Endpoint недоступен");
-    }
-    return c.json({ ok: true, data: scopedApp.setupDemo() });
-  });
-  api.post("/api/debug/error", (c) => {
-    if (process.env.ENABLE_DEBUG_ENDPOINTS !== "true") {
-      throw new DomainError("not_found", "Endpoint недоступен");
-    }
-    throw new Error("mpflow debug error");
-  });
 
   api.get("/api/dashboard", (c) => c.json({ ok: true, data: scopedApp.dashboard() }));
   api.get("/api/state", (c) => c.json({ ok: true, data: publicAccountingState(scopedApp.state) }));

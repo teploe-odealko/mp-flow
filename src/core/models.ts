@@ -32,8 +32,7 @@ export interface AccountingPeriod {
   label: string;
   startsOn: string;
   endsOn: string;
-  status: "open" | "closed";
-  closedAt?: string;
+  status: "open";
 }
 
 export interface ChartAccount {
@@ -806,28 +805,6 @@ export interface BackfillItem {
   status: "new" | "matched" | "ready" | "created" | "needs_mapping" | "needs_cost" | "applied";
 }
 
-export interface PeriodClosingRun {
-  id: ID;
-  organizationId: ID;
-  periodId: ID;
-  status: "draft" | "blocked" | "closed";
-  checks: PeriodClosingCheck[];
-  createdAt: string;
-  closedAt?: string;
-}
-
-export interface PeriodClosingCheck {
-  code: string;
-  area?: "documents" | "inventory" | "channels" | "money" | "settlements" | "reports" | "recalculations";
-  title: string;
-  severity: "required" | "warning";
-  status: "passed" | "failed" | "accepted";
-  count?: number;
-  details: string;
-  drilldownPath?: string;
-  acceptedReason?: string;
-}
-
 export interface UserAccount {
   id: ID;
   organizationId: ID;
@@ -926,7 +903,6 @@ export interface AccountingState {
   reportSnapshots: ReportSnapshot[];
   backfillProjects: BackfillProject[];
   backfillItems: BackfillItem[];
-  periodClosingRuns: PeriodClosingRun[];
   users: UserAccount[];
   roles: Role[];
   agentTokens: AgentToken[];

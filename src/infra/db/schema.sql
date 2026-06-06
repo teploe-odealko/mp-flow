@@ -444,9 +444,6 @@ create table if not exists report_saved_view (id uuid primary key default gen_ra
 create table if not exists backfill_project (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), name text not null, status text not null, payload jsonb not null default '{}');
 create table if not exists backfill_item (id uuid primary key default gen_random_uuid(), backfill_project_id uuid not null references backfill_project(id), item_type text not null, payload jsonb not null, status text not null);
 create table if not exists opening_balance_batch (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), document_id uuid references document(id), status text not null);
-create table if not exists period_closing_run (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), period_id uuid not null references accounting_period(id), status text not null, created_at timestamptz not null default now(), closed_at timestamptz);
-create table if not exists period_closing_check (id uuid primary key default gen_random_uuid(), period_closing_run_id uuid not null references period_closing_run(id), code text not null, title text not null, severity text not null, status text not null, details text not null);
-create table if not exists period_lock (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), period_id uuid not null references accounting_period(id), locked_at timestamptz not null default now(), reason text not null);
 create table if not exists user_account (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), email text not null, name text not null, status text not null);
 create table if not exists role (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), code text not null, name text not null);
 create table if not exists user_role (user_id uuid not null references user_account(id), role_id uuid not null references role(id), primary key (user_id, role_id));
@@ -532,7 +529,6 @@ alter table recalculation_job add column if not exists state_json jsonb not null
 alter table report_snapshot add column if not exists state_json jsonb not null default '{}'::jsonb;
 alter table backfill_project add column if not exists state_json jsonb not null default '{}'::jsonb;
 alter table backfill_item add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table period_closing_run add column if not exists state_json jsonb not null default '{}'::jsonb;
 alter table user_account add column if not exists state_json jsonb not null default '{}'::jsonb;
 alter table role add column if not exists state_json jsonb not null default '{}'::jsonb;
 alter table agent_token add column if not exists state_json jsonb not null default '{}'::jsonb;

@@ -69,8 +69,8 @@ describe("spec contract audit", () => {
 
 describe("MPFlow api surface", () => {
   it("exposes major read models after demo bootstrap", async () => {
-    const { api } = makeApi();
-    await post(api, "/api/dev/demo");
+    const { app, api } = makeApi();
+    app.setupDemo();
 
     const readModels = await Promise.all([
       get<{ configured: boolean; counters: { products: number; documents: number } }>(api, "/api/dashboard"),
@@ -126,7 +126,7 @@ describe("MPFlow api surface", () => {
 
   it("runs existing-store onboarding through opening balance creation", async () => {
     const { app, api } = makeApi();
-    await post(api, "/api/dev/demo");
+    app.setupDemo();
     const seedProduct = app.state.products[0];
 
     const project = await post<any>(api, "/api/onboarding/existing-store/projects", { name: "QA импорт существующего магазина" });
@@ -315,7 +315,7 @@ describe("MPFlow api surface", () => {
     process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED = "true";
     const { app, api } = makeApi();
     try {
-      await post(api, "/api/dev/demo");
+      app.setupDemo();
       const channel = app.state.salesChannels[0];
 
       const user = await post<any>(api, "/api/settings/users/invite", {
@@ -358,8 +358,8 @@ describe("MPFlow api surface", () => {
   });
 
   it("issues MCP keys and serves readonly API through MCP", async () => {
-    const { api } = makeApi();
-    await post(api, "/api/dev/demo");
+    const { app, api } = makeApi();
+    app.setupDemo();
 
     const issued = await post<any>(api, "/api/mcp/keys", { name: "Readonly agent", mode: "read_only" });
     expect(issued.endpoint).toBe("http://localhost/mcp");
@@ -420,8 +420,8 @@ describe("MPFlow api surface", () => {
   });
 
   it("creates and retries recalculation jobs", async () => {
-    const { api } = makeApi();
-    await post(api, "/api/dev/demo");
+    const { app, api } = makeApi();
+    app.setupDemo();
 
     const job = await post<any>(api, "/api/recalculation-jobs", {
       jobType: "sales_profit",
@@ -438,7 +438,7 @@ describe("MPFlow api surface", () => {
 
   it("keeps document versions and correction audit", async () => {
     const { app, api } = makeApi();
-    await post(api, "/api/dev/demo");
+    app.setupDemo();
 
     const document = await post<any>(api, "/api/documents", {
       accountingDate: "2026-06-10",

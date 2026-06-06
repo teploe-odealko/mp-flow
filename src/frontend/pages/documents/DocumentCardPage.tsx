@@ -128,8 +128,6 @@ export function DocumentCardPage() {
     );
   }
 
-  const isClosed = period?.status === "closed";
-
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
@@ -204,7 +202,7 @@ export function DocumentCardPage() {
                     { label: "Тип документа", value: doc.documentType },
                     { label: "Номер", value: <span className="font-mono">{doc.number}</span> },
                     { label: "Дата учёта", value: date(doc.accountingDate) },
-                    { label: "Период", value: period?.label ?? "—", hint: period?.status === "open" ? "Открыт" : "Закрыт" },
+                    { label: "Период", value: period?.label ?? "—", hint: "Открыт" },
                     { label: "Источник", value: sourceLabel(doc.source) },
                     { label: "Сумма", value: rub(doc.amountRub) },
                     { label: "Создан", value: dateTime(doc.createdAt) },
@@ -373,7 +371,7 @@ export function DocumentCardPage() {
             </CardHeader>
             <CardContent className="flex flex-col gap-3 text-sm">
               <Row label="Статус" value={<DocumentStatusBadge status={doc.status} />} />
-              <Row label="Период" value={period?.label ?? "—"} hint={period?.status === "open" ? "Открыт" : "Закрыт"} />
+              <Row label="Период" value={period?.label ?? "—"} hint="Открыт" />
               <Row label="Сумма" value={<span className="numeric font-semibold">{rub(doc.amountRub)}</span>} />
               <Row label="Проводки" value={`${entries.length}`} />
               <Row label="Строки" value={`${docLines.length}`} />
@@ -395,12 +393,7 @@ export function DocumentCardPage() {
               />
             </CardContent>
           </Card>
-          {isClosed && (
-            <div className="rounded-[var(--radius-md)] border border-[oklch(0.85_0.1_70)] bg-[var(--color-warning-soft)] p-3 text-xs leading-relaxed">
-              Период закрыт. Документ доступен только для просмотра, а исправление делайте из исходной сущности.
-            </div>
-          )}
-          {!isClosed && doc.status === "posted" && (
+          {doc.status === "posted" && (
             <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-muted)]/30 p-3 text-xs leading-relaxed text-[var(--color-muted-foreground)]">
               Проведенный документ здесь не редактируется. Если нужно исправить историю, откройте исходную сущность и удалите ее оттуда.
             </div>
