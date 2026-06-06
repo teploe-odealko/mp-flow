@@ -18,15 +18,12 @@
 1. Оставшиеся прямые ЧТЕНИЯ `state.externalEvents` → на стор (`await app.externalEvents.list/count`),
    все в async-контекстах: app.ts 979 (count), 3017/3437/3539/3545/3722/3746 (sync-pipeline);
    accounting-app 1840 (refresh→async), 2910 (reset, уже async), 3731, 4387.
-2. **Узел: запись статуса события.** `markExternalEventProcessed`/`markExternalEventNeedsAttention`
-   (`accounting-app` 5856/5867) зовутся из СИНХРОННЫХ posting-методов: `postSale` (2213/2280),
-   `recognizeSaleFromFinance` (2294/2306/2349), `postReturn` (3068/3085/3147), payout (3279).
-   Async-ить нельзя (каскад на весь `recordSale`/`recordReturn` — горячий путь, везде+тесты).
-   Решение: **отложенная запись** — `mark*` пишет patch события в sync-буфер на app
-   (`pendingExternalEventUpdates`), а сессия/контроллер делает `await store.flush(buffer)` в конце
-   (in-memory: применяет к массиву; Postgres: upsert). Так posting-методы остаются sync.
-   Также убрать прямые мутации события в `recordChannelFee` (2099 — externalId передать внутрь),
-   payout (2179), recordSale/Return → перевести на буфер.
+2. ✅ **Узел: запись статуса события — СДЕЛАНО** (отложенная запись). `markExternalEventProcessed`/
+   `markExternalEventNeedsAttention` теперь буферят patch (`pendingExternalEventUpdates`) и сразу
+   мутируют in-memory; `flushPendingExternalEventUpdates()` применяет через стор (для Postgres).
+   Posting-методы (`postSale`/`postReturn`/`recognizeSaleFromFinance`/payout) остались sync — каскада
+   на `recordSale` нет. Осталось: `recordChannelFee` (2100 — externalId передать из контроллера, не
+   искать по state); вызвать `flushPendingExternalEventUpdates()` в сессии перед commit (см. п.4).
 3. `PostgresExternalEventStore` (реализует `ExternalEventStore` + `flush`) поверх `external_event`.
 4. Инъекция стора в сессии (`runtime-store` openRead/WriteSession), flush буфера на commit.
 5. Исключить `external_event` из snapshot load/save. PG-тесты: события вне снэпшота, write ~50мс.
