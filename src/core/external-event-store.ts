@@ -20,24 +20,40 @@ export interface ExternalEventStore {
   deleteByIds(ids: ID[]): Promise<void>;
 }
 
+function identityKey(channelId: ID, identity: string): string {
+  return `${channelId}::${identity.trim()}`;
+}
+
 /**
  * In-memory реализация поверх массива (обычно — ссылка на state.externalEvents),
  * чтобы существующие in-memory тесты, инспектирующие state.externalEvents, продолжали
- * работать без изменений.
+ * работать без изменений. Держит индексы byId/identity для O(1) поиска (как раньше делал
+ * сам AccountingApp), иначе дедуп при синке тысяч событий деградировал бы в O(n²).
  */
 export class InMemoryExternalEventStore implements ExternalEventStore {
-  constructor(private readonly events: ExternalEvent[]) {}
+  private byId = new Map<ID, ExternalEvent>();
+  private byIdentity = new Map<string, ExternalEvent>();
+
+  constructor(private readonly events: ExternalEvent[]) {
+    for (const event of events) this.index(event);
+  }
+
+  private index(event: ExternalEvent): void {
+    this.byId.set(event.id, event);
+    this.byIdentity.set(identityKey(event.channelId, event.externalId), event);
+    if (event.idempotencyKey) this.byIdentity.set(identityKey(event.channelId, event.idempotencyKey), event);
+  }
 
   async getById(id: ID): Promise<ExternalEvent | undefined> {
-    return this.events.find((event) => event.id === id);
+    return this.byId.get(id);
   }
 
   async findByIdentity(channelId: ID, externalId: string, idempotencyKey?: string): Promise<ExternalEvent | undefined> {
     if (idempotencyKey) {
-      const byKey = this.events.find((event) => event.channelId === channelId && event.idempotencyKey === idempotencyKey);
+      const byKey = this.byIdentity.get(identityKey(channelId, idempotencyKey));
       if (byKey) return byKey;
     }
-    return this.events.find((event) => event.channelId === channelId && event.externalId === externalId);
+    return this.byIdentity.get(identityKey(channelId, externalId));
   }
 
   async list(filter: ExternalEventListFilter = {}): Promise<ExternalEvent[]> {
@@ -52,12 +68,18 @@ export class InMemoryExternalEventStore implements ExternalEventStore {
     const index = this.events.findIndex((candidate) => candidate.id === event.id);
     if (index >= 0) this.events[index] = event;
     else this.events.push(event);
+    this.index(event);
   }
 
   async deleteByIds(ids: ID[]): Promise<void> {
     const set = new Set(ids);
     for (let i = this.events.length - 1; i >= 0; i -= 1) {
-      if (set.has(this.events[i].id)) this.events.splice(i, 1);
+      const event = this.events[i];
+      if (!set.has(event.id)) continue;
+      this.events.splice(i, 1);
+      this.byId.delete(event.id);
+      this.byIdentity.delete(identityKey(event.channelId, event.externalId));
+      if (event.idempotencyKey) this.byIdentity.delete(identityKey(event.channelId, event.idempotencyKey));
     }
   }
 }
