@@ -59,7 +59,7 @@ describe("full reseller accounting scenario", () => {
     await app.recordChannelFee({ channelId: channel.id, eventKind: "commission", occurredAt: "2026-06-16", amountRub: 1_100 });
     await app.recordChannelPayout({ channelId: channel.id, payoutDate: "2026-06-20", bankReceiptRub: 8_800 });
 
-    const reports = app.reports();
+    const reports = await app.reports();
     const numbers = app.state.documents.map((document) => document.number);
     expect(sale.grossAmountRub).toBe(9_900);
     expect(reports.pnl.revenue).toBe(9_900);

@@ -277,7 +277,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/meta/navigation", (c) => c.json({ ok: true, data: navigationMeta }));
 
 
-  api.get("/api/dashboard", (c) => c.json({ ok: true, data: scopedApp.dashboard() }));
+  api.get("/api/dashboard", async (c) => c.json({ ok: true, data: await scopedApp.dashboard() }));
   api.get("/api/state", (c) => c.json({ ok: true, data: publicAccountingState(scopedApp.state) }));
   // Классический пер-ресурсный доступ: фронт уходит от всесущего /api/state к точечным
   // коллекциям (useCollection). Тот же public-шейпинг, что и /api/state (креды не утекают).
@@ -289,12 +289,12 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     }
     return c.json({ ok: true, data: publicState[name] });
   });
-  api.get("/api/reports", (c) => c.json({ ok: true, data: scopedApp.reports() }));
-  api.get("/api/reports/profit-and-loss", (c) => c.json({ ok: true, data: scopedApp.reports().pnl }));
-  api.get("/api/reports/balance-sheet", (c) => c.json({ ok: true, data: scopedApp.reports().balanceSheet }));
-  api.get("/api/reports/cash-flow", (c) => c.json({ ok: true, data: scopedApp.reports().cashFlow }));
-  api.get("/api/reports/unit-economics", (c) => c.json({ ok: true, data: scopedApp.reports().unitEconomics }));
-  api.get("/api/reports/inventory", (c) => c.json({ ok: true, data: scopedApp.reports().inventory }));
+  api.get("/api/reports", async (c) => c.json({ ok: true, data: await scopedApp.reports() }));
+  api.get("/api/reports/profit-and-loss", async (c) => c.json({ ok: true, data: (await scopedApp.reports()).pnl }));
+  api.get("/api/reports/balance-sheet", async (c) => c.json({ ok: true, data: (await scopedApp.reports()).balanceSheet }));
+  api.get("/api/reports/cash-flow", async (c) => c.json({ ok: true, data: (await scopedApp.reports()).cashFlow }));
+  api.get("/api/reports/unit-economics", async (c) => c.json({ ok: true, data: (await scopedApp.reports()).unitEconomics }));
+  api.get("/api/reports/inventory", async (c) => c.json({ ok: true, data: (await scopedApp.reports()).inventory }));
   api.get("/api/reports/drilldown", (c) => {
     const documentId = c.req.query("documentId");
     return c.json({ ok: true, data: { document: scopedApp.state.documents.find((document) => document.id === documentId), journalEntries: scopedApp.state.journalEntries.filter((entry) => entry.documentId === documentId), stockMovements: scopedApp.state.stockMovements.filter((movement) => movement.documentId === documentId) } });
@@ -329,8 +329,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/journal", (c) => c.json({ ok: true, data: { entries: scopedApp.state.journalEntries, lines: scopedApp.state.journalLines } }));
   api.get("/api/accounting/journal", (c) => c.json({ ok: true, data: { entries: scopedApp.state.journalEntries, lines: scopedApp.state.journalLines } }));
   api.get("/api/accounting/journal/:id", async (c) => c.json({ ok: true, data: await scopedApp.journalEntryDetails(c.req.param("id")) }));
-  api.get("/api/ledger", (c) => c.json({ ok: true, data: scopedApp.ledgerBalances() }));
-  api.get("/api/accounting/ledger", (c) => c.json({ ok: true, data: scopedApp.ledgerBalances() }));
+  api.get("/api/ledger", async (c) => c.json({ ok: true, data: await scopedApp.ledgerBalances() }));
+  api.get("/api/accounting/ledger", async (c) => c.json({ ok: true, data: await scopedApp.ledgerBalances() }));
   api.get("/api/documents", (c) => c.json({ ok: true, data: scopedApp.state.documents }));
   api.post("/api/documents", async (c) => {
     const body = documentCreateSchema.parse(await c.req.json());

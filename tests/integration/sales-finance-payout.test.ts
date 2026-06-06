@@ -353,7 +353,7 @@ describe("sales, returns, finance events and payouts", () => {
     expect(linkedReturnFee?.status).toBe("posted");
     expect(app.state.documentLinks.some((link) => link.fromDocumentId === returnFee.documentId && link.toDocumentId === salesReturn.documentId && link.linkType === "channel_fee")).toBe(true);
 
-    const reports = app.reports();
+    const reports = await app.reports();
     expect(reports.pnl.revenue).toBe(900);
     expect(reports.pnl.costOfSales).toBe(300);
     expect(reports.pnl.operatingExpenses).toBe(50);

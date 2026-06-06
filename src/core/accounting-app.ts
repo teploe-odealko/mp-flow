@@ -286,9 +286,9 @@ export class AccountingApp {
     return parent ?? undefined;
   }
 
-  bootstrap(input: BootstrapInput) {
+  async bootstrap(input: BootstrapInput) {
     if (this.state.organization) {
-      return this.dashboard();
+      return await this.dashboard();
     }
 
     this.validateSetupInput(input, false);
@@ -390,7 +390,7 @@ export class AccountingApp {
     );
 
     this.audit("organization", organization.id, "bootstrap", undefined, organization, "Первичная настройка");
-    return this.dashboard();
+    return await this.dashboard();
   }
 
   ensureBootstrapped() {
@@ -440,21 +440,22 @@ export class AccountingApp {
     this.invalidateSaleLookup();
   }
 
-  dashboard() {
+  async dashboard() {
     const org = this.state.organization;
+    const documents = await this.repos.documents.all();
     return {
       organization: org,
       configured: Boolean(org),
       policy: this.state.accountingPolicy,
-      currentPeriod: this.state.periods.find((period) => period.status === "open"),
+      currentPeriod: (await this.repos.periods.all()).find((period) => period.status === "open"),
       counters: {
-        products: this.state.products.length,
-        documents: this.state.documents.length,
-        postedDocuments: this.state.documents.filter((document) => document.status === "posted").length,
-        inventoryLots: this.state.inventoryLots.filter((lot) => lot.qtyRemaining > 0).length,
-        openCorrections: this.state.correctionCases.filter((correction) => correction.status !== "applied").length
+        products: (await this.repos.products.all()).length,
+        documents: documents.length,
+        postedDocuments: documents.filter((document) => document.status === "posted").length,
+        inventoryLots: (await this.repos.inventoryLots.all()).filter((lot) => lot.qtyRemaining > 0).length,
+        openCorrections: (await this.repos.correctionCases.all()).filter((correction) => correction.status !== "applied").length
       },
-      balances: this.ledgerBalances()
+      balances: await this.ledgerBalances()
     };
   }
 
@@ -465,7 +466,7 @@ export class AccountingApp {
     });
 
     if (this.state.products.length > 0) {
-      return this.dashboard();
+      return await this.dashboard();
     }
 
     const productA = this.createProduct({
@@ -560,7 +561,7 @@ export class AccountingApp {
       bankReceiptRub: 5_520
     });
 
-    return this.dashboard();
+    return await this.dashboard();
   }
 
   createCounterparty(input: {
@@ -5328,8 +5329,8 @@ export class AccountingApp {
     };
   }
 
-  reports() {
-    const balances = this.ledgerBalances();
+  async reports() {
+    const balances = await this.ledgerBalances();
     const revenue = creditTurnover(balances["90.01"]);
     const costOfSales = debitTurnover(balances["90.02"]);
     const operatingExpenses = round2(debitTurnover(balances["26"]) + debitTurnover(balances["44"]) + debitTurnover(balances["91.02"]));
@@ -5341,13 +5342,18 @@ export class AccountingApp {
       otherIncome,
       netProfit: round2(revenue + otherIncome - costOfSales - operatingExpenses)
     };
-    const inventory = this.state.stockStates.map((stock) => ({
+    const products = await this.repos.products.all();
+    const warehouses = await this.repos.warehouses.all();
+    const chartAccounts = await this.repos.chartAccounts.all();
+    const payments = await this.repos.payments.all();
+    const saleLines = await this.repos.saleLines.all();
+    const inventory = (await this.repos.stockStates.all()).map((stock) => ({
       ...stock,
-      product: this.state.products.find((product) => product.id === stock.productId),
-      warehouse: this.state.warehouses.find((warehouse) => warehouse.id === stock.warehouseId)
+      product: products.find((product) => product.id === stock.productId),
+      warehouse: warehouses.find((warehouse) => warehouse.id === stock.warehouseId)
     }));
     return {
-      trialBalance: this.state.chartAccounts.map((account) => ({
+      trialBalance: chartAccounts.map((account) => ({
         account,
         debit: balances[account.code]?.debit ?? 0,
         credit: balances[account.code]?.credit ?? 0,
@@ -5361,21 +5367,21 @@ export class AccountingApp {
       },
       cashFlow: {
         cashBalance: debitBalance(balances["51"]) + debitBalance(balances["50"]),
-        incoming: this.state.payments.filter((payment) => payment.paymentDirection === "incoming").reduce((sum, payment) => sum + payment.amountRub, 0),
-        outgoing: this.state.payments.filter((payment) => payment.paymentDirection === "outgoing").reduce((sum, payment) => sum + payment.amountRub, 0)
+        incoming: payments.filter((payment) => payment.paymentDirection === "incoming").reduce((sum, payment) => sum + payment.amountRub, 0),
+        outgoing: payments.filter((payment) => payment.paymentDirection === "outgoing").reduce((sum, payment) => sum + payment.amountRub, 0)
       },
       inventory,
-      unitEconomics: this.state.saleLines.map((line) => ({
+      unitEconomics: saleLines.map((line) => ({
         saleLine: line,
-        product: this.state.products.find((product) => product.id === line.productId),
+        product: products.find((product) => product.id === line.productId),
         grossMarginRub: round2(line.revenueRub - line.costRub),
         grossMarginPercent: line.revenueRub > 0 ? round2(((line.revenueRub - line.costRub) / line.revenueRub) * 100) : 0
       }))
     };
   }
 
-  ledgerBalances() {
-    return this.state.journalLines.reduce<Record<string, { debit: number; credit: number }>>((acc, line) => {
+  async ledgerBalances() {
+    return (await this.repos.journalLines.all()).reduce<Record<string, { debit: number; credit: number }>>((acc, line) => {
       const current = acc[line.accountCode] ?? { debit: 0, credit: 0 };
       current.debit = round2(current.debit + line.debit);
       current.credit = round2(current.credit + line.credit);
