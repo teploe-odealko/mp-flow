@@ -40,7 +40,7 @@ import {
 } from "@/components/ui/dialog";
 import { DataList } from "@/components/ui/data-list";
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/api";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { date, dateTime, rub } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
@@ -81,9 +81,9 @@ export function ChannelDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { state } = useAppState();
-  const warehouses = (state.warehouses ?? []).filter((w: any) => w.warehouseType === "sales_point");
-  const channelsList = state.salesChannels ?? [];
+  const warehouses = (useCollection<any[]>("warehouses") ?? []).filter((w: any) => w.warehouseType === "sales_point");
+  const channelsList = useCollection<any[]>("salesChannels") ?? [];
+  const backfillProjects = useCollection<any[]>("backfillProjects") ?? [];
 
   const channelQuery = useQuery({
     queryKey: ["channel-detail", id],
@@ -136,7 +136,7 @@ export function ChannelDetailPage() {
 
   // Onboarding ("перенос в учёт") progress for this channel, derived from its backfill project.
   const onboarding = useMemo(() => {
-    const projects = (state.backfillProjects ?? [])
+    const projects = backfillProjects
       .filter((p: any) => String(p?.payload?.salesChannelId ?? "") === String(id))
       .slice()
       .sort((a: any, b: any) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")));
@@ -145,7 +145,7 @@ export function ChannelDetailPage() {
     const done = project ? ["applied", "completed"].includes(project.status) : false;
     const started = Boolean(project) && !done;
     return { project, summary, done, started };
-  }, [state.backfillProjects, id]);
+  }, [backfillProjects, id]);
   const onboardingDocumentedFlow = onboarding.project?.payload?.inventoryStartMode === "documented_flow";
   const onboardingPath = `/integrations/channels/${channel.id}/onboarding`;
 

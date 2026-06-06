@@ -27,7 +27,7 @@ import {
   type FinanceOperationView
 } from "@/lib/finance-operations";
 import { paginateRows } from "@/lib/pagination";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -58,13 +58,22 @@ const STATUS_OPTIONS: Array<{ value: FinanceOperationStatusFilter; label: string
 ];
 
 export function FinanceWorkspace() {
-  const { state } = useAppState();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const documents = state.documents ?? [];
-  const cashAccounts = state.cashAccounts ?? [];
-  const payments = state.payments ?? [];
+  const documents = useCollection<any[]>("documents") ?? [];
+  const cashAccounts = useCollection<any[]>("cashAccounts") ?? [];
+  const payments = useCollection<any[]>("payments") ?? [];
+  const accountingPolicy = useCollection<any>("accountingPolicy");
+  const counterparties = useCollection<any[]>("counterparties") ?? [];
+  const expenseCategories = useCollection<any[]>("expenseCategories") ?? [];
+  const operatingExpenses = useCollection<any[]>("operatingExpenses") ?? [];
+  const ownerTransactions = useCollection<any[]>("ownerTransactions") ?? [];
+  const paymentAllocations = useCollection<any[]>("paymentAllocations") ?? [];
+  const payouts = useCollection<any[]>("payouts") ?? [];
+  const procurementCosts = useCollection<any[]>("procurementCosts") ?? [];
+  const purchaseOrders = useCollection<any[]>("purchaseOrders") ?? [];
+  const salesChannels = useCollection<any[]>("salesChannels") ?? [];
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -76,8 +85,11 @@ export function FinanceWorkspace() {
   const typeFilter = parseType(searchParams.get("type"));
   const statusFilter = parseStatus(searchParams.get("status"));
 
-  const operations = useMemo(() => buildFinanceOperations(state), [state]);
-  const suggestedRange = useMemo(() => suggestFinanceDateRange(state, operations), [state, operations]);
+  const operations = useMemo(
+    () => buildFinanceOperations({ counterparties, documents, expenseCategories, operatingExpenses, ownerTransactions, paymentAllocations, payments, payouts, procurementCosts, purchaseOrders, salesChannels } as any),
+    [counterparties, documents, expenseCategories, operatingExpenses, ownerTransactions, paymentAllocations, payments, payouts, procurementCosts, purchaseOrders, salesChannels]
+  );
+  const suggestedRange = useMemo(() => suggestFinanceDateRange({ accountingPolicy }, operations), [accountingPolicy, operations]);
 
   useEffect(() => {
     if (dateRangeTouched) return;

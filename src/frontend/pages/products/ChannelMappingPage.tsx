@@ -9,19 +9,18 @@ import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { ProductCell } from "@/components/product-thumb";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { apiDelete, apiGet, apiPost } from "@/api";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 
 export function ChannelMappingPage() {
-  const { state } = useAppState();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const externals = state.externalProducts ?? [];
-  const links = state.productExternalLinks ?? [];
-  const channels = state.salesChannels ?? [];
-  const products = state.products ?? [];
+  const externals = useCollection<any[]>("externalProducts") ?? [];
+  const links = useCollection<any[]>("productExternalLinks") ?? [];
+  const channels = useCollection<any[]>("salesChannels") ?? [];
+  const products = useCollection<any[]>("products") ?? [];
   const eventsQuery = useQuery({ queryKey: ["events"], queryFn: () => apiGet<any[]>("/api/integrations/events") });
   const externalEvents = eventsQuery.data ?? [];
   const focusedExternalProductId = searchParams.get("externalProductId");
@@ -151,7 +150,7 @@ export function ChannelMappingPage() {
                         </div>
                       </TD>
                       <TD muted className="font-mono text-xs">{row.external.externalSku}</TD>
-                      <TD><StatusBadge status={row.mappingStatus} /></TD>
+                      <TD><StatusBadge status={row.mappingStatus as any} /></TD>
                       <TD>{row.product ? <ProductCell product={row.product} size={32} /> : <span className="text-sm text-[var(--color-muted-foreground)]">Не связан</span>}</TD>
                     </TR>
                   ))}
@@ -176,7 +175,7 @@ export function ChannelMappingPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <StatusBadge status={selectedRow.mappingStatus} />
+                  <StatusBadge status={selectedRow.mappingStatus as any} />
                   <Badge tone="neutral">{selectedRow.channel?.name ?? "—"}</Badge>
                 </div>
 
