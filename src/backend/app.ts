@@ -277,8 +277,10 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/periods", async (c) => c.json({ ok: true, data: await collectionFor(c, "periods") }));
   api.get("/api/accounts", async (c) => c.json({ ok: true, data: await collectionFor(c, "chartAccounts") }));
   api.get("/api/accounting/accounts", async (c) => c.json({ ok: true, data: await collectionFor(c, "chartAccounts") }));
+  api.get("/api/accounting/accounts/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).accountByIdOrCode(c.req.param("id")) }));
   api.get("/api/journal", async (c) => c.json({ ok: true, data: { entries: await collectionFor(c, "journalEntries"), lines: await collectionFor(c, "journalLines") } }));
   api.get("/api/accounting/journal", async (c) => c.json({ ok: true, data: { entries: await collectionFor(c, "journalEntries"), lines: await collectionFor(c, "journalLines") } }));
+  api.get("/api/accounting/journal/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).journalEntryDetails(c.req.param("id")) }));
   api.get("/api/ledger", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).ledgerBalances() }));
   api.get("/api/accounting/ledger", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).ledgerBalances() }));
   api.get("/api/documents", async (c) => c.json({ ok: true, data: await collectionFor(c, "documents") }));
@@ -292,6 +294,9 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       channels: await collectionFor(c, "salesChannels")
     }
   }));
+  api.get("/api/products/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).productDetails(c.req.param("id")) }));
+  api.get("/api/products/:id/lots", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).productDetails(c.req.param("id"))).lots }));
+  api.get("/api/products/:id/stock-movements", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).productDetails(c.req.param("id"))).movements }));
   api.get("/api/warehouses", async (c) => c.json({ ok: true, data: await collectionFor(c, "warehouses") }));
   api.get("/api/inventory", async (c) => {
     const readModelApp = await readModelAppFor(c);
@@ -407,8 +412,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: scopedApp.updateOrganization(body) });
   });
 
-  api.get("/api/accounting/accounts/:id", async (c) => c.json({ ok: true, data: await scopedApp.accountByIdOrCode(c.req.param("id")) }));
-  api.get("/api/accounting/journal/:id", async (c) => c.json({ ok: true, data: await scopedApp.journalEntryDetails(c.req.param("id")) }));
   api.post("/api/documents", async (c) => {
     const body = documentCreateSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.createManualDocument(body) });
@@ -460,7 +463,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = productSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.createProduct(body) });
   });
-  api.get("/api/products/:id", async (c) => c.json({ ok: true, data: await scopedApp.productDetails(c.req.param("id")) }));
   api.post("/api/products/:id/update", async (c) => {
     const body = productSchema.partial().parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.updateProduct(c.req.param("id"), body) });
@@ -471,8 +473,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.post("/api/products/:id/archive", async (c) => c.json({ ok: true, data: await scopedApp.archiveProduct(c.req.param("id")) }));
   api.post("/api/products/:id/restore", async (c) => c.json({ ok: true, data: await scopedApp.restoreProduct(c.req.param("id")) }));
-  api.get("/api/products/:id/lots", async (c) => c.json({ ok: true, data: (await scopedApp.productDetails(c.req.param("id"))).lots }));
-  api.get("/api/products/:id/stock-movements", async (c) => c.json({ ok: true, data: (await scopedApp.productDetails(c.req.param("id"))).movements }));
   api.post("/api/products/:id/images", async (c) => {
     const body = imageSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.setProductImage(c.req.param("id"), body.url) });
