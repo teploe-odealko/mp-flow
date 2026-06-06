@@ -1058,7 +1058,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const channel = scopedApp.state.salesChannels.find((candidate) => candidate.id === c.req.param("id"));
     if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
     const body = z.object({ includePayouts: z.boolean().optional() }).parse(await c.req.json().catch(() => ({})));
-    return c.json({ ok: true, data: scopedApp.resetChannelSalesData(channel.id, body) });
+    return c.json({ ok: true, data: await scopedApp.resetChannelSalesData(channel.id, body) });
   });
   api.post("/api/channels/:id/sync", async (c) => {
     const channel = scopedApp.state.salesChannels.find((candidate) => candidate.id === c.req.param("id"));
@@ -1147,7 +1147,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       });
       const autoProcessing = body.autoProcess === false
         ? emptyAutoProcessingOutcome()
-        : autoProcessChannelFacts(scopedApp, channel.id, syncRun.id);
+        : await autoProcessChannelFacts(scopedApp, channel.id, syncRun.id);
       syncRun.stats = {
         ...result.stats,
         auto_sales_materialized: autoProcessing.salesPosted,
@@ -1249,27 +1249,28 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     externalProduct.status = "ignored";
     return c.json({ ok: true, data: externalProduct });
   });
-  api.post("/api/external-products/:id/reprocess-events", (c) => {
+  api.post("/api/external-products/:id/reprocess-events", async (c) => {
     const externalProduct = scopedApp.state.externalProducts.find((candidate) => candidate.id === c.req.param("id"));
     if (!externalProduct) throw new DomainError("external_product_not_found", "Внешний товар не найден");
-    const events = scopedApp.state.externalEvents.filter((event) => event.channelId === externalProduct.channelId && JSON.stringify(event.rawPayload).includes(externalProduct.externalSku));
-    events.forEach((event) => { scopedApp.reprocessExternalEvent(event.id); });
+    const events = (await scopedApp.externalEvents.list({ channelId: externalProduct.channelId }))
+      .filter((event) => JSON.stringify(event.rawPayload).includes(externalProduct.externalSku));
+    for (const event of events) await scopedApp.reprocessExternalEvent(event.id);
     return c.json({ ok: true, data: events });
   });
   api.post("/api/channels/:id/external-events", async (c) => {
     const body = externalEventSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.ingestExternalEvent({ ...body, channelId: c.req.param("id") }) });
+    return c.json({ ok: true, data: await scopedApp.ingestExternalEvent({ ...body, channelId: c.req.param("id") }) });
   });
   api.post("/api/channels/:id/observed-stock", async (c) => {
     const body = observedStockSchema.parse(await c.req.json());
     return c.json({ ok: true, data: scopedApp.recordObservedStock({ ...body, channelId: c.req.param("id") }) });
   });
-  api.post("/api/integrations/events/:id/reprocess", (c) => {
-    return c.json({ ok: true, data: scopedApp.reprocessExternalEvent(c.req.param("id")) });
+  api.post("/api/integrations/events/:id/reprocess", async (c) => {
+    return c.json({ ok: true, data: await scopedApp.reprocessExternalEvent(c.req.param("id")) });
   });
   api.post("/api/integrations/events/:id/ignore", async (c) => {
     const body = z.object({ reason: z.string().min(3) }).parse(await c.req.json().catch(() => ({})));
-    return c.json({ ok: true, data: scopedApp.ignoreExternalEvent(c.req.param("id"), body.reason) });
+    return c.json({ ok: true, data: await scopedApp.ignoreExternalEvent(c.req.param("id"), body.reason) });
   });
   api.get("/api/integrations/observed-stock", (c) => c.json({ ok: true, data: scopedApp.state.observedStocks }));
 
@@ -1317,10 +1318,10 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
     return c.json({ ok: true, data: materializeSaleEvent(scopedApp, event) });
   });
-  api.post("/api/integrations/events/:id/materialize-sale-accrual", (c) => {
+  api.post("/api/integrations/events/:id/materialize-sale-accrual", async (c) => {
     const event = scopedApp.state.externalEvents.find((candidate) => candidate.id === c.req.param("id"));
     if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
-    return c.json({ ok: true, data: materializeSaleAccrualEvent(scopedApp, event) });
+    return c.json({ ok: true, data: await materializeSaleAccrualEvent(scopedApp, event) });
   });
   api.get("/api/sales/:id/cost-applications", (c) => {
     const sale = scopedApp.state.sales.find((candidate) => candidate.id === c.req.param("id"));
@@ -1362,16 +1363,16 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: scopedApp.postReturn(c.req.param("id")) });
   });
   api.delete("/api/returns/:id", (c) => c.json({ ok: true, data: scopedApp.deleteReturnForResync(c.req.param("id")) }));
-  api.post("/api/integrations/events/:id/materialize-return", (c) => {
+  api.post("/api/integrations/events/:id/materialize-return", async (c) => {
     const event = scopedApp.state.externalEvents.find((candidate) => candidate.id === c.req.param("id"));
     if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
-    return c.json({ ok: true, data: materializeReturnEvent(scopedApp, event) });
+    return c.json({ ok: true, data: await materializeReturnEvent(scopedApp, event) });
   });
-  api.post("/api/integrations/events/:id/materialize-fee", (c) => {
+  api.post("/api/integrations/events/:id/materialize-fee", async (c) => {
     const event = scopedApp.state.externalEvents.find((candidate) => candidate.id === c.req.param("id"));
     if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
     if (event.eventType !== "fee") throw new DomainError("external_event_type_invalid", "Событие не относится к финансовым удержаниям");
-    return c.json({ ok: true, data: materializeFinanceEvent(scopedApp, event, { post: false }) });
+    return c.json({ ok: true, data: await materializeFinanceEvent(scopedApp, event, { post: false }) });
   });
   api.post("/api/channel-fees", async (c) => {
     const body = channelFeeSchema.parse(await c.req.json());
@@ -1405,10 +1406,10 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/integrations/finance-events/:id/post", (c) => {
     return c.json({ ok: true, data: scopedApp.postChannelFinanceEvent(c.req.param("id")) });
   });
-  api.post("/api/integrations/finance-events/:id/reprocess", (c) => {
+  api.post("/api/integrations/finance-events/:id/reprocess", async (c) => {
     const event = scopedApp.state.channelFinanceEvents.find((candidate) => candidate.id === c.req.param("id"));
     if (!event?.externalEventId) throw new DomainError("finance_event_not_found", "Финансовое событие не связано с исходным внешним событием");
-    return c.json({ ok: true, data: scopedApp.reprocessExternalEvent(event.externalEventId) });
+    return c.json({ ok: true, data: await scopedApp.reprocessExternalEvent(event.externalEventId) });
   });
   api.post("/api/integrations/channels/:id/finance-events/process-ready", (c) => {
     const processed = processReadyFinanceEvents(scopedApp, c.req.param("id"), { post: false });
@@ -1723,11 +1724,11 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       : 0;
     const historyProcessing = isHistoricalBackfillProject(project) && typeof project.payload?.salesChannelId === "string"
       ? {
-          ...autoProcessChannelFacts(
+          ...(await autoProcessChannelFacts(
             scopedApp,
             String(project.payload.salesChannelId),
             typeof project.payload.importSyncRunId === "string" ? String(project.payload.importSyncRunId) : undefined
-          ),
+          )),
           resetOutOfScopeEvents: resetHistoricalEvents
         }
       : undefined;
@@ -3162,13 +3163,13 @@ function materializeSaleEvent(app: AccountingApp, event: ExternalEvent): Sale {
   });
 }
 
-function materializeSaleAccrualEvent(app: AccountingApp, event: ExternalEvent): Sale {
+async function materializeSaleAccrualEvent(app: AccountingApp, event: ExternalEvent): Promise<Sale> {
   if (event.eventType !== "sale_accrual") {
     throw new DomainError("external_event_type_invalid", "Событие не относится к финансовому признанию продажи");
   }
   const payload = event.normalizedPayload as Record<string, unknown>;
   const postingNumber = String(payload.postingNumber ?? "").trim();
-  const sale = resolveSaleByPostingNumber(app, event.channelId, postingNumber);
+  const sale = await resolveSaleByPostingNumber(app, event.channelId, postingNumber);
   if (!sale) {
     throw new DomainError("finance_sale_link_required", "Финансовое признание продажи ждёт материализации исходной продажи");
   }
@@ -3180,7 +3181,7 @@ function materializeSaleAccrualEvent(app: AccountingApp, event: ExternalEvent): 
   });
 }
 
-function materializeReturnEvent(app: AccountingApp, event: ExternalEvent): SalesReturn {
+async function materializeReturnEvent(app: AccountingApp, event: ExternalEvent): Promise<SalesReturn> {
   if (event.eventType !== "return") {
     throw new DomainError("external_event_type_invalid", "Событие не относится к возвратам");
   }
@@ -3192,7 +3193,7 @@ function materializeReturnEvent(app: AccountingApp, event: ExternalEvent): Sales
   }
   const payload = event.normalizedPayload as Record<string, unknown>;
   const postingNumber = String(payload.postingNumber ?? "").trim();
-  const sale = resolveSaleByPostingNumber(app, event.channelId, postingNumber);
+  const sale = await resolveSaleByPostingNumber(app, event.channelId, postingNumber);
   if (!sale) throw new DomainError("sale_not_found", "Для возврата нужна исходная продажа по тому же posting number");
   const payloadLines = Array.isArray(payload.lines) ? payload.lines as Array<Record<string, unknown>> : [];
   const saleDetails = app.state.saleLines.filter((candidate) => candidate.saleId === sale.id);
@@ -3215,25 +3216,25 @@ function materializeReturnEvent(app: AccountingApp, event: ExternalEvent): Sales
     post: true,
     lines
   });
-  linkReturnFinanceEventsByPostingNumber(app, salesReturn, postingNumber);
+  await linkReturnFinanceEventsByPostingNumber(app, salesReturn, postingNumber);
   return salesReturn;
 }
 
-function materializeFinanceEvent(
+async function materializeFinanceEvent(
   app: AccountingApp,
   event: ExternalEvent,
   options: { post: boolean }
-): ChannelFinanceEvent {
+): Promise<ChannelFinanceEvent> {
   if (event.eventType !== "fee") {
     throw new DomainError("external_event_type_invalid", "Событие не относится к финансовым удержаниям");
   }
   const payload = event.normalizedPayload as Record<string, unknown>;
   const postingNumber = String(payload.postingNumber ?? "").trim();
-  const linkedSale = postingNumber ? resolveSaleByPostingNumber(app, event.channelId, postingNumber) : undefined;
+  const linkedSale = postingNumber ? await resolveSaleByPostingNumber(app, event.channelId, postingNumber) : undefined;
   const saleAllocations = !linkedSale && postingNumber ? resolveSaleAllocationsByPostingNumber(app, event.channelId, postingNumber, Number(payload.amountRub ?? 0)) : undefined;
   const derived = classifyChannelFinancePayload(payload);
   const linkedReturn = derived.treatment === "return_variable" && postingNumber
-    ? resolveReturnByPostingNumber(app, event.channelId, postingNumber, linkedSale)
+    ? await resolveReturnByPostingNumber(app, event.channelId, postingNumber, linkedSale)
     : undefined;
   if (linkedSale && linkedSale.status !== "posted" && Number(payload.saleAmountRub ?? 0) > 0) {
     app.recognizeSaleFromFinance({
@@ -3351,8 +3352,8 @@ function resolveSaleAllocationsByPostingNumber(app: AccountingApp, channelId: st
   );
 }
 
-function resolveReturnByPostingNumber(app: AccountingApp, channelId: string, postingNumber: string, linkedSale?: Sale) {
-  const sale = linkedSale ?? resolveSaleByPostingNumber(app, channelId, postingNumber);
+async function resolveReturnByPostingNumber(app: AccountingApp, channelId: string, postingNumber: string, linkedSale?: Sale) {
+  const sale = linkedSale ?? await resolveSaleByPostingNumber(app, channelId, postingNumber);
   if (!sale) return undefined;
   const matches = app.state.salesReturns
     .filter((candidate) =>
@@ -3364,18 +3365,21 @@ function resolveReturnByPostingNumber(app: AccountingApp, channelId: string, pos
   return matches.length === 1 ? matches[0] : undefined;
 }
 
-function linkReturnFinanceEventsByPostingNumber(app: AccountingApp, salesReturn: SalesReturn, postingNumber: string) {
+async function linkReturnFinanceEventsByPostingNumber(app: AccountingApp, salesReturn: SalesReturn, postingNumber: string) {
   const normalizedPostingNumber = String(postingNumber ?? "").trim();
   if (!normalizedPostingNumber) return;
-  const matchingEvents = app.state.channelFinanceEvents.filter((event) => {
-    if (event.channelId !== salesReturn.channelId) return false;
-    if (event.linkedReturnId || event.treatment !== "return_variable") return false;
-    if (event.linkedSaleId !== salesReturn.saleId) return false;
-    const sourceEvent = event.externalEventId ? app.findExternalEventById(String(event.externalEventId)) : undefined;
+  const candidates = app.state.channelFinanceEvents.filter((event) =>
+    event.channelId === salesReturn.channelId &&
+    !event.linkedReturnId && event.treatment === "return_variable" &&
+    event.linkedSaleId === salesReturn.saleId
+  );
+  for (const event of candidates) {
+    const sourceEvent = event.externalEventId ? await app.findExternalEventById(String(event.externalEventId)) : undefined;
     const payload = sourceEvent?.normalizedPayload as Record<string, unknown> | undefined;
-    return String(payload?.postingNumber ?? "").trim() === normalizedPostingNumber;
-  });
-  matchingEvents.forEach((event) => app.linkChannelFinanceEventToReturn(event.id, salesReturn.id));
+    if (String(payload?.postingNumber ?? "").trim() === normalizedPostingNumber) {
+      app.linkChannelFinanceEventToReturn(event.id, salesReturn.id);
+    }
+  }
 }
 
 function normalizeParentPostingNumber(postingNumber: string) {
@@ -3525,7 +3529,7 @@ function emptyAutoProcessingOutcome() {
   };
 }
 
-function autoProcessChannelFacts(app: AccountingApp, channelId: string, syncRunId?: string) {
+async function autoProcessChannelFacts(app: AccountingApp, channelId: string, syncRunId?: string) {
   const outcome = emptyAutoProcessingOutcome();
   const matchesCurrentRun = (event: ExternalEvent) => event.channelId === channelId && (!syncRunId || event.syncRunId === syncRunId);
   const currentRunEventIds = new Set(
@@ -3586,7 +3590,7 @@ function autoProcessChannelFacts(app: AccountingApp, channelId: string, syncRunI
   const returns = currentRunEvents.filter((event) => event.eventType === "return").sort(compareExternalEventsByDate);
   for (const event of returns) {
     try {
-      const salesReturn = materializeReturnEvent(app, event);
+      const salesReturn = await materializeReturnEvent(app, event);
       if (salesReturn.status === "posted") outcome.returnsPosted += 1;
       else outcome.needsAttention += 1;
     } catch (error) {
@@ -3664,16 +3668,16 @@ function autoProcessChannelFacts(app: AccountingApp, channelId: string, syncRunI
   );
   for (const event of stagedFinanceEvents) {
     try {
-      const sourceEvent = event.externalEventId ? app.findExternalEventById(String(event.externalEventId)) : undefined;
+      const sourceEvent = event.externalEventId ? await app.findExternalEventById(String(event.externalEventId)) : undefined;
       const payload = sourceEvent?.normalizedPayload as Record<string, unknown> | undefined;
       const postingNumber = String(payload?.postingNumber ?? "").trim();
-      const linkedSale = postingNumber ? resolveSaleByPostingNumber(app, channelId, postingNumber) : undefined;
+      const linkedSale = postingNumber ? await resolveSaleByPostingNumber(app, channelId, postingNumber) : undefined;
       if (!event.linkedSaleId && linkedSale?.id) {
         app.linkChannelFinanceEventToSale(event.id, linkedSale.id);
       }
       const effectiveTreatment = event.treatment ?? (linkedSale ? "sale_variable" : undefined);
       const linkedReturn = effectiveTreatment === "return_variable" && postingNumber
-        ? resolveReturnByPostingNumber(app, channelId, postingNumber, linkedSale)
+        ? await resolveReturnByPostingNumber(app, channelId, postingNumber, linkedSale)
         : undefined;
       if (!event.linkedReturnId && linkedReturn?.id) {
         app.linkChannelFinanceEventToReturn(event.id, linkedReturn.id);
@@ -3688,7 +3692,7 @@ function autoProcessChannelFacts(app: AccountingApp, channelId: string, syncRunI
       outcome.financePosted += 1;
     } catch (error) {
       if (error instanceof DomainError) {
-        const sourceEvent = event.externalEventId ? app.findExternalEventById(String(event.externalEventId)) : undefined;
+        const sourceEvent = event.externalEventId ? await app.findExternalEventById(String(event.externalEventId)) : undefined;
         if (sourceEvent) markExternalEventNeedsAttention(sourceEvent, error.message);
         outcome.needsAttention += 1;
         continue;

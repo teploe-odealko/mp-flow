@@ -261,7 +261,7 @@ async function syncRealOzon({ app, channelId, syncRunId, since, credentials, str
           const eventType = isReturnPosting(posting) ? "return" : "sale";
           if (eventType === "return" && !wantReturns) continue;
           if (eventType === "sale" && !wantSales) continue;
-          app.ingestExternalEvent({
+          await app.ingestExternalEvent({
             channelId,
             syncRunId,
             eventType,
@@ -283,7 +283,7 @@ async function syncRealOzon({ app, channelId, syncRunId, since, credentials, str
         for (const operation of await loadFinanceOperations(credentials!, startedAt, finishedAt, errors)) {
           for (const financeEvent of expandOzonFinanceEvents(operation)) {
             if (financeEvent.eventType !== "fee" && financeEvent.eventType !== "sale_accrual") continue;
-            app.ingestExternalEvent({
+            await app.ingestExternalEvent({
               channelId,
               syncRunId,
               eventType: financeEvent.eventType,
@@ -785,7 +785,7 @@ function isDemoCredentials(credentials?: PluginCredentials) {
   return credentials?.clientId === "demo-client" || credentials?.apiKey === "demo-key";
 }
 
-function syncDemo({ app, channelId, syncRunId, streams, autoLinkProducts }: SyncContext): SyncResult {
+async function syncDemo({ app, channelId, syncRunId, streams, autoLinkProducts }: SyncContext): Promise<SyncResult> {
   const wantStream = (code: string) => !streams || streams.length === 0 || streams.includes(code as any);
   const product = app.state.products[0];
   if (!product) {
@@ -808,7 +808,7 @@ function syncDemo({ app, channelId, syncRunId, streams, autoLinkProducts }: Sync
     observedAt: "2026-06-19T12:00:00.000Z",
     qtyObserved: 195
   });
-  app.ingestExternalEvent({
+  await app.ingestExternalEvent({
     channelId,
     syncRunId,
     eventType: "sale",
@@ -822,7 +822,7 @@ function syncDemo({ app, channelId, syncRunId, streams, autoLinkProducts }: Sync
       source: "ozon-demo-adapter"
     }
   });
-  app.ingestExternalEvent({
+  await app.ingestExternalEvent({
     channelId,
     syncRunId,
     eventType: "fee",

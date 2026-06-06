@@ -27,7 +27,7 @@ export const wildberriesPlugin: MarketplacePlugin = {
       observedAt: "2026-06-19T12:05:00.000Z",
       qtyObserved: 97
     });
-    app.ingestExternalEvent({
+    await app.ingestExternalEvent({
       channelId,
       eventType: "sale",
       externalId: "wb-sale-demo-1",

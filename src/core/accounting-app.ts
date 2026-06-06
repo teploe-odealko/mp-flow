@@ -264,10 +264,10 @@ export class AccountingApp {
     return this.externalEvents.findByIdentity(channelId, externalId, idempotencyKey);
   }
 
-  findSaleByPostingNumber(channelId: ID, postingNumber: string) {
+  async findSaleByPostingNumber(channelId: ID, postingNumber: string) {
     const value = String(postingNumber ?? "").trim();
     if (!value) return undefined;
-    const lookup = this.ensureSaleLookup();
+    const lookup = await this.ensureSaleLookup();
     const exact = lookup.exact.get(this.externalEventIdentityKey(channelId, value));
     if (exact) return exact;
     const normalizedParent = normalizeParentPostingNumber(value);
@@ -2885,7 +2885,7 @@ export class AccountingApp {
     return { financeEventId: event.id, ...deletion };
   }
 
-  resetChannelSalesData(channelId: ID, options?: { includePayouts?: boolean }) {
+  async resetChannelSalesData(channelId: ID, options?: { includePayouts?: boolean }) {
     const includePayouts = options?.includePayouts ?? false;
     const sales = this.state.sales.filter((sale) => sale.channelId === channelId);
     const saleIds = new Set(sales.map((sale) => sale.id));
@@ -2947,7 +2947,7 @@ export class AccountingApp {
     this.state.salesReturns = this.state.salesReturns.filter((salesReturn) => !salesReturnIds.has(salesReturn.id));
     this.state.saleLines = this.state.saleLines.filter((line) => !saleIds.has(line.saleId));
     this.state.sales = this.state.sales.filter((sale) => !saleIds.has(sale.id));
-    this.state.externalEvents = this.state.externalEvents.filter((event) => !externalEventIds.has(event.id));
+    await this.externalEvents.deleteByIds(Array.from(externalEventIds));
     this.compactZeroStockStates();
 
     this.invalidateExternalEventLookups();
