@@ -588,10 +588,10 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const { supplierName: _supplierName, ...purchaseOrder } = body;
     return c.json({ ok: true, data: await scopedApp.createPurchaseOrder({ ...purchaseOrder, supplierId }) });
   });
-  api.get("/api/procurement/purchase-orders/:id", (c) => c.json({ ok: true, data: scopedApp.purchaseOrderDetails(c.req.param("id")) }));
+  api.get("/api/procurement/purchase-orders/:id", async (c) => c.json({ ok: true, data: await scopedApp.purchaseOrderDetails(c.req.param("id")) }));
   api.patch("/api/procurement/purchase-orders/:id", async (c) => {
     const body = purchaseOrderPatchSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.updatePurchaseOrderDraft(c.req.param("id"), body) });
+    return c.json({ ok: true, data: await scopedApp.updatePurchaseOrderDraft(c.req.param("id"), body) });
   });
   api.post("/api/procurement/purchase-orders/:id/post", (c) => c.json({ ok: true, data: scopedApp.postPurchaseOrder(c.req.param("id")) }));
   api.post("/api/procurement/purchase-orders/:id/payments", async (c) => {
@@ -600,8 +600,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.get("/api/procurement/purchase-orders/:id/payments", (c) => c.json({ ok: true, data: scopedApp.paymentsForPurchaseOrder(c.req.param("id")) }));
   api.get("/api/settlements/suppliers/:id", (c) => c.json({ ok: true, data: scopedApp.state.settlementEntries.filter((entry) => entry.counterpartyId === c.req.param("id")) }));
-  api.get("/api/procurement/purchase-orders/:id/receipt-preview", (c) => {
-    const details = scopedApp.purchaseOrderDetails(c.req.param("id"));
+  api.get("/api/procurement/purchase-orders/:id/receipt-preview", async (c) => {
+    const details = await scopedApp.purchaseOrderDetails(c.req.param("id"));
     const postedReceiptIds = new Set(
       scopedApp.state.goodsReceipts
         .filter((receipt) => receipt.status === "posted")

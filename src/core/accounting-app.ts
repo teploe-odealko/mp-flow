@@ -4706,34 +4706,34 @@ export class AccountingApp {
     return payment;
   }
 
-  purchaseOrderDetails(purchaseOrderId: ID) {
-    const order = this.mustFind(this.state.purchaseOrders, purchaseOrderId, "purchase_order_not_found");
+  async purchaseOrderDetails(purchaseOrderId: ID) {
+    const order = this.mustFind(await this.repos.purchaseOrders.all(), purchaseOrderId, "purchase_order_not_found");
     return {
       order,
-      document: this.state.documents.find((document) => document.id === order.documentId),
-      lines: this.state.purchaseOrderLines.filter((line) => line.purchaseOrderId === order.id),
+      document: (await this.repos.documents.all()).find((document) => document.id === order.documentId),
+      lines: (await this.repos.purchaseOrderLines.all()).filter((line) => line.purchaseOrderId === order.id),
       payments: this.paymentsForPurchaseOrder(order.id),
-      receipts: this.state.goodsReceipts.filter((receipt) => receipt.purchaseOrderId === order.id),
-      costs: this.state.procurementCosts.filter((cost) => cost.purchaseOrderId === order.id),
-      shortages: this.state.shortageResolutions.filter((resolution) => resolution.purchaseOrderId === order.id),
-      links: this.state.documentLinks.filter((link) => link.fromDocumentId === order.documentId || link.toDocumentId === order.documentId)
+      receipts: (await this.repos.goodsReceipts.all()).filter((receipt) => receipt.purchaseOrderId === order.id),
+      costs: (await this.repos.procurementCosts.all()).filter((cost) => cost.purchaseOrderId === order.id),
+      shortages: (await this.repos.shortageResolutions.all()).filter((resolution) => resolution.purchaseOrderId === order.id),
+      links: (await this.repos.documentLinks.all()).filter((link) => link.fromDocumentId === order.documentId || link.toDocumentId === order.documentId)
     };
   }
 
-  updatePurchaseOrderDraft(purchaseOrderId: ID, input: {
+  async updatePurchaseOrderDraft(purchaseOrderId: ID, input: {
     supplierId?: ID;
     destinationWarehouseId?: ID;
     supplierCurrency?: PurchaseOrder["supplierCurrency"];
     orderedAt?: string;
     lines?: Array<{ productId: ID; qty: number; supplierUnitPrice: number; lineNote?: string }>;
     comment?: string;
-  }): PurchaseOrder {
-    const order = this.mustFind(this.state.purchaseOrders, purchaseOrderId, "purchase_order_not_found");
-    if (this.paymentsForPurchaseOrder(order.id).length > 0 || this.state.goodsReceipts.some((receipt) => receipt.purchaseOrderId === order.id)) {
+  }): Promise<PurchaseOrder> {
+    const order = this.mustFind(await this.repos.purchaseOrders.all(), purchaseOrderId, "purchase_order_not_found");
+    if (this.paymentsForPurchaseOrder(order.id).length > 0 || (await this.repos.goodsReceipts.all()).some((receipt) => receipt.purchaseOrderId === order.id)) {
       throw new DomainError("purchase_order_not_editable", "Заказ с оплатами или приемками нельзя редактировать напрямую");
     }
-    const document = this.mustFind(this.state.documents, order.documentId, "document_not_found");
-    const before = this.purchaseOrderDetails(order.id);
+    const document = this.mustFind(await this.repos.documents.all(), order.documentId, "document_not_found");
+    const before = await this.purchaseOrderDetails(order.id);
     if (input.supplierId !== undefined) order.supplierId = input.supplierId;
     if (input.destinationWarehouseId !== undefined) order.destinationWarehouseId = input.destinationWarehouseId;
     if (input.supplierCurrency !== undefined) order.supplierCurrency = input.supplierCurrency;
