@@ -2,7 +2,8 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { readFile } from "node:fs/promises";
 import { Pool, type PoolClient } from "pg";
 import { AccountingApp } from "../../core/accounting-app";
-import type { AccountingState, ID } from "../../core/models";
+import type { AccountingState, ExternalEvent, ID } from "../../core/models";
+import type { ExternalEventStore, ExternalEventListFilter } from "../../core/external-event-store";
 import { createEmptyState, currentIdSequence, restoreIdSequence } from "../../core/utils";
 
 export interface RuntimeSession {
@@ -80,7 +81,7 @@ const GLOBAL_REFERENCE_TABLES = new Set(["document_type_registry"]);
 // Коллекции, вынесенные из snapshot в классические репозитории: их НЕ грузим в state
 // на запрос и НЕ удаляем при сохранении. Append-only потоки (пишутся через loop-upsert,
 // читаются репозиторием напрямую). Это шаг переезда на controllers→services→repositories.
-const SNAPSHOT_APPEND_ONLY = new Set<RuntimeCollectionName>(["auditEvents"]);
+const SNAPSHOT_APPEND_ONLY = new Set<RuntimeCollectionName>(["auditEvents", "externalEvents"]);
 
 const COLLECTIONS: RuntimeCollectionName[] = [
   "periods",
@@ -1008,7 +1009,9 @@ export class PostgresRuntimeStore implements RuntimePersistence {
 
   async openReadSession(workspaceId = DEFAULT_WORKSPACE_ID): Promise<RuntimeSession> {
     await this.init();
-    const snapshot = await this.loadSnapshot(this.pool, normalizeWorkspaceId(workspaceId));
+    const scope = normalizeWorkspaceId(workspaceId);
+    const snapshot = await this.loadSnapshot(this.pool, scope);
+    snapshot.app.externalEvents = new PostgresExternalEventStore(this.pool, scope);
     return {
       app: snapshot.app,
       nextId: snapshot.nextId,
@@ -1025,6 +1028,7 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     const snapshot = await this.loadSnapshot(client, scope);
     restoreIdSequence(snapshot.nextId);
     const app = snapshot.app;
+    app.externalEvents = new PostgresExternalEventStore(client, scope);
     const baseline = snapshot.baseline;
     let finished = false;
 
@@ -1032,6 +1036,7 @@ export class PostgresRuntimeStore implements RuntimePersistence {
       if (finished) return;
       try {
         if (mode === "commit") {
+          await app.flushPendingExternalEventUpdates();
           await this.saveState(client, scope, app.state, app.exportChannelCredentials(), currentIdSequence(), app.exportPluginSecrets(), baseline);
           await client.query("commit");
         } else {
@@ -1563,6 +1568,93 @@ export class PostgresRuntimeStore implements RuntimePersistence {
       decipher.final()
     ]);
     return JSON.parse(decrypted.toString("utf8")) as T;
+  }
+}
+
+const externalEventTableSpec = TABLES.find((table) => table.collection === "externalEvents")!;
+
+/**
+ * Postgres-реализация ExternalEventStore: события живут в таблице external_event, а НЕ в snapshot.
+ * Чтение — по state_json (источник истины); запись — через тот же spec-сериализатор, что и snapshot.
+ * Инжектится в сессию (read: pool, write: транзакционный client). См. SNAPSHOT_APPEND_ONLY.
+ */
+export class PostgresExternalEventStore implements ExternalEventStore {
+  constructor(private readonly q: Queryable, private readonly workspaceId: string) {}
+
+  async getById(id: ID): Promise<ExternalEvent | undefined> {
+    const result = await this.q.query<{ state_json: ExternalEvent }>(
+      "select state_json from external_event where workspace_id = $1 and state_json->>'id' = $2 limit 1",
+      [this.workspaceId, id]
+    );
+    return result.rows[0]?.state_json;
+  }
+
+  async findByIdentity(channelId: ID, externalId: string, idempotencyKey?: string): Promise<ExternalEvent | undefined> {
+    const result = await this.q.query<{ state_json: ExternalEvent }>(
+      `select state_json from external_event
+       where workspace_id = $1 and state_json->>'channelId' = $2
+         and (external_id = $3 or state_json->>'idempotencyKey' = $4)
+       order by (state_json->>'idempotencyKey' = $4) desc
+       limit 1`,
+      [this.workspaceId, channelId, externalId, idempotencyKey ?? externalId]
+    );
+    return result.rows[0]?.state_json;
+  }
+
+  async list(filter: ExternalEventListFilter = {}): Promise<ExternalEvent[]> {
+    const conditions = ["workspace_id = $1"];
+    const params: unknown[] = [this.workspaceId];
+    if (filter.channelId) {
+      params.push(filter.channelId);
+      conditions.push(`state_json->>'channelId' = $${params.length}`);
+    }
+    if (filter.status) {
+      params.push(filter.status);
+      conditions.push(`status = $${params.length}`);
+    }
+    if (filter.eventType) {
+      params.push(filter.eventType);
+      conditions.push(`event_type = $${params.length}`);
+    }
+    const result = await this.q.query<{ state_json: ExternalEvent }>(
+      `select state_json from external_event where ${conditions.join(" and ")} order by occurred_at, id`,
+      params
+    );
+    return result.rows.map((row) => row.state_json);
+  }
+
+  async count(filter: { channelId?: ID; status?: string } = {}): Promise<number> {
+    const conditions = ["workspace_id = $1"];
+    const params: unknown[] = [this.workspaceId];
+    if (filter.channelId) {
+      params.push(filter.channelId);
+      conditions.push(`state_json->>'channelId' = $${params.length}`);
+    }
+    if (filter.status) {
+      params.push(filter.status);
+      conditions.push(`status = $${params.length}`);
+    }
+    const result = await this.q.query<{ count: string }>(
+      `select count(*)::text as count from external_event where ${conditions.join(" and ")}`,
+      params
+    );
+    return Number(result.rows[0]?.count ?? "0");
+  }
+
+  async upsert(event: ExternalEvent): Promise<void> {
+    const row = { ...externalEventTableSpec.serialize(event as unknown as RuntimeEntity), workspace_id: this.workspaceId } as RowRecord;
+    const columns = Object.keys(row);
+    const placeholders = columns.map((_, index) => `$${index + 1}`).join(", ");
+    const updates = columns.filter((column) => column !== "id").map((column) => `${column} = excluded.${column}`).join(", ");
+    await this.q.query(
+      `insert into external_event (${columns.join(", ")}) values (${placeholders}) on conflict (id) do update set ${updates}`,
+      columns.map((column) => row[column])
+    );
+  }
+
+  async deleteByIds(ids: ID[]): Promise<void> {
+    if (ids.length === 0) return;
+    await this.q.query("delete from external_event where workspace_id = $1 and state_json->>'id' = any($2)", [this.workspaceId, ids]);
   }
 }
 
