@@ -141,6 +141,18 @@ promise в `c.json` починены) + пайплайн (`materializeSale/Payou
 Синглтоны `organization`/`accountingPolicy` (~16 рефов) — НЕ массивы, не «тяжёлый снэпшот»; добираются в самом конце
 (или отдельным singleton-аксессором), уже после выноса всех коллекций.
 
+### ⚠️ Алгоритм для остатка (381 реф) — слепой скрипт НЕ работает (проверено дважды)
+Массовый async-ify+await-insert упирается во **вложенные колбэки**. Правила:
+1. **Колбэк-хелперы остаются sync** (читают `this.state` in-memory): `findRollbackDocumentSummary`,
+   `isDocumentPosted`, `isPaymentAllocationPosted` — вызываются внутри `.map/.filter/.some`. Их НЕ async-ить.
+2. `.map((x) => await this.H(x))` → `(await Promise.all(arr.map((x) => this.H(x)))).filter(...)` — пер-сайтово.
+3. `forEach((x) => { … await … })` → `for (const x of arr) { … }` ТОЛЬКО если в теле нет `return`
+   (иначе семантика ломается) — иначе precompute массива перед forEach.
+4. Данные-чтения `(await this.repos.X.all())`, попавшие во вложенный колбэк → откатить на `this.state.X`
+   (валидно в in-memory фазе; добить на Postgres-свапе).
+5. Идти **пер-методно, ≤10 методов/батч**, после каждого — tsc + fast + PG; коммит только зелёным.
+   Скрипт допустим только для statement-level чтений в уже-async методах (как сделанные 75+101).
+
 ### План исполнения ядра (для отдельного захода, с чистым контекстом)
 1. Завести `Repositories`-фасад (как уже сделанные сторы) для оставшихся коллекций: `documents`, `documentLines`,
    `documentVersions`, `documentLinks`, `journalEntries`, `journalLines`, `sales`, `saleLines`, `salesReturns`,
