@@ -6,6 +6,7 @@ import type { AccountingState, ExternalEvent, ObservedStock, SyncRun, ID } from 
 import type { ExternalEventStore, ExternalEventListFilter } from "../../core/external-event-store";
 import type { ObservedStockStore, ObservedStockListFilter } from "../../core/observed-stock-store";
 import type { SyncRunStore } from "../../core/sync-run-store";
+import type { CollectionRepo, Repositories } from "../../core/repositories";
 import { createEmptyState, currentIdSequence, restoreIdSequence } from "../../core/utils";
 
 export interface RuntimeSession {
@@ -19,6 +20,7 @@ export interface RuntimeSession {
 export interface RuntimePersistence {
   save?(app: AccountingApp, workspaceId?: string): Promise<void>;
   readCollection?(workspaceId: string | undefined, name: string): Promise<{ found: boolean; data?: unknown }>;
+  openReadModelApp?(workspaceId?: string): Promise<AccountingApp>;
   openReadSession?(workspaceId?: string): Promise<RuntimeSession>;
   openWriteSession?(workspaceId?: string): Promise<RuntimeSession>;
   checkReady?(): Promise<{ ok: boolean; schemaVersion?: number; message?: string }>;
@@ -1015,6 +1017,11 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     return await readRuntimeCollection(this.pool, normalizeWorkspaceId(workspaceId), name);
   }
 
+  async openReadModelApp(workspaceId = DEFAULT_WORKSPACE_ID): Promise<AccountingApp> {
+    await this.init();
+    return await openPostgresReadModelApp(this.pool, normalizeWorkspaceId(workspaceId));
+  }
+
   async openReadSession(workspaceId = DEFAULT_WORKSPACE_ID): Promise<RuntimeSession> {
     await this.init();
     const scope = normalizeWorkspaceId(workspaceId);
@@ -1821,6 +1828,84 @@ export async function readRuntimeCollection(source: Queryable, workspaceId: stri
   return { found: true, data: result.rows.map((row) => hydrateEntity(row.state_json)) };
 }
 
+export async function openPostgresReadModelApp(source: Queryable, workspaceId: string | undefined): Promise<AccountingApp> {
+  const scope = normalizeWorkspaceId(workspaceId);
+  const state = createEmptyState();
+  state.organization = await readRuntimeSingleton(source, scope, "organization") as AccountingState["organization"];
+  state.accountingPolicy = await readRuntimeSingleton(source, scope, "accounting_policy") as AccountingState["accountingPolicy"];
+  const app = new AccountingApp(state);
+  app.repos = buildPostgresRuntimeRepositories(source, scope);
+  app.externalEvents = new PostgresExternalEventStore(source, scope);
+  app.observedStocks = new PostgresObservedStockStore(source, scope);
+  app.syncRuns = new PostgresSyncRunStore(source, scope);
+  return app;
+}
+
+export function buildPostgresRuntimeRepositories(source: Queryable, workspaceId: string | undefined): Repositories {
+  const repos = {} as Repositories;
+  const scope = normalizeWorkspaceId(workspaceId);
+  for (const table of TABLES) {
+    (repos as Record<string, unknown>)[table.collection] = new PostgresRuntimeCollectionRepo(source, scope, table);
+  }
+  return repos;
+}
+
+class PostgresRuntimeCollectionRepo<T> implements CollectionRepo<T> {
+  constructor(private readonly q: Queryable, private readonly workspaceId: string, private readonly table: TableSpec) {}
+
+  async all(): Promise<T[]> {
+    const tableWorkspaceId = workspaceIdForTable(this.table, this.workspaceId);
+    const result = await this.q.query<{ state_json: unknown }>(
+      `select state_json from ${this.table.table} where workspace_id = $1${this.table.orderBy ? ` order by ${this.table.orderBy}` : ""}`,
+      [tableWorkspaceId]
+    );
+    return result.rows.map((row) => hydrateEntity(row.state_json) as T);
+  }
+
+  async getById(id: string): Promise<T | undefined> {
+    const tableWorkspaceId = workspaceIdForTable(this.table, this.workspaceId);
+    const result = await this.q.query<{ state_json: unknown }>(
+      `select state_json from ${this.table.table} where workspace_id = $1 and state_json->>'id' = $2 limit 1`,
+      [tableWorkspaceId, id]
+    );
+    return result.rows[0] ? hydrateEntity(result.rows[0].state_json) as T : undefined;
+  }
+
+  async add(item: T): Promise<T> {
+    await this.upsert(item);
+    return item;
+  }
+
+  async upsert(item: T): Promise<T> {
+    const row = {
+      ...this.table.serialize(item as unknown as RuntimeEntity),
+      workspace_id: workspaceIdForTable(this.table, this.workspaceId)
+    };
+    await upsertRow(this.q, this.table.table, this.table.keyColumns, row);
+    return item;
+  }
+
+  async removeById(id: string): Promise<void> {
+    await this.q.query(
+      `delete from ${this.table.table} where workspace_id = $1 and state_json->>'id' = $2`,
+      [workspaceIdForTable(this.table, this.workspaceId), id]
+    );
+  }
+
+  async removeWhere(pred: (item: T) => boolean): Promise<void> {
+    const keep = (await this.all()).filter((item) => !pred(item));
+    await this.replaceAll(keep);
+  }
+
+  async replaceAll(items: T[]): Promise<void> {
+    const tableWorkspaceId = workspaceIdForTable(this.table, this.workspaceId);
+    if (!GLOBAL_REFERENCE_TABLES.has(this.table.table)) {
+      await this.q.query(`delete from ${this.table.table} where workspace_id = $1`, [tableWorkspaceId]);
+    }
+    for (const item of items) await this.upsert(item);
+  }
+}
+
 async function readRuntimeSingleton(source: Queryable, workspaceId: string, table: "organization" | "accounting_policy") {
   const result = await source.query<{ state_json: unknown }>(
     `select state_json from ${table} where workspace_id = $1 order by id limit 1`,
@@ -1833,7 +1918,7 @@ function spec(collection: RuntimeCollectionName, table: string, keyColumns: stri
   return { collection, table, keyColumns, serialize, orderBy };
 }
 
-async function upsertRow(client: PoolClient, table: string, keyColumns: string[], row: RowRecord) {
+async function upsertRow(client: Queryable, table: string, keyColumns: string[], row: RowRecord) {
   const columns = Object.keys(row);
   const placeholders = columns.map((_, index) => `$${index + 1}`).join(", ");
   const updates = columns

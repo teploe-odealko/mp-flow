@@ -6,7 +6,7 @@ import { z } from "zod";
 import { AccountingApp } from "../core/accounting-app";
 import type { AgentToken, ChannelFinanceEvent, ChannelStreamCode, ExternalEvent, Payout, Sale, SalesChannel, SalesReturn, SyncRun } from "../core/models";
 import { DomainError, id, nowIso, runWithIdSequence } from "../core/utils";
-import { readRuntimeCollection, type RuntimePersistence } from "../infra/db/runtime-store";
+import { openPostgresReadModelApp, readRuntimeCollection, type RuntimePersistence } from "../infra/db/runtime-store";
 import { pluginRegistry } from "../plugins/registry";
 import { createPluginSecretApi, createPluginStateApi, pluginStateKey } from "../plugins/runtime";
 import { buildMediaKey, createPresignedUpload, headObject, isAllowedImageType, isStorageConfigured } from "../infra/storage/s3";
@@ -243,6 +243,16 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     }) });
   });
 
+  api.get("/api/dashboard", async (c) => {
+    const workspaceId = eventsWorkspaceId(c);
+    const readModelApp = options.persistence?.openReadModelApp
+      ? await options.persistence.openReadModelApp(workspaceId)
+      : postgresBacked()
+        ? await openPostgresReadModelApp(getPool(), workspaceId)
+        : app;
+    return c.json({ ok: true, data: await readModelApp.dashboard() });
+  });
+
   api.use("/api/*", async (c, next) => {
     const authUser = c.get("authUser") as PublicAuthUser | undefined;
     const authAgent = c.get("authAgent") as McpAgentPrincipal | undefined;
@@ -293,8 +303,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.get("/api/meta/navigation", (c) => c.json({ ok: true, data: navigationMeta }));
 
-
-  api.get("/api/dashboard", async (c) => c.json({ ok: true, data: await scopedApp.dashboard() }));
   api.get("/api/reports", async (c) => c.json({ ok: true, data: await scopedApp.reports() }));
   api.get("/api/reports/profit-and-loss", async (c) => c.json({ ok: true, data: (await scopedApp.reports()).pnl }));
   api.get("/api/reports/balance-sheet", async (c) => c.json({ ok: true, data: (await scopedApp.reports()).balanceSheet }));

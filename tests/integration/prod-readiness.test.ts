@@ -102,6 +102,43 @@ describe("prod-ready contracts", () => {
     expect(JSON.parse(savedSnapshots[0]).organization.displayName).toBe("Persisted");
   });
 
+  it("serves collection and dashboard reads before snapshot sessions", async () => {
+    resetIds();
+    const app = new AccountingApp();
+    await app.setupDemo();
+    let collectionReads = 0;
+    let readModelApps = 0;
+    let readSessions = 0;
+    const api = createApi(app, {
+      persistence: {
+        async readCollection(_workspaceId, name) {
+          collectionReads += 1;
+          if (name === "organization") return { found: true, data: app.state.organization };
+          if (name === "accountingPolicy") return { found: true, data: app.state.accountingPolicy };
+          const data = (app.state as unknown as Record<string, unknown>)[name];
+          return data === undefined ? { found: false } : { found: true, data };
+        },
+        async openReadModelApp() {
+          readModelApps += 1;
+          return app;
+        },
+        async openReadSession() {
+          readSessions += 1;
+          return { app, nextId: 1, close: async () => undefined };
+        }
+      }
+    });
+
+    const organization = await get<any>(api, "/api/collections/organization");
+    const dashboard = await get<any>(api, "/api/dashboard");
+
+    expect(organization.displayName).toBe("ИП Иванов");
+    expect(dashboard.configured).toBe(true);
+    expect(collectionReads).toBe(1);
+    expect(readModelApps).toBe(1);
+    expect(readSessions).toBe(0);
+  });
+
   it("keeps access sharing endpoints disabled by default", async () => {
     const previous = process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED;
     const previousAlias = process.env.ACCOUNTING_ENABLE_ACCESS_MANAGEMENT;
