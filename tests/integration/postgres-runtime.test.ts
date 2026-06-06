@@ -103,7 +103,7 @@ describePostgres("postgres runtime store", () => {
       if (!writeSession) throw new Error("write_session_missing");
       const pluginState = createPluginStateApi(writeSession.app, ozonPlugin);
       const pluginSecrets = createPluginSecretApi(writeSession.app, ozonPlugin);
-      pluginState.put({
+      await pluginState.put({
         namespace: "dispatch_flow",
         scopeType: "goods_receipt",
         scopeId: "receipt_test",
@@ -151,12 +151,12 @@ describePostgres("postgres runtime store", () => {
       if (!readSession) throw new Error("read_session_missing");
       const pluginState = createPluginStateApi(readSession.app, ozonPlugin);
       const pluginSecrets = createPluginSecretApi(readSession.app, ozonPlugin);
-      expect(pluginState.get({
+      expect((await pluginState.get({
         namespace: "dispatch_flow",
         scopeType: "goods_receipt",
         scopeId: "receipt_test",
         stateKey: "channel:test:dispatch"
-      })?.payload).toMatchObject({ hello: "world", qty: 4 });
+      }))?.payload).toMatchObject({ hello: "world", qty: 4 });
       expect(pluginSecrets.get({
         namespace: "provider_runtime",
         scopeType: "channel",

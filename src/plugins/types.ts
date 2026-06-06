@@ -33,13 +33,13 @@ export interface PluginStateApi {
     scopeType?: PluginStateScopeType;
     scopeId?: ID;
     stateKey?: string;
-  }): PluginStateRecord[];
+  }): Promise<PluginStateRecord[]>;
   get(filter: {
     namespace: string;
     scopeType: PluginStateScopeType;
     scopeId: ID;
     stateKey: string;
-  }): PluginStateRecord | undefined;
+  }): Promise<PluginStateRecord | undefined>;
   put(input: {
     namespace: string;
     visibility?: Exclude<PluginStateNamespaceVisibility, "secret">;
@@ -48,14 +48,14 @@ export interface PluginStateApi {
     stateKey: string;
     payload: Record<string, unknown>;
     expectedRevision?: number;
-  }): PluginStateRecord;
+  }): Promise<PluginStateRecord>;
   delete(input: {
     namespace: string;
     scopeType: PluginStateScopeType;
     scopeId: ID;
     stateKey: string;
     expectedRevision?: number;
-  }): boolean;
+  }): Promise<boolean>;
 }
 
 export interface PluginSecretApi {

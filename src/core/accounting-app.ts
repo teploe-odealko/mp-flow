@@ -1548,14 +1548,14 @@ export class AccountingApp {
     };
   }
 
-  listPluginStateRecords(filter: {
+  async listPluginStateRecords(filter: {
     pluginCode?: string;
     namespace?: string;
     scopeType?: PluginStateScopeType;
     scopeId?: ID;
     stateKey?: string;
   } = {}) {
-    return this.state.pluginStateRecords.filter((record) =>
+    return (await this.repos.pluginStateRecords.all()).filter((record) =>
       (!filter.pluginCode || record.pluginCode === filter.pluginCode) &&
       (!filter.namespace || record.namespace === filter.namespace) &&
       (!filter.scopeType || record.scopeType === filter.scopeType) &&
@@ -1564,14 +1564,14 @@ export class AccountingApp {
     );
   }
 
-  getPluginStateRecord(filter: {
+  async getPluginStateRecord(filter: {
     pluginCode: string;
     namespace: string;
     scopeType: PluginStateScopeType;
     scopeId: ID;
     stateKey: string;
   }) {
-    return this.state.pluginStateRecords.find((record) =>
+    return (await this.repos.pluginStateRecords.all()).find((record) =>
       record.pluginCode === filter.pluginCode &&
       record.namespace === filter.namespace &&
       record.scopeType === filter.scopeType &&
@@ -1580,7 +1580,7 @@ export class AccountingApp {
     );
   }
 
-  upsertPluginStateRecord(input: {
+  async upsertPluginStateRecord(input: {
     pluginCode: string;
     namespace: string;
     visibility?: PluginStateRecord["visibility"];
@@ -1589,10 +1589,10 @@ export class AccountingApp {
     stateKey: string;
     payload: Record<string, unknown>;
     expectedRevision?: number;
-  }): PluginStateRecord {
+  }): Promise<PluginStateRecord> {
     const visibility = input.visibility ?? "private";
     const now = nowIso();
-    const existing = this.getPluginStateRecord({
+    const existing = await this.getPluginStateRecord({
       pluginCode: input.pluginCode,
       namespace: input.namespace,
       scopeType: input.scopeType,
@@ -1607,6 +1607,7 @@ export class AccountingApp {
       existing.visibility = visibility;
       existing.revision += 1;
       existing.updatedAt = now;
+      await this.repos.pluginStateRecords.upsert(existing);
       return existing;
     }
     if (input.expectedRevision !== undefined && input.expectedRevision !== 0) {
@@ -1626,11 +1627,11 @@ export class AccountingApp {
       createdAt: now,
       updatedAt: now
     };
-    this.state.pluginStateRecords.push(record);
+    await this.repos.pluginStateRecords.add(record);
     return record;
   }
 
-  deletePluginStateRecord(filter: {
+  async deletePluginStateRecord(filter: {
     pluginCode: string;
     namespace: string;
     scopeType: PluginStateScopeType;
@@ -1638,12 +1639,12 @@ export class AccountingApp {
     stateKey: string;
     expectedRevision?: number;
   }) {
-    const existing = this.getPluginStateRecord(filter);
+    const existing = await this.getPluginStateRecord(filter);
     if (!existing) return false;
     if (filter.expectedRevision !== undefined && existing.revision !== filter.expectedRevision) {
       throw new DomainError("plugin_state_revision_conflict", "Состояние плагина было изменено другим действием");
     }
-    this.state.pluginStateRecords = this.state.pluginStateRecords.filter((record) => record.id !== existing.id);
+    await this.repos.pluginStateRecords.removeById(existing.id);
     return true;
   }
 

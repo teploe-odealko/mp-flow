@@ -55,23 +55,23 @@ function toStateRecord(record: PluginStateRecord) {
 
 export function createPluginStateApi(app: AccountingApp, plugin: MarketplacePlugin): PluginStateApi {
   return {
-    list(filter = {}) {
-      return app
+    async list(filter = {}) {
+      return (await app
         .listPluginStateRecords({
           pluginCode: plugin.code,
           namespace: filter.namespace,
           scopeType: filter.scopeType,
           scopeId: filter.scopeId,
           stateKey: filter.stateKey
-        })
+        }))
         .map(toStateRecord);
     },
-    get(filter) {
+    async get(filter) {
       const definition = getNamespaceDefinition(plugin, filter.namespace);
       if (definition.visibility === "secret") {
         throw new DomainError("plugin_secret_namespace_read_forbidden", `Namespace ${filter.namespace} относится к secret storage`);
       }
-      const record = app.getPluginStateRecord({
+      const record = await app.getPluginStateRecord({
         pluginCode: plugin.code,
         namespace: filter.namespace,
         scopeType: filter.scopeType,
@@ -80,7 +80,7 @@ export function createPluginStateApi(app: AccountingApp, plugin: MarketplacePlug
       });
       return record ? toStateRecord(record) : undefined;
     },
-    put(input) {
+    async put(input) {
       const requestedVisibility = input.visibility ?? "private";
       const definition = assertDefinition(plugin, input.namespace, input.scopeType, requestedVisibility);
       assertPayloadSize(
@@ -89,7 +89,7 @@ export function createPluginStateApi(app: AccountingApp, plugin: MarketplacePlug
         "plugin_state_too_large",
         `Namespace ${input.namespace} превысил лимит состояния`
       );
-      return toStateRecord(app.upsertPluginStateRecord({
+      return toStateRecord(await app.upsertPluginStateRecord({
         pluginCode: plugin.code,
         namespace: input.namespace,
         visibility: requestedVisibility,
@@ -100,7 +100,7 @@ export function createPluginStateApi(app: AccountingApp, plugin: MarketplacePlug
         expectedRevision: input.expectedRevision
       }));
     },
-    delete(input) {
+    async delete(input) {
       const definition = getNamespaceDefinition(plugin, input.namespace);
       if (definition.visibility === "secret") {
         throw new DomainError("plugin_secret_namespace_delete_forbidden", `Namespace ${input.namespace} относится к secret storage`);
@@ -108,7 +108,7 @@ export function createPluginStateApi(app: AccountingApp, plugin: MarketplacePlug
       if (definition.scopeType !== input.scopeType) {
         throw new DomainError("plugin_namespace_scope_mismatch", `Namespace ${input.namespace} у плагина ${plugin.code} работает только со scope ${definition.scopeType}`);
       }
-      return app.deletePluginStateRecord({
+      return await app.deletePluginStateRecord({
         pluginCode: plugin.code,
         namespace: input.namespace,
         scopeType: input.scopeType,
@@ -169,7 +169,7 @@ export function pluginStateKey(channelId: ID, suffix = "default") {
   return `channel:${channelId}:${suffix}`;
 }
 
-export function pluginScopedStateRecord<T extends Record<string, unknown>>(
+export async function pluginScopedStateRecord<T extends Record<string, unknown>>(
   app: AccountingApp,
   plugin: MarketplacePlugin,
   input: {
@@ -180,7 +180,7 @@ export function pluginScopedStateRecord<T extends Record<string, unknown>>(
   }
 ) {
   const api = createPluginStateApi(app, plugin);
-  return api.get(input) as (PluginStateRecord & { payload: T }) | undefined;
+  return await api.get(input) as (PluginStateRecord & { payload: T }) | undefined;
 }
 
 export type RegisteredPluginNamespace = PluginStateNamespaceDefinition;

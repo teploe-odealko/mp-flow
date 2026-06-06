@@ -454,7 +454,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       } : null,
       assets: await scopedApp.listProductAssets(productId),
       channels,
-      plan: readCardStudioPlan(scopedApp, productId),
+      plan: await readCardStudioPlan(scopedApp, productId),
       storageReady: isStorageConfigured()
     };
   };
@@ -484,8 +484,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     requireStudioProduct(productId);
     const body = cardPlanSchema.parse(await c.req.json());
     const pluginState = cardStudioPlanState(scopedApp);
-    const existing = pluginState.get({ namespace: "card_studio", scopeType: "flow_session", scopeId: productId, stateKey: "plan" });
-    const saved = pluginState.put({
+    const existing = await pluginState.get({ namespace: "card_studio", scopeType: "flow_session", scopeId: productId, stateKey: "plan" });
+    const saved = await pluginState.put({
       namespace: "card_studio",
       scopeType: "flow_session",
       scopeId: productId,
@@ -495,10 +495,10 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     });
     return c.json({ ok: true, data: { ...saved.payload, revision: saved.revision } });
   });
-  api.delete("/api/products/:id/card/plan", (c) => {
+  api.delete("/api/products/:id/card/plan", async (c) => {
     const productId = c.req.param("id");
     requireStudioProduct(productId);
-    const deleted = cardStudioPlanState(scopedApp).delete({
+    const deleted = await cardStudioPlanState(scopedApp).delete({
       namespace: "card_studio",
       scopeType: "flow_session",
       scopeId: productId,
@@ -637,7 +637,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const plugin = context.channel ? resolveChannelPlugin(scopedApp, context.channel) : undefined;
     return c.json({ ok: true, data: { ...context, plugin: plugin ? serializePluginMeta(plugin) : null } });
   });
-  api.get("/api/procurement/receipts/:id/channel-dispatch/state", (c) => {
+  api.get("/api/procurement/receipts/:id/channel-dispatch/state", async (c) => {
     const receiptId = c.req.param("id");
     const channelId = c.req.query("channelId");
     if (!channelId) throw new DomainError("channel_required", "Выберите канал продаж");
@@ -647,7 +647,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const pluginState = createPluginStateApi(scopedApp, plugin);
     return c.json({
       ok: true,
-      data: pluginState.get({
+      data: await pluginState.get({
         namespace: "dispatch_flow",
         scopeType: "goods_receipt",
         scopeId: receiptId,
@@ -704,13 +704,13 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       lines: dispatchLines
     });
     const pluginState = createPluginStateApi(scopedApp, plugin);
-    const existing = pluginState.get({
+    const existing = await pluginState.get({
       namespace: "dispatch_flow",
       scopeType: "goods_receipt",
       scopeId: receiptId,
       stateKey: pluginStateKey(channel.id, "dispatch")
     });
-    const saved = pluginState.put({
+    const saved = await pluginState.put({
       namespace: "dispatch_flow",
       scopeType: "goods_receipt",
       scopeId: receiptId,
@@ -738,7 +738,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       throw new DomainError("channel_dispatch_not_supported", "Плагин не поддерживает автоматическое распределение");
     }
     const pluginState = createPluginStateApi(scopedApp, plugin);
-    const existing = pluginState.get({
+    const existing = await pluginState.get({
       namespace: "dispatch_flow",
       scopeType: "goods_receipt",
       scopeId: receiptId,
@@ -759,7 +759,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       selectedDestinationIds: body.selectedDestinationIds,
       plan
     });
-    const saved = pluginState.put({
+    const saved = await pluginState.put({
       namespace: "dispatch_flow",
       scopeType: "goods_receipt",
       scopeId: receiptId,
@@ -782,12 +782,14 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const plugin = resolveChannelPlugin(scopedApp, channel);
     const context = await scopedApp.receiptDispatchContext(receiptId, channel.id);
     const pluginState = plugin ? createPluginStateApi(scopedApp, plugin) : undefined;
-    const existing = pluginState?.get({
-      namespace: "dispatch_flow",
-      scopeType: "goods_receipt",
-      scopeId: receiptId,
-      stateKey: pluginStateKey(channel.id, "dispatch")
-    });
+    const existing = pluginState
+      ? await pluginState.get({
+          namespace: "dispatch_flow",
+          scopeType: "goods_receipt",
+          scopeId: receiptId,
+          stateKey: pluginStateKey(channel.id, "dispatch")
+        })
+      : undefined;
     const savedPayload = existing?.payload as Record<string, any> | undefined;
     const allocations = body.allocations ?? savedPayload?.allocations ?? [];
     const selectedDestinationIds = body.selectedDestinationIds ?? savedPayload?.selectedDestinationIds ?? [];
@@ -819,7 +821,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       lines: buildReceiptDispatchTransferLines(context, body.lines)
     });
     if (plugin && pluginState && existing) {
-      pluginState.put({
+      await pluginState.put({
         namespace: "dispatch_flow",
         scopeType: "goods_receipt",
         scopeId: receiptId,
@@ -833,7 +835,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
         }
       });
       if (Array.isArray(allocations) && allocations.length > 0) {
-        pluginState.put({
+        await pluginState.put({
           namespace: "remote_supply",
           scopeType: "stock_transfer",
           scopeId: transfer.id,
@@ -2490,8 +2492,8 @@ function cardStudioPlanState(app: AccountingApp) {
   return createPluginStateApi(app, pluginRegistry.get("ozon"));
 }
 
-function readCardStudioPlan(app: AccountingApp, productId: string) {
-  const record = cardStudioPlanState(app).get({
+async function readCardStudioPlan(app: AccountingApp, productId: string) {
+  const record = await cardStudioPlanState(app).get({
     namespace: "card_studio",
     scopeType: "flow_session",
     scopeId: productId,
