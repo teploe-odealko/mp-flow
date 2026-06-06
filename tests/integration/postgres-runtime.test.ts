@@ -387,6 +387,50 @@ describePostgres("postgres runtime store", () => {
     }
   }, 30_000);
 
+  it("externalEvents живут в таблице вне snapshot, а не в state", async () => {
+    await resetRuntimeTables();
+    const store = new PostgresRuntimeStore(new Pool({ connectionString: connectionString! }), "ext-flip-secret");
+    const api = createApi(new AccountingApp(), { persistence: store });
+    try {
+      await request(api, "POST", "/api/setup", { displayName: "Ext Flip", accountingStartDate: "2026-01-01" });
+      const channel = await request<{ id: string }>(api, "POST", "/api/integrations/channels", {
+        name: "Ozon Flip",
+        channelType: "marketplace",
+        pluginCode: "ozon"
+      });
+      const event = await request<{ id: string; externalId: string }>(api, "POST", `/api/channels/${channel.id}/external-events`, {
+        eventType: "sale",
+        externalId: "FLIP-1",
+        occurredAt: "2026-02-01T10:00:00.000Z",
+        payload: { postingNumber: "FLIP-1", lines: [{ sku: "X", qty: 1, amountRub: 100 }] }
+      });
+
+      const session = await store.openReadSession?.();
+      try {
+        // событие НЕ в snapshot...
+        expect(session?.app.state.externalEvents).toEqual([]);
+        // ...но читается через инжектированный стор.
+        const fromStore = await session?.app.externalEvents.getById(event.id);
+        expect(fromStore?.externalId).toBe("FLIP-1");
+      } finally {
+        await session?.close?.();
+      }
+
+      const inspectPool = new Pool({ connectionString: connectionString! });
+      try {
+        const rows = await inspectPool.query<{ n: number }>(
+          "select count(*)::int as n from external_event where state_json->>'id' = $1",
+          [event.id]
+        );
+        expect(rows.rows[0]?.n).toBe(1);
+      } finally {
+        await inspectPool.end();
+      }
+    } finally {
+      await store.close();
+    }
+  }, 30_000);
+
   it("moves legacy default auth members to personal workspaces", async () => {
     await resetRuntimeTables();
 
