@@ -9,7 +9,7 @@ import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { ProductCell } from "@/components/product-thumb";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { apiGet, apiPatch, apiPost } from "@/api";
 import { rub, qty } from "@/lib/format";
 import { allocationBasisLabel, procurementCostTypeLabel, shortageActionLabel } from "@/lib/i18n";
@@ -18,7 +18,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 export function PurchaseOrderFormPage() {
   const { id } = useParams();
-  const { state } = useAppState();
+  const state = { accountingPolicy: useCollection<any>("accountingPolicy"), counterparties: useCollection<any[]>("counterparties") ?? [], documents: useCollection<any[]>("documents") ?? [], goodsReceiptLines: useCollection<any[]>("goodsReceiptLines") ?? [], goodsReceipts: useCollection<any[]>("goodsReceipts") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], paymentAllocations: useCollection<any[]>("paymentAllocations") ?? [], products: useCollection<any[]>("products") ?? [], purchaseOrderLines: useCollection<any[]>("purchaseOrderLines") ?? [], purchaseOrders: useCollection<any[]>("purchaseOrders") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
   const products = state.products ?? [];
   const counterparties = state.counterparties ?? [];
   const warehouses = (state.warehouses ?? []).filter((w: any) => w.warehouseType !== "sales_point");
@@ -246,7 +246,7 @@ function mutationMessage(error: unknown) {
 
 export function SupplierPaymentFormPage() {
   const { id } = useParams();
-  const { state } = useAppState();
+  const state = { accountingPolicy: useCollection<any>("accountingPolicy"), counterparties: useCollection<any[]>("counterparties") ?? [], documents: useCollection<any[]>("documents") ?? [], goodsReceiptLines: useCollection<any[]>("goodsReceiptLines") ?? [], goodsReceipts: useCollection<any[]>("goodsReceipts") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], paymentAllocations: useCollection<any[]>("paymentAllocations") ?? [], products: useCollection<any[]>("products") ?? [], purchaseOrderLines: useCollection<any[]>("purchaseOrderLines") ?? [], purchaseOrders: useCollection<any[]>("purchaseOrders") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
   const purchaseOrders = (state.purchaseOrders ?? []).filter((candidate: any) => candidate.status !== "cancelled");
   const docs = state.documents ?? [];
   const counterparties = state.counterparties ?? [];
@@ -363,7 +363,7 @@ export function SupplierPaymentFormPage() {
 
 export function GoodsReceiptFormPage() {
   const { id } = useParams();
-  const { state } = useAppState();
+  const state = { accountingPolicy: useCollection<any>("accountingPolicy"), counterparties: useCollection<any[]>("counterparties") ?? [], documents: useCollection<any[]>("documents") ?? [], goodsReceiptLines: useCollection<any[]>("goodsReceiptLines") ?? [], goodsReceipts: useCollection<any[]>("goodsReceipts") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], paymentAllocations: useCollection<any[]>("paymentAllocations") ?? [], products: useCollection<any[]>("products") ?? [], purchaseOrderLines: useCollection<any[]>("purchaseOrderLines") ?? [], purchaseOrders: useCollection<any[]>("purchaseOrders") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
   const order = (state.purchaseOrders ?? []).find((o: any) => o.id === id);
   const orderLines = (state.purchaseOrderLines ?? []).filter((l: any) => l.purchaseOrderId === id);
   const receiptLines = state.goodsReceiptLines ?? [];
@@ -637,7 +637,7 @@ export function GoodsReceiptFormPage() {
 
 export function ProcurementCostFormPage() {
   const { id } = useParams();
-  const { state } = useAppState();
+  const state = { accountingPolicy: useCollection<any>("accountingPolicy"), counterparties: useCollection<any[]>("counterparties") ?? [], documents: useCollection<any[]>("documents") ?? [], goodsReceiptLines: useCollection<any[]>("goodsReceiptLines") ?? [], goodsReceipts: useCollection<any[]>("goodsReceipts") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], paymentAllocations: useCollection<any[]>("paymentAllocations") ?? [], products: useCollection<any[]>("products") ?? [], purchaseOrderLines: useCollection<any[]>("purchaseOrderLines") ?? [], purchaseOrders: useCollection<any[]>("purchaseOrders") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
   const purchaseOrders = (state.purchaseOrders ?? []).filter((candidate: any) => candidate.status !== "cancelled");
   const documents = state.documents ?? [];
   const counterparties = state.counterparties ?? [];
@@ -911,7 +911,7 @@ function round2(value: number) {
 
 export function ShortageResolutionFormPage() {
   const { id } = useParams();
-  const { state } = useAppState();
+  const state = { accountingPolicy: useCollection<any>("accountingPolicy"), counterparties: useCollection<any[]>("counterparties") ?? [], documents: useCollection<any[]>("documents") ?? [], goodsReceiptLines: useCollection<any[]>("goodsReceiptLines") ?? [], goodsReceipts: useCollection<any[]>("goodsReceipts") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], paymentAllocations: useCollection<any[]>("paymentAllocations") ?? [], products: useCollection<any[]>("products") ?? [], purchaseOrderLines: useCollection<any[]>("purchaseOrderLines") ?? [], purchaseOrders: useCollection<any[]>("purchaseOrders") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
   const order = (state.purchaseOrders ?? []).find((o: any) => o.id === id);
   const products = state.products ?? [];
   const queryClient = useQueryClient();

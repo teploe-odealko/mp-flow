@@ -26,7 +26,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProductCell, ProductThumb } from "@/components/product-thumb";
 import { EntityDeleteDialog, type EntityRollbackPreview } from "@/components/entity-delete-dialog";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { rub, qty, date, dateTime } from "@/lib/format";
 import { apiDelete, apiGet, apiPost } from "@/api";
 import { stockStateLabel, documentStatusLabel } from "@/lib/i18n";
@@ -45,7 +45,7 @@ import {
 const today = () => new Date().toISOString().slice(0, 10);
 
 export function SalesWorkspace() {
-  const { state } = useAppState();
+  const state = { channelFinanceEvents: useCollection<any[]>("channelFinanceEvents") ?? [], costApplications: useCollection<any[]>("costApplications") ?? [], documentLines: useCollection<any[]>("documentLines") ?? [], documents: useCollection<any[]>("documents") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], products: useCollection<any[]>("products") ?? [], saleLines: useCollection<any[]>("saleLines") ?? [], sales: useCollection<any[]>("sales") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], salesReturns: useCollection<any[]>("salesReturns") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
   const sales = state.sales ?? [];
   const saleLines = state.saleLines ?? [];
   const channels = state.salesChannels ?? [];
@@ -250,7 +250,7 @@ export function SalesWorkspace() {
 }
 
 export function ManualSaleFormPage() {
-  const { state } = useAppState();
+  const state = { channelFinanceEvents: useCollection<any[]>("channelFinanceEvents") ?? [], costApplications: useCollection<any[]>("costApplications") ?? [], documentLines: useCollection<any[]>("documentLines") ?? [], documents: useCollection<any[]>("documents") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], products: useCollection<any[]>("products") ?? [], saleLines: useCollection<any[]>("saleLines") ?? [], sales: useCollection<any[]>("sales") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], salesReturns: useCollection<any[]>("salesReturns") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
   const channels = state.salesChannels ?? [];
   const products = state.products ?? [];
   const queryClient = useQueryClient();
@@ -351,7 +351,7 @@ export function ManualSaleFormPage() {
 export function SaleCardPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { state } = useAppState();
+  const state = { channelFinanceEvents: useCollection<any[]>("channelFinanceEvents") ?? [], costApplications: useCollection<any[]>("costApplications") ?? [], documentLines: useCollection<any[]>("documentLines") ?? [], documents: useCollection<any[]>("documents") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], products: useCollection<any[]>("products") ?? [], saleLines: useCollection<any[]>("saleLines") ?? [], sales: useCollection<any[]>("sales") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], salesReturns: useCollection<any[]>("salesReturns") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
   const queryClient = useQueryClient();
   const sale = (state.sales ?? []).find((candidate: any) => candidate.id === id);
   if (!sale) return null;
@@ -666,7 +666,7 @@ export function SaleCardPage() {
 }
 
 export function ReturnsListPage() {
-  const { state } = useAppState();
+  const state = { channelFinanceEvents: useCollection<any[]>("channelFinanceEvents") ?? [], costApplications: useCollection<any[]>("costApplications") ?? [], documentLines: useCollection<any[]>("documentLines") ?? [], documents: useCollection<any[]>("documents") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], products: useCollection<any[]>("products") ?? [], saleLines: useCollection<any[]>("saleLines") ?? [], sales: useCollection<any[]>("sales") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], salesReturns: useCollection<any[]>("salesReturns") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
   const returns = state.salesReturns ?? [];
   const sales = state.sales ?? [];
   const channels = state.salesChannels ?? [];
@@ -796,7 +796,7 @@ export function ReturnsListPage() {
 export function ReturnCardPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { state } = useAppState();
+  const state = { channelFinanceEvents: useCollection<any[]>("channelFinanceEvents") ?? [], costApplications: useCollection<any[]>("costApplications") ?? [], documentLines: useCollection<any[]>("documentLines") ?? [], documents: useCollection<any[]>("documents") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], products: useCollection<any[]>("products") ?? [], saleLines: useCollection<any[]>("saleLines") ?? [], sales: useCollection<any[]>("sales") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], salesReturns: useCollection<any[]>("salesReturns") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
   const queryClient = useQueryClient();
   const salesReturn = (state.salesReturns ?? []).find((candidate: any) => candidate.id === id);
   if (!salesReturn) return null;
@@ -893,7 +893,7 @@ export function ReturnCardPage() {
 export function ReturnFormPage() {
   const { saleId, id } = useParams<{ saleId?: string; id?: string }>();
   const targetSaleId = saleId ?? id;
-  const { state } = useAppState();
+  const state = { channelFinanceEvents: useCollection<any[]>("channelFinanceEvents") ?? [], costApplications: useCollection<any[]>("costApplications") ?? [], documentLines: useCollection<any[]>("documentLines") ?? [], documents: useCollection<any[]>("documents") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], products: useCollection<any[]>("products") ?? [], saleLines: useCollection<any[]>("saleLines") ?? [], sales: useCollection<any[]>("sales") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], salesReturns: useCollection<any[]>("salesReturns") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const sale = (state.sales ?? []).find((candidate: any) => candidate.id === targetSaleId);
