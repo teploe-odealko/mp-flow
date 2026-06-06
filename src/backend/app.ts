@@ -963,10 +963,11 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const channel = scopedApp.createSalesChannel(body);
     return c.json({ ok: true, data: channel });
   });
-  api.get("/api/integrations/channels/:id", (c) => {
+  api.get("/api/integrations/channels/:id", async (c) => {
     const channel = scopedApp.state.salesChannels.find((candidate) => candidate.id === c.req.param("id"));
     if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
     const plugin = resolveChannelPlugin(scopedApp, channel);
+    const externalEventsCount = await scopedApp.externalEvents.count({ channelId: channel.id });
     return c.json({ ok: true, data: {
       channel,
       credentialStatus: scopedApp.channelCredentialStatus(channel.id),
@@ -976,7 +977,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       counts: {
         externalProducts: scopedApp.state.externalProducts.filter((ep) => ep.channelId === channel.id).length,
         observedStocks: scopedApp.state.observedStocks.filter((o) => o.channelId === channel.id).length,
-        externalEvents: scopedApp.state.externalEvents.filter((e) => e.channelId === channel.id).length,
+        externalEvents: externalEventsCount,
         sales: scopedApp.state.sales.filter((s) => s.channelId === channel.id).length,
         payouts: scopedApp.state.payouts.filter((p) => p.channelId === channel.id).length
       }
