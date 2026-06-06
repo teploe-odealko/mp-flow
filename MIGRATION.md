@@ -96,8 +96,33 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,
 `stockMovements` 15 и т.д., и всё связано через `documents`/`journalEntries`. Дешёвых пер-коллекционных флипов
-здесь нет — вынос ядра = перевод доменных операций (createSale/receiveGoods/postPayment/…) на async-репозитории.
-Делать по кластерам операций; «можно ломать» → большими батчами с финальной стыковкой (tsc + тесты + smoke).
+больше НЕТ: проверено, что даже мелкий `recalculationJobs` пишется из глубины постинга (`queueRecalculation`
+зовётся из `receiveGoods`/`applyProcurementCostCorrection`/reports). Любая оставшаяся коллекция читается/
+пишется посреди синхронных операций.
+
+**Вывод:** вынести ядро = сделать `AccountingApp` async по всему графу операций. async вирусен — это не
+держится «зелёным» пошагово, значит делается одним крупным заходом со сборкой в конце (разрешено «можно ломать»).
+
+### План исполнения ядра (для отдельного захода, с чистым контекстом)
+1. Завести `Repositories`-фасад (как уже сделанные сторы) для оставшихся коллекций: `documents`, `documentLines`,
+   `documentVersions`, `documentLinks`, `journalEntries`, `journalLines`, `sales`, `saleLines`, `salesReturns`,
+   `stockMovements`, `stockStates`, `inventoryLots`, `costApplications`, `payments`, `paymentAllocations`,
+   `payouts`, `payoutLines`, `settlementEntries`, `channelFinanceEvents`, `purchaseOrders`, `purchaseOrderLines`,
+   `goodsReceipts`, `goodsReceiptLines`, `procurementCosts`, `procurementCostLines`, `shortageResolutions(+Lines)`,
+   `stockTransfers(+Lines)`, `stocktakes(+Lines)`, `recalculationJobs`, `correctionCases` + справочники
+   (`products`, `warehouses`, `salesChannels`, `counterparties`, `chartAccounts`, `cashAccounts`, `periods`,
+   `externalProducts`, `productExternalLinks`, `integrationPlugins`, `productAssets`, `expenseCategories`,
+   `operatingExpenses`, `ownerTransactions`, `documentTypes`, `accountingPolicy`, `organization`, `agentTokens`,
+   `backfillProjects`, `users`).
+2. `AccountingApp`: каждый `this.state.X` → `await this.repos.X...`; каждый доменный метод → `async`.
+   Порядок — снизу вверх по графу: листовые helpers → постинг-методы (createSale/receiveGoods/postPayment/
+   deleteDocument/recalculate*/AVCO) → публичные команды.
+3. `app.ts`: все вызовы доменных методов → `await` (большинство handler'ов уже `async`).
+4. runtime-store: убрать `loadSnapshot`/`saveState` полностью; `openWrite/ReadSession` отдаёт `AccountingApp`
+   с Postgres-репозиториями на `client`/`pool`; снять глобальный `pg_advisory_xact_lock` (транзакция на запрос
+   заменяет full-state-write-lock). Удалить `state_json`-снэпшот, `publicAccountingState`, `/api/state`.
+5. Отчёты (`/api/reports*`) — в SQL (агрегаты), а не перебор state.
+6. Стыковка: `tsc` 0 → fast → PG → smoke (browser). Тесты, дергающие `/api/state`, перевести на `/api/collections`.
 
 ## Уточнение стратегии (важный вывод из кода)
 Домен — **синхронный in-memory движок**: почти каждая коллекция читается ПОСРЕДИ
