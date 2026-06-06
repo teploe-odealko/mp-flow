@@ -9,12 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { DataList } from "@/components/ui/data-list";
 import { PageHeader } from "@/components/ui/page-header";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { date } from "@/lib/format";
 
 export function SettingsOverviewPage() {
-  const { state } = useAppState();
-  if (!state.organization) {
+  const organization = useCollection<any>("organization");
+  const policy = useCollection<any>("accountingPolicy");
+  if (!organization) {
     return (
       <div className="max-w-3xl mx-auto">
         <PageHeader title="Настройки" subtitle="Сначала создайте учётную базу" />
@@ -30,8 +31,6 @@ export function SettingsOverviewPage() {
       </div>
     );
   }
-
-  const policy = state.accountingPolicy;
 
   return (
     <div className="max-w-6xl mx-auto flex flex-col gap-5">
@@ -53,8 +52,8 @@ export function SettingsOverviewPage() {
             <DataList
               columns={2}
               items={[
-                { label: "Название", value: state.organization.displayName },
-                { label: "Часовой пояс", value: state.organization.timezone ?? "—" }
+                { label: "Название", value: organization.displayName },
+                { label: "Часовой пояс", value: organization.timezone ?? "—" }
               ]}
             />
             <Button variant="ghost" size="sm" asChild className="self-start">
