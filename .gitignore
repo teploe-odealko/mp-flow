@@ -6,6 +6,7 @@ coverage/
 .DS_Store
 tmp/
 tmp-spec-audit.json
+output/
 .env
 .env.local
 .claude/

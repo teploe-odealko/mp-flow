@@ -13,6 +13,9 @@
     "url": "https://github.com/teploe-odealko/mp-flow/issues"
   },
   "homepage": "https://github.com/teploe-odealko/mp-flow",
+  "engines": {
+    "node": ">=20.19"
+  },
   "scripts": {
     "dev": "concurrently \"npm:dev:server\" \"npm:dev:client\"",
     "dev:server": "tsx watch src/backend/index.ts",

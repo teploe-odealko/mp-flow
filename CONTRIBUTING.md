@@ -4,12 +4,14 @@
 
 ## Локальная разработка
 
+Быстрый старт без БД и авторизации:
+
 ```bash
-npm ci
-cp .env.example .env
-docker compose up -d
-npm run dev
+npm install
+npm run dev          # откройте http://127.0.0.1:5174
 ```
+
+Полный стек с PostgreSQL и авторизацией, режимы запуска, подтверждение email и тесты — в разделах «Быстрый старт» и «Команды» в [README.md](README.md).
 
 Перед PR запустите:
 

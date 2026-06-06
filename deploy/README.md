@@ -27,4 +27,4 @@ tail -n 100 /var/log/mpflow-deploy.log
 /usr/local/bin/mpflow-deploy-production "$(git -C /opt/mpflow/repo rev-parse origin/main)"
 ```
 
-Подробный порядок развертывания описан в `docs/deployment.md`.
+Минимальные production-переменные и порядок развертывания описаны в разделе «Production» в [`README.md`](../README.md).
