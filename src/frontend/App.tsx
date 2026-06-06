@@ -51,7 +51,7 @@ import { ReportsWorkspace } from "@/pages/reports/ReportsPage";
 import { ControlsWorkspace } from "@/pages/controls/ControlsPages";
 import { AuditPage } from "@/pages/access/AccessPages";
 import { BackfillWizardPage } from "@/pages/onboarding/OnboardingPages";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 
 export function App() {
   return (
@@ -162,7 +162,7 @@ export function App() {
 }
 
 function ExistingStoreEntryRedirect() {
-  const { state } = useAppState();
+  const organization = useCollection<any>("organization");
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const mode = searchParams.get("mode") === "current_stock_start" ? "current_stock_start" : "historical_backfill";
@@ -175,7 +175,7 @@ function ExistingStoreEntryRedirect() {
     confirmed ? "confirmed=1" : ""
   ].filter(Boolean).join("&");
 
-  return <Navigate to={state.organization ? `/setup/existing-store?${suffix}` : "/setup"} replace />;
+  return <Navigate to={organization ? `/setup/existing-store?${suffix}` : "/setup"} replace />;
 }
 
 function LegacySetupReviewRedirect() {

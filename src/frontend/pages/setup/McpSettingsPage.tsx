@@ -54,7 +54,6 @@ export function McpSettingsPage() {
       setIssued(data);
       setName("Личный агент");
       await queryClient.invalidateQueries({ queryKey: ["mcp-keys"] });
-      await queryClient.invalidateQueries({ queryKey: ["state"] });
     }
   });
 
@@ -62,7 +61,6 @@ export function McpSettingsPage() {
     mutationFn: (id: string) => apiPost<McpKey>(`/api/mcp/keys/${id}/revoke`),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["mcp-keys"] });
-      await queryClient.invalidateQueries({ queryKey: ["state"] });
     }
   });
 

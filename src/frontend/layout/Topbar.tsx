@@ -3,14 +3,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, ChevronDown, HelpCircle, Landmark, LogOut, Search } from "lucide-react";
 import { apiGet, apiPost } from "@/api";
 import { Button } from "@/components/ui/button";
+import { useCollection } from "@/lib/use-collection";
 
-interface Props {
-  state: any;
-}
-
-export function Topbar({ state }: Props) {
+export function Topbar() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const organization = useCollection<any>("organization");
   const sessionQuery = useQuery({
     queryKey: ["auth", "session"],
     retry: false,
@@ -42,12 +40,12 @@ export function Topbar({ state }: Props) {
           className="h-9 px-3 rounded-[var(--radius-md)] border border-[var(--color-border-strong)] bg-[var(--color-card)] flex items-center gap-2 text-sm hover:bg-[var(--color-muted)] transition-colors"
         >
           <Landmark size={14} className="text-[var(--color-muted-foreground)]" />
-          <span className="font-medium">{state.organization?.displayName ?? "Не настроена"}</span>
+          <span className="font-medium">{organization?.displayName ?? "Не настроена"}</span>
           <ChevronDown size={13} className="text-[var(--color-muted-foreground)]" />
         </Link>
 
         <Button variant="ghost" size="icon" asChild>
-          <Link to={state.organization ? "/setup/existing-store?from=setup&mode=current_stock_start" : "/setup"} aria-label="Помощь">
+          <Link to={organization ? "/setup/existing-store?from=setup&mode=current_stock_start" : "/setup"} aria-label="Помощь">
             <HelpCircle />
           </Link>
         </Button>

@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { apiGet } from "@/api";
+import { useCollection } from "@/lib/use-collection";
 import { AlertStack } from "@/components/ui/alert-stack";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
@@ -21,9 +20,7 @@ export function AppShell() {
     if (typeof window === "undefined") return "";
     return window.localStorage.getItem(WORKING_PERIOD_KEY) ?? "";
   });
-  const stateQuery = useQuery({ queryKey: ["state"], queryFn: () => apiGet<AppState>("/api/state") });
-  const state = stateQuery.data ?? {};
-  const periods = state.periods ?? [];
+  const periods = useCollection<any[]>("periods") ?? [];
 
   useEffect(() => {
     if (periods.length === 0) {
@@ -52,13 +49,9 @@ export function AppShell() {
       </a>
       <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((v) => !v)} />
       <div className="flex flex-col flex-1 min-w-0">
-        <Topbar state={state} />
+        <Topbar />
         <main id="main-content" className="flex-1 px-7 py-6">
-          {stateQuery.isLoading ? (
-            <div className="text-sm text-[var(--color-muted-foreground)]">Загрузка…</div>
-          ) : (
-            <Outlet context={{ state, isLoading: false, workingPeriodId, setWorkingPeriodId }} />
-          )}
+          <Outlet context={{ isLoading: false, workingPeriodId, setWorkingPeriodId }} />
         </main>
       </div>
     </div>
