@@ -31,7 +31,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Kpi } from "@/components/ui/kpi";
 import { Pagination } from "@/components/ui/pagination";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { apiDelete, apiGet, apiPost } from "@/api";
 import { channelTypeLabel, eventKindLabel, eventStatusLabel, observedLocationStatusLabel } from "@/lib/i18n";
 import { rub, date, dateTime } from "@/lib/format";
@@ -62,7 +62,7 @@ const STREAM_DEFS: Array<{ code: string; label: string; hint: string; pluginCap?
 ];
 
 export function ChannelsWorkspace() {
-  const { state } = useAppState();
+  const state = { salesChannels: useCollection<any[]>("salesChannels") ?? [], integrationPlugins: useCollection<any[]>("integrationPlugins") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
   const channels = state.salesChannels ?? [];
   const plugins = state.integrationPlugins ?? [];
   const warehouses = state.warehouses ?? [];
@@ -376,7 +376,7 @@ export function ChannelFormPage() {
 
 export function ChannelSyncPage() {
   const { id } = useParams();
-  const { state } = useAppState();
+  const state = { salesChannels: useCollection<any[]>("salesChannels") ?? [] };
   const queryClient = useQueryClient();
   const channel = (state.salesChannels ?? []).find((candidate: any) => candidate.id === id);
   const runsQuery = useQuery({
@@ -628,7 +628,7 @@ export function ChannelSyncPage() {
 }
 
 export function SyncInboxPage() {
-  const { state } = useAppState();
+  const state = { salesChannels: useCollection<any[]>("salesChannels") ?? [], externalProducts: useCollection<any[]>("externalProducts") ?? [], products: useCollection<any[]>("products") ?? [], documents: useCollection<any[]>("documents") ?? [] };
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const eventsQuery = useQuery({ queryKey: ["events"], queryFn: () => apiGet<any[]>("/api/integrations/events") });
@@ -899,7 +899,7 @@ export function SyncInboxPage() {
 
 export function ChannelFinancePage() {
   const { id } = useParams();
-  const { state } = useAppState();
+  const state = { salesChannels: useCollection<any[]>("salesChannels") ?? [], channelFinanceEvents: useCollection<any[]>("channelFinanceEvents") ?? [], sales: useCollection<any[]>("sales") ?? [], salesReturns: useCollection<any[]>("salesReturns") ?? [], payouts: useCollection<any[]>("payouts") ?? [], documents: useCollection<any[]>("documents") ?? [] };
   const queryClient = useQueryClient();
   const channel = (state.salesChannels ?? []).find((c: any) => c.id === id);
   const events = (state.channelFinanceEvents ?? []).filter((e: any) => e.channelId === id);
@@ -1117,7 +1117,7 @@ export function ChannelFinancePage() {
 export function FinanceEventCardPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { state } = useAppState();
+  const state = { channelFinanceEvents: useCollection<any[]>("channelFinanceEvents") ?? [], sales: useCollection<any[]>("sales") ?? [], salesReturns: useCollection<any[]>("salesReturns") ?? [], payouts: useCollection<any[]>("payouts") ?? [], documents: useCollection<any[]>("documents") ?? [] };
   const queryClient = useQueryClient();
   const event = (state.channelFinanceEvents ?? []).find((candidate: any) => candidate.id === id);
   const sales = state.sales ?? [];
