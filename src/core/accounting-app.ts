@@ -4323,7 +4323,7 @@ export class AccountingApp {
       case "purchase_order": {
         const order = (await this.repos.purchaseOrders.all()).find((candidate) => candidate.documentId === document.id);
         if (!order) break;
-        if (this.paymentsForPurchaseOrder(order.id).length > 0 || (await this.repos.goodsReceipts.all()).some((receipt) => receipt.purchaseOrderId === order.id)) {
+        if ((await this.paymentsForPurchaseOrder(order.id)).length > 0 || (await this.repos.goodsReceipts.all()).some((receipt) => receipt.purchaseOrderId === order.id)) {
           throw new DomainError("purchase_order_has_dependencies", "Нельзя удалить заказ, по которому уже есть оплаты или приемки");
         }
         await this.repos.purchaseOrderLines.replaceAll((await this.repos.purchaseOrderLines.all()).filter((line) => line.purchaseOrderId !== order.id));
@@ -4712,7 +4712,7 @@ export class AccountingApp {
       order,
       document: (await this.repos.documents.all()).find((document) => document.id === order.documentId),
       lines: (await this.repos.purchaseOrderLines.all()).filter((line) => line.purchaseOrderId === order.id),
-      payments: this.paymentsForPurchaseOrder(order.id),
+      payments: await this.paymentsForPurchaseOrder(order.id),
       receipts: (await this.repos.goodsReceipts.all()).filter((receipt) => receipt.purchaseOrderId === order.id),
       costs: (await this.repos.procurementCosts.all()).filter((cost) => cost.purchaseOrderId === order.id),
       shortages: (await this.repos.shortageResolutions.all()).filter((resolution) => resolution.purchaseOrderId === order.id),
@@ -4729,7 +4729,7 @@ export class AccountingApp {
     comment?: string;
   }): Promise<PurchaseOrder> {
     const order = this.mustFind(await this.repos.purchaseOrders.all(), purchaseOrderId, "purchase_order_not_found");
-    if (this.paymentsForPurchaseOrder(order.id).length > 0 || (await this.repos.goodsReceipts.all()).some((receipt) => receipt.purchaseOrderId === order.id)) {
+    if ((await this.paymentsForPurchaseOrder(order.id)).length > 0 || (await this.repos.goodsReceipts.all()).some((receipt) => receipt.purchaseOrderId === order.id)) {
       throw new DomainError("purchase_order_not_editable", "Заказ с оплатами или приемками нельзя редактировать напрямую");
     }
     const document = this.mustFind(await this.repos.documents.all(), order.documentId, "document_not_found");
@@ -4822,9 +4822,9 @@ export class AccountingApp {
     return order;
   }
 
-  paymentsForPurchaseOrder(purchaseOrderId: ID) {
-    const paymentIds = new Set(this.state.paymentAllocations.filter((allocation) => allocation.purchaseOrderId === purchaseOrderId).map((allocation) => allocation.paymentId));
-    return this.state.payments.filter((payment) => paymentIds.has(payment.id));
+  async paymentsForPurchaseOrder(purchaseOrderId: ID) {
+    const paymentIds = new Set((await this.repos.paymentAllocations.all()).filter((allocation) => allocation.purchaseOrderId === purchaseOrderId).map((allocation) => allocation.paymentId));
+    return (await this.repos.payments.all()).filter((payment) => paymentIds.has(payment.id));
   }
 
   async receiptDetails(receiptId: ID) {
@@ -4945,7 +4945,7 @@ export class AccountingApp {
       }
     });
 
-    const setoff = round2(Math.min(receipt.goodsCostRubTotal, this.supplierAdvanceBalance(order.id)));
+    const setoff = round2(Math.min(receipt.goodsCostRubTotal, await this.supplierAdvanceBalance(order.id)));
     const journalLines: JournalLineInput[] = [
       { accountCode: "41.01", debit: receipt.goodsCostRubTotal, memo: "Поступление товара на склад" },
       { accountCode: "60.01", credit: receipt.goodsCostRubTotal, memo: "Задолженность поставщику по приемке" }
@@ -5815,20 +5815,21 @@ export class AccountingApp {
     return job;
   }
 
-  private supplierAdvanceBalance(purchaseOrderId: ID): number {
-    const paid = this.state.paymentAllocations
+  private async supplierAdvanceBalance(purchaseOrderId: ID): Promise<number> {
+    const paid = (await this.repos.paymentAllocations.all())
       .filter((allocation) =>
         allocation.purchaseOrderId === purchaseOrderId &&
         allocation.allocationPurpose === "goods_purchase" &&
         this.isPaymentAllocationPosted(allocation)
       )
       .reduce((sum, allocation) => sum + allocation.amountRub, 0);
-    const received = this.state.goodsReceipts
+    const received = (await this.repos.goodsReceipts.all())
       .filter((receipt) => receipt.purchaseOrderId === purchaseOrderId && receipt.status === "posted" && this.isDocumentPosted(receipt.documentId))
       .reduce((sum, receipt) => sum + receipt.goodsCostRubTotal, 0);
-    const resolved = this.state.shortageResolutions
+    const allShortageResolutionLines = await this.repos.shortageResolutionLines.all();
+    const resolved = (await this.repos.shortageResolutions.all())
       .filter((resolution) => resolution.purchaseOrderId === purchaseOrderId && resolution.status === "posted")
-      .flatMap((resolution) => this.state.shortageResolutionLines.filter((line) => line.shortageResolutionId === resolution.id))
+      .flatMap((resolution) => allShortageResolutionLines.filter((line) => line.shortageResolutionId === resolution.id))
       .reduce((sum, line) => sum + (line.action === "supplier_claim" || line.action === "loss" ? line.paidShareRub : 0), 0);
     return round2(paid - received - resolved);
   }
@@ -6022,9 +6023,10 @@ export class AccountingApp {
     );
   }
 
-  private unbalancedEntries() {
-    return this.state.journalEntries.filter((entry) => {
-      const lines = this.state.journalLines.filter((line) => line.journalEntryId === entry.id);
+  private async unbalancedEntries() {
+    const allJournalLines = await this.repos.journalLines.all();
+    return (await this.repos.journalEntries.all()).filter((entry) => {
+      const lines = allJournalLines.filter((line) => line.journalEntryId === entry.id);
       const debit = round2(lines.reduce((sum, line) => sum + line.debit, 0));
       const credit = round2(lines.reduce((sum, line) => sum + line.credit, 0));
       return debit !== credit;

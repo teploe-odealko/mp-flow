@@ -598,7 +598,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = supplierPaymentSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.recordSupplierPayment({ ...body, purchaseOrderId: c.req.param("id") }) });
   });
-  api.get("/api/procurement/purchase-orders/:id/payments", (c) => c.json({ ok: true, data: scopedApp.paymentsForPurchaseOrder(c.req.param("id")) }));
+  api.get("/api/procurement/purchase-orders/:id/payments", async (c) => c.json({ ok: true, data: await scopedApp.paymentsForPurchaseOrder(c.req.param("id")) }));
   api.get("/api/settlements/suppliers/:id", (c) => c.json({ ok: true, data: scopedApp.state.settlementEntries.filter((entry) => entry.counterpartyId === c.req.param("id")) }));
   api.get("/api/procurement/purchase-orders/:id/receipt-preview", async (c) => {
     const details = await scopedApp.purchaseOrderDetails(c.req.param("id"));
