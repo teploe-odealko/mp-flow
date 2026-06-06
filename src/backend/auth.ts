@@ -498,20 +498,23 @@ export function publicUser(user: AuthPrincipal) {
   };
 }
 
-export function ensureAppUser(app: AccountingApp, input: AuthPrincipal & { status: "invited" | "active" | "disabled" }) {
-  if (!app.state.organization) {
+export async function ensureAppUser(app: AccountingApp, input: AuthPrincipal & { status: "invited" | "active" | "disabled" }) {
+  const setup = await app.setupSnapshot();
+  if (!setup.organization) {
     return null;
   }
-  const existing = app.state.users.find((candidate) => candidate.email.toLowerCase() === input.email.toLowerCase());
-  const organizationId = app.state.organization.id;
+  const users = await app.repos.users.all();
+  const existing = users.find((candidate) => candidate.email.toLowerCase() === input.email.toLowerCase());
+  const organizationId = setup.organization.id;
   if (existing) {
     existing.name = input.name;
     existing.roleCode = input.roleCode;
     existing.status = input.status;
     existing.lastActiveAt = input.status === "active" ? nowIso() : existing.lastActiveAt;
+    await app.repos.users.upsert(existing);
     return existing;
   }
-  const placeholder = app.state.users.find((candidate) =>
+  const placeholder = users.find((candidate) =>
     candidate.email.toLowerCase() === "owner@mpflow.local" &&
     candidate.roleCode === "owner" &&
     input.roleCode === "owner"
@@ -523,6 +526,7 @@ export function ensureAppUser(app: AccountingApp, input: AuthPrincipal & { statu
     placeholder.roleCode = input.roleCode;
     placeholder.status = input.status;
     placeholder.lastActiveAt = input.status === "active" ? nowIso() : placeholder.lastActiveAt;
+    await app.repos.users.upsert(placeholder);
     return placeholder;
   }
   const user = {
@@ -535,7 +539,7 @@ export function ensureAppUser(app: AccountingApp, input: AuthPrincipal & { statu
     invitedAt: nowIso(),
     lastActiveAt: input.status === "active" ? nowIso() : undefined
   };
-  app.state.users.push(user);
+  await app.repos.users.add(user);
   return user;
 }
 

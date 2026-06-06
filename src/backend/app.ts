@@ -628,14 +628,14 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const authAgent = c.get("authAgent") as McpAgentPrincipal | undefined;
     const workspaceId = authUser?.workspaceId ?? "default";
     const isWrite = ["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method);
-    const activateAuthUser = (targetApp: AccountingApp) => {
-      if (authUser && !authAgent) ensureAppUser(targetApp, { ...authUser, status: "active" });
+    const activateAuthUser = async (targetApp: AccountingApp) => {
+      if (authUser && !authAgent) await ensureAppUser(targetApp, { ...authUser, status: "active" });
     };
 
     if (!supportsSessions) {
-      activateAuthUser(app);
+      await activateAuthUser(app);
       await next();
-      if (c.res.status < 400) activateAuthUser(app);
+      if (c.res.status < 400) await activateAuthUser(app);
       if (options.persistence?.save && isWrite && c.res.status < 400) {
         await options.persistence.save(app, workspaceId);
       }
@@ -654,9 +654,9 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     try {
       await appStorage.run(session.app, async () => {
         await runWithIdSequence(session.nextId, async () => {
-          activateAuthUser(session.app);
+          await activateAuthUser(session.app);
           await next();
-          if (c.res.status < 400) activateAuthUser(session.app);
+          if (c.res.status < 400) await activateAuthUser(session.app);
           if (isWrite && c.res.status < 400) {
             await session.commit?.();
           } else {
@@ -678,7 +678,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = bootstrapSchema.parse(await c.req.json());
     const data = await scopedApp.bootstrap(body);
     const authUser = c.get("authUser") as ReturnType<typeof publicUser> | undefined;
-    if (authUser) ensureAppUser(scopedApp, { ...authUser, status: "active" });
+    if (authUser) await ensureAppUser(scopedApp, { ...authUser, status: "active" });
     return c.json({ ok: true, data });
   });
   api.put("/api/setup", async (c) => {
@@ -686,7 +686,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const setup = await scopedApp.setupSnapshot();
     const data = setup.organization ? await scopedApp.updateSetup(body) : await scopedApp.bootstrap(body);
     const authUser = c.get("authUser") as ReturnType<typeof publicUser> | undefined;
-    if (authUser) ensureAppUser(scopedApp, { ...authUser, status: "active" });
+    if (authUser) await ensureAppUser(scopedApp, { ...authUser, status: "active" });
     return c.json({ ok: true, data });
   });
   api.patch("/api/organization", async (c) => {
@@ -2342,8 +2342,8 @@ async function collectionPayload(
   name: string,
   options: { loadAuditEvents: () => Promise<unknown[]> }
 ): Promise<unknown> {
-  if (name === "organization") return app.state.organization;
-  if (name === "accountingPolicy") return app.state.accountingPolicy;
+  if (name === "organization") return (await app.setupSnapshot()).organization;
+  if (name === "accountingPolicy") return (await app.setupSnapshot()).accountingPolicy;
   if (name === "auditEvents") return await options.loadAuditEvents();
   if (name === "externalEvents") return await app.externalEvents.list();
   if (name === "observedStocks") return await app.observedStocks.list();
