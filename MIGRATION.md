@@ -106,14 +106,21 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
 ### Прогресс конверсии ядра (идёт)
 - ✅ Шаг 1: async-фасад `Repositories` ([repositories.ts](src/core/repositories.ts)) + `buildInMemoryRepositories`,
   инжектнут как `this.repos`, бэкается массивами `this.state` (поведение идентично, тесты зелёные).
-- ✅ Переведено методов: **17/137** — `retryRecalculationJob`, `accountByIdOrCode`, `journalEntryDetails`,
-  `stockForSalesPoint`, `stockByProduct`, `productDetails`, `setProductImage`, `deleteProductImage`,
-  `updateProduct`, `archiveProduct`, `restoreProduct` (+ozon `ensureInternalProduct` async-каскад),
-  `createCashAccount`, `updateCashAccount`, `receiptDetails`, `procurementCostDetails`, `shortageDetails`,
-  `transferDetails` (+ их вызовы в app.ts/плагинах на `await`; floating-promise в `c.json({data})` tsc НЕ ловит
-  — каждый caller проверять grep'ом).
-- 📉 Остаток `this.state.` в домене: **586** (метрика прогресса; цель — 0).
-- ⏳ Осталось ~120 методов. Порядок: листовые чтения/CRUD → постинг → AVCO/recalculate.
+- ✅ Переведено методов: **20/137** (все «чистые листья» — чтения/preview/справочный CRUD без индексов и
+  широкого каскада): `retryRecalculationJob`, `accountByIdOrCode`, `journalEntryDetails`, `stockForSalesPoint`,
+  `stockByProduct`, `productDetails`, `setProductImage`, `deleteProductImage`, `updateProduct`, `archiveProduct`,
+  `restoreProduct` (+ozon `ensureInternalProduct` async-каскад), `createCashAccount`, `updateCashAccount`,
+  `receiptDetails`, `procurementCostDetails`, `shortageDetails`, `transferDetails`, `saleRollbackPreview`,
+  `stockTransferRollbackPreview`, `shortagePreview` (+ вызовы в app.ts/плагинах/тестах на `await`; floating-promise
+  в `c.json({data})` tsc НЕ ловит — каждый caller через grep).
+- 📉 Остаток `this.state.` в домене: **565** (метрика прогресса; цель — 0).
+- ⛳ Граница: дальше идёт **энтэнглд-ядро** — постинг (`createDocument`/`postJournalEntry`/`createSale`/`receiveGoods`/
+  `postPayment`), AVCO/`consumeFifo`/`recalculate*`, и методы с индексами/кэшами (`ensureExternalProductIndex`,
+  `ensureActiveLinkIndex`, `refreshExternalReferencesForProduct`). Их нельзя конвертировать листом — общие
+  sync-хелперы (createDocument/postJournalEntry/consumeFifo/addStockState) зовутся отовсюду, поэтому их перевод
+  в async каскадит широко. Делать кластером, целыми методами, с прогоном fast+PG после каждого; индексы (`Map`)
+  при Postgres-свапе заменяются на запросы. Порядок: общие хелперы постинга → команды постинга → AVCO/recalculate.
+- ⏳ Осталось ~117 методов.
   Каждый: `async` + `this.state.X` → `await this.repos.X.all()`/`.add`/`.upsert`/`.removeWhere`; `mustFind(this.state.X,…)`
   → `mustFind(await this.repos.X.all(),…)`; после мутации на месте — `await this.repos.X.upsert(entity)`; callers `await`.
   Общие sync-хелперы (`mustFind`, `ledgerBalances`, `audit`, `createDocument`/`postJournalEntry` пока) читают
