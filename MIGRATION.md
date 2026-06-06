@@ -160,6 +160,29 @@ addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocument
 5. Идти **пер-методно, ≤10 методов/батч**, после каждого — tsc + fast + PG; коммит только зелёным.
    Скрипт допустим только для statement-level чтений в уже-async методах (как сделанные 75+101).
 
+### 🧭 Развилка фундаментального слоя (остаток ~321 рефов) — нужна архитектурная, не механическая
+Лёгкие изолированные методы исчерпаны (переведено ~24 + всё ядро постинга). Остаток — фундамент,
+который НЕ конвертируется быстро/безопасно:
+1. **Пронизывающие tiny-хелперы**: `currentOrgId`, `mustFind`, `ownWarehouse`, `periodForDate`,
+   `documentTypeDisplayName`, `findActiveLink`, `isDocumentPosted`, `stockState`, `findRollbackDocumentSummary`.
+   Зовутся из десятков sync- И async-контекстов (вкл. sync-колбэки). async → каскад на всё + Promise.all везде.
+2. **Фундаментальные creates**: `createProduct`/`createCounterparty`/`createWarehouse`/`createChartAccount` —
+   по 1 рефу (push), но ~100 sync-вызовов в тестах/bootstrap/seed → большой (механический) каскад await.
+3. **Write-хелперы в колбэках**: `consumeFifo`/`createLot`/`addStockState`/`appendJournalEntry` —
+   зовутся в `forEach/for-of` посреди постинга → for-of + ручной await.
+4. **Синглтоны** `organization`/`accountingPolicy` (~16 рефов) — не массивы.
+
+**Рекомендуемое решение (для свежего контекста):** bounded **reference-cache** — справочные/мелкие коллекции
+(warehouses, periods, documentTypes, chartAccounts, cashAccounts, organization, accountingPolicy) грузятся раз
+на запрос в маленький sync-доступный объект; tiny-хелперы читают его (остаются sync). Это НЕ «тяжёлый снэпшот»
+(growing-транзакционные коллекции уже на async-repos), а bounded reference-config. Тогда:
+- tiny-хелперы и creates справочников остаются sync поверх reference-cache;
+- транзакционные данные — через async-repos (Postgres);
+- `state`(транзакционный)/`loadSnapshot`/`saveState`/глобальный лок сносятся; остаётся лишь загрузка reference-cache.
+Альтернатива — тотальный async + Promise.all во всех колбэках (больше кода, выше риск).
+**РЕШЕНИЕ ПРИНЯТО: reference-cache** (прагматично, ниже риск, не «всесущий snapshot» — bounded reference-config).
+Исполняю им: tiny-хелперы и creates справочников остаются sync поверх reference-cache; транзакционное ядро уже async.
+
 ### План исполнения ядра (для отдельного захода, с чистым контекстом)
 1. Завести `Repositories`-фасад (как уже сделанные сторы) для оставшихся коллекций: `documents`, `documentLines`,
    `documentVersions`, `documentLinks`, `journalEntries`, `journalLines`, `sales`, `saleLines`, `salesReturns`,
