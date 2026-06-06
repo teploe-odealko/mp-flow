@@ -170,6 +170,10 @@ describe("prod-ready contracts", () => {
     const expenses = await get<any>(api, "/api/finance/expenses");
     const corrections = await get<any>(api, "/api/controls/corrections");
     const recalculationJobs = await get<any[]>(api, "/api/recalculation-jobs");
+    const mcpConfig = await get<any>(api, "/api/mcp/config");
+    const usersResponse = await api.request("/api/users");
+    const settingsUsersResponse = await api.request("/api/settings/users");
+    const agentTokensResponse = await api.request("/api/agent-tokens");
 
     expect(organization.displayName).toBe("ИП Иванов");
     expect(dashboard.configured).toBe(true);
@@ -203,6 +207,10 @@ describe("prod-ready contracts", () => {
     expect(expenses.expenses).toEqual(expect.any(Array));
     expect(corrections.corrections).toEqual(expect.any(Array));
     expect(recalculationJobs).toEqual(expect.any(Array));
+    expect(mcpConfig.tools.length).toBeGreaterThan(0);
+    expect(usersResponse.status).toBe(404);
+    expect(settingsUsersResponse.status).toBe(404);
+    expect(agentTokensResponse.status).toBe(404);
     expect(collectionReads).toBe(1);
     expect(readModelApps).toBeGreaterThan(6);
     expect(readSessions).toBe(0);

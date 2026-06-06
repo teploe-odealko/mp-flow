@@ -17,7 +17,6 @@ import { initHttpMetrics, metricsMiddleware, renderMetrics } from "./metrics";
 import { captureException } from "./observability";
 import { getPool } from "./db/pool";
 import { ExternalEventRepository } from "./repositories/external-event-repository";
-import { AuditEventRepository } from "./repositories/audit-event-repository";
 
 interface CreateApiOptions {
   persistence?: RuntimePersistence;
@@ -538,6 +537,38 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: { corrections: await readModelApp.repos.correctionCases.all(), jobs: await readModelApp.repos.recalculationJobs.all() } });
   });
   api.get("/api/recalculation-jobs", async (c) => c.json({ ok: true, data: await collectionFor(c, "recalculationJobs") }));
+  api.get("/api/mcp/config", async (c) => c.json({ ok: true, data: await mcpSettingsPayload(await readModelAppFor(c), publicMcpEndpoint(c)) }));
+  api.get("/api/mcp/keys", async (c) => c.json({ ok: true, data: await mcpSettingsPayload(await readModelAppFor(c), publicMcpEndpoint(c)) }));
+  api.get("/api/users", async (c) => {
+    if (!accessManagementEnabled()) return accessManagementDisabled(c);
+    const readModelApp = await readModelAppFor(c);
+    return c.json({
+      ok: true,
+      data: {
+        users: await readModelApp.repos.users.all(),
+        roles: await readModelApp.repos.roles.all(),
+        agentTokens: (await readModelApp.repos.agentTokens.all()).map(publicAgentToken),
+        auditEvents: await readModelApp.repos.auditEvents.all()
+      }
+    });
+  });
+  api.get("/api/settings/users", async (c) => {
+    if (!accessManagementEnabled()) return accessManagementDisabled(c);
+    const readModelApp = await readModelAppFor(c);
+    return c.json({
+      ok: true,
+      data: {
+        users: await readModelApp.repos.users.all(),
+        roles: await readModelApp.repos.roles.all(),
+        agentTokens: (await readModelApp.repos.agentTokens.all()).map(publicAgentToken),
+        channelAgentPermissions: await readModelApp.repos.channelAgentPermissions.all()
+      }
+    });
+  });
+  api.get("/api/agent-tokens", async (c) => {
+    if (!accessManagementEnabled()) return accessManagementDisabled(c);
+    return c.json({ ok: true, data: (await (await readModelAppFor(c)).repos.agentTokens.all()).map(publicAgentToken) });
+  });
 
   api.use("/api/*", async (c, next) => {
     const authUser = c.get("authUser") as PublicAuthUser | undefined;
@@ -1902,12 +1933,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: await scopedApp.applyReceiptQuantityCorrection({ goodsReceiptId: c.req.param("id"), ...body }) });
   });
 
-  api.get("/api/mcp/config", async (c) => {
-    return c.json({ ok: true, data: await mcpSettingsPayload(scopedApp, publicMcpEndpoint(c)) });
-  });
-  api.get("/api/mcp/keys", async (c) => {
-    return c.json({ ok: true, data: await mcpSettingsPayload(scopedApp, publicMcpEndpoint(c)) });
-  });
   api.post("/api/mcp/keys", async (c) => {
     const body = agentTokenCreateSchema.parse(await c.req.json());
     const issued = await issueMcpAgentToken(scopedApp, c.get("authUser")?.workspaceId ?? "default", body);
@@ -1928,25 +1953,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     token.revokedAt = nowIso();
     await scopedApp.repos.agentTokens.upsert(token);
     return c.json({ ok: true, data: publicAgentToken(token) });
-  });
-  api.get("/api/users", async (c) => {
-    if (!accessManagementEnabled()) return accessManagementDisabled(c);
-    const auditEvents = postgresBacked()
-      ? await new AuditEventRepository(getPool(), eventsWorkspaceId(c)).listAll()
-      : scopedApp.state.auditEvents;
-    return c.json({ ok: true, data: { users: scopedApp.state.users, roles: scopedApp.state.roles, agentTokens: (await scopedApp.repos.agentTokens.all()).map(publicAgentToken), auditEvents } });
-  });
-  api.get("/api/settings/users", async (c) => {
-    if (!accessManagementEnabled()) return accessManagementDisabled(c);
-    return c.json({
-      ok: true,
-      data: {
-        users: scopedApp.state.users,
-        roles: scopedApp.state.roles,
-        agentTokens: (await scopedApp.repos.agentTokens.all()).map(publicAgentToken),
-        channelAgentPermissions: scopedApp.state.channelAgentPermissions
-      }
-    });
   });
   api.post("/api/settings/users/invite", async (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
@@ -1993,10 +1999,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     user.status = "invited";
     user.invitedAt = nowIso();
     return c.json({ ok: true, data: user });
-  });
-  api.get("/api/agent-tokens", async (c) => {
-    if (!accessManagementEnabled()) return accessManagementDisabled(c);
-    return c.json({ ok: true, data: (await scopedApp.repos.agentTokens.all()).map(publicAgentToken) });
   });
   api.post("/api/agent-tokens", async (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
