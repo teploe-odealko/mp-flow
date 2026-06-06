@@ -2899,7 +2899,7 @@ export class AccountingApp {
     );
     const removableEventTypes = new Set<ExternalEvent["eventType"]>(["sale", "sale_accrual", "return", "fee"]);
     if (includePayouts) removableEventTypes.add("payout");
-    const externalEvents = this.state.externalEvents.filter((event) => event.channelId === channelId && removableEventTypes.has(event.eventType));
+    const externalEvents = (await this.externalEvents.list({ channelId })).filter((event) => removableEventTypes.has(event.eventType));
     const externalEventIds = new Set(externalEvents.map((event) => event.id));
     const removableDocumentIds = new Set<ID>([
       ...saleDocumentIds,
