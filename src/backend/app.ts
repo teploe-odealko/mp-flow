@@ -208,6 +208,75 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       loadAuditEvents: () => readModelApp.repos.auditEvents.all()
     });
   };
+  const documentDescendantIdForLink = (link: { linkType: string; fromDocumentId: string; toDocumentId: string }, currentDocumentId: string) => {
+    switch (link.linkType) {
+      case "payment":
+      case "channel_fee":
+        return link.toDocumentId === currentDocumentId ? link.fromDocumentId : undefined;
+      default:
+        return link.fromDocumentId === currentDocumentId ? link.toDocumentId : undefined;
+    }
+  };
+  const documentDescendantsFor = async (readModelApp: AccountingApp, documentId: string) => {
+    const documents = await readModelApp.repos.documents.all();
+    if (!documents.some((document) => document.id === documentId)) throw new DomainError("document_not_found", "Документ не найден");
+    const documentTypesByCode = new Map((await readModelApp.repos.documentTypes.all()).map((documentType) => [documentType.code, documentType.displayName]));
+    const documentLinks = await readModelApp.repos.documentLinks.all();
+    const queue: Array<{ documentId: string; depth: number }> = [{ documentId, depth: 0 }];
+    const visited = new Set<string>([documentId]);
+    const descendants: Array<{
+      documentId: string;
+      number: string;
+      title: string;
+      documentType: string;
+      documentTypeName: string;
+      status: string;
+      accountingDate: string;
+      linkType: string;
+      parentDocumentId: string;
+      depth: number;
+    }> = [];
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      for (const link of documentLinks) {
+        const descendantId = documentDescendantIdForLink(link, current.documentId);
+        if (!descendantId || visited.has(descendantId)) continue;
+        const descendant = documents.find((candidate) => candidate.id === descendantId);
+        if (!descendant) continue;
+        visited.add(descendantId);
+        descendants.push({
+          documentId: descendant.id,
+          number: descendant.number,
+          title: descendant.title,
+          documentType: descendant.documentType,
+          documentTypeName: documentTypesByCode.get(descendant.documentType) ?? descendant.documentType,
+          status: descendant.status,
+          accountingDate: descendant.accountingDate,
+          linkType: link.linkType,
+          parentDocumentId: current.documentId,
+          depth: current.depth + 1
+        });
+        queue.push({ documentId: descendant.id, depth: current.depth + 1 });
+      }
+    }
+
+    return descendants.sort((left, right) =>
+      left.depth - right.depth ||
+      left.accountingDate.localeCompare(right.accountingDate) ||
+      left.number.localeCompare(right.number)
+    );
+  };
+  const documentPayloadFor = async (c: Context, id: string) => {
+    const readModelApp = await readModelAppFor(c);
+    return {
+      document: await readModelApp.repos.documents.getById(id),
+      lines: (await readModelApp.repos.documentLines.all()).filter((line) => line.documentId === id),
+      links: (await readModelApp.repos.documentLinks.all()).filter((link) => link.fromDocumentId === id || link.toDocumentId === id),
+      journalEntries: (await readModelApp.repos.journalEntries.all()).filter((entry) => entry.documentId === id),
+      auditEvents: (await readModelApp.repos.auditEvents.all()).filter((event) => event.entityId === id)
+    };
+  };
   api.get("/api/integrations/events", async (c) => {
     const channelId = c.req.query("channelId");
     const status = c.req.query("status");
@@ -337,6 +406,138 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       }
     } });
   });
+  api.get("/api/reports/drilldown", async (c) => {
+    const documentId = c.req.query("documentId");
+    if (!documentId) return c.json({ ok: true, data: { document: undefined, journalEntries: [], stockMovements: [] } });
+    const readModelApp = await readModelAppFor(c);
+    return c.json({
+      ok: true,
+      data: {
+        document: await readModelApp.repos.documents.getById(documentId),
+        journalEntries: (await readModelApp.repos.journalEntries.all()).filter((entry) => entry.documentId === documentId),
+        stockMovements: (await readModelApp.repos.stockMovements.all()).filter((movement) => movement.documentId === documentId)
+      }
+    });
+  });
+  api.get("/api/documents/:id", async (c) => c.json({ ok: true, data: await documentPayloadFor(c, c.req.param("id")) }));
+  api.get("/api/documents/:id/history", async (c) => {
+    const id = c.req.param("id");
+    return c.json({ ok: true, data: (await (await readModelAppFor(c)).repos.documentVersions.all()).filter((version) => version.documentId === id) });
+  });
+  api.get("/api/documents/:id/links", async (c) => {
+    const id = c.req.param("id");
+    return c.json({ ok: true, data: (await (await readModelAppFor(c)).repos.documentLinks.all()).filter((link) => link.fromDocumentId === id || link.toDocumentId === id) });
+  });
+  api.get("/api/documents/:id/descendants", async (c) => {
+    const readModelApp = await readModelAppFor(c);
+    return c.json({ ok: true, data: await documentDescendantsFor(readModelApp, c.req.param("id")) });
+  });
+  api.get("/api/inventory/opening-balances/:id", async (c) => {
+    const id = c.req.param("id");
+    const readModelApp = await readModelAppFor(c);
+    const document = (await readModelApp.repos.documents.all()).find((item) => item.id === id && item.documentType === "opening_balance");
+    return c.json({ ok: true, data: { document, lines: (await readModelApp.repos.documentLines.all()).filter((line) => line.documentId === document?.id) } });
+  });
+  api.get("/api/procurement/purchase-orders/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).purchaseOrderDetails(c.req.param("id")) }));
+  api.get("/api/procurement/purchase-orders/:id/payments", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).paymentsForPurchaseOrder(c.req.param("id")) }));
+  api.get("/api/settlements/suppliers/:id", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).repos.settlementEntries.all()).filter((entry) => entry.counterpartyId === c.req.param("id")) }));
+  api.get("/api/procurement/purchase-orders/:id/receipts", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).repos.goodsReceipts.all()).filter((receipt) => receipt.purchaseOrderId === c.req.param("id")) }));
+  api.get("/api/procurement/receipts/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).receiptDetails(c.req.param("id")) }));
+  api.get("/api/procurement/purchase-orders/:id/costs", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).repos.procurementCosts.all()).filter((cost) => cost.purchaseOrderId === c.req.param("id")) }));
+  api.get("/api/procurement/costs/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).procurementCostDetails(c.req.param("id")) }));
+  api.get("/api/procurement/shortages/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).shortageDetails(c.req.param("id")) }));
+  api.get("/api/money/cash-accounts", async (c) => c.json({ ok: true, data: await collectionFor(c, "cashAccounts") }));
+  api.get("/api/money/payments", async (c) => {
+    const readModelApp = await readModelAppFor(c);
+    return c.json({ ok: true, data: { cashAccounts: await readModelApp.repos.cashAccounts.all(), payments: await readModelApp.repos.payments.all(), allocations: await readModelApp.repos.paymentAllocations.all() } });
+  });
+  api.get("/api/inventory/transfer-preview", async (c) => {
+    const readModelApp = await readModelAppFor(c);
+    return c.json({ ok: true, data: { stock: await readModelApp.stockByProduct(), lots: await readModelApp.repos.inventoryLots.all() } });
+  });
+  api.get("/api/inventory/transfers/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).transferDetails(c.req.param("id")) }));
+  api.get("/api/inventory/sales-points/:id/stock", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).stockForSalesPoint(c.req.param("id")) }));
+  api.get("/api/inventory/stocktakes/:id", async (c) => {
+    const readModelApp = await readModelAppFor(c);
+    const stocktake = await readModelApp.repos.stocktakes.getById(c.req.param("id"));
+    if (!stocktake) throw new DomainError("stocktake_not_found", "Инвентаризация не найдена");
+    return c.json({ ok: true, data: { stocktake, lines: (await readModelApp.repos.stocktakeLines.all()).filter((line) => line.stocktakeId === stocktake.id) } });
+  });
+  api.get("/api/plugins", (c) => c.json({ ok: true, data: pluginRegistry.all().map(serializePluginMeta) }));
+  api.get("/api/integrations/plugins", (c) => c.json({ ok: true, data: pluginRegistry.all().map(serializePluginMeta) }));
+  api.get("/api/channels/:id/external-products", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).repos.externalProducts.all()).filter((product) => product.channelId === c.req.param("id")) }));
+  api.get("/api/sales", async (c) => {
+    const readModelApp = await readModelAppFor(c);
+    return c.json({ ok: true, data: { sales: await readModelApp.repos.sales.all(), lines: await readModelApp.repos.saleLines.all() } });
+  });
+  api.get("/api/sales/:id", async (c) => {
+    const saleId = c.req.param("id");
+    const readModelApp = await readModelAppFor(c);
+    const sale = await readModelApp.repos.sales.getById(saleId);
+    if (!sale) throw new DomainError("sale_not_found", "Продажа не найдена");
+    const documents = await readModelApp.repos.documents.all();
+    return c.json({ ok: true, data: {
+      sale,
+      lines: (await readModelApp.repos.saleLines.all()).filter((line) => line.saleId === sale.id),
+      document: documents.find((document) => document.id === sale.documentId),
+      financialDocument: sale.financialDocumentId ? documents.find((document) => document.id === sale.financialDocumentId) : undefined,
+      costApplications: (await readModelApp.repos.costApplications.all()).filter((application) => application.outboundDocumentId === sale.documentId),
+      financeEvents: (await readModelApp.repos.channelFinanceEvents.all()).filter((event) =>
+        event.linkedSaleId === sale.id || Boolean(event.saleAllocations?.some((allocation) => allocation.saleId === sale.id))
+      )
+    } });
+  });
+  api.get("/api/sales/:id/cost-applications", async (c) => {
+    const readModelApp = await readModelAppFor(c);
+    const sale = await readModelApp.repos.sales.getById(c.req.param("id"));
+    if (!sale) throw new DomainError("sale_not_found", "Продажа не найдена");
+    return c.json({ ok: true, data: (await readModelApp.repos.costApplications.all()).filter((application) => application.outboundDocumentId === sale.documentId) });
+  });
+  api.get("/api/returns", async (c) => c.json({ ok: true, data: await collectionFor(c, "salesReturns") }));
+  api.get("/api/returns/:id", async (c) => {
+    const readModelApp = await readModelAppFor(c);
+    const salesReturn = await readModelApp.repos.salesReturns.getById(c.req.param("id"));
+    if (!salesReturn) throw new DomainError("return_not_found", "Возврат не найден");
+    return c.json({ ok: true, data: {
+      return: salesReturn,
+      document: await readModelApp.repos.documents.getById(salesReturn.documentId),
+      lines: (await readModelApp.repos.documentLines.all()).filter((line) => line.documentId === salesReturn.documentId && line.lineType === "sales_return_line")
+    } });
+  });
+  api.get("/api/integrations/channels/:id/finance-events", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).repos.channelFinanceEvents.all()).filter((event) => event.channelId === c.req.param("id")) }));
+  api.get("/api/integrations/finance-events/:id", async (c) => {
+    const event = await (await readModelAppFor(c)).repos.channelFinanceEvents.getById(c.req.param("id"));
+    if (!event) throw new DomainError("finance_event_not_found", "Финансовое событие не найдено");
+    return c.json({ ok: true, data: event });
+  });
+  api.get("/api/finance/payouts", async (c) => c.json({ ok: true, data: await collectionFor(c, "payouts") }));
+  api.get("/api/finance/payouts/:id", async (c) => {
+    const readModelApp = await readModelAppFor(c);
+    const payout = await readModelApp.repos.payouts.getById(c.req.param("id"));
+    if (!payout) throw new DomainError("payout_not_found", "Выплата не найдена");
+    return c.json({ ok: true, data: { payout, lines: (await readModelApp.repos.payoutLines.all()).filter((line) => line.payoutId === payout.id), payment: payout.paymentId ? await readModelApp.repos.payments.getById(payout.paymentId) : undefined } });
+  });
+  api.get("/api/finance/expenses", async (c) => {
+    const readModelApp = await readModelAppFor(c);
+    return c.json({ ok: true, data: { expenses: await readModelApp.repos.operatingExpenses.all(), categories: await readModelApp.repos.expenseCategories.all() } });
+  });
+  api.get("/api/finance/expenses/:id", async (c) => {
+    const readModelApp = await readModelAppFor(c);
+    const expense = await readModelApp.repos.operatingExpenses.getById(c.req.param("id"));
+    if (!expense) throw new DomainError("expense_not_found", "Расход не найден");
+    return c.json({ ok: true, data: {
+      expense,
+      document: await readModelApp.repos.documents.getById(expense.documentId),
+      payment: await readModelApp.repos.payments.getById(expense.paymentId),
+      counterparty: expense.counterpartyId ? await readModelApp.repos.counterparties.getById(expense.counterpartyId) : undefined,
+      category: await readModelApp.repos.expenseCategories.getById(expense.categoryId)
+    } });
+  });
+  api.get("/api/controls/corrections", async (c) => {
+    const readModelApp = await readModelAppFor(c);
+    return c.json({ ok: true, data: { corrections: await readModelApp.repos.correctionCases.all(), jobs: await readModelApp.repos.recalculationJobs.all() } });
+  });
+  api.get("/api/recalculation-jobs", async (c) => c.json({ ok: true, data: await collectionFor(c, "recalculationJobs") }));
 
   api.use("/api/*", async (c, next) => {
     const authUser = c.get("authUser") as PublicAuthUser | undefined;
@@ -388,10 +589,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.get("/api/meta/navigation", (c) => c.json({ ok: true, data: navigationMeta }));
 
-  api.get("/api/reports/drilldown", (c) => {
-    const documentId = c.req.query("documentId");
-    return c.json({ ok: true, data: { document: scopedApp.state.documents.find((document) => document.id === documentId), journalEntries: scopedApp.state.journalEntries.filter((entry) => entry.documentId === documentId), stockMovements: scopedApp.state.stockMovements.filter((movement) => movement.documentId === documentId) } });
-  });
   api.post("/api/reports/recalculate", (c) => c.json({ ok: true, data: scopedApp.createRecalculationJob({ jobType: "reports", scope: { requestedAt: nowIso() } }) }));
   api.post("/api/setup", async (c) => {
     const body = bootstrapSchema.parse(await c.req.json());
@@ -416,22 +613,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = documentCreateSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.createManualDocument(body) });
   });
-  api.get("/api/documents/:id", async (c) => {
-    const id = c.req.param("id");
-    const auditEvents = postgresBacked()
-      ? await new AuditEventRepository(getPool(), eventsWorkspaceId(c)).listByEntity(id)
-      : scopedApp.state.auditEvents.filter((event) => event.entityId === id);
-    return c.json({
-      ok: true,
-      data: {
-        document: scopedApp.state.documents.find((document) => document.id === id),
-        lines: scopedApp.state.documentLines.filter((line) => line.documentId === id),
-        links: scopedApp.state.documentLinks.filter((link) => link.fromDocumentId === id || link.toDocumentId === id),
-        journalEntries: scopedApp.state.journalEntries.filter((entry) => entry.documentId === id),
-        auditEvents
-      }
-    });
-  });
   api.patch("/api/documents/:id", async (c) => {
     const body = documentPatchSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.updateDraftDocument(c.req.param("id"), body) });
@@ -442,17 +623,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.delete("/api/documents/:id", async (c) => {
     return c.json({ ok: true, data: await scopedApp.deleteDraftDocument(c.req.param("id")) });
-  });
-  api.get("/api/documents/:id/history", (c) => {
-    const id = c.req.param("id");
-    return c.json({ ok: true, data: scopedApp.state.documentVersions.filter((version) => version.documentId === id) });
-  });
-  api.get("/api/documents/:id/links", (c) => {
-    const id = c.req.param("id");
-    return c.json({ ok: true, data: scopedApp.state.documentLinks.filter((link) => link.fromDocumentId === id || link.toDocumentId === id) });
-  });
-  api.get("/api/documents/:id/descendants", (c) => {
-    return c.json({ ok: true, data: scopedApp.documentDescendants(c.req.param("id")) });
   });
   api.post("/api/documents/:id/correction-preview", async (c) => {
     const body = correctionPreviewSchema.parse(await c.req.json());
@@ -633,10 +803,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = openingBalanceSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.createOpeningBalance(body) });
   });
-  api.get("/api/inventory/opening-balances/:id", (c) => {
-    const document = scopedApp.state.documents.find((item) => item.id === c.req.param("id") && item.documentType === "opening_balance");
-    return c.json({ ok: true, data: { document, lines: scopedApp.state.documentLines.filter((line) => line.documentId === document?.id) } });
-  });
   api.post("/api/inventory/opening-balances/:id/post", async (c) => c.json({ ok: true, data: await scopedApp.postOpeningBalance(c.req.param("id")) }));
 
   api.post("/api/counterparties", async (c) => {
@@ -655,7 +821,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const { supplierName: _supplierName, ...purchaseOrder } = body;
     return c.json({ ok: true, data: await scopedApp.createPurchaseOrder({ ...purchaseOrder, supplierId }) });
   });
-  api.get("/api/procurement/purchase-orders/:id", async (c) => c.json({ ok: true, data: await scopedApp.purchaseOrderDetails(c.req.param("id")) }));
   api.patch("/api/procurement/purchase-orders/:id", async (c) => {
     const body = purchaseOrderPatchSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.updatePurchaseOrderDraft(c.req.param("id"), body) });
@@ -665,8 +830,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = supplierPaymentSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.recordSupplierPayment({ ...body, purchaseOrderId: c.req.param("id") }) });
   });
-  api.get("/api/procurement/purchase-orders/:id/payments", async (c) => c.json({ ok: true, data: await scopedApp.paymentsForPurchaseOrder(c.req.param("id")) }));
-  api.get("/api/settlements/suppliers/:id", (c) => c.json({ ok: true, data: scopedApp.state.settlementEntries.filter((entry) => entry.counterpartyId === c.req.param("id")) }));
   api.get("/api/procurement/purchase-orders/:id/receipt-preview", async (c) => {
     const details = await scopedApp.purchaseOrderDetails(c.req.param("id"));
     const postedReceiptIds = new Set(
@@ -693,8 +856,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = goodsReceiptSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.receiveGoods({ ...body, purchaseOrderId: c.req.param("id") }) });
   });
-  api.get("/api/procurement/purchase-orders/:id/receipts", (c) => c.json({ ok: true, data: scopedApp.state.goodsReceipts.filter((receipt) => receipt.purchaseOrderId === c.req.param("id")) }));
-  api.get("/api/procurement/receipts/:id", async (c) => c.json({ ok: true, data: await scopedApp.receiptDetails(c.req.param("id")) }));
   api.post("/api/procurement/receipts/:id/post", async (c) => c.json({ ok: true, data: await scopedApp.postGoodsReceipt(c.req.param("id")) }));
   api.get("/api/procurement/receipts/:id/delete-preview", async (c) => c.json({ ok: true, data: await scopedApp.goodsReceiptRollbackPreview(c.req.param("id")) }));
   api.delete("/api/procurement/receipts/:id", async (c) => c.json({ ok: true, data: await scopedApp.deleteGoodsReceipt(c.req.param("id")) }));
@@ -924,7 +1085,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = procurementCostSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.addProcurementCost(body) });
   });
-  api.get("/api/procurement/purchase-orders/:id/costs", (c) => c.json({ ok: true, data: scopedApp.state.procurementCosts.filter((cost) => cost.purchaseOrderId === c.req.param("id")) }));
   api.post("/api/procurement/purchase-orders/:id/costs/preview", async (c) => {
     const body = procurementCostSchema.omit({ purchaseOrderId: true }).partial({ paidImmediately: true, costDate: true, costType: true }).parse(await c.req.json().catch(() => ({})));
     return c.json({ ok: true, data: scopedApp.previewProcurementCost({ purchaseOrderId: c.req.param("id"), allocationBasis: body.allocationBasis, amountRub: body.amountRub ?? 0 }) });
@@ -933,7 +1093,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = procurementCostSchema.omit({ purchaseOrderId: true }).parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.addProcurementCost({ ...body, purchaseOrderId: c.req.param("id") }) });
   });
-  api.get("/api/procurement/costs/:id", async (c) => c.json({ ok: true, data: await scopedApp.procurementCostDetails(c.req.param("id")) }));
   api.patch("/api/procurement/costs/:id", async (c) => {
     const body = z.object({ amountRub: z.number().optional(), comment: z.string().optional() }).parse(await c.req.json());
     const cost = scopedApp.state.procurementCosts.find((item) => item.id === c.req.param("id"));
@@ -950,7 +1109,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: await scopedApp.resolveShortage({ ...body, purchaseOrderId: c.req.param("id") }) });
   });
   api.get("/api/procurement/purchase-orders/:id/shortages/preview", async (c) => c.json({ ok: true, data: await scopedApp.shortagePreview(c.req.param("id")) }));
-  api.get("/api/procurement/shortages/:id", async (c) => c.json({ ok: true, data: await scopedApp.shortageDetails(c.req.param("id")) }));
   api.post("/api/procurement/shortages/:id/post", async (c) => c.json({ ok: true, data: await scopedApp.postShortage(c.req.param("id")) }));
 
   api.post("/api/money/owner-contributions", async (c) => {
@@ -961,7 +1119,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = ownerContributionSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.recordOwnerWithdrawal(body) });
   });
-  api.get("/api/money/cash-accounts", (c) => c.json({ ok: true, data: scopedApp.state.cashAccounts }));
   api.post("/api/money/cash-accounts", async (c) => {
     const body = cashAccountSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.createCashAccount(body) });
@@ -970,30 +1127,21 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = cashAccountPatchSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.updateCashAccount(c.req.param("id"), body) });
   });
-  api.get("/api/money/payments", (c) => c.json({ ok: true, data: { cashAccounts: scopedApp.state.cashAccounts, payments: scopedApp.state.payments, allocations: scopedApp.state.paymentAllocations } }));
   api.post("/api/payments/:id/post", async (c) => c.json({ ok: true, data: await scopedApp.postPayment(c.req.param("id")) }));
   api.get("/api/payments/:id/delete-preview", async (c) => c.json({ ok: true, data: await scopedApp.paymentRollbackPreview(c.req.param("id")) }));
   api.delete("/api/payments/:id", async (c) => c.json({ ok: true, data: await scopedApp.deletePayment(c.req.param("id")) }));
 
-  api.get("/api/inventory/transfer-preview", async (c) => c.json({ ok: true, data: { stock: await scopedApp.stockByProduct(), lots: scopedApp.state.inventoryLots } }));
   api.post("/api/inventory/transfers", async (c) => {
     const body = transferSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.transferStock(body) });
   });
-  api.get("/api/inventory/transfers/:id", async (c) => c.json({ ok: true, data: await scopedApp.transferDetails(c.req.param("id")) }));
   api.patch("/api/inventory/transfers/:id", async (c) => c.json({ ok: true, data: await scopedApp.transferDetails(c.req.param("id")) }));
   api.get("/api/inventory/transfers/:id/delete-preview", async (c) => c.json({ ok: true, data: await scopedApp.stockTransferRollbackPreview(c.req.param("id")) }));
   api.delete("/api/inventory/transfers/:id", async (c) => c.json({ ok: true, data: await scopedApp.deleteStockTransfer(c.req.param("id")) }));
   api.post("/api/inventory/transfers/:id/post", async (c) => c.json({ ok: true, data: await scopedApp.postStockTransfer(c.req.param("id")) }));
-  api.get("/api/inventory/sales-points/:id/stock", async (c) => c.json({ ok: true, data: await scopedApp.stockForSalesPoint(c.req.param("id")) }));
   api.post("/api/inventory/stocktakes", async (c) => {
     const body = stocktakeSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.runStocktake(body) });
-  });
-  api.get("/api/inventory/stocktakes/:id", (c) => {
-    const stocktake = scopedApp.state.stocktakes.find((candidate) => candidate.id === c.req.param("id"));
-    if (!stocktake) throw new DomainError("stocktake_not_found", "Инвентаризация не найдена");
-    return c.json({ ok: true, data: { stocktake, lines: scopedApp.state.stocktakeLines.filter((line) => line.stocktakeId === stocktake.id) } });
   });
   api.post("/api/inventory/reconciliation/:id/resolve", async (c) => {
     const body = z.object({
@@ -1020,8 +1168,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: observed ?? { id: c.req.param("id"), status: "ignored" } });
   });
 
-  api.get("/api/plugins", (c) => c.json({ ok: true, data: pluginRegistry.all().map(serializePluginMeta) }));
-  api.get("/api/integrations/plugins", (c) => c.json({ ok: true, data: pluginRegistry.all().map(serializePluginMeta) }));
   api.post("/api/integrations/channels/validate", async (c) => {
     const body = channelValidationSchema.parse(await c.req.json());
     const plugin = body.pluginCode ? pluginRegistry.get(body.pluginCode) : undefined;
@@ -1278,7 +1424,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = externalProductSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.createExternalProduct({ ...body, channelId: c.req.param("id") }) });
   });
-  api.get("/api/channels/:id/external-products", (c) => c.json({ ok: true, data: scopedApp.state.externalProducts.filter((product) => product.channelId === c.req.param("id")) }));
   api.post("/api/external-products/:id/link", async (c) => {
     const body = z.object({ productId: z.string() }).parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.linkExternalProduct({ externalProductId: c.req.param("id"), productId: body.productId }) });
@@ -1329,27 +1474,9 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = z.object({ reason: z.string().min(3) }).parse(await c.req.json().catch(() => ({})));
     return c.json({ ok: true, data: await scopedApp.ignoreExternalEvent(c.req.param("id"), body.reason) });
   });
-  api.get("/api/sales", (c) => c.json({ ok: true, data: { sales: scopedApp.state.sales, lines: scopedApp.state.saleLines } }));
   api.post("/api/sales", async (c) => {
     const body = saleSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.recordSale(body) });
-  });
-  api.get("/api/sales/:id", (c) => {
-    const sale = scopedApp.state.sales.find((candidate) => candidate.id === c.req.param("id"));
-    if (!sale) throw new DomainError("sale_not_found", "Продажа не найдена");
-    return c.json({
-      ok: true,
-      data: {
-        sale,
-        lines: scopedApp.state.saleLines.filter((line) => line.saleId === sale.id),
-        document: scopedApp.state.documents.find((document) => document.id === sale.documentId),
-        financialDocument: sale.financialDocumentId ? scopedApp.state.documents.find((document) => document.id === sale.financialDocumentId) : undefined,
-        costApplications: scopedApp.state.costApplications.filter((application) => application.outboundDocumentId === sale.documentId),
-        financeEvents: scopedApp.state.channelFinanceEvents.filter((event) =>
-          event.linkedSaleId === sale.id || Boolean(event.saleAllocations?.some((allocation) => allocation.saleId === sale.id))
-        )
-      }
-    });
   });
   api.get("/api/sales/:id/delete-preview", async (c) => {
     return c.json({ ok: true, data: await scopedApp.saleRollbackPreview(c.req.param("id")) });
@@ -1378,12 +1505,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
     return c.json({ ok: true, data: await materializeSaleAccrualEvent(scopedApp, event) });
   });
-  api.get("/api/sales/:id/cost-applications", (c) => {
-    const sale = scopedApp.state.sales.find((candidate) => candidate.id === c.req.param("id"));
-    if (!sale) throw new DomainError("sale_not_found", "Продажа не найдена");
-    return c.json({ ok: true, data: scopedApp.state.costApplications.filter((application) => application.outboundDocumentId === sale.documentId) });
-  });
-  api.get("/api/returns", (c) => c.json({ ok: true, data: scopedApp.state.salesReturns }));
   api.post("/api/returns", async (c) => {
     const body = returnSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.recordReturn(body) });
@@ -1391,18 +1512,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/sales/:id/returns", async (c) => {
     const body = returnSchema.omit({ saleId: true }).parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.recordReturn({ ...body, saleId: c.req.param("id") }) });
-  });
-  api.get("/api/returns/:id", (c) => {
-    const salesReturn = scopedApp.state.salesReturns.find((candidate) => candidate.id === c.req.param("id"));
-    if (!salesReturn) throw new DomainError("return_not_found", "Возврат не найден");
-    return c.json({
-      ok: true,
-      data: {
-        return: salesReturn,
-        document: scopedApp.state.documents.find((document) => document.id === salesReturn.documentId),
-        lines: scopedApp.state.documentLines.filter((line) => line.documentId === salesReturn.documentId && line.lineType === "sales_return_line")
-      }
-    });
   });
   api.patch("/api/returns/:id", async (c) => {
     const body = z.object({ refundRub: z.number().optional() }).parse(await c.req.json());
@@ -1432,12 +1541,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/channel-fees", async (c) => {
     const body = channelFeeSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.recordChannelFee(body) });
-  });
-  api.get("/api/integrations/channels/:id/finance-events", (c) => c.json({ ok: true, data: scopedApp.state.channelFinanceEvents.filter((event) => event.channelId === c.req.param("id")) }));
-  api.get("/api/integrations/finance-events/:id", (c) => {
-    const event = scopedApp.state.channelFinanceEvents.find((candidate) => candidate.id === c.req.param("id"));
-    if (!event) throw new DomainError("finance_event_not_found", "Финансовое событие не найдено");
-    return c.json({ ok: true, data: event });
   });
   api.patch("/api/integrations/finance-events/:id/classification", async (c) => {
     const body = z.object({
@@ -1470,7 +1573,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const processed = await processReadyFinanceEvents(scopedApp, c.req.param("id"), { post: false });
     return c.json({ ok: true, data: processed });
   });
-  api.get("/api/finance/payouts", (c) => c.json({ ok: true, data: scopedApp.state.payouts }));
   api.post("/api/finance/payouts", async (c) => {
     const body = payoutSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.recordChannelPayout(body) });
@@ -1478,11 +1580,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/payouts", async (c) => {
     const body = payoutSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.recordChannelPayout(body) });
-  });
-  api.get("/api/finance/payouts/:id", (c) => {
-    const payout = scopedApp.state.payouts.find((candidate) => candidate.id === c.req.param("id"));
-    if (!payout) throw new DomainError("payout_not_found", "Выплата не найдена");
-    return c.json({ ok: true, data: { payout, lines: scopedApp.state.payoutLines.filter((line) => line.payoutId === payout.id), payment: scopedApp.state.payments.find((payment) => payment.id === payout.paymentId) } });
   });
   api.delete("/api/finance/payouts/:id", async (c) => {
     const payout = scopedApp.state.payouts.find((candidate) => candidate.id === c.req.param("id"));
@@ -1508,7 +1605,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
     return c.json({ ok: true, data: await materializePayoutEvent(scopedApp, event) });
   });
-  api.get("/api/finance/expenses", (c) => c.json({ ok: true, data: { expenses: scopedApp.state.operatingExpenses, categories: scopedApp.state.expenseCategories } }));
   api.post("/api/finance/expenses", async (c) => {
     const body = operatingExpenseSchema.parse(await c.req.json());
     const counterpartyId = body.counterpartyId ?? (body.counterpartyName?.trim()
@@ -1524,20 +1620,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       : undefined);
     const { counterpartyName: _counterpartyName, ...payload } = body;
     return c.json({ ok: true, data: await scopedApp.recordOperatingExpense({ ...payload, counterpartyId }) });
-  });
-  api.get("/api/finance/expenses/:id", (c) => {
-    const expense = scopedApp.state.operatingExpenses.find((candidate) => candidate.id === c.req.param("id"));
-    if (!expense) throw new DomainError("expense_not_found", "Расход не найден");
-    return c.json({
-      ok: true,
-      data: {
-        expense,
-        document: scopedApp.state.documents.find((document) => document.id === expense.documentId),
-        payment: scopedApp.state.payments.find((payment) => payment.id === expense.paymentId),
-        counterparty: expense.counterpartyId ? scopedApp.state.counterparties.find((counterparty) => counterparty.id === expense.counterpartyId) : undefined,
-        category: scopedApp.state.expenseCategories.find((category) => category.id === expense.categoryId)
-      }
-    });
   });
   api.patch("/api/finance/expenses/:id", async (c) => {
     const body = z.object({
@@ -1802,12 +1884,10 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: { project, created, deferred: remaining.length, items, historyProcessing } });
   });
 
-  api.get("/api/controls/corrections", (c) => c.json({ ok: true, data: { corrections: scopedApp.state.correctionCases, jobs: scopedApp.state.recalculationJobs } }));
   api.post("/api/documents/:id/apply-correction", async (c) => {
     const body = correctionPreviewSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.applyDocumentCorrection(c.req.param("id"), body.patch, body.reason ?? "Исправление документа") });
   });
-  api.get("/api/recalculation-jobs", (c) => c.json({ ok: true, data: scopedApp.state.recalculationJobs }));
   api.post("/api/recalculation-jobs", async (c) => {
     const body = recalculationJobSchema.parse(await c.req.json());
     return c.json({ ok: true, data: scopedApp.createRecalculationJob(body) });
