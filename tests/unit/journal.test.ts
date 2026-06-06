@@ -19,7 +19,7 @@ describe("journal invariants", () => {
   it("seeds the full account set needed by the roadmap", async () => {
     resetIds();
     const app = new AccountingApp();
-    app.bootstrap({ displayName: "Тест", accountingStartDate: "2026-06-01" });
+    await app.bootstrap({ displayName: "Тест", accountingStartDate: "2026-06-01" });
 
     expect(app.state.chartAccounts.map((account) => account.code)).toEqual(
       expect.arrayContaining(["41.01", "41.02", "41.03", "51", "60.01", "60.02", "76.02", "76.ТП", "90.01", "90.02", "91.01", "91.02", "94", "26", "44"])

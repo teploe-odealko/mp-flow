@@ -5,7 +5,7 @@ import { resetIds } from "../../src/core/utils";
 async function setupTwoProductReceipt() {
   resetIds();
   const app = new AccountingApp();
-  app.bootstrap({ displayName: "Landed cost", accountingStartDate: "2026-01-01" });
+  await app.bootstrap({ displayName: "Landed cost", accountingStartDate: "2026-01-01" });
   const light = await app.createProduct({ sku: "LIGHT", name: "Легкий товар", weightGrams: 100 });
   const heavy = await app.createProduct({ sku: "HEAVY", name: "Тяжелый товар", weightGrams: 300 });
   const supplier = await app.createCounterparty({ name: "Supplier", counterpartyType: "supplier" });
@@ -72,7 +72,7 @@ describe("procurement landed cost allocation", () => {
   it("blocks weight allocation when product weight is missing", async () => {
     resetIds();
     const app = new AccountingApp();
-    app.bootstrap({ displayName: "No weight", accountingStartDate: "2026-01-01" });
+    await app.bootstrap({ displayName: "No weight", accountingStartDate: "2026-01-01" });
     const product = await app.createProduct({ sku: "NO-WEIGHT", name: "Без веса" });
     const supplier = await app.createCounterparty({ name: "Supplier", counterpartyType: "supplier" });
     const order = await app.createPurchaseOrder({

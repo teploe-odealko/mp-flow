@@ -6,7 +6,7 @@ describe("FIFO ledger", () => {
   it("consumes the oldest lots first, including same-date creation order", async () => {
     resetIds();
     const app = new AccountingApp();
-    app.bootstrap({
+    await app.bootstrap({
       displayName: "FIFO test",
       accountingStartDate: "2026-06-01"
     });
@@ -50,7 +50,7 @@ describe("FIFO ledger", () => {
   it("rejects FIFO consumption above available stock", async () => {
     resetIds();
     const app = new AccountingApp();
-    app.bootstrap({
+    await app.bootstrap({
       displayName: "FIFO test",
       accountingStartDate: "2026-06-01"
     });

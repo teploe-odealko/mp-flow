@@ -5,7 +5,7 @@ import { resetIds } from "../../src/core/utils";
 async function setupPurchase() {
   resetIds();
   const app = new AccountingApp();
-  app.bootstrap({ displayName: "Тест", accountingStartDate: "2026-06-01" });
+  await app.bootstrap({ displayName: "Тест", accountingStartDate: "2026-06-01" });
   const product = await app.createProduct({ sku: "SKU-1", name: "Товар" });
   const supplier = await app.createCounterparty({ name: "Supplier", counterpartyType: "supplier" });
   await app.recordOwnerContribution({ amountRub: 200_000, paidAt: "2026-06-01" });
@@ -26,7 +26,7 @@ describe("goods receipt preview", () => {
   it("does not hide shortage by allocating full prepayment into received goods", async () => {
     const { app, po, poLine } = await setupPurchase();
 
-    const preview = app.previewGoodsReceipt({
+    const preview = await app.previewGoodsReceipt({
       purchaseOrderId: po.id,
       lines: [{ purchaseOrderLineId: poLine.id, qtyReceived: 990 }]
     });

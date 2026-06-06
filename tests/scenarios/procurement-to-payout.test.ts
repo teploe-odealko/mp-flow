@@ -6,7 +6,7 @@ describe("full reseller accounting scenario", () => {
   it("runs procurement -> receipt shortage -> cost -> transfer -> sale -> fee -> payout -> reports", async () => {
     resetIds();
     const app = new AccountingApp();
-    app.bootstrap({ displayName: "Reseller", accountingStartDate: "2026-06-01" });
+    await app.bootstrap({ displayName: "Reseller", accountingStartDate: "2026-06-01" });
 
     const product = await app.createProduct({ sku: "CASE", name: "Чехол", imageUrl: "https://example.test/case.png" });
     const supplier = await app.createCounterparty({ name: "China Supplier", counterpartyType: "supplier", country: "CN" });

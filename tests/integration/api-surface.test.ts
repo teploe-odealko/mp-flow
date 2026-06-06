@@ -460,7 +460,7 @@ describe("MPFlow api surface", () => {
 
   it("returns descendants and blocks document changes while dependents exist", async () => {
     const { app, api } = makeApi();
-    app.bootstrap({ displayName: "Document descendants", accountingStartDate: "2026-06-01" });
+    await app.bootstrap({ displayName: "Document descendants", accountingStartDate: "2026-06-01" });
     const product = await app.createProduct({ sku: "DESC-1", name: "Товар для связей" });
     const supplier = await app.createCounterparty({ name: "Поставщик связей", counterpartyType: "supplier" });
     const order = await app.createPurchaseOrder({

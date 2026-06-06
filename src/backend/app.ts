@@ -711,7 +711,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.post("/api/documents/:id/correction-preview", async (c) => {
     const body = correctionPreviewSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.previewCorrection(c.req.param("id"), body.patch, body.reason) });
+    return c.json({ ok: true, data: await scopedApp.previewCorrection(c.req.param("id"), body.patch, body.reason) });
   });
 
   api.post("/api/products", async (c) => {
@@ -846,7 +846,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = purchaseOrderPatchSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.updatePurchaseOrderDraft(c.req.param("id"), body) });
   });
-  api.post("/api/procurement/purchase-orders/:id/post", (c) => c.json({ ok: true, data: scopedApp.postPurchaseOrder(c.req.param("id")) }));
+  api.post("/api/procurement/purchase-orders/:id/post", async (c) => c.json({ ok: true, data: await scopedApp.postPurchaseOrder(c.req.param("id")) }));
   api.post("/api/procurement/purchase-orders/:id/payments", async (c) => {
     const body = supplierPaymentSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.recordSupplierPayment({ ...body, purchaseOrderId: c.req.param("id") }) });
@@ -869,11 +869,11 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
           .reduce((sum, receiptLine) => sum + receiptLine.qtyReceived, 0)
       }))
       .filter((line) => line.qtyReceived > 0);
-    return c.json({ ok: true, data: scopedApp.previewGoodsReceipt({ purchaseOrderId: details.order.id, lines }) });
+    return c.json({ ok: true, data: await scopedApp.previewGoodsReceipt({ purchaseOrderId: details.order.id, lines }) });
   });
   api.post("/api/procurement/purchase-orders/:id/receipt-preview", async (c) => {
     const body = receiptPreviewSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.previewGoodsReceipt({ ...body, purchaseOrderId: c.req.param("id") }) });
+    return c.json({ ok: true, data: await scopedApp.previewGoodsReceipt({ ...body, purchaseOrderId: c.req.param("id") }) });
   });
   api.post("/api/procurement/purchase-orders/:id/receipts", async (c) => {
     const body = goodsReceiptSchema.parse(await c.req.json());
@@ -885,15 +885,15 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/procurement/receipts/:id/dispatch-context", async (c) => {
     const channelId = c.req.query("channelId");
     const context = await scopedApp.receiptDispatchContext(c.req.param("id"), channelId);
-    const plugin = context.channel ? resolveChannelPlugin(scopedApp, context.channel) : undefined;
+    const plugin = context.channel ? await resolveChannelPlugin(scopedApp, context.channel) : undefined;
     return c.json({ ok: true, data: { ...context, plugin: plugin ? serializePluginMeta(plugin) : null } });
   });
   api.get("/api/procurement/receipts/:id/channel-dispatch/state", async (c) => {
     const receiptId = c.req.param("id");
     const channelId = c.req.query("channelId");
     if (!channelId) throw new DomainError("channel_required", "Выберите канал продаж");
-    const channel = mustFindChannel(scopedApp, channelId);
-    const plugin = resolveChannelPlugin(scopedApp, channel);
+    const channel = await mustFindChannel(scopedApp, channelId);
+    const plugin = await resolveChannelPlugin(scopedApp, channel);
     if (!plugin) return c.json({ ok: true, data: null });
     const pluginState = createPluginStateApi(scopedApp, plugin);
     return c.json({
@@ -934,8 +934,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/procurement/receipts/:id/channel-dispatch/plan", async (c) => {
     const receiptId = c.req.param("id");
     const body = channelDispatchPlanSchema.parse(await c.req.json());
-    const channel = mustFindChannel(scopedApp, body.channelId);
-    const plugin = requireChannelPlugin(scopedApp, channel);
+    const channel = await mustFindChannel(scopedApp, body.channelId);
+    const plugin = await requireChannelPlugin(scopedApp, channel);
     if (!plugin.fulfillment?.planDispatchFromReceipt) {
       throw new DomainError("channel_dispatch_not_supported", "Плагин не поддерживает расширенный flow распределения");
     }
@@ -983,8 +983,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/procurement/receipts/:id/channel-dispatch/auto-allocate", async (c) => {
     const receiptId = c.req.param("id");
     const body = channelDispatchAutoAllocateSchema.parse(await c.req.json());
-    const channel = mustFindChannel(scopedApp, body.channelId);
-    const plugin = requireChannelPlugin(scopedApp, channel);
+    const channel = await mustFindChannel(scopedApp, body.channelId);
+    const plugin = await requireChannelPlugin(scopedApp, channel);
     if (!plugin.fulfillment?.planDispatchFromReceipt || !plugin.fulfillment.autoAllocateDispatch) {
       throw new DomainError("channel_dispatch_not_supported", "Плагин не поддерживает автоматическое распределение");
     }
@@ -1029,8 +1029,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/procurement/receipts/:id/channel-dispatch/commit", async (c) => {
     const receiptId = c.req.param("id");
     const body = channelDispatchCommitSchema.parse(await c.req.json());
-    const channel = mustFindChannel(scopedApp, body.channelId);
-    const plugin = resolveChannelPlugin(scopedApp, channel);
+    const channel = await mustFindChannel(scopedApp, body.channelId);
+    const plugin = await resolveChannelPlugin(scopedApp, channel);
     const context = await scopedApp.receiptDispatchContext(receiptId, channel.id);
     const pluginState = plugin ? createPluginStateApi(scopedApp, plugin) : undefined;
     const existing = pluginState
@@ -1230,7 +1230,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const plugin = pluginRegistry.get(installedPlugin.code);
     const validation = plugin.validateCredentials(body.credentials ?? {});
     if (!validation.ok) throw new DomainError("plugin_credentials_invalid", validation.message);
-    const saved = scopedApp.saveChannelCredentials(channel.id, body.credentials ?? {});
+    const saved = await scopedApp.saveChannelCredentials(channel.id, body.credentials ?? {});
     // After saving creds, run an online check; flip channel status accordingly.
     if (plugin.checkAccess) {
       const online = await plugin.checkAccess(body.credentials ?? {});
@@ -1307,7 +1307,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const credentials = body.credentials ?? scopedApp.credentialsForChannel(channel.id);
     const validation = plugin.validateCredentials(credentials ?? {});
     if (!validation.ok) throw new DomainError("plugin_credentials_invalid", validation.message);
-    if (body.credentials) scopedApp.saveChannelCredentials(channel.id, body.credentials);
+    if (body.credentials) await scopedApp.saveChannelCredentials(channel.id, body.credentials);
     return c.json({
       ok: true,
       data: await plugin.sync({
@@ -1368,7 +1368,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       syncRun.lastError = telemetry.lastError;
       throw new DomainError("plugin_credentials_invalid", validation.message);
     }
-    if (body.credentials) scopedApp.saveChannelCredentials(channel.id, body.credentials);
+    if (body.credentials) await scopedApp.saveChannelCredentials(channel.id, body.credentials);
     try {
       const result = await plugin.sync({
         app: scopedApp,
@@ -1590,14 +1590,14 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       operationType: z.string().optional(),
       operationTypeName: z.string().optional()
     }).parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.classifyChannelFinanceEvent({ financeEventId: c.req.param("id"), ...body }) });
+    return c.json({ ok: true, data: await scopedApp.classifyChannelFinanceEvent({ financeEventId: c.req.param("id"), ...body }) });
   });
   api.delete("/api/integrations/finance-events/:id", async (c) => {
     return c.json({ ok: true, data: await scopedApp.deleteChannelFinanceEventForResync(c.req.param("id")) });
   });
   api.post("/api/integrations/finance-events/:id/link-sale", async (c) => {
     const body = z.object({ saleId: z.string() }).parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.linkChannelFinanceEventToSale(c.req.param("id"), body.saleId) });
+    return c.json({ ok: true, data: await scopedApp.linkChannelFinanceEventToSale(c.req.param("id"), body.saleId) });
   });
   api.post("/api/integrations/finance-events/:id/post", async (c) => {
     return c.json({ ok: true, data: await scopedApp.postChannelFinanceEvent(c.req.param("id")) });
@@ -1636,7 +1636,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.post("/api/finance/payouts/:id/leave-difference", async (c) => {
     const body = z.object({ reason: z.string().min(3) }).parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.leavePayoutDifference(c.req.param("id"), body.reason) });
+    return c.json({ ok: true, data: await scopedApp.leavePayoutDifference(c.req.param("id"), body.reason) });
   });
   api.post("/api/integrations/events/:id/materialize-payout", async (c) => {
     const event = await scopedApp.externalEvents.getById(c.req.param("id"));
@@ -1697,13 +1697,13 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/onboarding/existing-store/projects/:id", async (c) => {
     const project = await scopedApp.repos.backfillProjects.getById(c.req.param("id"));
     if (!project) throw new DomainError("backfill_project_not_found", "Проект импорта не найден");
-    const items = (await scopedApp.repos.backfillItems.all())
+    const items = await Promise.all((await scopedApp.repos.backfillItems.all())
       .filter((item) => item.backfillProjectId === project.id)
-      .map((item) => evaluateBackfillItem(scopedApp, item));
-    syncBackfillProjectStatus(scopedApp, project);
+      .map((item) => evaluateBackfillItem(scopedApp, item)));
+    await syncBackfillProjectStatus(scopedApp, project);
     await scopedApp.repos.backfillProjects.upsert(project);
     for (const item of items) await scopedApp.repos.backfillItems.upsert(item);
-    return c.json({ ok: true, data: { project, items, summary: buildBackfillSummary(scopedApp, project.id) } });
+    return c.json({ ok: true, data: { project, items, summary: await buildBackfillSummary(scopedApp, project.id) } });
   });
   api.post("/api/onboarding/existing-store/projects/:id/import", async (c) => {
     const body = backfillImportSchema.parse(await c.req.json().catch(() => ({})));
@@ -1730,7 +1730,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     } else if (salesChannelId) {
       const externalProducts = (await scopedApp.repos.externalProducts.all()).filter((candidate) => candidate.channelId === salesChannelId);
       const observedByExternal = await scopedApp.observedStocks.list({ channelId: salesChannelId });
-      externalProducts.forEach((externalProduct) => {
+      for (const externalProduct of externalProducts) {
         const rows = observedByExternal.filter((stock) => stock.externalProductId === externalProduct.id);
         // Observed stock is a point-in-time LEVEL, not a flow. Each sync writes a fresh
         // snapshot row (new observedAt) for the channel's warehouse, so summing every row
@@ -1759,33 +1759,33 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
             externalName: externalProduct.externalName,
             imageUrl: externalProduct.imageUrl,
             observedQty,
-            warehouseId: rows[0]?.warehouseId ?? preferredWarehouseId(scopedApp, salesChannelId),
+            warehouseId: rows[0]?.warehouseId ?? await preferredWarehouseId(scopedApp, salesChannelId),
             observedAt: rows.map((row) => row.observedAt).sort().at(-1)
           },
           status: "new" as const
         });
-      });
+      }
     }
 
     for (const item of importedItems) {
-      evaluateBackfillItem(scopedApp, item);
+      await evaluateBackfillItem(scopedApp, item);
       await scopedApp.repos.backfillItems.add(item);
     }
-    syncBackfillProjectStatus(scopedApp, project);
+    await syncBackfillProjectStatus(scopedApp, project);
     await scopedApp.repos.backfillProjects.upsert(project);
-    return c.json({ ok: true, data: { project, items: (await scopedApp.repos.backfillItems.all()).filter((candidate) => candidate.backfillProjectId === project.id), summary: buildBackfillSummary(scopedApp, project.id) } });
+    return c.json({ ok: true, data: { project, items: (await scopedApp.repos.backfillItems.all()).filter((candidate) => candidate.backfillProjectId === project.id), summary: await buildBackfillSummary(scopedApp, project.id) } });
   });
   api.post("/api/onboarding/existing-store/projects/:id/match-products", async (c) => {
     const project = await scopedApp.repos.backfillProjects.getById(c.req.param("id"));
     if (!project) throw new DomainError("backfill_project_not_found", "Проект импорта не найден");
-    const items = (await scopedApp.repos.backfillItems.all()).filter((item) => item.backfillProjectId === project.id).map((item) => evaluateBackfillItem(scopedApp, item));
+    const items = await Promise.all((await scopedApp.repos.backfillItems.all()).filter((item) => item.backfillProjectId === project.id).map((item) => evaluateBackfillItem(scopedApp, item)));
     items.forEach((item) => {
       if (item.status === "ready") item.status = "ready";
     });
-    syncBackfillProjectStatus(scopedApp, project);
+    await syncBackfillProjectStatus(scopedApp, project);
     await scopedApp.repos.backfillProjects.upsert(project);
     for (const item of items) await scopedApp.repos.backfillItems.upsert(item);
-    return c.json({ ok: true, data: { project, items, summary: buildBackfillSummary(scopedApp, project.id) } });
+    return c.json({ ok: true, data: { project, items, summary: await buildBackfillSummary(scopedApp, project.id) } });
   });
   api.patch("/api/onboarding/existing-store/projects/:id/items/:itemId", async (c) => {
     const body = z.object({
@@ -1798,27 +1798,27 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (!item) throw new DomainError("backfill_item_not_found", "Строка импорта не найдена");
     if (body.status) item.status = body.status;
     if (body.payload) item.payload = { ...item.payload, ...body.payload };
-    linkBackfillItemProduct(scopedApp, item);
-    evaluateBackfillItem(scopedApp, item);
-    syncBackfillProjectStatus(scopedApp, project);
+    await linkBackfillItemProduct(scopedApp, item);
+    await evaluateBackfillItem(scopedApp, item);
+    await syncBackfillProjectStatus(scopedApp, project);
     await scopedApp.repos.backfillItems.upsert(item);
     await scopedApp.repos.backfillProjects.upsert(project);
-    return c.json({ ok: true, data: { item, project, summary: buildBackfillSummary(scopedApp, project.id) } });
+    return c.json({ ok: true, data: { item, project, summary: await buildBackfillSummary(scopedApp, project.id) } });
   });
   api.post("/api/onboarding/existing-store/projects/:id/review", async (c) => {
     const project = await scopedApp.repos.backfillProjects.getById(c.req.param("id"));
     if (!project) throw new DomainError("backfill_project_not_found", "Проект импорта не найден");
-    const items = (await scopedApp.repos.backfillItems.all()).filter((item) => item.backfillProjectId === project.id).map((item) => evaluateBackfillItem(scopedApp, item));
-    syncBackfillProjectStatus(scopedApp, project);
+    const items = await Promise.all((await scopedApp.repos.backfillItems.all()).filter((item) => item.backfillProjectId === project.id).map((item) => evaluateBackfillItem(scopedApp, item)));
+    await syncBackfillProjectStatus(scopedApp, project);
     await scopedApp.repos.backfillProjects.upsert(project);
     for (const item of items) await scopedApp.repos.backfillItems.upsert(item);
-    return c.json({ ok: true, data: { project, items, summary: buildBackfillSummary(scopedApp, project.id) } });
+    return c.json({ ok: true, data: { project, items, summary: await buildBackfillSummary(scopedApp, project.id) } });
   });
   api.post("/api/onboarding/existing-store/projects/:id/create-opening-balances", async (c) => {
     const body = z.object({ allowPartial: z.boolean().optional() }).parse(await c.req.json().catch(() => ({})));
     const project = await scopedApp.repos.backfillProjects.getById(c.req.param("id"));
     if (!project) throw new DomainError("backfill_project_not_found", "Проект импорта не найден");
-    const items = (await scopedApp.repos.backfillItems.all()).filter((item) => item.backfillProjectId === project.id).map((item) => evaluateBackfillItem(scopedApp, item));
+    const items = await Promise.all((await scopedApp.repos.backfillItems.all()).filter((item) => item.backfillProjectId === project.id).map((item) => evaluateBackfillItem(scopedApp, item)));
     const documentedFlow = isDocumentedFlowBackfillProject(project);
     const blocking = items.filter((item) => !["ready", "applied"].includes(item.status));
     if (blocking.length > 0 && !body.allowPartial) {
@@ -1836,12 +1836,12 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       const remaining = items.filter((item) => item.status === "needs_mapping" || item.status === "needs_cost");
       const previousDocumentIds = Array.isArray(project.payload?.createdDocumentIds) ? project.payload.createdDocumentIds.map(String) : [];
       if (remaining.length > 0) {
-        syncBackfillProjectStatus(scopedApp, project);
+        await syncBackfillProjectStatus(scopedApp, project);
         project.payload = {
           ...(project.payload ?? {}),
           createdDocumentIds: previousDocumentIds,
           skippedOpeningBalances: true,
-          summary: buildBackfillSummary(scopedApp, project.id)
+          summary: await buildBackfillSummary(scopedApp, project.id)
         };
       } else {
         project.status = "applied";
@@ -1849,7 +1849,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
           ...(project.payload ?? {}),
           createdDocumentIds: previousDocumentIds,
           skippedOpeningBalances: true,
-          summary: buildBackfillSummary(scopedApp, project.id)
+          summary: await buildBackfillSummary(scopedApp, project.id)
         };
       }
       await scopedApp.repos.backfillProjects.upsert(project);
@@ -1858,26 +1858,24 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     }
 
     const linesByWarehouse = new Map<string, Array<{ productId: string; qty: number; unitCostRub: number }>>();
-    items
-      .filter((item) => item.status === "ready")
-      .forEach((item) => {
-        linkBackfillItemProduct(scopedApp, item);
-        evaluateBackfillItem(scopedApp, item);
-        const payload = item.payload as Record<string, unknown>;
-        const warehouseId = String(payload.warehouseId ?? preferredWarehouseId(scopedApp, typeof project.payload?.salesChannelId === "string" ? String(project.payload.salesChannelId) : undefined));
-        const productId = String(payload.productId ?? "");
-        const qty = backfillOpeningQty(project, payload);
-        const unitCostRub = round2(Number(payload.unitCostRub ?? 0));
-        if (!productId || qty <= 0 || unitCostRub <= 0) return;
-        const bucket = linesByWarehouse.get(warehouseId) ?? [];
-        const existing = bucket.find((line) => line.productId === productId && Math.abs(line.unitCostRub - unitCostRub) < 0.01);
-        if (existing) {
-          existing.qty = round4(existing.qty + qty);
-        } else {
-          bucket.push({ productId, qty, unitCostRub });
-        }
-        linesByWarehouse.set(warehouseId, bucket);
-      });
+    for (const item of items.filter((candidate) => candidate.status === "ready")) {
+      await linkBackfillItemProduct(scopedApp, item);
+      await evaluateBackfillItem(scopedApp, item);
+      const payload = item.payload as Record<string, unknown>;
+      const warehouseId = String(payload.warehouseId ?? await preferredWarehouseId(scopedApp, typeof project.payload?.salesChannelId === "string" ? String(project.payload.salesChannelId) : undefined));
+      const productId = String(payload.productId ?? "");
+      const qty = backfillOpeningQty(project, payload);
+      const unitCostRub = round2(Number(payload.unitCostRub ?? 0));
+      if (!productId || qty <= 0 || unitCostRub <= 0) continue;
+      const bucket = linesByWarehouse.get(warehouseId) ?? [];
+      const existing = bucket.find((line) => line.productId === productId && Math.abs(line.unitCostRub - unitCostRub) < 0.01);
+      if (existing) {
+        existing.qty = round4(existing.qty + qty);
+      } else {
+        bucket.push({ productId, qty, unitCostRub });
+      }
+      linesByWarehouse.set(warehouseId, bucket);
+    }
 
     const historicalStartDate = isHistoricalBackfillProject(project) && typeof project.payload?.accountingStartDate === "string"
       ? String(project.payload.accountingStartDate)
@@ -1903,7 +1901,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       if (item.status === "ready") item.status = "applied";
     });
     const resetHistoricalEvents = isHistoricalBackfillProject(project) && typeof project.payload?.salesChannelId === "string"
-      ? resetOutOfScopeEventsForHistoricalBackfill(
+      ? await resetOutOfScopeEventsForHistoricalBackfill(
           scopedApp,
           String(project.payload.salesChannelId),
           typeof project.payload.importSyncRunId === "string" ? String(project.payload.importSyncRunId) : undefined,
@@ -1925,11 +1923,11 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const createdDocumentIds = [...previousDocumentIds, ...created.map((entry) => entry.document.id)];
     if (remaining.length > 0) {
       // Partial apply: keep the project resumable so deferred rows can be finished later.
-      syncBackfillProjectStatus(scopedApp, project);
-      project.payload = { ...(project.payload ?? {}), createdDocumentIds, historyProcessing, summary: buildBackfillSummary(scopedApp, project.id) };
+      await syncBackfillProjectStatus(scopedApp, project);
+      project.payload = { ...(project.payload ?? {}), createdDocumentIds, historyProcessing, summary: await buildBackfillSummary(scopedApp, project.id) };
     } else {
       project.status = "applied";
-      project.payload = { ...(project.payload ?? {}), createdDocumentIds, historyProcessing, summary: buildBackfillSummary(scopedApp, project.id) };
+      project.payload = { ...(project.payload ?? {}), createdDocumentIds, historyProcessing, summary: await buildBackfillSummary(scopedApp, project.id) };
     }
     await scopedApp.repos.backfillProjects.upsert(project);
     for (const item of items) await scopedApp.repos.backfillItems.upsert(item);
@@ -3021,21 +3019,21 @@ function serializePluginMeta(plugin: ReturnType<typeof pluginRegistry.all>[numbe
   };
 }
 
-function mustFindChannel(app: AccountingApp, channelId: string): SalesChannel {
-  const channel = app.state.salesChannels.find((candidate) => candidate.id === channelId);
+async function mustFindChannel(app: AccountingApp, channelId: string): Promise<SalesChannel> {
+  const channel = await app.repos.salesChannels.getById(channelId);
   if (!channel) {
     throw new DomainError("channel_not_found", "Канал продаж не найден");
   }
   return channel;
 }
 
-function resolveChannelPlugin(app: AccountingApp, channel: SalesChannel) {
-  const installedPlugin = app.state.integrationPlugins.find((plugin) => plugin.id === channel.pluginId);
+async function resolveChannelPlugin(app: AccountingApp, channel: SalesChannel) {
+  const installedPlugin = channel.pluginId ? await app.repos.integrationPlugins.getById(channel.pluginId) : undefined;
   return installedPlugin ? pluginRegistry.get(installedPlugin.code) : undefined;
 }
 
-function requireChannelPlugin(app: AccountingApp, channel: SalesChannel) {
-  const plugin = resolveChannelPlugin(app, channel);
+async function requireChannelPlugin(app: AccountingApp, channel: SalesChannel) {
+  const plugin = await resolveChannelPlugin(app, channel);
   if (!plugin) {
     throw new DomainError("plugin_not_found", "У канала не выбран плагин");
   }
@@ -3133,8 +3131,8 @@ function round4(value: number) {
   return Math.round((value + Number.EPSILON) * 10000) / 10000;
 }
 
-function averageUnitCost(app: AccountingApp, productId: string) {
-  const lots = app.state.inventoryLots.filter((lot) => lot.productId === productId && lot.unitCostRub > 0);
+async function averageUnitCost(app: AccountingApp, productId: string) {
+  const lots = (await app.repos.inventoryLots.all()).filter((lot) => lot.productId === productId && lot.unitCostRub > 0);
   if (lots.length === 0) return undefined;
   const totalQty = lots.reduce((sum, lot) => sum + lot.qtyRemaining, 0);
   const totalCost = lots.reduce((sum, lot) => sum + lot.costRemainingRub, 0);
@@ -3143,11 +3141,12 @@ function averageUnitCost(app: AccountingApp, productId: string) {
   return latest ? round2(latest.unitCostRub) : undefined;
 }
 
-function preferredWarehouseId(app: AccountingApp, salesChannelId?: string) {
-  const channel = salesChannelId ? app.state.salesChannels.find((candidate) => candidate.id === salesChannelId) : undefined;
+async function preferredWarehouseId(app: AccountingApp, salesChannelId?: string) {
+  const channel = salesChannelId ? await app.repos.salesChannels.getById(salesChannelId) : undefined;
   if (channel?.salesPointWarehouseId) return channel.salesPointWarehouseId;
-  return app.state.warehouses.find((warehouse) => warehouse.warehouseType === "sales_point")?.id
-    ?? app.state.warehouses.find((warehouse) => warehouse.warehouseType === "own")?.id
+  const warehouses = await app.repos.warehouses.all();
+  return warehouses.find((warehouse) => warehouse.warehouseType === "sales_point")?.id
+    ?? warehouses.find((warehouse) => warehouse.warehouseType === "own")?.id
     ?? "";
 }
 
@@ -3165,22 +3164,22 @@ function backfillOpeningQty(project: any, payload: Record<string, unknown>) {
   return round4(Math.max(0, Number(rawQty ?? payload.observedQty ?? 0)));
 }
 
-function linkBackfillItemProduct(app: AccountingApp, item: any) {
+async function linkBackfillItemProduct(app: AccountingApp, item: any) {
   const payload = item.payload as Record<string, unknown> | undefined;
   const externalProductId = typeof payload?.externalProductId === "string" ? payload.externalProductId : undefined;
   const productId = typeof payload?.productId === "string" ? payload.productId : undefined;
   if (!externalProductId || !productId) return;
-  app.linkExternalProduct({ externalProductId, productId });
+  await app.linkExternalProduct({ externalProductId, productId });
 }
 
-function applyHistoricalBackfillProjection(app: AccountingApp, project: any, payload: Record<string, unknown>) {
+async function applyHistoricalBackfillProjection(app: AccountingApp, project: any, payload: Record<string, unknown>) {
   const observedQty = round4(Number(payload.observedQty ?? payload.qty ?? 0));
   payload.observedQty = observedQty;
   if (!isHistoricalBackfillProject(project)) {
     return observedQty;
   }
-  const salesQty = historicalEventQty(app, project, payload, "sale");
-  const returnsQty = historicalEventQty(app, project, payload, "return");
+  const salesQty = await historicalEventQty(app, project, payload, "sale");
+  const returnsQty = await historicalEventQty(app, project, payload, "return");
   const openingQty = round4(Math.max(0, observedQty + salesQty - returnsQty));
   payload.currentStockQty = observedQty;
   payload.historicalSalesQty = salesQty;
@@ -3189,7 +3188,7 @@ function applyHistoricalBackfillProjection(app: AccountingApp, project: any, pay
   return openingQty;
 }
 
-function historicalEventQty(
+async function historicalEventQty(
   app: AccountingApp,
   project: any,
   payload: Record<string, unknown>,
@@ -3199,30 +3198,34 @@ function historicalEventQty(
   if (!salesChannelId) return 0;
   const accountingStartDate = typeof project?.payload?.accountingStartDate === "string" ? String(project.payload.accountingStartDate) : undefined;
   const importSyncRunId = typeof project?.payload?.importSyncRunId === "string" ? String(project.payload.importSyncRunId) : undefined;
-  return round4(app.state.externalEvents.reduce((sum, event) => {
-    if (event.channelId !== salesChannelId) return sum;
-    if (event.eventType !== eventType) return sum;
-    if (importSyncRunId && event.syncRunId !== importSyncRunId) return sum;
-    if (accountingStartDate && event.occurredAt.slice(0, 10) < accountingStartDate) return sum;
-    if (event.status === "failed") return sum;
-    if (event.status === "ignored" && !isBeforeStartIgnoredEvent(event)) return sum;
-    return round4(sum + eventQtyForBackfillItem(app, event, payload));
-  }, 0));
+  let total = 0;
+  for (const event of await app.externalEvents.list({ channelId: salesChannelId })) {
+    if (event.channelId !== salesChannelId) continue;
+    if (event.eventType !== eventType) continue;
+    if (importSyncRunId && event.syncRunId !== importSyncRunId) continue;
+    if (accountingStartDate && event.occurredAt.slice(0, 10) < accountingStartDate) continue;
+    if (event.status === "failed") continue;
+    if (event.status === "ignored" && !isBeforeStartIgnoredEvent(event)) continue;
+    total = round4(total + await eventQtyForBackfillItem(app, event, payload));
+  }
+  return round4(total);
 }
 
-function eventQtyForBackfillItem(app: AccountingApp, event: ExternalEvent, payload: Record<string, unknown>) {
+async function eventQtyForBackfillItem(app: AccountingApp, event: ExternalEvent, payload: Record<string, unknown>) {
   const normalized = event.normalizedPayload as Record<string, unknown>;
   const rawLines = Array.isArray(normalized.lines)
     ? normalized.lines as Array<Record<string, unknown>>
     : [{ sku: normalized.sku, qty: normalized.qty }];
-  return rawLines.reduce((sum, line) => {
-    if (!lineMatchesBackfillItem(app, event.channelId, line, payload)) return sum;
+  let total = 0;
+  for (const line of rawLines) {
+    if (!await lineMatchesBackfillItem(app, event.channelId, line, payload)) continue;
     const qty = Number(line.qty ?? 1);
-    return round4(sum + (Number.isFinite(qty) && qty > 0 ? qty : 0));
-  }, 0);
+    total = round4(total + (Number.isFinite(qty) && qty > 0 ? qty : 0));
+  }
+  return total;
 }
 
-function lineMatchesBackfillItem(
+async function lineMatchesBackfillItem(
   app: AccountingApp,
   channelId: string,
   line: Record<string, unknown>,
@@ -3235,24 +3238,24 @@ function lineMatchesBackfillItem(
 
   const externalSku = String(line.sku ?? "").trim();
   const externalProduct = externalSku
-    ? app.state.externalProducts.find((product) => product.channelId === channelId && product.externalSku === externalSku)
+    ? (await app.repos.externalProducts.all()).find((product) => product.channelId === channelId && product.externalSku === externalSku)
     : undefined;
   if (targetExternalProductId) return externalProduct?.id === targetExternalProductId;
   if (!targetProductId || !externalProduct) return false;
-  return app.state.productExternalLinks.some((link) =>
+  return (await app.repos.productExternalLinks.all()).some((link) =>
     link.externalProductId === externalProduct.id &&
     link.productId === targetProductId &&
     link.status === "active"
   );
 }
 
-function evaluateBackfillItem(app: AccountingApp, item: any) {
+async function evaluateBackfillItem(app: AccountingApp, item: any) {
   const payload = { ...(item.payload ?? {}) } as Record<string, unknown>;
-  const project = app.state.backfillProjects.find((candidate) => candidate.id === item.backfillProjectId);
+  const project = await app.repos.backfillProjects.getById(item.backfillProjectId);
   const externalProductId = typeof payload.externalProductId === "string" ? payload.externalProductId : undefined;
-  const externalProduct = externalProductId ? app.state.externalProducts.find((candidate) => candidate.id === externalProductId) : undefined;
+  const externalProduct = externalProductId ? await app.repos.externalProducts.getById(externalProductId) : undefined;
   const linkedProductId = externalProductId
-    ? app.state.productExternalLinks.find((link) => link.externalProductId === externalProductId)?.productId
+    ? (await app.repos.productExternalLinks.all()).find((link) => link.externalProductId === externalProductId)?.productId
     : undefined;
   const sku = String(payload.externalSku ?? payload.sku ?? externalProduct?.externalSku ?? "");
   // Auto-match disabled: we only resolve a product when the user has made it explicit —
@@ -3265,12 +3268,13 @@ function evaluateBackfillItem(app: AccountingApp, item: any) {
   if (inferredProductId) payload.productId = inferredProductId;
   payload.externalSku = sku || externalProduct?.externalSku || "";
   payload.externalName = String(payload.externalName ?? externalProduct?.externalName ?? payload.name ?? "");
-  payload.channelName = String(payload.channelName ?? (payload.salesChannelId && app.state.salesChannels.find((candidate) => candidate.id === payload.salesChannelId)?.name) ?? "");
-  payload.warehouseId = String(payload.warehouseId ?? preferredWarehouseId(app, typeof payload.salesChannelId === "string" ? payload.salesChannelId : undefined));
-  const openingQty = applyHistoricalBackfillProjection(app, project, payload);
+  const channel = typeof payload.salesChannelId === "string" ? await app.repos.salesChannels.getById(payload.salesChannelId) : undefined;
+  payload.channelName = String(payload.channelName ?? channel?.name ?? "");
+  payload.warehouseId = String(payload.warehouseId ?? await preferredWarehouseId(app, typeof payload.salesChannelId === "string" ? payload.salesChannelId : undefined));
+  const openingQty = await applyHistoricalBackfillProjection(app, project, payload);
   const requiresOpeningBalanceCost = !isDocumentedFlowBackfillProject(project);
   if (requiresOpeningBalanceCost) {
-    const inferredUnitCost = Number(payload.unitCostRub ?? averageUnitCost(app, String(payload.productId ?? "")) ?? 0);
+    const inferredUnitCost = Number(payload.unitCostRub ?? await averageUnitCost(app, String(payload.productId ?? "")) ?? 0);
     if (inferredUnitCost > 0) payload.unitCostRub = round2(inferredUnitCost);
     payload.totalCostRub = round2(Number(payload.unitCostRub ?? 0) * openingQty);
   } else {
@@ -3293,9 +3297,9 @@ function evaluateBackfillItem(app: AccountingApp, item: any) {
   return item;
 }
 
-function buildBackfillSummary(app: AccountingApp, projectId: string) {
-  const project = app.state.backfillProjects.find((candidate) => candidate.id === projectId);
-  const items = app.state.backfillItems.filter((item) => item.backfillProjectId === projectId);
+async function buildBackfillSummary(app: AccountingApp, projectId: string) {
+  const project = await app.repos.backfillProjects.getById(projectId);
+  const items = (await app.repos.backfillItems.all()).filter((item) => item.backfillProjectId === projectId);
   const requiresOpeningBalanceCost = !isDocumentedFlowBackfillProject(project);
   const totalItems = items.length;
   const mapped = items.filter((item) => item.status === "ready" || item.status === "applied").length;
@@ -3317,21 +3321,23 @@ async function materializeSaleEvent(app: AccountingApp, event: ExternalEvent): P
   if (event.eventType !== "sale") {
     throw new DomainError("external_event_type_invalid", "Событие не относится к продажам");
   }
-	  if (event.materializedDocumentId) {
-	    const existingSale = app.state.sales.find((candidate) => candidate.documentId === event.materializedDocumentId);
-	    if (existingSale) {
-	      return existingSale.status === "draft" || existingSale.status === "needs_attention" ? await app.postSale(existingSale.id) : existingSale;
-	    }
-	  }
+  if (event.materializedDocumentId) {
+    const existingSale = (await app.repos.sales.all()).find((candidate) => candidate.documentId === event.materializedDocumentId);
+    if (existingSale) {
+      return existingSale.status === "draft" || existingSale.status === "needs_attention" ? await app.postSale(existingSale.id) : existingSale;
+    }
+  }
   const payload = event.normalizedPayload as Record<string, unknown>;
   const rawLines = Array.isArray(payload.lines)
     ? payload.lines as Array<Record<string, unknown>>
     : [{ sku: payload.sku, qty: payload.qty, amountRub: payload.amountRub }];
+  const externalProducts = await app.repos.externalProducts.all();
+  const productExternalLinks = await app.repos.productExternalLinks.all();
   const saleLines = rawLines.map((line) => {
     const externalSku = String(line.sku ?? "").trim();
-    const externalProduct = app.state.externalProducts.find((product) => product.channelId === event.channelId && product.externalSku === externalSku);
+    const externalProduct = externalProducts.find((product) => product.channelId === event.channelId && product.externalSku === externalSku);
     const link = externalProduct
-      ? app.state.productExternalLinks.find((candidate) => candidate.externalProductId === externalProduct.id && candidate.status === "active")
+      ? productExternalLinks.find((candidate) => candidate.externalProductId === externalProduct.id && candidate.status === "active")
       : undefined;
     if (!link) throw new DomainError("mapping_required", `Для продажи нужна привязка товара: ${externalSku || "без SKU"}`);
     const qty = Number(line.qty ?? 1);
@@ -3371,7 +3377,7 @@ async function materializeReturnEvent(app: AccountingApp, event: ExternalEvent):
     throw new DomainError("external_event_type_invalid", "Событие не относится к возвратам");
   }
   if (event.materializedDocumentId) {
-    const existingReturn = app.state.salesReturns.find((candidate) => candidate.documentId === event.materializedDocumentId);
+    const existingReturn = (await app.repos.salesReturns.all()).find((candidate) => candidate.documentId === event.materializedDocumentId);
     if (existingReturn) {
       return existingReturn.status === "posted" ? existingReturn : await app.postReturn(existingReturn.id);
     }
@@ -3381,15 +3387,17 @@ async function materializeReturnEvent(app: AccountingApp, event: ExternalEvent):
   const sale = await resolveSaleByPostingNumber(app, event.channelId, postingNumber);
   if (!sale) throw new DomainError("sale_not_found", "Для возврата нужна исходная продажа по тому же posting number");
   const payloadLines = Array.isArray(payload.lines) ? payload.lines as Array<Record<string, unknown>> : [];
-  const saleDetails = app.state.saleLines.filter((candidate) => candidate.saleId === sale.id);
+  const saleDetails = (await app.repos.saleLines.all()).filter((candidate) => candidate.saleId === sale.id);
+  const externalProducts = await app.repos.externalProducts.all();
+  const productExternalLinks = await app.repos.productExternalLinks.all();
   const lines = payloadLines.length === 0
     ? undefined
     : payloadLines.map((line) => {
         const externalSku = String(line.sku ?? "").trim();
-        const externalProduct = app.state.externalProducts.find((product) => product.channelId === event.channelId && product.externalSku === externalSku);
+        const externalProduct = externalProducts.find((product) => product.channelId === event.channelId && product.externalSku === externalSku);
         const saleLine = saleDetails.find((candidate) => {
           if (candidate.externalProductId && externalProduct) return candidate.externalProductId === externalProduct.id;
-          return candidate.productId === app.state.productExternalLinks.find((link) => link.externalProductId === externalProduct?.id && link.status === "active")?.productId;
+          return candidate.productId === productExternalLinks.find((link) => link.externalProductId === externalProduct?.id && link.status === "active")?.productId;
         });
         if (!saleLine) throw new DomainError("sale_line_not_found", `Для возврата не найдена строка продажи по SKU ${externalSku || "без SKU"}`);
         return { saleLineId: saleLine.id, qty: Number(line.qty ?? 1) };
@@ -3416,7 +3424,7 @@ async function materializeFinanceEvent(
   const payload = event.normalizedPayload as Record<string, unknown>;
   const postingNumber = String(payload.postingNumber ?? "").trim();
   const linkedSale = postingNumber ? await resolveSaleByPostingNumber(app, event.channelId, postingNumber) : undefined;
-  const saleAllocations = !linkedSale && postingNumber ? resolveSaleAllocationsByPostingNumber(app, event.channelId, postingNumber, Number(payload.amountRub ?? 0)) : undefined;
+  const saleAllocations = !linkedSale && postingNumber ? await resolveSaleAllocationsByPostingNumber(app, event.channelId, postingNumber, Number(payload.amountRub ?? 0)) : undefined;
   const derived = classifyChannelFinancePayload(payload);
   const linkedReturn = derived.treatment === "return_variable" && postingNumber
     ? await resolveReturnByPostingNumber(app, event.channelId, postingNumber, linkedSale)
@@ -3429,16 +3437,16 @@ async function materializeFinanceEvent(
     });
   }
   if (event.materializedDocumentId) {
-    const existing = app.state.channelFinanceEvents.find((candidate) => candidate.documentId === event.materializedDocumentId);
+    const existing = (await app.repos.channelFinanceEvents.all()).find((candidate) => candidate.documentId === event.materializedDocumentId);
     if (existing) {
       if (!existing.linkedSaleId && linkedSale?.id) {
-        app.linkChannelFinanceEventToSale(existing.id, linkedSale.id);
+        await app.linkChannelFinanceEventToSale(existing.id, linkedSale.id);
       }
       if (!existing.linkedSaleId && !existing.saleAllocations?.length && saleAllocations?.length) {
-        app.allocateChannelFinanceEventToSales(existing.id, saleAllocations);
+        await app.allocateChannelFinanceEventToSales(existing.id, saleAllocations);
       }
       if (!existing.linkedReturnId && linkedReturn?.id) {
-        app.linkChannelFinanceEventToReturn(existing.id, linkedReturn.id);
+        await app.linkChannelFinanceEventToReturn(existing.id, linkedReturn.id);
       }
       const effectiveTreatment = existing.treatment ?? derived.treatment;
       if (
@@ -3480,12 +3488,12 @@ async function materializePayoutEvent(app: AccountingApp, event: ExternalEvent):
     throw new DomainError("external_event_type_invalid", "Событие не относится к выплатам");
   }
   if (event.materializedDocumentId) {
-    const existingByDocument = app.state.payouts.find((candidate) => candidate.documentId === event.materializedDocumentId);
+    const existingByDocument = (await app.repos.payouts.all()).find((candidate) => candidate.documentId === event.materializedDocumentId);
     if (existingByDocument) return existingByDocument;
   }
   const payload = event.normalizedPayload as Record<string, unknown>;
   const externalPayoutId = String(payload.externalPayoutId ?? payload.operationId ?? event.externalId);
-  const existing = app.state.payouts.find((candidate) =>
+  const existing = (await app.repos.payouts.all()).find((candidate) =>
     candidate.externalEventId === event.id ||
     (externalPayoutId && candidate.externalPayoutId === externalPayoutId)
   );
@@ -3531,8 +3539,8 @@ async function resolveSaleByPostingNumber(app: AccountingApp, channelId: string,
   return await app.findSaleByPostingNumber(channelId, postingNumber);
 }
 
-function resolveSaleAllocationsByPostingNumber(app: AccountingApp, channelId: string, postingNumber: string, amountRub: number) {
-  const matches = app.state.sales
+async function resolveSaleAllocationsByPostingNumber(app: AccountingApp, channelId: string, postingNumber: string, amountRub: number) {
+  const matches = (await app.repos.sales.all())
     .filter((candidate) => candidate.channelId === channelId && String(candidate.externalOrderId ?? "").startsWith(`${postingNumber}-`))
     .sort((left, right) => String(left.externalOrderId ?? "").localeCompare(String(right.externalOrderId ?? "")));
   if (matches.length <= 1) return undefined;
@@ -3545,7 +3553,7 @@ function resolveSaleAllocationsByPostingNumber(app: AccountingApp, channelId: st
 async function resolveReturnByPostingNumber(app: AccountingApp, channelId: string, postingNumber: string, linkedSale?: Sale) {
   const sale = linkedSale ?? await resolveSaleByPostingNumber(app, channelId, postingNumber);
   if (!sale) return undefined;
-  const matches = app.state.salesReturns
+  const matches = (await app.repos.salesReturns.all())
     .filter((candidate) =>
       candidate.channelId === channelId &&
       candidate.saleId === sale.id &&
@@ -3558,7 +3566,7 @@ async function resolveReturnByPostingNumber(app: AccountingApp, channelId: strin
 async function linkReturnFinanceEventsByPostingNumber(app: AccountingApp, salesReturn: SalesReturn, postingNumber: string) {
   const normalizedPostingNumber = String(postingNumber ?? "").trim();
   if (!normalizedPostingNumber) return;
-  const candidates = app.state.channelFinanceEvents.filter((event) =>
+  const candidates = (await app.repos.channelFinanceEvents.all()).filter((event) =>
     event.channelId === salesReturn.channelId &&
     !event.linkedReturnId && event.treatment === "return_variable" &&
     event.linkedSaleId === salesReturn.saleId
@@ -3567,7 +3575,7 @@ async function linkReturnFinanceEventsByPostingNumber(app: AccountingApp, salesR
     const sourceEvent = event.externalEventId ? await app.findExternalEventById(String(event.externalEventId)) : undefined;
     const payload = sourceEvent?.normalizedPayload as Record<string, unknown> | undefined;
     if (String(payload?.postingNumber ?? "").trim() === normalizedPostingNumber) {
-      app.linkChannelFinanceEventToReturn(event.id, salesReturn.id);
+      await app.linkChannelFinanceEventToReturn(event.id, salesReturn.id);
     }
   }
 }
@@ -3612,7 +3620,7 @@ function isBeforeStartIgnoredEvent(event: ExternalEvent) {
   return event.status === "ignored" && String(event.reason ?? "").includes("раньше старта учёта");
 }
 
-function resetOutOfScopeEventsForHistoricalBackfill(
+async function resetOutOfScopeEventsForHistoricalBackfill(
   app: AccountingApp,
   channelId: string,
   syncRunId?: string,
@@ -3620,7 +3628,7 @@ function resetOutOfScopeEventsForHistoricalBackfill(
 ) {
   if (!accountingStartDate) return 0;
   let reset = 0;
-  for (const event of app.state.externalEvents) {
+  for (const event of await app.externalEvents.list({ channelId })) {
     if (event.channelId !== channelId) continue;
     if (syncRunId && event.syncRunId !== syncRunId) continue;
     if (!isBeforeStartIgnoredEvent(event)) continue;
@@ -3630,6 +3638,7 @@ function resetOutOfScopeEventsForHistoricalBackfill(
     event.reason = undefined;
     event.lastError = undefined;
     event.updatedAt = nowIso();
+    await app.externalEvents.upsert(event);
     reset += 1;
   }
   return reset;
@@ -3846,7 +3855,7 @@ async function autoProcessChannelFacts(app: AccountingApp, channelId: string, sy
   outcome.financePosted += replayOutcome.posted;
   outcome.needsAttention += replayOutcome.needsAttention;
 
-  const stagedFinanceEvents = app.state.channelFinanceEvents.filter((event) =>
+  const stagedFinanceEvents = (await app.repos.channelFinanceEvents.all()).filter((event) =>
     event.channelId === channelId &&
     !!event.externalEventId &&
     currentRunEventIds.has(String(event.externalEventId)) &&
@@ -3861,14 +3870,14 @@ async function autoProcessChannelFacts(app: AccountingApp, channelId: string, sy
       const postingNumber = String(payload?.postingNumber ?? "").trim();
       const linkedSale = postingNumber ? await resolveSaleByPostingNumber(app, channelId, postingNumber) : undefined;
       if (!event.linkedSaleId && linkedSale?.id) {
-        app.linkChannelFinanceEventToSale(event.id, linkedSale.id);
+        await app.linkChannelFinanceEventToSale(event.id, linkedSale.id);
       }
       const effectiveTreatment = event.treatment ?? (linkedSale ? "sale_variable" : undefined);
       const linkedReturn = effectiveTreatment === "return_variable" && postingNumber
         ? await resolveReturnByPostingNumber(app, channelId, postingNumber, linkedSale)
         : undefined;
       if (!event.linkedReturnId && linkedReturn?.id) {
-        app.linkChannelFinanceEventToReturn(event.id, linkedReturn.id);
+        await app.linkChannelFinanceEventToReturn(event.id, linkedReturn.id);
       }
       if ((effectiveTreatment === "sale_variable" || effectiveTreatment === "return_variable") && !event.linkedSaleId && !linkedSale) {
         if (sourceEvent) {
@@ -3892,8 +3901,8 @@ async function autoProcessChannelFacts(app: AccountingApp, channelId: string, sy
   return outcome;
 }
 
-function syncBackfillProjectStatus(app: AccountingApp, project: any) {
-  const summary = buildBackfillSummary(app, project.id);
+async function syncBackfillProjectStatus(app: AccountingApp, project: any) {
+  const summary = await buildBackfillSummary(app, project.id);
   project.payload = { ...(project.payload ?? {}), summary };
   if (project.status === "applied" || project.status === "completed") return project;
   project.status = summary.totalItems === 0 || summary.unmatched > 0 || summary.missingCost > 0 ? "needs_review" : "ready";
@@ -3902,7 +3911,7 @@ function syncBackfillProjectStatus(app: AccountingApp, project: any) {
 
 async function captureSyncRunBaseline(app: AccountingApp, channelId: string) {
   return {
-    externalProductIds: new Set(app.state.externalProducts.filter((item) => item.channelId === channelId).map((item) => item.id)),
+    externalProductIds: new Set((await app.repos.externalProducts.all()).filter((item) => item.channelId === channelId).map((item) => item.id)),
     observedStockIds: new Set((await app.observedStocks.list({ channelId })).map((item) => item.id)),
     externalEventIds: new Set((await app.externalEvents.list({ channelId })).map((item) => item.id))
   };
@@ -3926,7 +3935,7 @@ function initSyncRunStreams(syncRunId: string, streams: ChannelStreamCode[], sta
 }
 
 async function finalizeSyncRun(app: AccountingApp, syncRun: SyncRun, baseline: Awaited<ReturnType<typeof captureSyncRunBaseline>>, selectedStreams: ChannelStreamCode[], errors: string[]) {
-  const createdProducts = app.state.externalProducts.filter((item) => item.channelId === syncRun.channelId && !baseline.externalProductIds.has(item.id)).length;
+  const createdProducts = (await app.repos.externalProducts.all()).filter((item) => item.channelId === syncRun.channelId && !baseline.externalProductIds.has(item.id)).length;
   const createdStocks = (await app.observedStocks.list({ channelId: syncRun.channelId })).filter((item) => !baseline.observedStockIds.has(item.id)).length;
   const createdEvents = (await app.externalEvents.list({ channelId: syncRun.channelId })).filter((item) => !baseline.externalEventIds.has(item.id));
   const createdEventsByType = {

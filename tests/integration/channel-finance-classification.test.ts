@@ -70,7 +70,7 @@ describe("channel finance classification", () => {
   it("defaults manually linked finance event to sale variable treatment", async () => {
     resetIds();
     const app = new AccountingApp();
-    app.bootstrap({ displayName: "QA", accountingStartDate: "2026-01-01" });
+    await app.bootstrap({ displayName: "QA", accountingStartDate: "2026-01-01" });
     const channel = await app.createSalesChannel({ name: "Marketplace", channelType: "marketplace" });
     const sale = await app.recordSale({
       channelId: channel.id,
@@ -94,7 +94,7 @@ describe("channel finance classification", () => {
   it("allows zero-amount channel finance events", async () => {
     resetIds();
     const app = new AccountingApp();
-    app.bootstrap({ displayName: "QA", accountingStartDate: "2026-01-01" });
+    await app.bootstrap({ displayName: "QA", accountingStartDate: "2026-01-01" });
     const channel = await app.createSalesChannel({ name: "Marketplace", channelType: "marketplace" });
 
     const event = await app.recordChannelFee({

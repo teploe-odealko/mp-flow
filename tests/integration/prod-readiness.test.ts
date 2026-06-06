@@ -259,9 +259,9 @@ describe("prod-ready contracts", () => {
   it("exports and imports channel credentials outside the public state object", async () => {
     resetIds();
     const app = new AccountingApp();
-    app.bootstrap({ displayName: "Creds", accountingStartDate: "2026-01-01" });
+    await app.bootstrap({ displayName: "Creds", accountingStartDate: "2026-01-01" });
     const channel = await app.createSalesChannel({ name: "Ozon", channelType: "marketplace", pluginCode: "ozon" });
-    app.saveChannelCredentials(channel.id, { clientId: "client", apiKey: "key" });
+    await app.saveChannelCredentials(channel.id, { clientId: "client", apiKey: "key" });
 
     const restored = new AccountingApp(app.state);
     restored.importChannelCredentials(app.exportChannelCredentials());
@@ -283,7 +283,7 @@ describe("prod-ready contracts", () => {
       lines: [{ productId: product.id, qty: 2, costRub: 500 }]
     });
     const channel = await app.createSalesChannel({ name: "Ozon DB", channelType: "marketplace", pluginCode: "ozon" });
-    app.saveChannelCredentials(channel.id, { clientId: "client-secret", apiKey: "api-secret" });
+    await app.saveChannelCredentials(channel.id, { clientId: "client-secret", apiKey: "api-secret" });
 
     const rows = exportRuntimeEntities(app.state);
 

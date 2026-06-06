@@ -39,7 +39,7 @@ describe("procurement workflow api", () => {
   it("updates purchase order before dependencies and rejects direct edit afterwards", async () => {
     resetIds();
     const app = new AccountingApp();
-    app.bootstrap({ displayName: "PO Edit", accountingStartDate: "2026-06-01" });
+    await app.bootstrap({ displayName: "PO Edit", accountingStartDate: "2026-06-01" });
     const product = await app.createProduct({ sku: "PO-1", name: "Товар для заказа" });
     const supplier = await app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
     const order = await app.createPurchaseOrder({
@@ -77,7 +77,7 @@ describe("procurement workflow api", () => {
   it("applies receipt and procurement cost corrections through dedicated endpoints", async () => {
     resetIds();
     const app = new AccountingApp();
-    app.bootstrap({ displayName: "PO Corrections", accountingStartDate: "2026-06-01" });
+    await app.bootstrap({ displayName: "PO Corrections", accountingStartDate: "2026-06-01" });
     const product = await app.createProduct({ sku: "PO-2", name: "Товар с корректировкой" });
     const supplier = await app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
     const order = await app.createPurchaseOrder({
@@ -139,7 +139,7 @@ describe("procurement workflow api", () => {
   it("keeps supplier payment, receipt, procurement cost and shortage as drafts until explicit post", async () => {
     resetIds();
     const app = new AccountingApp();
-    app.bootstrap({ displayName: "PO Drafts", accountingStartDate: "2026-06-01" });
+    await app.bootstrap({ displayName: "PO Drafts", accountingStartDate: "2026-06-01" });
     const product = await app.createProduct({ sku: "PO-3", name: "Товар с черновиками", weightGrams: 100 });
     const supplier = await app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
     const order = await app.createPurchaseOrder({
@@ -215,7 +215,7 @@ describe("procurement workflow api", () => {
   it("deletes receipt only after removing its linked procurement cost", async () => {
     resetIds();
     const app = new AccountingApp();
-    app.bootstrap({ displayName: "PO Re-receive", accountingStartDate: "2026-06-01" });
+    await app.bootstrap({ displayName: "PO Re-receive", accountingStartDate: "2026-06-01" });
     const warehouseId = app.state.warehouses.find((warehouse) => warehouse.warehouseType === "own")!.id;
     const product = await app.createProduct({ sku: "PO-4", name: "Товар для переприемки" });
     const supplier = await app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
@@ -276,7 +276,7 @@ describe("procurement workflow api", () => {
   it("allows a procurement cost before receipt and capitalizes it at receipt (41.02 -> 41.01)", async () => {
     resetIds();
     const app = new AccountingApp();
-    app.bootstrap({ displayName: "Cost before receipt", accountingStartDate: "2026-06-01" });
+    await app.bootstrap({ displayName: "Cost before receipt", accountingStartDate: "2026-06-01" });
     const warehouseId = app.state.warehouses.find((warehouse) => warehouse.warehouseType === "own")!.id;
     const product = await app.createProduct({ sku: "PO-COST", name: "Товар с доставкой" });
     const supplier = await app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
@@ -321,7 +321,7 @@ describe("procurement workflow api", () => {
   it("deletes a draft document only while it has no dependent links", async () => {
     resetIds();
     const app = new AccountingApp();
-    app.bootstrap({ displayName: "PO Delete Draft", accountingStartDate: "2026-06-01" });
+    await app.bootstrap({ displayName: "PO Delete Draft", accountingStartDate: "2026-06-01" });
     const warehouseId = app.state.warehouses.find((warehouse) => warehouse.warehouseType === "own")!.id;
     const product = await app.createProduct({ sku: "PO-5", name: "Черновик к удалению" });
     const supplier = await app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });

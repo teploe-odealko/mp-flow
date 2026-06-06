@@ -57,7 +57,7 @@ describe("corrections", () => {
   it("corrects receipt quantity down and returns missing paid share to advance workflow", async () => {
     resetIds();
     const app = new AccountingApp();
-    app.bootstrap({ displayName: "Коррекции", accountingStartDate: "2026-06-01" });
+    await app.bootstrap({ displayName: "Коррекции", accountingStartDate: "2026-06-01" });
     const product = await app.createProduct({ sku: "A", name: "A" });
     const supplier = await app.createCounterparty({ name: "Supplier", counterpartyType: "supplier" });
     await app.recordOwnerContribution({ amountRub: 200_000, paidAt: "2026-06-01" });

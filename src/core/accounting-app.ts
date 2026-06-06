@@ -210,10 +210,10 @@ export class AccountingApp {
     return `${channelId}::${identity.trim()}`;
   }
 
-  private ensureExternalProductIndex() {
+  private async ensureExternalProductIndex() {
     if (this.externalProductByChannelSku) return this.externalProductByChannelSku;
     this.externalProductByChannelSku = new Map(
-      this.state.externalProducts.map((product) => [
+      (await this.repos.externalProducts.all()).map((product) => [
         this.externalProductKey(product.channelId, product.externalSku),
         product
       ])
@@ -221,10 +221,10 @@ export class AccountingApp {
     return this.externalProductByChannelSku;
   }
 
-  private ensureActiveLinkIndex() {
+  private async ensureActiveLinkIndex() {
     if (this.activeLinkByExternalProductId) return this.activeLinkByExternalProductId;
     this.activeLinkByExternalProductId = new Map<ID, ProductExternalLink>();
-    for (const link of this.state.productExternalLinks) {
+    for (const link of await this.repos.productExternalLinks.all()) {
       if (link.status === "active") {
         this.activeLinkByExternalProductId.set(link.externalProductId, link);
       }
@@ -240,7 +240,7 @@ export class AccountingApp {
     if (this.saleLookup) return this.saleLookup;
     const exact = new Map<string, Sale>();
     const parent = new Map<string, Sale | null>();
-    for (const sale of this.state.sales) {
+    for (const sale of await this.repos.sales.all()) {
       if (!sale.externalEventId) continue;
       const sourceEvent = await this.externalEvents.getById(sale.externalEventId);
       if (!sourceEvent) continue;
@@ -258,12 +258,12 @@ export class AccountingApp {
     return this.saleLookup;
   }
 
-  private findExternalProduct(channelId: ID, externalSku: string) {
-    return this.ensureExternalProductIndex().get(this.externalProductKey(channelId, externalSku));
+  private async findExternalProduct(channelId: ID, externalSku: string) {
+    return (await this.ensureExternalProductIndex()).get(this.externalProductKey(channelId, externalSku));
   }
 
-  private findActiveLink(externalProductId: ID) {
-    return this.ensureActiveLinkIndex().get(externalProductId);
+  private async findActiveLink(externalProductId: ID) {
+    return (await this.ensureActiveLinkIndex()).get(externalProductId);
   }
 
   findExternalEventById(eventId: ID) {
@@ -314,11 +314,15 @@ export class AccountingApp {
       allowOpenPeriodEdits: input.allowOpenPeriodEdits ?? true,
       comment: input.comment
     };
-    this.state.periods.push(...monthPeriods(organization.id, input.accountingStartDate, 24));
-    this.state.chartAccounts.push(...seedChartAccounts(organization.id));
+    for (const period of monthPeriods(organization.id, input.accountingStartDate, 24)) {
+      await this.repos.periods.add(period);
+    }
+    for (const account of seedChartAccounts(organization.id)) {
+      await this.repos.chartAccounts.add(account);
+    }
     this.ensureRequiredSystemMetadata();
 
-    this.state.cashAccounts.push({
+    await this.repos.cashAccounts.add({
       id: id("cash"),
       organizationId: organization.id,
       name: "Расчетный счет",
@@ -327,7 +331,7 @@ export class AccountingApp {
       isActive: true
     });
 
-    this.state.counterparties.push({
+    await this.repos.counterparties.add({
       id: id("cp"),
       organizationId: organization.id,
       name: "Владелец",
@@ -336,7 +340,7 @@ export class AccountingApp {
       isActive: true
     });
 
-    this.state.warehouses.push(
+    for (const warehouse of [
       {
         id: id("wh"),
         organizationId: organization.id,
@@ -358,21 +362,27 @@ export class AccountingApp {
         warehouseType: "sales_point",
         isActive: true
       }
-    );
+    ] satisfies Warehouse[]) {
+      await this.repos.warehouses.add(warehouse);
+    }
 
-    this.state.integrationPlugins.push(
+    for (const plugin of [
       { id: id("plugin"), code: "ozon", displayName: "Ozon", status: "available" },
       { id: id("plugin"), code: "wildberries", displayName: "Wildberries", status: "available" },
       { id: id("plugin"), code: "manual", displayName: "Ручной канал", status: "installed" }
-    );
+    ] satisfies Array<AccountingState["integrationPlugins"][number]>) {
+      await this.repos.integrationPlugins.add(plugin);
+    }
 
-    this.state.expenseCategories.push(
+    for (const category of [
       { id: id("expense_cat"), organizationId: organization.id, name: "Зарплата и подрядчики", accountCode: "26" },
       { id: id("expense_cat"), organizationId: organization.id, name: "Реклама", accountCode: "44" },
       { id: id("expense_cat"), organizationId: organization.id, name: "Прочие расходы", accountCode: "91.02" }
-    );
+    ] satisfies AccountingState["expenseCategories"]) {
+      await this.repos.expenseCategories.add(category);
+    }
 
-    this.state.users.push({
+    await this.repos.users.add({
       id: id("user"),
       organizationId: organization.id,
       email: "owner@mpflow.local",
@@ -382,12 +392,14 @@ export class AccountingApp {
       invitedAt: nowIso(),
       lastActiveAt: nowIso()
     });
-    this.state.roles.push(
+    for (const role of [
       { id: id("role"), organizationId: organization.id, code: "owner", name: "Владелец" },
       { id: id("role"), organizationId: organization.id, code: "accountant", name: "Бухгалтер" },
       { id: id("role"), organizationId: organization.id, code: "operator", name: "Оператор" },
       { id: id("role"), organizationId: organization.id, code: "viewer", name: "Наблюдатель" }
-    );
+    ] satisfies Role[]) {
+      await this.repos.roles.add(role);
+    }
 
     this.audit("organization", organization.id, "bootstrap", undefined, organization, "Первичная настройка");
     return await this.dashboard();
@@ -946,25 +958,27 @@ export class AccountingApp {
     return payment;
   }
 
-  previewGoodsReceipt(input: {
+  async previewGoodsReceipt(input: {
     purchaseOrderId: ID;
     lines: Array<{ purchaseOrderLineId: ID; qtyReceived: number }>;
-  }): ReceiptPreview {
-    const order = this.mustFind(this.state.purchaseOrders, input.purchaseOrderId, "purchase_order_not_found");
-    const orderLines = this.state.purchaseOrderLines.filter((line) => line.purchaseOrderId === order.id);
+  }): Promise<ReceiptPreview> {
+    const order = this.mustFind(await this.repos.purchaseOrders.all(), input.purchaseOrderId, "purchase_order_not_found");
+    const orderLines = (await this.repos.purchaseOrderLines.all()).filter((line) => line.purchaseOrderId === order.id);
     const totalOrderBasis = round2(orderLines.reduce((sum, line) => sum + line.supplierAmount, 0));
+    const payments = await this.repos.payments.all();
+    const documents = await this.repos.documents.all();
     const linkedGoodsPaymentRub = round2(
-      this.state.paymentAllocations
+      (await this.repos.paymentAllocations.all())
         .filter((allocation) =>
           allocation.purchaseOrderId === order.id &&
           allocation.allocationPurpose === "goods_purchase" &&
-          this.isPaymentAllocationPosted(allocation)
+          documents.find((document) => document.id === payments.find((payment) => payment.id === allocation.paymentId)?.documentId)?.status === "posted"
         )
         .reduce((sum, allocation) => sum + allocation.amountRub, 0)
     );
     const previousReceiptCostRub = round2(
-      this.state.goodsReceipts
-        .filter((receipt) => receipt.purchaseOrderId === order.id && receipt.status === "posted" && this.isDocumentPosted(receipt.documentId))
+      (await this.repos.goodsReceipts.all())
+        .filter((receipt) => receipt.purchaseOrderId === order.id && receipt.status === "posted" && documents.find((document) => document.id === receipt.documentId)?.status === "posted")
         .reduce((sum, receipt) => sum + receipt.goodsCostRubTotal, 0)
     );
     const currentReceiptSupplierBasis = round2(
@@ -1008,7 +1022,7 @@ export class AccountingApp {
         throw new DomainError("receipt_qty_exceeds_order", "Нельзя принять больше, чем осталось по заказу");
       }
     }
-    const preview = this.previewGoodsReceipt({ purchaseOrderId: order.id, lines: input.lines });
+    const preview = await this.previewGoodsReceipt({ purchaseOrderId: order.id, lines: input.lines });
     const source = input.source ?? "linked_supplier_payments";
     const goodsCostRubTotal = round2(input.goodsCostRubTotal ?? preview.suggestedGoodsCostRub);
     if (source !== "linked_supplier_payments" && !input.manualCostReason) {
@@ -1228,7 +1242,7 @@ export class AccountingApp {
     lines: Array<{ purchaseOrderLineId: ID; action: ShortageResolutionLine["action"]; qtyShortage?: number }>;
     post?: boolean;
   }): Promise<ShortageResolution> {
-    const order = this.mustFind(this.state.purchaseOrders, input.purchaseOrderId, "purchase_order_not_found");
+    const order = this.mustFind(await this.repos.purchaseOrders.all(), input.purchaseOrderId, "purchase_order_not_found");
     const document = await this.createDocument({
       documentType: "shortage_resolution",
       accountingDate: input.resolvedAt,
@@ -1469,7 +1483,7 @@ export class AccountingApp {
       status: "active"
     };
     await this.repos.externalProducts.add(externalProduct);
-    this.ensureExternalProductIndex().set(this.externalProductKey(externalProduct.channelId, externalProduct.externalSku), externalProduct);
+    (await this.ensureExternalProductIndex()).set(this.externalProductKey(externalProduct.channelId, externalProduct.externalSku), externalProduct);
     return externalProduct;
   }
 
@@ -1500,7 +1514,7 @@ export class AccountingApp {
       status: "active"
     };
     await this.repos.productExternalLinks.add(link);
-    this.ensureActiveLinkIndex().set(link.externalProductId, link);
+    (await this.ensureActiveLinkIndex()).set(link.externalProductId, link);
     if (externalProduct.status === "ignored") {
       externalProduct.status = "active";
       await this.repos.externalProducts.upsert(externalProduct);
@@ -1509,8 +1523,8 @@ export class AccountingApp {
     return link;
   }
 
-  saveChannelCredentials(channelId: ID, credentials: Record<string, string | undefined>) {
-    this.mustFind(this.state.salesChannels, channelId, "channel_not_found");
+  async saveChannelCredentials(channelId: ID, credentials: Record<string, string | undefined>) {
+    this.mustFind(await this.repos.salesChannels.all(), channelId, "channel_not_found");
     const cleaned = Object.fromEntries(
       Object.entries(credentials).filter(([, value]) => typeof value === "string" && value.length > 0)
     ) as Record<string, string>;
@@ -1831,7 +1845,7 @@ export class AccountingApp {
     observedAt: string;
     qtyObserved: number;
   }) {
-    const link = this.findActiveLink(input.externalProductId);
+    const link = await this.findActiveLink(input.externalProductId);
     const channel = this.mustFind(await this.repos.salesChannels.all(), input.channelId, "channel_not_found");
     const warehouseId = channel.salesPointWarehouseId;
     const existing = await this.observedStocks.findByKey(input.channelId, input.externalProductId, warehouseId, input.observedAt);
@@ -1952,7 +1966,7 @@ export class AccountingApp {
     post?: boolean;
     lines: Array<{ productId: ID; qty: number; priceRub: number; externalProductId?: ID }>;
   }): Promise<Sale> {
-    const channel = this.mustFind(this.state.salesChannels, input.channelId, "channel_not_found");
+    const channel = this.mustFind(await this.repos.salesChannels.all(), input.channelId, "channel_not_found");
     const warehouseId = input.warehouseId ?? channel.salesPointWarehouseId;
     const revenueRub = round2(input.lines.reduce((sum, line) => sum + line.qty * line.priceRub, 0));
     const document = await this.createDocument({
@@ -2490,7 +2504,7 @@ export class AccountingApp {
       accountingDate: document.accountingDate,
       canDelete: blockers.length === 0,
       blockers,
-      descendants: this.documentDescendants(document.id),
+      descendants: await this.documentDescendants(document.id),
       effects: {
         documents: removableDocumentIds.size,
         journalEntries: journalEntryIds.size,
@@ -2537,7 +2551,7 @@ export class AccountingApp {
   async stockTransferRollbackPreview(transferId: ID): Promise<EntityRollbackPreview> {
     const transfer = this.mustFind(await this.repos.stockTransfers.all(), transferId, "transfer_not_found");
     const document = this.mustFind(await this.repos.documents.all(), transfer.documentId, "document_not_found");
-    const descendants = this.documentDescendants(document.id);
+    const descendants = await this.documentDescendants(document.id);
     const downstreamDocuments = this.inventoryUsageDocuments(document.id);
     const blockers: EntityRollbackBlockerSummary[] = [];
     if (descendants.length > 0) {
@@ -2607,7 +2621,7 @@ export class AccountingApp {
   async deleteStockTransfer(transferId: ID) {
     const transfer = this.mustFind(await this.repos.stockTransfers.all(), transferId, "transfer_not_found");
     const document = this.mustFind(await this.repos.documents.all(), transfer.documentId, "document_not_found");
-    this.assertDocumentHasNoDescendants(document.id, "Нельзя удалить перемещение, пока от него зависят другие документы");
+    await this.assertDocumentHasNoDescendants(document.id, "Нельзя удалить перемещение, пока от него зависят другие документы");
     const downstreamDocuments = this.inventoryUsageDocuments(document.id);
     if (downstreamDocuments.length > 0) {
       throw new DomainError(
@@ -2693,7 +2707,7 @@ export class AccountingApp {
     const payment = this.mustFind(await this.repos.payments.all(), paymentId, "payment_not_found");
     const document = this.mustFind(await this.repos.documents.all(), payment.documentId, "document_not_found");
     const blockers: EntityRollbackBlockerSummary[] = [];
-    const descendants = this.documentDescendants(document.id);
+    const descendants = await this.documentDescendants(document.id);
     if (descendants.length > 0) {
       blockers.push({
         code: "document_has_descendants",
@@ -2769,7 +2783,7 @@ export class AccountingApp {
     const lots = (await this.repos.inventoryLots.all()).filter((lot) => lot.sourceDocumentId === document.id);
     const lotIds = new Set(lots.map((lot) => lot.id));
     const blockers: EntityRollbackBlockerSummary[] = [];
-    const descendants = this.documentDescendants(document.id);
+    const descendants = await this.documentDescendants(document.id);
     const downstream = this.inventoryUsageDocuments(document.id);
     if (downstream.length > 0) {
       blockers.push({
@@ -2859,7 +2873,7 @@ export class AccountingApp {
         message: "Нельзя удалить расход закупки: часть суммы уже отнесена на проданные товары"
       });
     }
-    const descendants = this.documentDescendants(document.id);
+    const descendants = await this.documentDescendants(document.id);
     if (descendants.length > 0) {
       blockers.push({
         code: "document_has_descendants",
@@ -3203,7 +3217,7 @@ export class AccountingApp {
     return salesReturn;
   }
 
-  classifyChannelFinanceEvent(input: {
+  async classifyChannelFinanceEvent(input: {
     financeEventId: ID;
     eventKind?: ChannelFinanceEvent["eventKind"];
     treatment?: ChannelFinanceEvent["treatment"];
@@ -3212,9 +3226,9 @@ export class AccountingApp {
     comment?: string;
     operationType?: string;
     operationTypeName?: string;
-  }): ChannelFinanceEvent {
-    const event = this.mustFind(this.state.channelFinanceEvents, input.financeEventId, "finance_event_not_found");
-    const document = this.mustFind(this.state.documents, event.documentId, "document_not_found");
+  }): Promise<ChannelFinanceEvent> {
+    const event = this.mustFind(await this.repos.channelFinanceEvents.all(), input.financeEventId, "finance_event_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), event.documentId, "document_not_found");
     if (input.eventKind) event.eventKind = input.eventKind;
     if (input.treatment !== undefined) event.treatment = input.treatment;
     if (input.category !== undefined) event.category = input.category;
@@ -3233,12 +3247,14 @@ export class AccountingApp {
     if (!event.category) event.category = defaultFinanceCategory(event.eventKind);
     document.title = channelFinanceDocumentTitle(event.eventKind, event.category);
     event.status = event.eventKind ? "classified" : "needs_attention";
+    await this.repos.channelFinanceEvents.upsert(event);
+    await this.repos.documents.upsert(document);
     return event;
   }
 
-  linkChannelFinanceEventToSale(financeEventId: ID, saleId: ID): ChannelFinanceEvent {
-    const event = this.mustFind(this.state.channelFinanceEvents, financeEventId, "finance_event_not_found");
-    const sale = this.mustFind(this.state.sales, saleId, "sale_not_found");
+  async linkChannelFinanceEventToSale(financeEventId: ID, saleId: ID): Promise<ChannelFinanceEvent> {
+    const event = this.mustFind(await this.repos.channelFinanceEvents.all(), financeEventId, "finance_event_not_found");
+    const sale = this.mustFind(await this.repos.sales.all(), saleId, "sale_not_found");
     if (sale.channelId !== event.channelId) {
       throw new DomainError("finance_event_channel_mismatch", "Связать можно только с продажей того же канала");
     }
@@ -3247,12 +3263,13 @@ export class AccountingApp {
     if (!event.treatment) event.treatment = "sale_variable";
     event.status = event.eventKind ? "classified" : event.status;
     this.ensureDocumentLink(event.documentId, sale.documentId, "channel_fee");
+    await this.repos.channelFinanceEvents.upsert(event);
     return event;
   }
 
-  linkChannelFinanceEventToReturn(financeEventId: ID, returnId: ID): ChannelFinanceEvent {
-    const event = this.mustFind(this.state.channelFinanceEvents, financeEventId, "finance_event_not_found");
-    const salesReturn = this.mustFind(this.state.salesReturns, returnId, "return_not_found");
+  async linkChannelFinanceEventToReturn(financeEventId: ID, returnId: ID): Promise<ChannelFinanceEvent> {
+    const event = this.mustFind(await this.repos.channelFinanceEvents.all(), financeEventId, "finance_event_not_found");
+    const salesReturn = this.mustFind(await this.repos.salesReturns.all(), returnId, "return_not_found");
     if (salesReturn.channelId !== event.channelId) {
       throw new DomainError("finance_event_channel_mismatch", "Связать можно только с возвратом того же канала");
     }
@@ -3262,16 +3279,18 @@ export class AccountingApp {
       event.status = event.eventKind ? "classified" : event.status;
     }
     this.ensureDocumentLink(event.documentId, salesReturn.documentId, "channel_fee");
+    await this.repos.channelFinanceEvents.upsert(event);
     return event;
   }
 
-  allocateChannelFinanceEventToSales(financeEventId: ID, allocations: Array<{ saleId: ID; amountRub: number }>): ChannelFinanceEvent {
-    const event = this.mustFind(this.state.channelFinanceEvents, financeEventId, "finance_event_not_found");
+  async allocateChannelFinanceEventToSales(financeEventId: ID, allocations: Array<{ saleId: ID; amountRub: number }>): Promise<ChannelFinanceEvent> {
+    const event = this.mustFind(await this.repos.channelFinanceEvents.all(), financeEventId, "finance_event_not_found");
     if (!allocations.length) {
       throw new DomainError("finance_event_allocations_empty", "Нужна хотя бы одна продажа для распределения");
     }
+    const sales = await this.repos.sales.all();
     const normalized = allocations.map((allocation) => {
-      const sale = this.mustFind(this.state.sales, allocation.saleId, "sale_not_found");
+      const sale = this.mustFind(sales, allocation.saleId, "sale_not_found");
       if (sale.channelId !== event.channelId) {
         throw new DomainError("finance_event_channel_mismatch", "Связать можно только с продажами того же канала");
       }
@@ -3289,9 +3308,10 @@ export class AccountingApp {
     if (!event.treatment) event.treatment = "sale_variable";
     event.status = event.eventKind ? "classified" : event.status;
     normalized.forEach((allocation) => {
-      const sale = this.mustFind(this.state.sales, allocation.saleId, "sale_not_found");
+      const sale = this.mustFind(sales, allocation.saleId, "sale_not_found");
       this.ensureDocumentLink(event.documentId, sale.documentId, "channel_fee");
     });
+    await this.repos.channelFinanceEvents.upsert(event);
     return event;
   }
 
@@ -3425,11 +3445,12 @@ export class AccountingApp {
     return payout;
   }
 
-  leavePayoutDifference(payoutId: ID, reason: string): Payout {
-    const payout = this.mustFind(this.state.payouts, payoutId, "payout_not_found");
+  async leavePayoutDifference(payoutId: ID, reason: string): Promise<Payout> {
+    const payout = this.mustFind(await this.repos.payouts.all(), payoutId, "payout_not_found");
     payout.differenceReason = reason;
     payout.differenceAccepted = true;
     payout.status = payout.differenceRub === 0 ? "ready" : "needs_reconciliation";
+    await this.repos.payouts.upsert(payout);
     return payout;
   }
 
@@ -3723,36 +3744,39 @@ export class AccountingApp {
     return stocktake;
   }
 
-  previewCorrection(documentId: ID, patch: Record<string, unknown>, reason = "Предпросмотр") {
-    const document = this.mustFind(this.state.documents, documentId, "document_not_found");
-    this.assertDocumentHasNoDescendants(document.id, "Нельзя изменить документ, пока от него зависят другие документы");
+  async previewCorrection(documentId: ID, patch: Record<string, unknown>, reason = "Предпросмотр") {
+    const document = this.mustFind(await this.repos.documents.all(), documentId, "document_not_found");
+    await this.assertDocumentHasNoDescendants(document.id, "Нельзя изменить документ, пока от него зависят другие документы");
+    const period = (await this.repos.periods.all()).find((candidate) => candidate.startsOn <= document.accountingDate && candidate.endsOn >= document.accountingDate);
     return {
       document,
       reason,
-      periodStatus: this.periodForDate(document.accountingDate)?.status ?? "unknown",
+      periodStatus: period?.status ?? "unknown",
       patch,
       impact: {
-        journalEntries: this.state.journalEntries.filter((entry) => entry.documentId === documentId).length,
-        stockMovements: this.state.stockMovements.filter((movement) => movement.documentId === documentId).length,
-        dependentSales: this.state.sales.filter((sale) => sale.documentId !== documentId).length,
+        journalEntries: (await this.repos.journalEntries.all()).filter((entry) => entry.documentId === documentId).length,
+        stockMovements: (await this.repos.stockMovements.all()).filter((movement) => movement.documentId === documentId).length,
+        dependentSales: (await this.repos.sales.all()).filter((sale) => sale.documentId !== documentId).length,
         reports: ["Прибыль и убытки", "Баланс", "Остатки и партии"]
       }
     };
   }
 
-  documentDescendants(documentId: ID): DocumentDescendantSummary[] {
-    this.mustFind(this.state.documents, documentId, "document_not_found");
-    const documentTypesByCode = new Map(this.state.documentTypes.map((documentType) => [documentType.code, documentType.displayName]));
+  async documentDescendants(documentId: ID): Promise<DocumentDescendantSummary[]> {
+    const documents = await this.repos.documents.all();
+    this.mustFind(documents, documentId, "document_not_found");
+    const documentTypesByCode = new Map((await this.repos.documentTypes.all()).map((documentType) => [documentType.code, documentType.displayName]));
+    const documentLinks = await this.repos.documentLinks.all();
     const queue: Array<{ documentId: ID; depth: number }> = [{ documentId, depth: 0 }];
     const visited = new Set<ID>([documentId]);
     const descendants: DocumentDescendantSummary[] = [];
 
     while (queue.length > 0) {
       const current = queue.shift()!;
-      for (const link of this.state.documentLinks) {
+      for (const link of documentLinks) {
         const descendantId = this.documentDescendantIdForLink(link, current.documentId);
         if (!descendantId || visited.has(descendantId)) continue;
-        const descendant = this.state.documents.find((candidate) => candidate.id === descendantId);
+        const descendant = documents.find((candidate) => candidate.id === descendantId);
         if (!descendant) continue;
         visited.add(descendantId);
         descendants.push({
@@ -3825,8 +3849,8 @@ export class AccountingApp {
       );
   }
 
-  assertDocumentHasNoDescendants(documentId: ID, message: string) {
-    const descendants = this.documentDescendants(documentId);
+  async assertDocumentHasNoDescendants(documentId: ID, message: string) {
+    const descendants = await this.documentDescendants(documentId);
     if (descendants.length === 0) return;
     throw new DomainError("document_has_descendants", message, { descendants });
   }
@@ -4306,7 +4330,7 @@ export class AccountingApp {
     if (document.status !== "draft") {
       throw new DomainError("document_not_editable", "Проведенный документ меняется только через исправление");
     }
-    this.assertDocumentHasNoDescendants(document.id, "Нельзя изменить документ, пока от него зависят другие документы");
+    await this.assertDocumentHasNoDescendants(document.id, "Нельзя изменить документ, пока от него зависят другие документы");
     if (patch.accountingDate) this.assertAccountingDateAllowed(patch.accountingDate);
     const before = {
       document: { ...document },
@@ -4370,7 +4394,7 @@ export class AccountingApp {
     if (document.status !== "draft") {
       throw new DomainError("document_delete_not_allowed", "Удалять можно только черновики без проведённых последствий");
     }
-    this.assertDocumentHasNoDescendants(document.id, "Нельзя удалить документ, пока от него зависят другие документы");
+    await this.assertDocumentHasNoDescendants(document.id, "Нельзя удалить документ, пока от него зависят другие документы");
     if ((await this.repos.journalEntries.all()).some((entry) => entry.documentId === document.id)) {
       throw new DomainError("document_has_postings", "Нельзя удалить документ с проводками");
     }
@@ -4503,7 +4527,7 @@ export class AccountingApp {
 
   async applyDocumentCorrection(documentId: ID, patch: Record<string, unknown>, reason = "Исправление документа") {
     const document = this.mustFind(this.state.documents, documentId, "document_not_found");
-    this.assertDocumentHasNoDescendants(document.id, "Нельзя изменить документ, пока от него зависят другие документы");
+    await this.assertDocumentHasNoDescendants(document.id, "Нельзя изменить документ, пока от него зависят другие документы");
     const before = { ...document };
     const correction = this.createCorrectionCase(document.id, "open_period_edit", reason, { patch });
     this.state.documentVersions.push({
@@ -4704,8 +4728,8 @@ export class AccountingApp {
   }
 
   async postOwnerContribution(paymentId: ID): Promise<Payment> {
-    const payment = this.mustFind(this.state.payments, paymentId, "payment_not_found");
-    const document = this.mustFind(this.state.documents, payment.documentId, "document_not_found");
+    const payment = this.mustFind(await this.repos.payments.all(), paymentId, "payment_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), payment.documentId, "document_not_found");
     if (document.status === "posted") return payment;
     if (payment.paymentType !== "owner_contribution") {
       throw new DomainError("payment_type_mismatch", "Это не пополнение владельцем");
@@ -4719,8 +4743,8 @@ export class AccountingApp {
   }
 
   async postSupplierPayment(paymentId: ID): Promise<Payment> {
-    const payment = this.mustFind(this.state.payments, paymentId, "payment_not_found");
-    const document = this.mustFind(this.state.documents, payment.documentId, "document_not_found");
+    const payment = this.mustFind(await this.repos.payments.all(), paymentId, "payment_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), payment.documentId, "document_not_found");
     if (document.status === "posted") return payment;
     if (payment.paymentType !== "supplier_payment") {
       throw new DomainError("payment_type_mismatch", "Это не оплата поставщику");
@@ -4729,13 +4753,13 @@ export class AccountingApp {
     if (!allocation?.purchaseOrderId) {
       throw new DomainError("payment_allocation_not_found", "Для платежа не найден связанный заказ поставщику");
     }
-    const order = this.mustFind(this.state.purchaseOrders, allocation.purchaseOrderId, "purchase_order_not_found");
+    const order = this.mustFind(await this.repos.purchaseOrders.all(), allocation.purchaseOrderId, "purchase_order_not_found");
     await this.postDocument(payment.documentId, [
       { accountCode: "60.02", debit: payment.amountRub, memo: "Аванс поставщику" },
       { accountCode: "51", credit: payment.amountRub, memo: "Оплата с расчетного счета" }
     ]);
     this.applyPaymentToCashAccount(payment);
-    this.state.settlementEntries.push({
+    await this.repos.settlementEntries.add({
       id: id("settlement"),
       organizationId: this.currentOrgId(),
       counterpartyId: order.supplierId,
@@ -4750,8 +4774,8 @@ export class AccountingApp {
   }
 
   async postOwnerWithdrawal(paymentId: ID): Promise<Payment> {
-    const payment = this.mustFind(this.state.payments, paymentId, "payment_not_found");
-    const document = this.mustFind(this.state.documents, payment.documentId, "document_not_found");
+    const payment = this.mustFind(await this.repos.payments.all(), paymentId, "payment_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), payment.documentId, "document_not_found");
     if (document.status === "posted") return payment;
     if (payment.paymentType !== "owner_withdrawal") {
       throw new DomainError("payment_type_mismatch", "Это не изъятие владельца");
@@ -4873,13 +4897,15 @@ export class AccountingApp {
     return order;
   }
 
-  postPurchaseOrder(purchaseOrderId: ID): PurchaseOrder {
-    const order = this.mustFind(this.state.purchaseOrders, purchaseOrderId, "purchase_order_not_found");
-    const document = this.mustFind(this.state.documents, order.documentId, "document_not_found");
+  async postPurchaseOrder(purchaseOrderId: ID): Promise<PurchaseOrder> {
+    const order = this.mustFind(await this.repos.purchaseOrders.all(), purchaseOrderId, "purchase_order_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), order.documentId, "document_not_found");
     this.assertAccountingDateAllowed(order.orderedAt);
     order.status = "ordered";
     document.status = "posted";
     document.postedAt = document.postedAt ?? nowIso();
+    await this.repos.purchaseOrders.upsert(order);
+    await this.repos.documents.upsert(document);
     this.audit("document", document.id, "post", undefined, document, "Заказ не создает проводок");
     return order;
   }

@@ -136,11 +136,15 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
 → `repos.X.replaceAll` (мутация на месте, ссылка цела) + delete-for-resync. app.ts-хендлеры (55 floating-
 promise в `c.json` починены) + пайплайн (`materializeSale/Payout/Return`) + тесты на `await`; sync test-
 коллбэки → async; async-throw → `rejects.toThrow`. **Двойная запись/AVCO/удаления корректны (тесты зелёные).**
-Остаток `this.state.` в домене: **449** (было 565); из них ~215 в 81 sync-хелпере, ~234 — внутренние чтения
-уже-async команд + синглтоны. Переведены reporting (`reports`/`ledgerBalances`) и `dashboard`.
+Остаток `this.state.` в домене: **115** (было 565; факт после среза `app.ts`/finance/backfill/corrections);
+из них часть — синглтоны/metadata (`organization`, `accountingPolicy`, `documentTypes`) и временные in-memory
+stores (`externalEvents`/`observedStocks`/`syncRuns`) в конструкторе. Переведены reporting
+(`reports`/`ledgerBalances`), `dashboard`, backend helper-layer в `app.ts` (прямого `app.state` больше нет),
+backfill/materialization/sync helpers, `saveChannelCredentials`, finance-link методы, `previewGoodsReceipt`,
+`postPurchaseOrder`, payment posting lookup'и и `documentDescendants`/`previewCorrection`.
 Топ sync-хелперов на конверсию: `updatePurchaseOrderDraft`(12), `receiptDispatchContext`(9),
 `paymentRollbackPreview`(9), `goodsReceiptRollbackPreview`(9), `purchaseOrderDetails`(7), `consumeFifo`(мутирует!),
-`appendJournalEntry`, `documentDescendants`, `findActiveLink`, `receivedQtyForLine`, `paidShareForOrderLine` и т.д.
+`appendJournalEntry`, `receivedQtyForLine`, `paidShareForOrderLine`, `inventoryUsageDocuments`, `findRollbackDocumentSummary` и т.д.
 Синглтоны `organization`/`accountingPolicy` (~16 рефов) — НЕ массивы, не «тяжёлый снэпшот»; добираются в самом конце
 (или отдельным singleton-аксессором), уже после выноса всех коллекций.
 

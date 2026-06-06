@@ -16,7 +16,7 @@ describe("channel dispatch from goods receipt", () => {
   it("stores plugin flow state and commits a channel transfer with receipt provenance", async () => {
     resetIds();
     const app = new AccountingApp();
-    app.bootstrap({ displayName: "Dispatch", accountingStartDate: "2026-06-01" });
+    await app.bootstrap({ displayName: "Dispatch", accountingStartDate: "2026-06-01" });
     const ownWarehouse = app.state.warehouses.find((warehouse) => warehouse.warehouseType === "own");
     if (!ownWarehouse) throw new Error("own_warehouse_missing");
 

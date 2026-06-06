@@ -27,7 +27,7 @@ describe("stock transfer workflow api", () => {
   it("keeps transfer as draft until explicit post and preserves inventory value", async () => {
     resetIds();
     const app = new AccountingApp();
-    app.bootstrap({ displayName: "Transfers", accountingStartDate: "2026-06-01" });
+    await app.bootstrap({ displayName: "Transfers", accountingStartDate: "2026-06-01" });
     const product = await app.createProduct({ sku: "TR-1", name: "Товар для перемещения" });
     const ownWarehouse = app.state.warehouses.find((warehouse) => warehouse.warehouseType === "own");
     const salesPointWarehouse = app.state.warehouses.find((warehouse) => warehouse.warehouseType === "sales_point");

@@ -25,7 +25,7 @@ describe("channel mapping api", () => {
   it("links external product, can create internal product from external card and keeps raw card on unlink", async () => {
     resetIds();
     const app = new AccountingApp();
-    app.bootstrap({ displayName: "Mapping", accountingStartDate: "2026-06-01" });
+    await app.bootstrap({ displayName: "Mapping", accountingStartDate: "2026-06-01" });
     const internal = await app.createProduct({ sku: "MAP-1", name: "Ручной товар" });
     const channel = await app.createSalesChannel({ name: "Ozon", channelType: "marketplace" });
     const external = await app.createExternalProduct({
