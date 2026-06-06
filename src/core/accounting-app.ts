@@ -6005,18 +6005,18 @@ export class AccountingApp {
     return this.state.documents.find((document) => document.id === documentId)?.status === "posted";
   }
 
-  private channelClearingBalance(channelId: ID): number {
+  private async channelClearingBalance(channelId: ID): Promise<number> {
     const documents = new Set(
       [
-        ...this.state.sales.filter((sale) => sale.channelId === channelId).flatMap((sale) => [sale.documentId, sale.financialDocumentId].filter(Boolean) as string[]),
-        ...this.state.salesReturns.filter((saleReturn) => saleReturn.channelId === channelId).map((saleReturn) => saleReturn.documentId),
-        ...this.state.channelFinanceEvents.filter((event) => event.channelId === channelId).map((event) => event.documentId),
-        ...this.state.payouts.filter((payout) => payout.channelId === channelId).map((payout) => payout.documentId)
+        ...(await this.repos.sales.all()).filter((sale) => sale.channelId === channelId).flatMap((sale) => [sale.documentId, sale.financialDocumentId].filter(Boolean) as string[]),
+        ...(await this.repos.salesReturns.all()).filter((saleReturn) => saleReturn.channelId === channelId).map((saleReturn) => saleReturn.documentId),
+        ...(await this.repos.channelFinanceEvents.all()).filter((event) => event.channelId === channelId).map((event) => event.documentId),
+        ...(await this.repos.payouts.all()).filter((payout) => payout.channelId === channelId).map((payout) => payout.documentId)
       ]
     );
-    const entryIds = this.state.journalEntries.filter((entry) => documents.has(entry.documentId)).map((entry) => entry.id);
+    const entryIds = (await this.repos.journalEntries.all()).filter((entry) => documents.has(entry.documentId)).map((entry) => entry.id);
     return round2(
-      this.state.journalLines
+      (await this.repos.journalLines.all())
         .filter((line) => entryIds.includes(line.journalEntryId) && line.accountCode === "76.ТП")
         .reduce((sum, line) => sum + line.debit - line.credit, 0)
     );
