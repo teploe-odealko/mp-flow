@@ -67,6 +67,30 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
 и НЕ диффятся в snapshot на каждый запрос — это и был корень тормозов «создание товара ~4с».
 Из snapshot вынесены: `auditEvents`, `externalEvents`, `observedStocks`, `syncRuns`.
 
+**Замер на реальной БД (9887 событий):** создание товара 3.6–3.9с → **0.03–0.09с**; `/api/state` ~4с → **0.11с**;
+весь лог событий отдаётся только на странице событий, по запросу (0.3с). Исходная жалоба закрыта.
+
+## Фронт: уход от всесущего `state` (`/api/state` → пер-ресурсные запросы)
+Цель «ни на фронте всесущего snapshot» — самостоятельная и не трогает синхронность домена.
+- ✅ Инфра: бэк `GET /api/collections/:name` (классический пер-ресурс, тот же public-шейпинг, что `/api/state`,
+  404 на неизвестную) + хук `useCollection(name)` ([use-collection.ts](src/frontend/lib/use-collection.ts)),
+  React Query кэширует по `["collection", name]`. Замена механическая: `state.X` → `useCollection("X")`.
+- ✅ Уже на запросах (dedicated): события (`/api/integrations/events`+`/:id`), остатки (`/api/integrations/observed-stock`),
+  аудит (`/api/controls/audit-events`), sync-runs (`/api/integrations/channels/:id/sync-runs`).
+- ✅ Переведены на `useCollection`: Products, ProductForm, ChartAccounts, Audit.
+- ⏳ Осталось ~25 страниц (тот же swap; внутри `useMemo`/функций — поднять чтение в top-level хук):
+  AccountingWorkspace, Ledger, Journal, ChannelDetail, ChannelsPages, FinanceWorkspace, ChannelMapping,
+  ProductCard, SettingsOverview, Setup, Documents, DocumentCard, InventoryWorkspace, inventory/forms,
+  ProcurementWorkspace, PurchaseOrderCard, procurement/forms, ControlsPages, Home, Onboarding, Money,
+  Expenses, Reports, Sales.
+- ⏳ Финал фронта: когда все страницы сняты — удалить `/api/state`, `use-app-state`, `AppState`-проп в `AppShell`.
+
+## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
+Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,
+`stockMovements` 15 и т.д., и всё связано через `documents`/`journalEntries`. Дешёвых пер-коллекционных флипов
+здесь нет — вынос ядра = перевод доменных операций (createSale/receiveGoods/postPayment/…) на async-репозитории.
+Делать по кластерам операций; «можно ломать» → большими батчами с финальной стыковкой (tsc + тесты + smoke).
+
 ## Уточнение стратегии (важный вывод из кода)
 Домен — **синхронный in-memory движок**: почти каждая коллекция читается ПОСРЕДИ
 операций. `auditEvents` вынесся легко только потому, что он чисто append-only
