@@ -221,7 +221,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
       return c.json({ ok: true, data: event });
     }
-    const event = scopedApp.state.externalEvents.find((candidate) => candidate.id === c.req.param("id"));
+    const event = await scopedApp.externalEvents.getById(c.req.param("id"));
     if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
     return c.json({ ok: true, data: event });
   });
@@ -1313,13 +1313,13 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: scopedApp.postSale(c.req.param("id")) });
   });
   api.delete("/api/sales/:id", (c) => c.json({ ok: true, data: scopedApp.deleteSaleForResync(c.req.param("id")) }));
-  api.post("/api/integrations/events/:id/materialize-sale", (c) => {
-    const event = scopedApp.state.externalEvents.find((candidate) => candidate.id === c.req.param("id"));
+  api.post("/api/integrations/events/:id/materialize-sale", async (c) => {
+    const event = await scopedApp.externalEvents.getById(c.req.param("id"));
     if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
     return c.json({ ok: true, data: materializeSaleEvent(scopedApp, event) });
   });
   api.post("/api/integrations/events/:id/materialize-sale-accrual", async (c) => {
-    const event = scopedApp.state.externalEvents.find((candidate) => candidate.id === c.req.param("id"));
+    const event = await scopedApp.externalEvents.getById(c.req.param("id"));
     if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
     return c.json({ ok: true, data: await materializeSaleAccrualEvent(scopedApp, event) });
   });
@@ -1364,12 +1364,12 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.delete("/api/returns/:id", (c) => c.json({ ok: true, data: scopedApp.deleteReturnForResync(c.req.param("id")) }));
   api.post("/api/integrations/events/:id/materialize-return", async (c) => {
-    const event = scopedApp.state.externalEvents.find((candidate) => candidate.id === c.req.param("id"));
+    const event = await scopedApp.externalEvents.getById(c.req.param("id"));
     if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
     return c.json({ ok: true, data: await materializeReturnEvent(scopedApp, event) });
   });
   api.post("/api/integrations/events/:id/materialize-fee", async (c) => {
-    const event = scopedApp.state.externalEvents.find((candidate) => candidate.id === c.req.param("id"));
+    const event = await scopedApp.externalEvents.getById(c.req.param("id"));
     if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
     if (event.eventType !== "fee") throw new DomainError("external_event_type_invalid", "Событие не относится к финансовым удержаниям");
     return c.json({ ok: true, data: await materializeFinanceEvent(scopedApp, event, { post: false }) });
@@ -1448,8 +1448,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = z.object({ reason: z.string().min(3) }).parse(await c.req.json());
     return c.json({ ok: true, data: scopedApp.leavePayoutDifference(c.req.param("id"), body.reason) });
   });
-  api.post("/api/integrations/events/:id/materialize-payout", (c) => {
-    const event = scopedApp.state.externalEvents.find((candidate) => candidate.id === c.req.param("id"));
+  api.post("/api/integrations/events/:id/materialize-payout", async (c) => {
+    const event = await scopedApp.externalEvents.getById(c.req.param("id"));
     if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
     return c.json({ ok: true, data: materializePayoutEvent(scopedApp, event) });
   });
