@@ -20,6 +20,8 @@ import { date, dateTime } from "@/lib/format";
 export function ControlsWorkspace() {
   const { state } = useAppState();
   const queryClient = useQueryClient();
+  const auditQuery = useQuery({ queryKey: ["audit-events"], queryFn: () => apiGet<any[]>("/api/controls/audit-events") });
+  const auditEvents = auditQuery.data ?? [];
   const corrections = state.correctionCases ?? [];
   const jobs = state.recalculationJobs ?? [];
   const periods = state.periods ?? [];
@@ -101,7 +103,7 @@ export function ControlsWorkspace() {
         <Kpi tone="warning" label="Открытые исправления" value={openCorrections} hint={`${correctionRows.length} кейсов`} />
         <Kpi tone="info" label="Задачи пересчета" value={visibleJobs.length} hint={`${failedJobs} с ошибкой`} />
         <Kpi tone="success" label="Готово" value={correctionRows.filter((row) => row.correction.status === "applied").length} hint="Примененные кейсы" />
-        <Kpi tone="neutral" label="Аудит" value={(state.auditEvents ?? []).length} hint="Записей в журнале действий" />
+        <Kpi tone="neutral" label="Аудит" value={auditEvents.length} hint="Записей в журнале действий" />
       </div>
 
       <Tabs defaultValue="corrections">
@@ -293,7 +295,7 @@ export function ControlsWorkspace() {
               <Table>
                 <THead><TR><TH>Дата</TH><TH>Действие</TH><TH>Сущность</TH><TH>Кто</TH></TR></THead>
                 <TBody>
-                  {(state.auditEvents ?? []).slice(-25).reverse().map((e: any) => (
+                  {auditEvents.slice(-25).reverse().map((e: any) => (
                     <TR key={e.id}>
                       <TD muted className="text-xs numeric">{dateTime(e.createdAt)}</TD>
                       <TD><Badge tone="neutral">{e.eventType}</Badge></TD>

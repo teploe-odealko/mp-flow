@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { apiGet } from "@/api";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
@@ -12,7 +14,8 @@ import { dateTime } from "@/lib/format";
 
 export function AuditPage() {
   const { state } = useAppState();
-  const auditEvents = state.auditEvents ?? [];
+  const auditQuery = useQuery({ queryKey: ["audit-events"], queryFn: () => apiGet<any[]>("/api/controls/audit-events") });
+  const auditEvents = auditQuery.data ?? [];
   const users = state.users ?? [];
   const [periodFilter, setPeriodFilter] = useState("");
   const [userFilter, setUserFilter] = useState("");

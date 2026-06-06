@@ -278,13 +278,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
 
 
   api.get("/api/dashboard", (c) => c.json({ ok: true, data: scopedApp.dashboard() }));
-  api.get("/api/state", async (c) => {
-    const data = publicAccountingState(scopedApp.state);
-    if (postgresBacked()) {
-      data.auditEvents = await new AuditEventRepository(getPool(), eventsWorkspaceId(c)).listAll();
-    }
-    return c.json({ ok: true, data });
-  });
+  api.get("/api/state", (c) => c.json({ ok: true, data: publicAccountingState(scopedApp.state) }));
   api.get("/api/reports", (c) => c.json({ ok: true, data: scopedApp.reports() }));
   api.get("/api/reports/profit-and-loss", (c) => c.json({ ok: true, data: scopedApp.reports().pnl }));
   api.get("/api/reports/balance-sheet", (c) => c.json({ ok: true, data: scopedApp.reports().balanceSheet }));
