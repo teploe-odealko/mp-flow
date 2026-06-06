@@ -18,7 +18,7 @@ async function get<T>(api: ReturnType<typeof createApi>, path: string): Promise<
 }
 
 describe("marketplace plugins", () => {
-  it("expands Ozon sale settlement into commission and logistics components", () => {
+  it("expands Ozon sale settlement into commission and logistics components", async () => {
     const events = expandOzonFinanceEvents({
       operation_id: 50944820885,
       operation_type: "OperationAgentDeliveredToCustomer",
@@ -47,7 +47,7 @@ describe("marketplace plugins", () => {
     expect(events[1].payload.componentTreatment).toBe("sale_variable");
   });
 
-  it("routes positive acquiring operation to fee instead of payout", () => {
+  it("routes positive acquiring operation to fee instead of payout", async () => {
     const events = expandOzonFinanceEvents({
       operation_id: 50502872424,
       operation_type: "MarketplaceRedistributionOfAcquiringOperation",
@@ -64,7 +64,7 @@ describe("marketplace plugins", () => {
     expect(events[0].payload.operationType).toBe("MarketplaceRedistributionOfAcquiringOperation");
   });
 
-  it("no longer routes payout-like finance operations into payout sync events", () => {
+  it("no longer routes payout-like finance operations into payout sync events", async () => {
     const events = expandOzonFinanceEvents({
       operation_id: 60000000001,
       operation_type: "SellerPayoutSettlement",
@@ -81,7 +81,7 @@ describe("marketplace plugins", () => {
     resetIds();
     const app = new AccountingApp();
     const api = createApi(app);
-    app.setupDemo();
+    await app.setupDemo();
     const state = await get<any>(api, "/api/state");
     const channel = state.salesChannels.find((candidate: any) => candidate.name.includes("Ozon"));
 

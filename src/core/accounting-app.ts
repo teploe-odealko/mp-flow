@@ -458,7 +458,7 @@ export class AccountingApp {
     };
   }
 
-  setupDemo() {
+  async setupDemo() {
     this.bootstrap({
       displayName: "ИП Иванов",
       accountingStartDate: "2026-06-01"
@@ -493,8 +493,8 @@ export class AccountingApp {
       imageUrl: "https://images.unsplash.com/photo-1612815154858-60aa4c59eaa6?auto=format&fit=crop&w=160&q=80"
     });
     const supplier = this.createCounterparty({ name: "Shenzhen Good Supply", counterpartyType: "supplier", country: "CN" });
-    this.recordOwnerContribution({ amountRub: 500_000, paidAt: "2026-06-01", comment: "Стартовый капитал" });
-    const po = this.createPurchaseOrder({
+    await this.recordOwnerContribution({ amountRub: 500_000, paidAt: "2026-06-01", comment: "Стартовый капитал" });
+    const po = await this.createPurchaseOrder({
       supplierId: supplier.id,
       destinationWarehouseId: this.ownWarehouse().id,
       supplierCurrency: "CNY",
@@ -505,13 +505,13 @@ export class AccountingApp {
       ],
       post: true
     });
-    this.recordSupplierPayment({
+    await this.recordSupplierPayment({
       purchaseOrderId: po.id,
       amountRub: 130_000,
       paidAt: "2026-06-03",
       comment: "Оплата товара поставщику"
     });
-    this.receiveGoods({
+    await this.receiveGoods({
       purchaseOrderId: po.id,
       warehouseId: this.ownWarehouse().id,
       receiptDate: "2026-06-12",
@@ -520,7 +520,7 @@ export class AccountingApp {
         { purchaseOrderLineId: this.state.purchaseOrderLines.find((line) => line.purchaseOrderId === po.id && line.productId === productB.id)!.id, qtyReceived: 500 }
       ]
     });
-    this.addProcurementCost({
+    await this.addProcurementCost({
       purchaseOrderId: po.id,
       costType: "delivery",
       costDate: "2026-06-14",
@@ -530,7 +530,7 @@ export class AccountingApp {
     });
     const channel = this.createSalesChannel({ name: "Ozon FBO", channelType: "marketplace", pluginCode: "ozon", enabledStreams: ["products", "stocks", "sales", "returns", "finance_events", "payouts"] });
     channel.status = "active";
-    this.transferStock({
+    await this.transferStock({
       fromWarehouseId: this.ownWarehouse().id,
       toWarehouseId: channel.salesPointWarehouseId,
       transferDate: "2026-06-15",
@@ -539,7 +539,7 @@ export class AccountingApp {
         { productId: productB.id, qty: 100 }
       ]
     });
-    this.recordSale({
+    await this.recordSale({
       channelId: channel.id,
       saleDate: "2026-06-18",
       lines: [
@@ -547,14 +547,14 @@ export class AccountingApp {
         { productId: productB.id, qty: 3, priceRub: 490 }
       ]
     });
-    this.recordChannelFee({
+    await this.recordChannelFee({
       channelId: channel.id,
       eventKind: "commission",
       occurredAt: "2026-06-18",
       amountRub: 720,
       comment: "Комиссия канала"
     });
-    this.recordChannelPayout({
+    await this.recordChannelPayout({
       channelId: channel.id,
       payoutDate: "2026-06-22",
       bankReceiptRub: 5_520
@@ -706,7 +706,7 @@ export class AccountingApp {
     return warehouse;
   }
 
-  createOpeningBalance(input: {
+  async createOpeningBalance(input: {
     warehouseId: ID;
     date: string;
     comment?: string;
@@ -746,7 +746,7 @@ export class AccountingApp {
       return { ...line, stateCode, costRub: round2(lineCostRub) };
     });
     const amountRub = round2(normalizedLines.reduce((sum, line) => sum + line.costRub, 0));
-    const document = this.createDocument({
+    const document = await this.createDocument({
       documentType: "opening_balance",
       accountingDate: input.date,
       title: "Стартовый остаток товаров",
@@ -772,12 +772,12 @@ export class AccountingApp {
     });
 
     if (input.post ?? true) {
-      return this.postOpeningBalance(document.id);
+      return await this.postOpeningBalance(document.id);
     }
     return document;
   }
 
-  postOpeningBalance(documentId: ID) {
+  async postOpeningBalance(documentId: ID) {
     const document = this.mustFind(this.state.documents, documentId, "document_not_found");
     if (document.documentType !== "opening_balance") {
       throw new DomainError("invalid_document_type", "Документ не является стартовым остатком");
@@ -812,7 +812,7 @@ export class AccountingApp {
       });
     });
 
-    const entry = this.postDocument(document.id, [
+    const entry = await this.postDocument(document.id, [
       { accountCode: accountForWarehouse(warehouse), debit: amountRub, memo: "Стартовый остаток товаров" },
       { accountCode: "80.01", credit: amountRub, memo: "Ввод начального капитала товарами" }
     ]);
@@ -820,7 +820,7 @@ export class AccountingApp {
     return document;
   }
 
-  createPurchaseOrder(input: {
+  async createPurchaseOrder(input: {
     supplierId: ID;
     destinationWarehouseId: ID;
     supplierCurrency: PurchaseOrder["supplierCurrency"];
@@ -828,14 +828,14 @@ export class AccountingApp {
     lines: Array<{ productId: ID; qty: number; supplierUnitPrice: number; lineNote?: string }>;
     comment?: string;
     post?: boolean;
-  }): PurchaseOrder {
+  }): Promise<PurchaseOrder> {
     const organizationId = this.currentOrgId();
     if (input.lines.length === 0) {
       throw new DomainError("empty_order", "В заказе должна быть хотя бы одна строка");
     }
     const totalSupplierAmount = round2(input.lines.reduce((sum, line) => sum + line.qty * line.supplierUnitPrice, 0));
     const totalQty = round4(input.lines.reduce((sum, line) => sum + line.qty, 0));
-    const document = this.createDocument({
+    const document = await this.createDocument({
       documentType: "purchase_order",
       accountingDate: input.orderedAt,
       title: "Заказ поставщику",
@@ -890,10 +890,10 @@ export class AccountingApp {
     return purchaseOrder;
   }
 
-  recordOwnerContribution(input: { amountRub: number; paidAt: string; comment?: string; post?: boolean }) {
+  async recordOwnerContribution(input: { amountRub: number; paidAt: string; comment?: string; post?: boolean }) {
     assertPositive(input.amountRub, "Сумма пополнения должна быть положительной");
     const owner = this.state.counterparties.find((counterparty) => counterparty.counterpartyType === "owner");
-    const payment = this.createPayment({
+    const payment = await this.createPayment({
       paymentDirection: "incoming",
       paymentType: "owner_contribution",
       amountRub: input.amountRub,
@@ -911,15 +911,15 @@ export class AccountingApp {
       amountRub: payment.amountRub
     });
     if (input.post !== false) {
-      this.postOwnerContribution(payment.id);
+      await this.postOwnerContribution(payment.id);
     }
     return payment;
   }
 
-  recordSupplierPayment(input: { purchaseOrderId: ID; amountRub: number; paidAt: string; comment?: string; post?: boolean }): Payment {
+  async recordSupplierPayment(input: { purchaseOrderId: ID; amountRub: number; paidAt: string; comment?: string; post?: boolean }): Promise<Payment> {
     assertPositive(input.amountRub, "Сумма оплаты поставщику должна быть положительной");
     const order = this.mustFind(this.state.purchaseOrders, input.purchaseOrderId, "purchase_order_not_found");
-    const payment = this.createPayment({
+    const payment = await this.createPayment({
       paymentDirection: "outgoing",
       paymentType: "supplier_payment",
       amountRub: input.amountRub,
@@ -939,7 +939,7 @@ export class AccountingApp {
     this.state.paymentAllocations.push(allocation);
     this.ensureDocumentLink(payment.documentId, order.documentId, "payment");
     if (input.post !== false) {
-      this.postSupplierPayment(payment.id);
+      await this.postSupplierPayment(payment.id);
     }
     return payment;
   }
@@ -986,7 +986,7 @@ export class AccountingApp {
     };
   }
 
-  receiveGoods(input: {
+  async receiveGoods(input: {
     purchaseOrderId: ID;
     warehouseId: ID;
     receiptDate: string;
@@ -995,7 +995,7 @@ export class AccountingApp {
     source?: GoodsReceipt["goodsCostSource"];
     manualCostReason?: string;
     post?: boolean;
-  }): GoodsReceipt {
+  }): Promise<GoodsReceipt> {
     const order = this.mustFind(this.state.purchaseOrders, input.purchaseOrderId, "purchase_order_not_found");
     input.lines.forEach((line) => {
       assertPositive(line.qtyReceived, "Принимаемое количество должно быть положительным");
@@ -1016,7 +1016,7 @@ export class AccountingApp {
         ? preview.lines
         : allocateReceiptLines(input.lines, this.state.purchaseOrderLines.filter((line) => line.purchaseOrderId === order.id), goodsCostRubTotal);
 
-    const document = this.createDocument({
+    const document = await this.createDocument({
       documentType: "goods_receipt",
       accountingDate: input.receiptDate,
       title: "Приемка товара",
@@ -1060,12 +1060,12 @@ export class AccountingApp {
       });
     });
     if (input.post !== false) {
-      this.postGoodsReceipt(receipt.id);
+      await this.postGoodsReceipt(receipt.id);
     }
     return receipt;
   }
 
-  addProcurementCost(input: {
+  async addProcurementCost(input: {
     purchaseOrderId?: ID;
     costType: ProcurementCost["costType"];
     allocationBasis?: ProcurementCost["allocationBasis"];
@@ -1074,13 +1074,13 @@ export class AccountingApp {
     paidImmediately: boolean;
     comment?: string;
     post?: boolean;
-  }): ProcurementCost {
+  }): Promise<ProcurementCost> {
     assertPositive(input.amountRub, "Сумма расхода должна быть положительной");
     const allocationBasis = input.allocationBasis ?? "by_cost";
     // До приёмки партий ещё нет — расход висит «в пути» (41.02) и распределяется при приёмке.
     const hasLots = this.procurementCostTargets(input.purchaseOrderId, allocationBasis).length > 0;
     const organizationId = this.currentOrgId();
-    const document = this.createDocument({
+    const document = await this.createDocument({
       documentType: "procurement_cost",
       accountingDate: input.costDate,
       title: "Дополнительный расход закупки",
@@ -1111,7 +1111,7 @@ export class AccountingApp {
       }));
     }
     if (input.post !== false) {
-      this.postProcurementCost(cost.id);
+      await this.postProcurementCost(cost.id);
     }
     return cost;
   }
@@ -1217,15 +1217,15 @@ export class AccountingApp {
     };
   }
 
-  resolveShortage(input: {
+  async resolveShortage(input: {
     purchaseOrderId: ID;
     resolvedAt: string;
     reason: string;
     lines: Array<{ purchaseOrderLineId: ID; action: ShortageResolutionLine["action"]; qtyShortage?: number }>;
     post?: boolean;
-  }): ShortageResolution {
+  }): Promise<ShortageResolution> {
     const order = this.mustFind(this.state.purchaseOrders, input.purchaseOrderId, "purchase_order_not_found");
-    const document = this.createDocument({
+    const document = await this.createDocument({
       documentType: "shortage_resolution",
       accountingDate: input.resolvedAt,
       title: "Решение по недопоставке",
@@ -1268,12 +1268,12 @@ export class AccountingApp {
       });
     });
     if (input.post !== false) {
-      this.postShortage(resolution.id);
+      await this.postShortage(resolution.id);
     }
     return resolution;
   }
 
-  transferStock(input: {
+  async transferStock(input: {
     fromWarehouseId: ID;
     toWarehouseId: ID;
     fromStockStateCode?: string;
@@ -1293,12 +1293,12 @@ export class AccountingApp {
     }>;
     comment?: string;
     post?: boolean;
-  }): StockTransfer {
+  }): Promise<StockTransfer> {
     if (input.fromWarehouseId === input.toWarehouseId && (input.fromStockStateCode ?? "sellable") === (input.toStockStateCode ?? "sellable")) {
       throw new DomainError("transfer_same_source_target", "Нечего перемещать: место и состояние совпадают");
     }
     const organizationId = this.currentOrgId();
-    const document = this.createDocument({
+    const document = await this.createDocument({
       documentType: "stock_transfer",
       accountingDate: input.transferDate,
       title: "Перемещение товара",
@@ -1366,7 +1366,7 @@ export class AccountingApp {
       });
     });
     if (input.post !== false) {
-      this.postStockTransfer(transfer.id);
+      await this.postStockTransfer(transfer.id);
     }
     return transfer;
   }
@@ -1917,7 +1917,7 @@ export class AccountingApp {
     return event;
   }
 
-  recordSale(input: {
+  async recordSale(input: {
     channelId: ID;
     saleDate: string;
     externalEventId?: ID;
@@ -1925,11 +1925,11 @@ export class AccountingApp {
     warehouseId?: ID;
     post?: boolean;
     lines: Array<{ productId: ID; qty: number; priceRub: number; externalProductId?: ID }>;
-  }): Sale {
+  }): Promise<Sale> {
     const channel = this.mustFind(this.state.salesChannels, input.channelId, "channel_not_found");
     const warehouseId = input.warehouseId ?? channel.salesPointWarehouseId;
     const revenueRub = round2(input.lines.reduce((sum, line) => sum + line.qty * line.priceRub, 0));
-    const document = this.createDocument({
+    const document = await this.createDocument({
       documentType: "sale",
       accountingDate: input.saleDate,
       title: "Продажа",
@@ -1988,10 +1988,10 @@ export class AccountingApp {
       });
     });
     if (input.post === false) return sale;
-    return this.postSale(sale.id);
+    return await this.postSale(sale.id);
   }
 
-  recordReturn(input: {
+  async recordReturn(input: {
     saleId: ID;
     returnDate: string;
     warehouseId?: ID;
@@ -2001,13 +2001,13 @@ export class AccountingApp {
     post?: boolean;
     lines?: Array<{ saleLineId: ID; qty: number }>;
     externalEventId?: ID;
-  }): SalesReturn {
+  }): Promise<SalesReturn> {
     const sale = this.mustFind(this.state.sales, input.saleId, "sale_not_found");
     const saleLines = this.state.saleLines.filter((line) => line.saleId === sale.id);
     const returnLines = input.lines ?? saleLines.map((line) => ({ saleLineId: line.id, qty: line.qty }));
     const warehouseId = input.warehouseId ?? sale.warehouseId;
     const stockStateCode = input.stockStateCode ?? "sellable";
-    const document = this.createDocument({
+    const document = await this.createDocument({
       documentType: "sales_return",
       accountingDate: input.returnDate,
       title: "Возврат от покупателя",
@@ -2071,10 +2071,10 @@ export class AccountingApp {
     };
     this.state.salesReturns.push(salesReturn);
     if (input.post === false) return salesReturn;
-    return this.postReturn(salesReturn.id);
+    return await this.postReturn(salesReturn.id);
   }
 
-  recordChannelFee(input: {
+  async recordChannelFee(input: {
     channelId: ID;
     eventKind: ChannelFinanceEvent["eventKind"];
     treatment?: ChannelFinanceEvent["treatment"];
@@ -2090,9 +2090,9 @@ export class AccountingApp {
     operationType?: string;
     operationTypeName?: string;
     post?: boolean;
-  }): ChannelFinanceEvent {
+  }): Promise<ChannelFinanceEvent> {
     assertNonNegative(input.amountRub, "Сумма события канала не может быть отрицательной");
-    const document = this.createDocument({
+    const document = await this.createDocument({
       documentType: "channel_finance_event",
       accountingDate: input.occurredAt,
       title: channelFinanceDocumentTitle(input.eventKind, input.category),
@@ -2123,10 +2123,10 @@ export class AccountingApp {
     };
     this.state.channelFinanceEvents.push(event);
     if (input.post === false) return event;
-    return this.postChannelFinanceEvent(event.id);
+    return await this.postChannelFinanceEvent(event.id);
   }
 
-  recordChannelPayout(input: {
+  async recordChannelPayout(input: {
     channelId: ID;
     payoutDate: string;
     bankReceiptRub?: number;
@@ -2137,12 +2137,12 @@ export class AccountingApp {
     periodFrom?: string;
     periodTo?: string;
     post?: boolean;
-  }): Payout {
+  }): Promise<Payout> {
     const channel = this.mustFind(this.state.salesChannels, input.channelId, "channel_not_found");
     const compositionMode = input.compositionMode ?? "auto";
     const expectedAmountRub = round2(input.expectedAmountRub ?? 0);
     const bankReceiptRub = round2(input.bankReceiptRub ?? input.expectedAmountRub ?? 0);
-    const document = this.createDocument({
+    const document = await this.createDocument({
       documentType: "payout",
       accountingDate: input.payoutDate,
       title: "Выплата и сверка точки продаж",
@@ -2181,15 +2181,15 @@ export class AccountingApp {
       });
     }
     if (bankReceiptRub > 0) {
-      this.linkBankPaymentToPayout({ payoutId: payout.id, bankReceiptRub });
+      await this.linkBankPaymentToPayout({ payoutId: payout.id, bankReceiptRub });
     }
     this.rebuildPayout(payout.id);
     this.markExternalEventProcessed(input.externalEventId, document.id);
-    if (input.post) return this.postChannelPayout(payout.id);
+    if (input.post) return await this.postChannelPayout(payout.id);
     return payout;
   }
 
-  postSale(saleId: ID): Sale {
+  async postSale(saleId: ID): Promise<Sale> {
     const sale = this.mustFind(this.state.sales, saleId, "sale_not_found");
     const document = this.mustFind(this.state.documents, sale.documentId, "document_not_found");
     const channel = this.mustFind(this.state.salesChannels, sale.channelId, "channel_not_found");
@@ -2254,7 +2254,7 @@ export class AccountingApp {
     sale.costAmountRub = round2(costRubTotal);
     sale.grossProfitRub = round2(sale.grossAmountRub - costRubTotal);
     sale.status = deferredRecognition ? "shipped" : "posted";
-    this.postDocument(document.id, deferredRecognition
+    await this.postDocument(document.id, deferredRecognition
       ? [
           { accountCode: MARKETPLACE_SHIPPED_ACCOUNT_CODE, debit: costRubTotal, memo: "Продажа ждёт начисления маркетплейса" },
           { accountCode: accountForWarehouse(warehouse), credit: costRubTotal, memo: "Списание товара с точки продаж" }
@@ -2281,21 +2281,21 @@ export class AccountingApp {
     return sale;
   }
 
-  recognizeSaleFromFinance(input: {
+  async recognizeSaleFromFinance(input: {
     saleId: ID;
     recognitionDate: string;
     externalEventId?: ID;
     recognizedGrossAmountRub?: number;
-  }): Sale {
+  }): Promise<Sale> {
     const sale = this.mustFind(this.state.sales, input.saleId, "sale_not_found");
     const shipmentDocument = this.mustFind(this.state.documents, sale.documentId, "document_not_found");
     const channel = this.mustFind(this.state.salesChannels, sale.channelId, "channel_not_found");
     if (!saleRequiresDeferredMarketplaceRecognition(sale, channel)) {
       if (input.externalEventId) this.markExternalEventProcessed(input.externalEventId, sale.documentId);
-      return sale.status === "draft" ? this.postSale(sale.id) : sale;
+      return sale.status === "draft" ? await this.postSale(sale.id) : sale;
     }
     if (shipmentDocument.status !== "posted" || sale.status === "draft") {
-      this.postSale(sale.id);
+      await this.postSale(sale.id);
     }
     if (sale.status !== "shipped" && sale.status !== "posted") {
       throw new DomainError("sale_not_shipped", "Сначала нужно провести операционную отгрузку продажи");
@@ -2314,7 +2314,7 @@ export class AccountingApp {
         ? input.recognizedGrossAmountRub
         : sale.grossAmountRub
     );
-    const financialDocument = this.createDocument({
+    const financialDocument = await this.createDocument({
       documentType: MARKETPLACE_SALE_RECOGNITION_DOCUMENT_TYPE,
       accountingDate: input.recognitionDate,
       title: "Начисление продажи маркетплейса",
@@ -2326,7 +2326,7 @@ export class AccountingApp {
     sale.recognizedGrossAmountRub = recognizedGrossAmountRub;
     sale.grossProfitRub = round2(recognizedGrossAmountRub - sale.costAmountRub);
     sale.status = "posted";
-    this.postDocument(financialDocument.id, [
+    await this.postDocument(financialDocument.id, [
       { accountCode: "76.ТП", debit: recognizedGrossAmountRub, memo: "Начисление продажи к получению от маркетплейса" },
       { accountCode: "90.01", credit: recognizedGrossAmountRub, memo: "Выручка по продаже маркетплейса" },
       { accountCode: "90.02", debit: sale.costAmountRub, memo: "Себестоимость признанной продажи" },
@@ -2351,7 +2351,7 @@ export class AccountingApp {
     return sale;
   }
 
-  deleteSaleForResync(saleId: ID) {
+  async deleteSaleForResync(saleId: ID) {
     const sale = this.mustFind(this.state.sales, saleId, "sale_not_found");
     const linkedReturns = this.state.salesReturns.filter((candidate) => candidate.saleId === sale.id);
     if (linkedReturns.length > 0) {
@@ -2381,7 +2381,7 @@ export class AccountingApp {
 
     const resetExternalEventIds = this.saleResetExternalEventIds(sale, linkedFinanceEvents);
 
-    const deletion = this.deleteChannelFacts({
+    const deletion = await this.deleteChannelFacts({
       sales: [sale],
       financeEvents: linkedFinanceEvents,
       resetExternalEventIds
@@ -2477,7 +2477,7 @@ export class AccountingApp {
     };
   }
 
-  deleteReturnForResync(returnId: ID) {
+  async deleteReturnForResync(returnId: ID) {
     const salesReturn = this.mustFind(this.state.salesReturns, returnId, "return_not_found");
     const linkedFinanceEvents = this.state.channelFinanceEvents.filter((event) => event.linkedReturnId === salesReturn.id);
     const blockedByPayout = this.state.payoutLines.some((line) =>
@@ -2494,7 +2494,7 @@ export class AccountingApp {
       if (event.externalEventId) resetExternalEventIds.add(event.externalEventId);
     });
 
-    const deletion = this.deleteChannelFacts({
+    const deletion = await this.deleteChannelFacts({
       returns: [salesReturn],
       financeEvents: linkedFinanceEvents,
       resetExternalEventIds
@@ -2572,7 +2572,7 @@ export class AccountingApp {
     };
   }
 
-  deleteStockTransfer(transferId: ID) {
+  async deleteStockTransfer(transferId: ID) {
     const transfer = this.mustFind(this.state.stockTransfers, transferId, "transfer_not_found");
     const document = this.mustFind(this.state.documents, transfer.documentId, "document_not_found");
     this.assertDocumentHasNoDescendants(document.id, "Нельзя удалить перемещение, пока от него зависят другие документы");
@@ -2593,19 +2593,19 @@ export class AccountingApp {
     this.restoreCostApplicationsToLots(outboundApplications);
     this.removeLotsFromStockStates(inboundLots);
 
-    this.state.costApplications = this.state.costApplications.filter((application) => application.outboundDocumentId !== document.id);
-    this.state.inventoryLots = this.state.inventoryLots.filter((lot) => lot.sourceDocumentId !== document.id);
-    this.state.stockMovements = this.state.stockMovements.filter((movement) => movement.documentId !== document.id);
-    this.state.settlementEntries = this.state.settlementEntries.filter((entry) => entry.documentId !== document.id);
-    this.state.journalEntries = this.state.journalEntries.filter((entry) => entry.documentId !== document.id);
+    await this.repos.costApplications.replaceAll((await this.repos.costApplications.all()).filter((application) => application.outboundDocumentId !== document.id));
+    await this.repos.inventoryLots.replaceAll((await this.repos.inventoryLots.all()).filter((lot) => lot.sourceDocumentId !== document.id));
+    await this.repos.stockMovements.replaceAll((await this.repos.stockMovements.all()).filter((movement) => movement.documentId !== document.id));
+    await this.repos.settlementEntries.replaceAll((await this.repos.settlementEntries.all()).filter((entry) => entry.documentId !== document.id));
+    await this.repos.journalEntries.replaceAll((await this.repos.journalEntries.all()).filter((entry) => entry.documentId !== document.id));
     const remainingJournalEntryIds = new Set(this.state.journalEntries.map((entry) => entry.id));
-    this.state.journalLines = this.state.journalLines.filter((line) => remainingJournalEntryIds.has(line.journalEntryId));
-    this.state.stockTransferLines = this.state.stockTransferLines.filter((line) => line.stockTransferId !== transfer.id);
-    this.state.stockTransfers = this.state.stockTransfers.filter((candidate) => candidate.id !== transfer.id);
-    this.state.documentLines = this.state.documentLines.filter((line) => line.documentId !== document.id);
-    this.state.documentVersions = this.state.documentVersions.filter((version) => version.documentId !== document.id);
-    this.state.documentLinks = this.state.documentLinks.filter((link) => link.fromDocumentId !== document.id && link.toDocumentId !== document.id);
-    this.state.documents = this.state.documents.filter((candidate) => candidate.id !== document.id);
+    await this.repos.journalLines.replaceAll((await this.repos.journalLines.all()).filter((line) => remainingJournalEntryIds.has(line.journalEntryId)));
+    await this.repos.stockTransferLines.replaceAll((await this.repos.stockTransferLines.all()).filter((line) => line.stockTransferId !== transfer.id));
+    await this.repos.stockTransfers.replaceAll((await this.repos.stockTransfers.all()).filter((candidate) => candidate.id !== transfer.id));
+    await this.repos.documentLines.replaceAll((await this.repos.documentLines.all()).filter((line) => line.documentId !== document.id));
+    await this.repos.documentVersions.replaceAll((await this.repos.documentVersions.all()).filter((version) => version.documentId !== document.id));
+    await this.repos.documentLinks.replaceAll((await this.repos.documentLinks.all()).filter((link) => link.fromDocumentId !== document.id && link.toDocumentId !== document.id));
+    await this.repos.documents.replaceAll((await this.repos.documents.all()).filter((candidate) => candidate.id !== document.id));
     this.compactZeroStockStates();
     this.audit("stock_transfer", transfer.id, "delete", transfer, undefined, "Удаление перемещения");
     return {
@@ -2644,17 +2644,17 @@ export class AccountingApp {
   }
 
   // Снимает проводки, settlements, links, строки и сам документ.
-  private removeDocumentGraph(documentId: ID) {
+  private async removeDocumentGraph(documentId: ID) {
     const journalEntryIds = new Set(
       this.state.journalEntries.filter((entry) => entry.documentId === documentId).map((entry) => entry.id)
     );
-    this.state.journalEntries = this.state.journalEntries.filter((entry) => entry.documentId !== documentId);
-    this.state.journalLines = this.state.journalLines.filter((line) => !journalEntryIds.has(line.journalEntryId));
-    this.state.settlementEntries = this.state.settlementEntries.filter((entry) => entry.documentId !== documentId);
-    this.state.documentLines = this.state.documentLines.filter((line) => line.documentId !== documentId);
-    this.state.documentVersions = this.state.documentVersions.filter((version) => version.documentId !== documentId);
-    this.state.documentLinks = this.state.documentLinks.filter((link) => link.fromDocumentId !== documentId && link.toDocumentId !== documentId);
-    this.state.documents = this.state.documents.filter((document) => document.id !== documentId);
+    await this.repos.journalEntries.replaceAll((await this.repos.journalEntries.all()).filter((entry) => entry.documentId !== documentId));
+    await this.repos.journalLines.replaceAll((await this.repos.journalLines.all()).filter((line) => !journalEntryIds.has(line.journalEntryId)));
+    await this.repos.settlementEntries.replaceAll((await this.repos.settlementEntries.all()).filter((entry) => entry.documentId !== documentId));
+    await this.repos.documentLines.replaceAll((await this.repos.documentLines.all()).filter((line) => line.documentId !== documentId));
+    await this.repos.documentVersions.replaceAll((await this.repos.documentVersions.all()).filter((version) => version.documentId !== documentId));
+    await this.repos.documentLinks.replaceAll((await this.repos.documentLinks.all()).filter((link) => link.fromDocumentId !== documentId && link.toDocumentId !== documentId));
+    await this.repos.documents.replaceAll((await this.repos.documents.all()).filter((document) => document.id !== documentId));
   }
 
   paymentRollbackPreview(paymentId: ID): EntityRollbackPreview {
@@ -2712,7 +2712,7 @@ export class AccountingApp {
     };
   }
 
-  deletePayment(paymentId: ID) {
+  async deletePayment(paymentId: ID) {
     const preview = this.paymentRollbackPreview(paymentId);
     if (!preview.canDelete) {
       const blocker = preview.blockers[0];
@@ -2721,7 +2721,7 @@ export class AccountingApp {
     const payment = this.mustFind(this.state.payments, paymentId, "payment_not_found");
     const before = { ...payment };
     const documentId = payment.documentId;
-    this.state.ownerTransactions = this.state.ownerTransactions.filter((transaction) => transaction.paymentId !== payment.id);
+    await this.repos.ownerTransactions.replaceAll((await this.repos.ownerTransactions.all()).filter((transaction) => transaction.paymentId !== payment.id));
     this.rollbackPaymentsForDocument(documentId); // касса + аллокации + сам платёж
     this.removeDocumentGraph(documentId);
     this.audit("payment", payment.id, "delete", before, undefined, "Удаление оплаты");
@@ -2788,7 +2788,7 @@ export class AccountingApp {
     };
   }
 
-  deleteGoodsReceipt(receiptId: ID) {
+  async deleteGoodsReceipt(receiptId: ID) {
     const preview = this.goodsReceiptRollbackPreview(receiptId);
     if (!preview.canDelete) {
       const blocker = preview.blockers[0];
@@ -2799,10 +2799,10 @@ export class AccountingApp {
     const before = { ...receipt };
     const lots = this.state.inventoryLots.filter((lot) => lot.sourceDocumentId === document.id);
     this.removeLotsFromStockStates(lots);
-    this.state.inventoryLots = this.state.inventoryLots.filter((lot) => lot.sourceDocumentId !== document.id);
-    this.state.stockMovements = this.state.stockMovements.filter((movement) => movement.documentId !== document.id);
-    this.state.goodsReceiptLines = this.state.goodsReceiptLines.filter((line) => line.goodsReceiptId !== receipt.id);
-    this.state.goodsReceipts = this.state.goodsReceipts.filter((candidate) => candidate.id !== receipt.id);
+    await this.repos.inventoryLots.replaceAll((await this.repos.inventoryLots.all()).filter((lot) => lot.sourceDocumentId !== document.id));
+    await this.repos.stockMovements.replaceAll((await this.repos.stockMovements.all()).filter((movement) => movement.documentId !== document.id));
+    await this.repos.goodsReceiptLines.replaceAll((await this.repos.goodsReceiptLines.all()).filter((line) => line.goodsReceiptId !== receipt.id));
+    await this.repos.goodsReceipts.replaceAll((await this.repos.goodsReceipts.all()).filter((candidate) => candidate.id !== receipt.id));
     this.removeDocumentGraph(document.id);
     this.compactZeroStockStates();
     this.audit("goods_receipt", receipt.id, "delete", before, undefined, "Удаление приёмки");
@@ -2850,7 +2850,7 @@ export class AccountingApp {
     };
   }
 
-  deleteProcurementCost(costId: ID) {
+  async deleteProcurementCost(costId: ID) {
     const preview = this.procurementCostRollbackPreview(costId);
     if (!preview.canDelete) {
       const blocker = preview.blockers[0];
@@ -2869,15 +2869,15 @@ export class AccountingApp {
       this.addStockState(lot.productId, lot.warehouseId, 0, -line.remainingInventoryAmountRub, lot.stockStateCode);
     }
     this.rollbackPaymentsForDocument(document.id);
-    this.state.procurementCostLines = this.state.procurementCostLines.filter((line) => line.procurementCostId !== cost.id);
-    this.state.procurementCosts = this.state.procurementCosts.filter((candidate) => candidate.id !== cost.id);
+    await this.repos.procurementCostLines.replaceAll((await this.repos.procurementCostLines.all()).filter((line) => line.procurementCostId !== cost.id));
+    await this.repos.procurementCosts.replaceAll((await this.repos.procurementCosts.all()).filter((candidate) => candidate.id !== cost.id));
     this.removeDocumentGraph(document.id);
     this.compactZeroStockStates();
     this.audit("procurement_cost", cost.id, "delete", before, undefined, "Удаление расхода закупки");
     return { costId: cost.id, deleted: { procurementCosts: 1, documents: 1 } };
   }
 
-  deleteChannelFinanceEventForResync(financeEventId: ID) {
+  async deleteChannelFinanceEventForResync(financeEventId: ID) {
     const event = this.mustFind(this.state.channelFinanceEvents, financeEventId, "finance_event_not_found");
     const blockedByPayout = this.state.payoutLines.some((line) => line.sourceType === "finance_event" && line.sourceId === event.id);
     if (blockedByPayout || event.payoutId) {
@@ -2887,7 +2887,7 @@ export class AccountingApp {
     const resetExternalEventIds = new Set<ID>();
     if (event.externalEventId) resetExternalEventIds.add(event.externalEventId);
 
-    const deletion = this.deleteChannelFacts({
+    const deletion = await this.deleteChannelFacts({
       financeEvents: [event],
       resetExternalEventIds
     });
@@ -2939,23 +2939,23 @@ export class AccountingApp {
       this.rollbackPaymentsForDocument(paymentDocumentId);
     }
 
-    this.state.costApplications = this.state.costApplications.filter((application) => !saleDocumentIds.has(application.outboundDocumentId));
-    this.state.inventoryLots = this.state.inventoryLots.filter((lot) => !salesReturnDocumentIds.has(lot.sourceDocumentId));
-    this.state.stockMovements = this.state.stockMovements.filter((movement) => !saleDocumentIds.has(movement.documentId) && !salesReturnDocumentIds.has(movement.documentId));
-    this.state.settlementEntries = this.state.settlementEntries.filter((entry) => !removableDocumentIds.has(entry.documentId));
-    this.state.journalEntries = this.state.journalEntries.filter((entry) => !removableDocumentIds.has(entry.documentId));
+    await this.repos.costApplications.replaceAll((await this.repos.costApplications.all()).filter((application) => !saleDocumentIds.has(application.outboundDocumentId)));
+    await this.repos.inventoryLots.replaceAll((await this.repos.inventoryLots.all()).filter((lot) => !salesReturnDocumentIds.has(lot.sourceDocumentId)));
+    await this.repos.stockMovements.replaceAll((await this.repos.stockMovements.all()).filter((movement) => !saleDocumentIds.has(movement.documentId) && !salesReturnDocumentIds.has(movement.documentId)));
+    await this.repos.settlementEntries.replaceAll((await this.repos.settlementEntries.all()).filter((entry) => !removableDocumentIds.has(entry.documentId)));
+    await this.repos.journalEntries.replaceAll((await this.repos.journalEntries.all()).filter((entry) => !removableDocumentIds.has(entry.documentId)));
     const remainingJournalEntryIds = new Set(this.state.journalEntries.map((entry) => entry.id));
-    this.state.journalLines = this.state.journalLines.filter((line) => remainingJournalEntryIds.has(line.journalEntryId));
-    this.state.documentLines = this.state.documentLines.filter((line) => !removableDocumentIds.has(line.documentId));
-    this.state.documentVersions = this.state.documentVersions.filter((version) => !removableDocumentIds.has(version.documentId));
-    this.state.documentLinks = this.state.documentLinks.filter((link) => !removableDocumentIds.has(link.fromDocumentId) && !removableDocumentIds.has(link.toDocumentId));
-    this.state.documents = this.state.documents.filter((document) => !removableDocumentIds.has(document.id));
-    this.state.payoutLines = this.state.payoutLines.filter((line) => !payoutIds.has(line.payoutId) && (!line.saleId || !saleIds.has(line.saleId)));
-    this.state.payouts = this.state.payouts.filter((payout) => !payoutIds.has(payout.id));
-    this.state.channelFinanceEvents = this.state.channelFinanceEvents.filter((event) => event.channelId !== channelId);
-    this.state.salesReturns = this.state.salesReturns.filter((salesReturn) => !salesReturnIds.has(salesReturn.id));
-    this.state.saleLines = this.state.saleLines.filter((line) => !saleIds.has(line.saleId));
-    this.state.sales = this.state.sales.filter((sale) => !saleIds.has(sale.id));
+    await this.repos.journalLines.replaceAll((await this.repos.journalLines.all()).filter((line) => remainingJournalEntryIds.has(line.journalEntryId)));
+    await this.repos.documentLines.replaceAll((await this.repos.documentLines.all()).filter((line) => !removableDocumentIds.has(line.documentId)));
+    await this.repos.documentVersions.replaceAll((await this.repos.documentVersions.all()).filter((version) => !removableDocumentIds.has(version.documentId)));
+    await this.repos.documentLinks.replaceAll((await this.repos.documentLinks.all()).filter((link) => !removableDocumentIds.has(link.fromDocumentId) && !removableDocumentIds.has(link.toDocumentId)));
+    await this.repos.documents.replaceAll((await this.repos.documents.all()).filter((document) => !removableDocumentIds.has(document.id)));
+    await this.repos.payoutLines.replaceAll((await this.repos.payoutLines.all()).filter((line) => !payoutIds.has(line.payoutId) && (!line.saleId || !saleIds.has(line.saleId))));
+    await this.repos.payouts.replaceAll((await this.repos.payouts.all()).filter((payout) => !payoutIds.has(payout.id)));
+    await this.repos.channelFinanceEvents.replaceAll((await this.repos.channelFinanceEvents.all()).filter((event) => event.channelId !== channelId));
+    await this.repos.salesReturns.replaceAll((await this.repos.salesReturns.all()).filter((salesReturn) => !salesReturnIds.has(salesReturn.id)));
+    await this.repos.saleLines.replaceAll((await this.repos.saleLines.all()).filter((line) => !saleIds.has(line.saleId)));
+    await this.repos.sales.replaceAll((await this.repos.sales.all()).filter((sale) => !saleIds.has(sale.id)));
     await this.externalEvents.deleteByIds(Array.from(externalEventIds));
     this.compactZeroStockStates();
 
@@ -2975,7 +2975,7 @@ export class AccountingApp {
     };
   }
 
-  private deleteChannelFacts(input: {
+  private async deleteChannelFacts(input: {
     sales?: Sale[];
     returns?: SalesReturn[];
     financeEvents?: ChannelFinanceEvent[];
@@ -3007,25 +3007,27 @@ export class AccountingApp {
     const returnLots = this.state.inventoryLots.filter((lot) => salesReturnDocumentIds.has(lot.sourceDocumentId));
     this.removeLotsFromStockStates(returnLots);
 
-    this.state.costApplications = this.state.costApplications.filter((application) => !saleDocumentIds.has(application.outboundDocumentId));
-    this.state.inventoryLots = this.state.inventoryLots.filter((lot) => !salesReturnDocumentIds.has(lot.sourceDocumentId));
-    this.state.stockMovements = this.state.stockMovements.filter((movement) => !saleDocumentIds.has(movement.documentId) && !salesReturnDocumentIds.has(movement.documentId));
-    this.state.settlementEntries = this.state.settlementEntries.filter((entry) => !removableDocumentIds.has(entry.documentId));
-    this.state.journalEntries = this.state.journalEntries.filter((entry) => !removableDocumentIds.has(entry.documentId));
+    await this.repos.costApplications.replaceAll((await this.repos.costApplications.all()).filter((application) => !saleDocumentIds.has(application.outboundDocumentId)));
+    await this.repos.inventoryLots.replaceAll((await this.repos.inventoryLots.all()).filter((lot) => !salesReturnDocumentIds.has(lot.sourceDocumentId)));
+    await this.repos.stockMovements.replaceAll((await this.repos.stockMovements.all()).filter((movement) => !saleDocumentIds.has(movement.documentId) && !salesReturnDocumentIds.has(movement.documentId)));
+    await this.repos.settlementEntries.replaceAll((await this.repos.settlementEntries.all()).filter((entry) => !removableDocumentIds.has(entry.documentId)));
+    await this.repos.journalEntries.replaceAll((await this.repos.journalEntries.all()).filter((entry) => !removableDocumentIds.has(entry.documentId)));
     const remainingJournalEntryIds = new Set(this.state.journalEntries.map((entry) => entry.id));
-    this.state.journalLines = this.state.journalLines.filter((line) => remainingJournalEntryIds.has(line.journalEntryId));
-    this.state.documentLines = this.state.documentLines.filter((line) => !removableDocumentIds.has(line.documentId));
-    this.state.documentVersions = this.state.documentVersions.filter((version) => !removableDocumentIds.has(version.documentId));
-    this.state.documentLinks = this.state.documentLinks.filter((link) => !removableDocumentIds.has(link.fromDocumentId) && !removableDocumentIds.has(link.toDocumentId));
-    this.state.documents = this.state.documents.filter((document) => !removableDocumentIds.has(document.id));
-    this.state.channelFinanceEvents = this.state.channelFinanceEvents.filter((event) => !financeEventIds.has(event.id));
-    this.state.salesReturns = this.state.salesReturns.filter((salesReturn) => !salesReturnIds.has(salesReturn.id));
-    this.state.saleLines = this.state.saleLines.filter((line) => !saleIds.has(line.saleId));
-    this.state.sales = this.state.sales.filter((sale) => !saleIds.has(sale.id));
+    await this.repos.journalLines.replaceAll((await this.repos.journalLines.all()).filter((line) => remainingJournalEntryIds.has(line.journalEntryId)));
+    await this.repos.documentLines.replaceAll((await this.repos.documentLines.all()).filter((line) => !removableDocumentIds.has(line.documentId)));
+    await this.repos.documentVersions.replaceAll((await this.repos.documentVersions.all()).filter((version) => !removableDocumentIds.has(version.documentId)));
+    await this.repos.documentLinks.replaceAll((await this.repos.documentLinks.all()).filter((link) => !removableDocumentIds.has(link.fromDocumentId) && !removableDocumentIds.has(link.toDocumentId)));
+    await this.repos.documents.replaceAll((await this.repos.documents.all()).filter((document) => !removableDocumentIds.has(document.id)));
+    await this.repos.channelFinanceEvents.replaceAll((await this.repos.channelFinanceEvents.all()).filter((event) => !financeEventIds.has(event.id)));
+    await this.repos.salesReturns.replaceAll((await this.repos.salesReturns.all()).filter((salesReturn) => !salesReturnIds.has(salesReturn.id)));
+    await this.repos.saleLines.replaceAll((await this.repos.saleLines.all()).filter((line) => !saleIds.has(line.saleId)));
+    await this.repos.sales.replaceAll((await this.repos.sales.all()).filter((sale) => !saleIds.has(sale.id)));
     this.compactZeroStockStates();
 
     const resetExternalEvents = Array.from(new Set(Array.from(input.resetExternalEventIds ?? []).filter(Boolean)));
-    resetExternalEvents.forEach((eventId) => this.reprocessExternalEvent(eventId));
+    for (const eventId of resetExternalEvents) {
+      await this.reprocessExternalEvent(eventId);
+    }
 
     this.invalidateSaleLookup();
 
@@ -3040,7 +3042,7 @@ export class AccountingApp {
     };
   }
 
-  postReturn(returnId: ID): SalesReturn {
+  async postReturn(returnId: ID): Promise<SalesReturn> {
     const salesReturn = this.mustFind(this.state.salesReturns, returnId, "return_not_found");
     const document = this.mustFind(this.state.documents, salesReturn.documentId, "document_not_found");
     if (salesReturn.status === "posted" && document.status === "posted") return salesReturn;
@@ -3145,7 +3147,7 @@ export class AccountingApp {
     salesReturn.status = salesReturn.status === "needs_attention" ? "needs_attention" : "posted";
     document.amountRub = salesReturn.refundRub;
     if (salesReturn.status !== "needs_attention") {
-      this.postDocument(document.id, [
+      await this.postDocument(document.id, [
         { accountCode: "90.01", debit: salesReturn.refundRub, memo: "Сторно выручки по возврату" },
         { accountCode: "76.ТП", credit: salesReturn.refundRub, memo: "Уменьшение задолженности точки продаж" },
         { accountCode: accountForWarehouse(warehouse), debit: salesReturn.restoredCostRub, memo: "Возврат товара в остаток" },
@@ -3249,7 +3251,7 @@ export class AccountingApp {
     return event;
   }
 
-  postChannelFinanceEvent(financeEventId: ID): ChannelFinanceEvent {
+  async postChannelFinanceEvent(financeEventId: ID): Promise<ChannelFinanceEvent> {
     const event = this.mustFind(this.state.channelFinanceEvents, financeEventId, "finance_event_not_found");
     const document = this.mustFind(this.state.documents, event.documentId, "document_not_found");
     if (event.status === "posted" && document.status === "posted") return event;
@@ -3269,7 +3271,7 @@ export class AccountingApp {
           { accountCode: treatment === "other_expense" ? "91.02" : "44", debit: event.amountRub, memo: "Удержание канала" },
           { accountCode: "76.ТП", credit: event.amountRub, memo: "Уменьшение задолженности канала" }
         ];
-    this.postDocument(document.id, journalLines);
+    await this.postDocument(document.id, journalLines);
     event.status = "posted";
     if (event.linkedSaleId) {
       const sale = this.mustFind(this.state.sales, event.linkedSaleId, "sale_not_found");
@@ -3289,7 +3291,7 @@ export class AccountingApp {
     return event;
   }
 
-  linkBankPaymentToPayout(input: { payoutId: ID; paymentId?: ID; bankReceiptRub?: number }): Payout {
+  async linkBankPaymentToPayout(input: { payoutId: ID; paymentId?: ID; bankReceiptRub?: number }): Promise<Payout> {
     const payout = this.mustFind(this.state.payouts, input.payoutId, "payout_not_found");
     if (input.paymentId) {
       const payment = this.mustFind(this.state.payments, input.paymentId, "payment_not_found");
@@ -3304,7 +3306,7 @@ export class AccountingApp {
       if (amountRub < 0) throw new DomainError("payout_bank_amount_invalid", "Сумма банковского поступления не может быть отрицательной");
       let payment = payout.paymentId ? this.mustFind(this.state.payments, payout.paymentId, "payment_not_found") : undefined;
       if (!payment && amountRub > 0) {
-        payment = this.createPayment({
+        payment = await this.createPayment({
           paymentDirection: "incoming",
           paymentType: "channel_payout",
           amountRub,
@@ -3327,7 +3329,7 @@ export class AccountingApp {
     return payout;
   }
 
-  postChannelPayout(payoutId: ID): Payout {
+  async postChannelPayout(payoutId: ID): Promise<Payout> {
     const payout = this.mustFind(this.state.payouts, payoutId, "payout_not_found");
     const document = this.mustFind(this.state.documents, payout.documentId, "document_not_found");
     if (document.status === "posted" && (payout.status === "posted" || payout.status === "needs_reconciliation")) return payout;
@@ -3343,12 +3345,12 @@ export class AccountingApp {
         this.applyPaymentToCashAccount(payment);
       }
     } else if (payout.bankReceiptRub > 0) {
-      this.linkBankPaymentToPayout({ payoutId: payout.id, bankReceiptRub: payout.bankReceiptRub });
-      if (payout.paymentId) return this.postChannelPayout(payout.id);
+      await this.linkBankPaymentToPayout({ payoutId: payout.id, bankReceiptRub: payout.bankReceiptRub });
+      if (payout.paymentId) return await this.postChannelPayout(payout.id);
     }
 
     if (payout.bankReceiptRub > 0) {
-      this.postDocument(document.id, [
+      await this.postDocument(document.id, [
         { accountCode: "51", debit: payout.bankReceiptRub, memo: "Поступление выплаты на расчетный счет" },
         { accountCode: "76.ТП", credit: payout.bankReceiptRub, memo: "Закрытие задолженности точки продаж" }
       ]);
@@ -3375,7 +3377,7 @@ export class AccountingApp {
     return payout;
   }
 
-  rebuildPayout(payoutId: ID): Payout {
+  async rebuildPayout(payoutId: ID): Promise<Payout> {
     const payout = this.mustFind(this.state.payouts, payoutId, "payout_not_found");
     const cutoff = payout.periodTo ?? payout.payoutDate;
     const manualLines = this.state.payoutLines
@@ -3448,7 +3450,7 @@ export class AccountingApp {
 
     lines.push(...manualLines);
 
-    this.state.payoutLines = this.state.payoutLines.filter((line) => line.payoutId !== payout.id).concat(lines);
+    await this.repos.payoutLines.replaceAll((await this.repos.payoutLines.all()).filter((line) => line.payoutId !== payout.id).concat(lines));
     const expectedAmountRub = round2(lines.reduce((sum, line) => sum + line.amountRub, 0));
     payout.expectedAmountRub = expectedAmountRub;
     payout.grossEventsRub = expectedAmountRub;
@@ -3459,7 +3461,7 @@ export class AccountingApp {
     return payout;
   }
 
-  recordOperatingExpense(input: {
+  async recordOperatingExpense(input: {
     categoryId: ID;
     expenseDate: string;
     amountRub: number;
@@ -3467,10 +3469,10 @@ export class AccountingApp {
     cashAccountId?: ID;
     comment?: string;
     post?: boolean;
-  }): OperatingExpense {
+  }): Promise<OperatingExpense> {
     assertPositive(input.amountRub, "Сумма расхода должна быть положительной");
     const category = this.mustFind(this.state.expenseCategories, input.categoryId, "expense_category_not_found");
-    const payment = this.createPayment({
+    const payment = await this.createPayment({
       paymentDirection: "outgoing",
       paymentType: "operating_expense_payment",
       amountRub: input.amountRub,
@@ -3497,13 +3499,13 @@ export class AccountingApp {
     };
     this.state.operatingExpenses.push(expense);
     if (input.post !== false) {
-      this.postOperatingExpense(expense.id);
+      await this.postOperatingExpense(expense.id);
     }
     return expense;
   }
 
   // Расход всегда оплачивается сразу: Дт категории / Кт 51.
-  postOperatingExpense(expenseId: ID): OperatingExpense {
+  async postOperatingExpense(expenseId: ID): Promise<OperatingExpense> {
     const expense = this.mustFind(this.state.operatingExpenses, expenseId, "expense_not_found");
     const category = this.mustFind(this.state.expenseCategories, expense.categoryId, "expense_category_not_found");
     const payment = this.mustFind(this.state.payments, expense.paymentId, "payment_not_found");
@@ -3515,7 +3517,7 @@ export class AccountingApp {
       return expense;
     }
 
-    this.postDocument(document.id, [
+    await this.postDocument(document.id, [
       { accountCode: category.accountCode, debit: expense.amountRub, memo: category.name },
       { accountCode: "51", credit: expense.amountRub, memo: "Оплата операционного расхода" }
     ]);
@@ -3526,8 +3528,8 @@ export class AccountingApp {
     return expense;
   }
 
-  recordOwnerWithdrawal(input: { amountRub: number; paidAt: string; comment?: string }) {
-    const payment = this.createPayment({
+  async recordOwnerWithdrawal(input: { amountRub: number; paidAt: string; comment?: string }) {
+    const payment = await this.createPayment({
       paymentDirection: "outgoing",
       paymentType: "owner_withdrawal",
       amountRub: input.amountRub,
@@ -3543,7 +3545,7 @@ export class AccountingApp {
       transactionType: "withdrawal",
       amountRub: input.amountRub
     });
-    this.postDocument(payment.documentId, [
+    await this.postDocument(payment.documentId, [
       { accountCode: "80.02", debit: input.amountRub, memo: "Изъятие владельца" },
       { accountCode: "51", credit: input.amountRub, memo: "Выплата владельцу" }
     ]);
@@ -3551,14 +3553,14 @@ export class AccountingApp {
     return payment;
   }
 
-  runStocktake(input: {
+  async runStocktake(input: {
     warehouseId: ID;
     stocktakeDate: string;
     comment?: string;
     post?: boolean;
     lines: Array<{ productId: ID; observedQty: number; unitCostRub?: number }>;
   }) {
-    const document = this.createDocument({
+    const document = await this.createDocument({
       documentType: "stocktake",
       accountingDate: input.stocktakeDate,
       title: "Инвентаризация",
@@ -3593,7 +3595,7 @@ export class AccountingApp {
     });
 
     if (input.post !== false) {
-      this.postStocktake(stocktake.id);
+      await this.postStocktake(stocktake.id);
     } else {
       document.status = "draft";
       document.postedAt = undefined;
@@ -3601,7 +3603,7 @@ export class AccountingApp {
     return stocktake;
   }
 
-  postStocktake(stocktakeId: ID) {
+  async postStocktake(stocktakeId: ID) {
     const stocktake = this.mustFind(this.state.stocktakes, stocktakeId, "stocktake_not_found");
     const document = this.mustFind(this.state.documents, stocktake.documentId, "document_not_found");
     if (stocktake.status === "posted") return stocktake;
@@ -3648,7 +3650,7 @@ export class AccountingApp {
     });
 
     if (journalLines.length > 0) {
-      this.postDocument(document.id, journalLines);
+      await this.postDocument(document.id, journalLines);
     } else {
       document.status = "posted";
       document.postedAt = nowIso();
@@ -3765,7 +3767,7 @@ export class AccountingApp {
     throw new DomainError("document_has_descendants", message, { descendants });
   }
 
-  applyProcurementCostCorrection(input: { procurementCostId: ID; newAmountRub: number; reason: string }) {
+  async applyProcurementCostCorrection(input: { procurementCostId: ID; newAmountRub: number; reason: string }) {
     const cost = this.mustFind(this.state.procurementCosts, input.procurementCostId, "procurement_cost_not_found");
     const nextAmountRub = round2(input.newAmountRub);
     assertNonNegative(nextAmountRub, "Сумма расхода не может быть отрицательной");
@@ -3830,7 +3832,7 @@ export class AccountingApp {
     cost.amountRub = nextAmountRub;
 
     if (accountingDelta !== 0) {
-      const document = this.createDocument({
+      const document = await this.createDocument({
         documentType: "correction",
         accountingDate: sourceDocument.accountingDate,
         title: "Корректировка расхода закупки",
@@ -3854,7 +3856,7 @@ export class AccountingApp {
       } else {
         journalLines.push({ accountCode: sourceAccountCode, debit: Math.abs(accountingDelta), memo: "Уменьшение источника расхода" });
       }
-      this.postDocument(document.id, journalLines);
+      await this.postDocument(document.id, journalLines);
       this.linkDocuments(sourceDocument.id, document.id, "correction");
     }
     correction.status = "applied";
@@ -4017,7 +4019,7 @@ export class AccountingApp {
     this.audit("payment", payment.id, "correct", beforePayment, payment, "Исправление расхода закупки");
   }
 
-  applyReceiptQuantityCorrection(input: {
+  async applyReceiptQuantityCorrection(input: {
     goodsReceiptId: ID;
     purchaseOrderLineId: ID;
     newQtyReceived: number;
@@ -4043,7 +4045,7 @@ export class AccountingApp {
       correction.status = "failed";
       throw new DomainError("negative_stock_after_correction", "Исправление создаст отрицательный остаток", { state, qtyDelta });
     }
-    const document = this.createDocument({
+    const document = await this.createDocument({
       documentType: "correction",
       accountingDate: sourceDocument.accountingDate,
       title: "Корректировка приемки товара",
@@ -4059,7 +4061,7 @@ export class AccountingApp {
       applicationType: "correction",
       movementType: "correction"
     });
-    this.postDocument(document.id, [
+    await this.postDocument(document.id, [
       { accountCode: "60.02", debit: amountDelta, memo: "Возврат доли оплаты в аванс по недопоставке" },
       { accountCode: "41.01", credit: amountDelta, memo: "Уменьшение фактически принятого товара" }
     ]);
@@ -4190,7 +4192,7 @@ export class AccountingApp {
     };
   }
 
-  createManualDocument(input: {
+  async createManualDocument(input: {
     documentType?: string;
     accountingDate: string;
     title: string;
@@ -4200,8 +4202,8 @@ export class AccountingApp {
     lines?: Array<{ lineType?: string; qty?: number; amountRub?: number; payload?: Record<string, unknown> }>;
     journalLines?: JournalLineInput[];
     post?: boolean;
-  }): Document {
-    const document = this.createDocument({
+  }): Promise<Document> {
+    const document = await this.createDocument({
       documentType: input.documentType ?? "accounting_note",
       accountingDate: input.accountingDate,
       title: input.title,
@@ -4221,19 +4223,19 @@ export class AccountingApp {
       });
     });
     if (input.post) {
-      this.postExistingDocument(document.id, input.journalLines);
+      await this.postExistingDocument(document.id, input.journalLines);
     }
     return document;
   }
 
-  updateDraftDocument(documentId: ID, patch: {
+  async updateDraftDocument(documentId: ID, patch: {
     accountingDate?: string;
     title?: string;
     amountRub?: number;
     comment?: string;
     lines?: Array<{ lineType?: string; qty?: number; amountRub?: number; payload?: Record<string, unknown> }>;
     changeReason?: string;
-  }): Document {
+  }): Promise<Document> {
     const document = this.mustFind(this.state.documents, documentId, "document_not_found");
     if (document.status !== "draft") {
       throw new DomainError("document_not_editable", "Проведенный документ меняется только через исправление");
@@ -4249,7 +4251,7 @@ export class AccountingApp {
     if (patch.amountRub !== undefined) document.amountRub = patch.amountRub;
     if (patch.comment !== undefined) document.comment = patch.comment;
     if (patch.lines) {
-      this.state.documentLines = this.state.documentLines.filter((line) => line.documentId !== document.id);
+      await this.repos.documentLines.replaceAll((await this.repos.documentLines.all()).filter((line) => line.documentId !== document.id));
       patch.lines.forEach((line, index) => {
         this.state.documentLines.push({
           id: id("doc_line"),
@@ -4274,7 +4276,7 @@ export class AccountingApp {
     return document;
   }
 
-  postExistingDocument(documentId: ID, journalLines?: JournalLineInput[]) {
+  async postExistingDocument(documentId: ID, journalLines?: JournalLineInput[]) {
     const document = this.mustFind(this.state.documents, documentId, "document_not_found");
     if (document.status === "posted") {
       return { document, entry: this.state.journalEntries.find((entry) => entry.documentId === document.id) };
@@ -4294,10 +4296,10 @@ export class AccountingApp {
     if (!journalLines || journalLines.length === 0) {
       throw new DomainError("posting_rule_required", "Для этого типа документа нужна проводка или специализированное бизнес-действие");
     }
-    return { document, entry: this.postDocument(document.id, journalLines) };
+    return { document, entry: await this.postDocument(document.id, journalLines) };
   }
 
-  deleteDraftDocument(documentId: ID): Document {
+  async deleteDraftDocument(documentId: ID): Promise<Document> {
     const document = this.mustFind(this.state.documents, documentId, "document_not_found");
     if (document.status !== "draft") {
       throw new DomainError("document_delete_not_allowed", "Удалять можно только черновики без проведённых последствий");
@@ -4314,38 +4316,38 @@ export class AccountingApp {
         if (this.paymentsForPurchaseOrder(order.id).length > 0 || this.state.goodsReceipts.some((receipt) => receipt.purchaseOrderId === order.id)) {
           throw new DomainError("purchase_order_has_dependencies", "Нельзя удалить заказ, по которому уже есть оплаты или приемки");
         }
-        this.state.purchaseOrderLines = this.state.purchaseOrderLines.filter((line) => line.purchaseOrderId !== order.id);
-        this.state.purchaseOrders = this.state.purchaseOrders.filter((candidate) => candidate.id !== order.id);
+        await this.repos.purchaseOrderLines.replaceAll((await this.repos.purchaseOrderLines.all()).filter((line) => line.purchaseOrderId !== order.id));
+        await this.repos.purchaseOrders.replaceAll((await this.repos.purchaseOrders.all()).filter((candidate) => candidate.id !== order.id));
         break;
       }
       case "goods_receipt": {
         const receipt = this.state.goodsReceipts.find((candidate) => candidate.documentId === document.id);
         if (!receipt) break;
-        this.state.goodsReceiptLines = this.state.goodsReceiptLines.filter((line) => line.goodsReceiptId !== receipt.id);
-        this.state.goodsReceipts = this.state.goodsReceipts.filter((candidate) => candidate.id !== receipt.id);
+        await this.repos.goodsReceiptLines.replaceAll((await this.repos.goodsReceiptLines.all()).filter((line) => line.goodsReceiptId !== receipt.id));
+        await this.repos.goodsReceipts.replaceAll((await this.repos.goodsReceipts.all()).filter((candidate) => candidate.id !== receipt.id));
         break;
       }
       case "procurement_cost": {
         const cost = this.state.procurementCosts.find((candidate) => candidate.documentId === document.id);
         if (!cost) break;
-        this.state.procurementCostLines = this.state.procurementCostLines.filter((line) => line.procurementCostId !== cost.id);
-        this.state.procurementCosts = this.state.procurementCosts.filter((candidate) => candidate.id !== cost.id);
+        await this.repos.procurementCostLines.replaceAll((await this.repos.procurementCostLines.all()).filter((line) => line.procurementCostId !== cost.id));
+        await this.repos.procurementCosts.replaceAll((await this.repos.procurementCosts.all()).filter((candidate) => candidate.id !== cost.id));
         break;
       }
       case "shortage_resolution": {
         const shortage = this.state.shortageResolutions.find((candidate) => candidate.documentId === document.id);
         if (!shortage) break;
         const shortageLineIds = new Set(this.state.shortageResolutionLines.filter((line) => line.shortageResolutionId === shortage.id).map((line) => line.id));
-        this.state.supplierClaims = this.state.supplierClaims.filter((claim) => !shortageLineIds.has(claim.shortageResolutionLineId));
-        this.state.shortageResolutionLines = this.state.shortageResolutionLines.filter((line) => line.shortageResolutionId !== shortage.id);
-        this.state.shortageResolutions = this.state.shortageResolutions.filter((candidate) => candidate.id !== shortage.id);
+        await this.repos.supplierClaims.replaceAll((await this.repos.supplierClaims.all()).filter((claim) => !shortageLineIds.has(claim.shortageResolutionLineId)));
+        await this.repos.shortageResolutionLines.replaceAll((await this.repos.shortageResolutionLines.all()).filter((line) => line.shortageResolutionId !== shortage.id));
+        await this.repos.shortageResolutions.replaceAll((await this.repos.shortageResolutions.all()).filter((candidate) => candidate.id !== shortage.id));
         break;
       }
       case "stock_transfer": {
         const transfer = this.state.stockTransfers.find((candidate) => candidate.documentId === document.id);
         if (!transfer) break;
-        this.state.stockTransferLines = this.state.stockTransferLines.filter((line) => line.stockTransferId !== transfer.id);
-        this.state.stockTransfers = this.state.stockTransfers.filter((candidate) => candidate.id !== transfer.id);
+        await this.repos.stockTransferLines.replaceAll((await this.repos.stockTransferLines.all()).filter((line) => line.stockTransferId !== transfer.id));
+        await this.repos.stockTransfers.replaceAll((await this.repos.stockTransfers.all()).filter((candidate) => candidate.id !== transfer.id));
         break;
       }
       case "sale": {
@@ -4354,20 +4356,20 @@ export class AccountingApp {
         if (this.state.salesReturns.some((candidate) => candidate.saleId === sale.id)) {
           throw new DomainError("sale_has_returns", "Нельзя удалить продажу, по которой уже есть возвраты");
         }
-        this.state.saleLines = this.state.saleLines.filter((line) => line.saleId !== sale.id);
-        this.state.sales = this.state.sales.filter((candidate) => candidate.id !== sale.id);
+        await this.repos.saleLines.replaceAll((await this.repos.saleLines.all()).filter((line) => line.saleId !== sale.id));
+        await this.repos.sales.replaceAll((await this.repos.sales.all()).filter((candidate) => candidate.id !== sale.id));
         break;
       }
       case "sales_return": {
         const salesReturn = this.state.salesReturns.find((candidate) => candidate.documentId === document.id);
         if (!salesReturn) break;
-        this.state.salesReturns = this.state.salesReturns.filter((candidate) => candidate.id !== salesReturn.id);
+        await this.repos.salesReturns.replaceAll((await this.repos.salesReturns.all()).filter((candidate) => candidate.id !== salesReturn.id));
         break;
       }
       case "channel_finance_event": {
         const event = this.state.channelFinanceEvents.find((candidate) => candidate.documentId === document.id);
         if (!event) break;
-        this.state.channelFinanceEvents = this.state.channelFinanceEvents.filter((candidate) => candidate.id !== event.id);
+        await this.repos.channelFinanceEvents.replaceAll((await this.repos.channelFinanceEvents.all()).filter((candidate) => candidate.id !== event.id));
         break;
       }
       case "payout": {
@@ -4382,10 +4384,10 @@ export class AccountingApp {
           if (this.state.paymentAllocations.some((allocation) => allocation.paymentId === payment.id)) {
             throw new DomainError("payment_has_allocations", "Нельзя удалить платеж, который уже распределен по другим документам");
           }
-          this.state.payments = this.state.payments.filter((candidate) => candidate.id !== payment.id);
-          this.state.documentLines = this.state.documentLines.filter((line) => line.documentId !== payment.documentId);
-          this.state.documentVersions = this.state.documentVersions.filter((version) => version.documentId !== payment.documentId);
-          this.state.documents = this.state.documents.filter((candidate) => candidate.id !== payment.documentId);
+          await this.repos.payments.replaceAll((await this.repos.payments.all()).filter((candidate) => candidate.id !== payment.id));
+          await this.repos.documentLines.replaceAll((await this.repos.documentLines.all()).filter((line) => line.documentId !== payment.documentId));
+          await this.repos.documentVersions.replaceAll((await this.repos.documentVersions.all()).filter((version) => version.documentId !== payment.documentId));
+          await this.repos.documents.replaceAll((await this.repos.documents.all()).filter((candidate) => candidate.id !== payment.documentId));
         }
         this.state.payoutLines
           .filter((line) => line.payoutId === payout.id && line.sourceType === "finance_event" && line.sourceId)
@@ -4402,15 +4404,15 @@ export class AccountingApp {
             updatedAt: nowIso()
           });
         }
-        this.state.payoutLines = this.state.payoutLines.filter((line) => line.payoutId !== payout.id);
-        this.state.payouts = this.state.payouts.filter((candidate) => candidate.id !== payout.id);
+        await this.repos.payoutLines.replaceAll((await this.repos.payoutLines.all()).filter((line) => line.payoutId !== payout.id));
+        await this.repos.payouts.replaceAll((await this.repos.payouts.all()).filter((candidate) => candidate.id !== payout.id));
         break;
       }
       case "stocktake": {
         const stocktake = this.state.stocktakes.find((candidate) => candidate.documentId === document.id);
         if (!stocktake) break;
-        this.state.stocktakeLines = this.state.stocktakeLines.filter((line) => line.stocktakeId !== stocktake.id);
-        this.state.stocktakes = this.state.stocktakes.filter((candidate) => candidate.id !== stocktake.id);
+        await this.repos.stocktakeLines.replaceAll((await this.repos.stocktakeLines.all()).filter((line) => line.stocktakeId !== stocktake.id));
+        await this.repos.stocktakes.replaceAll((await this.repos.stocktakes.all()).filter((candidate) => candidate.id !== stocktake.id));
         break;
       }
       case "payment": {
@@ -4419,21 +4421,21 @@ export class AccountingApp {
         if (this.state.paymentAllocations.some((allocation) => allocation.paymentId === payment.id)) {
           throw new DomainError("payment_has_allocations", "Нельзя удалить платеж, который уже распределен по другим документам");
         }
-        this.state.payments = this.state.payments.filter((candidate) => candidate.id !== payment.id);
+        await this.repos.payments.replaceAll((await this.repos.payments.all()).filter((candidate) => candidate.id !== payment.id));
         break;
       }
       default:
         break;
     }
 
-    this.state.documentLines = this.state.documentLines.filter((line) => line.documentId !== document.id);
-    this.state.documentVersions = this.state.documentVersions.filter((version) => version.documentId !== document.id);
-    this.state.documents = this.state.documents.filter((candidate) => candidate.id !== document.id);
+    await this.repos.documentLines.replaceAll((await this.repos.documentLines.all()).filter((line) => line.documentId !== document.id));
+    await this.repos.documentVersions.replaceAll((await this.repos.documentVersions.all()).filter((version) => version.documentId !== document.id));
+    await this.repos.documents.replaceAll((await this.repos.documents.all()).filter((candidate) => candidate.id !== document.id));
     this.audit("document", document.id, "delete", document, undefined, "Удаление черновика");
     return document;
   }
 
-  applyDocumentCorrection(documentId: ID, patch: Record<string, unknown>, reason = "Исправление документа") {
+  async applyDocumentCorrection(documentId: ID, patch: Record<string, unknown>, reason = "Исправление документа") {
     const document = this.mustFind(this.state.documents, documentId, "document_not_found");
     this.assertDocumentHasNoDescendants(document.id, "Нельзя изменить документ, пока от него зависят другие документы");
     const before = { ...document };
@@ -4452,7 +4454,7 @@ export class AccountingApp {
       if (typeof patch.amountRub === "number") document.amountRub = patch.amountRub;
       correction.impactSummary = { ...correction.impactSummary, mode: "draft_patch" };
     } else {
-      const correctionDocument = this.createDocument({
+      const correctionDocument = await this.createDocument({
         documentType: "correction",
         accountingDate: document.accountingDate,
         title: `Исправление ${document.number}`,
@@ -4601,9 +4603,9 @@ export class AccountingApp {
     return asset;
   }
 
-  deleteProductAsset(assetId: ID): { id: ID; deleted: true } {
+  async deleteProductAsset(assetId: ID): Promise<{ id: ID; deleted: true }> {
     const asset = this.mustFind(this.state.productAssets, assetId, "product_asset_not_found");
-    this.state.productAssets = this.state.productAssets.filter((candidate) => candidate.id !== asset.id);
+    await this.repos.productAssets.replaceAll((await this.repos.productAssets.all()).filter((candidate) => candidate.id !== asset.id));
     this.audit("product_asset", asset.id, "delete", asset, undefined);
     return { id: asset.id, deleted: true };
   }
@@ -4633,14 +4635,14 @@ export class AccountingApp {
     return account;
   }
 
-  postOwnerContribution(paymentId: ID): Payment {
+  async postOwnerContribution(paymentId: ID): Promise<Payment> {
     const payment = this.mustFind(this.state.payments, paymentId, "payment_not_found");
     const document = this.mustFind(this.state.documents, payment.documentId, "document_not_found");
     if (document.status === "posted") return payment;
     if (payment.paymentType !== "owner_contribution") {
       throw new DomainError("payment_type_mismatch", "Это не пополнение владельцем");
     }
-    this.postDocument(payment.documentId, [
+    await this.postDocument(payment.documentId, [
       { accountCode: "51", debit: payment.amountRub, memo: "Поступление денег" },
       { accountCode: "80.01", credit: payment.amountRub, memo: "Вклад владельца" }
     ]);
@@ -4648,7 +4650,7 @@ export class AccountingApp {
     return payment;
   }
 
-  postSupplierPayment(paymentId: ID): Payment {
+  async postSupplierPayment(paymentId: ID): Promise<Payment> {
     const payment = this.mustFind(this.state.payments, paymentId, "payment_not_found");
     const document = this.mustFind(this.state.documents, payment.documentId, "document_not_found");
     if (document.status === "posted") return payment;
@@ -4660,7 +4662,7 @@ export class AccountingApp {
       throw new DomainError("payment_allocation_not_found", "Для платежа не найден связанный заказ поставщику");
     }
     const order = this.mustFind(this.state.purchaseOrders, allocation.purchaseOrderId, "purchase_order_not_found");
-    this.postDocument(payment.documentId, [
+    await this.postDocument(payment.documentId, [
       { accountCode: "60.02", debit: payment.amountRub, memo: "Аванс поставщику" },
       { accountCode: "51", credit: payment.amountRub, memo: "Оплата с расчетного счета" }
     ]);
@@ -4679,14 +4681,14 @@ export class AccountingApp {
     return payment;
   }
 
-  postOwnerWithdrawal(paymentId: ID): Payment {
+  async postOwnerWithdrawal(paymentId: ID): Promise<Payment> {
     const payment = this.mustFind(this.state.payments, paymentId, "payment_not_found");
     const document = this.mustFind(this.state.documents, payment.documentId, "document_not_found");
     if (document.status === "posted") return payment;
     if (payment.paymentType !== "owner_withdrawal") {
       throw new DomainError("payment_type_mismatch", "Это не изъятие владельца");
     }
-    this.postDocument(payment.documentId, [
+    await this.postDocument(payment.documentId, [
       { accountCode: "80.02", debit: payment.amountRub, memo: "Изъятие владельца" },
       { accountCode: "51", credit: payment.amountRub, memo: "Выплата владельцу" }
     ]);
@@ -4878,30 +4880,30 @@ export class AccountingApp {
     };
   }
 
-  postPayment(paymentId: ID): Payment {
-    const payment = this.mustFind(this.state.payments, paymentId, "payment_not_found");
+  async postPayment(paymentId: ID): Promise<Payment> {
+    const payment = this.mustFind(await this.repos.payments.all(), paymentId, "payment_not_found");
     if (this.isDocumentPosted(payment.documentId)) return payment;
     switch (payment.paymentType) {
       case "owner_contribution":
-        return this.postOwnerContribution(payment.id);
+        return await this.postOwnerContribution(payment.id);
       case "supplier_payment":
-        return this.postSupplierPayment(payment.id);
+        return await this.postSupplierPayment(payment.id);
       case "channel_payout": {
-        const payout = this.state.payouts.find((candidate) => candidate.paymentId === payment.id);
+        const payout = (await this.repos.payouts.all()).find((candidate) => candidate.paymentId === payment.id);
         if (!payout) {
           throw new DomainError("payout_not_found", "Для платежа не найдена выплата канала");
         }
-        this.postChannelPayout(payout.id);
+        await this.postChannelPayout(payout.id);
         return payment;
       }
       case "owner_withdrawal":
-        return this.postOwnerWithdrawal(payment.id);
+        return await this.postOwnerWithdrawal(payment.id);
       default:
         throw new DomainError("payment_post_not_supported", "Для этого типа платежа нет отдельного проведения");
     }
   }
 
-  postGoodsReceipt(receiptId: ID): GoodsReceipt {
+  async postGoodsReceipt(receiptId: ID): Promise<GoodsReceipt> {
     const receipt = this.mustFind(this.state.goodsReceipts, receiptId, "receipt_not_found");
     const document = this.mustFind(this.state.documents, receipt.documentId, "document_not_found");
     if (document.status === "posted" && receipt.status === "posted") return receipt;
@@ -4940,7 +4942,7 @@ export class AccountingApp {
         { accountCode: "60.02", credit: setoff, memo: "Зачет аванса поставщику" }
       );
     }
-    this.postDocument(document.id, journalLines);
+    await this.postDocument(document.id, journalLines);
     this.ensureDocumentLink(order.documentId, document.id, "receipt");
     this.state.settlementEntries.push({
       id: id("settlement"),
@@ -4979,7 +4981,7 @@ export class AccountingApp {
     };
   }
 
-  postProcurementCost(costId: ID): ProcurementCost {
+  async postProcurementCost(costId: ID): Promise<ProcurementCost> {
     const cost = this.mustFind(this.state.procurementCosts, costId, "procurement_cost_not_found");
     const document = this.mustFind(this.state.documents, cost.documentId, "document_not_found");
     if (document.status === "posted" && cost.status === "posted") return cost;
@@ -4989,7 +4991,7 @@ export class AccountingApp {
     if (cost.pendingAllocation) {
       // Расход до приёмки: деньги ушли, сумма висит в 41.02 «Товары в пути» до распределения на партии при приёмке.
       const creditAccount = cost.paidImmediately ? "51" : "60.01";
-      this.postDocument(document.id, [
+      await this.postDocument(document.id, [
         { accountCode: "41.02", debit: cost.amountRub, memo: "Расход закупки (товары в пути)" },
         { accountCode: creditAccount, credit: cost.amountRub, memo: cost.paidImmediately ? "Оплачен расход закупки" : "Задолженность за расход закупки" }
       ]);
@@ -5034,7 +5036,7 @@ export class AccountingApp {
       credit: cost.amountRub,
       memo: cost.paidImmediately ? "Оплачен расход закупки" : "Задолженность за расход закупки"
     });
-    this.postDocument(document.id, journalLines);
+    await this.postDocument(document.id, journalLines);
 
     this.ensurePaidProcurementCostPayment(cost, document);
     if (cost.purchaseOrderId) {
@@ -5182,7 +5184,7 @@ export class AccountingApp {
     };
   }
 
-  postShortage(shortageId: ID) {
+  async postShortage(shortageId: ID) {
     const shortage = this.mustFind(this.state.shortageResolutions, shortageId, "shortage_not_found");
     const document = this.mustFind(this.state.documents, shortage.documentId, "document_not_found");
     if (document.status === "posted" && shortage.status === "posted") return shortage;
@@ -5218,7 +5220,7 @@ export class AccountingApp {
       }
     });
     if (journalLines.length > 0) {
-      this.postDocument(document.id, journalLines);
+      await this.postDocument(document.id, journalLines);
     } else {
       document.status = "posted";
       document.postedAt = nowIso();
@@ -5238,7 +5240,7 @@ export class AccountingApp {
     };
   }
 
-  postStockTransfer(transferId: ID): StockTransfer {
+  async postStockTransfer(transferId: ID): Promise<StockTransfer> {
     const transfer = this.mustFind(this.state.stockTransfers, transferId, "transfer_not_found");
     const document = this.mustFind(this.state.documents, transfer.documentId, "document_not_found");
     if (document.status === "posted" && transfer.status === "posted") return transfer;
@@ -5291,7 +5293,7 @@ export class AccountingApp {
       document.postedAt = nowIso();
       this.audit("document", document.id, "post", undefined, document, "Перемещение внутри одного субсчета");
     } else {
-      this.postDocument(document.id, [
+      await this.postDocument(document.id, [
         { accountCode: toAccount, debit: totalCost, memo: "Перемещение товара: приход" },
         { accountCode: fromAccount, credit: totalCost, memo: "Перемещение товара: расход" }
       ]);
@@ -5392,16 +5394,16 @@ export class AccountingApp {
     }));
   }
 
-  private createDocument(input: {
+  private async createDocument(input: {
     documentType: string;
     accountingDate: string;
     title: string;
     amountRub: number;
     source?: Document["source"];
     comment?: string;
-  }): Document {
+  }): Promise<Document> {
     this.ensureBootstrapped();
-    const registry = this.state.documentTypes.find((type) => type.code === input.documentType);
+    const registry = (await this.repos.documentTypes.all()).find((type) => type.code === input.documentType);
     if (!registry) {
       throw new DomainError("unknown_document_type", `Неизвестный тип документа: ${input.documentType}`);
     }
@@ -5419,12 +5421,12 @@ export class AccountingApp {
       comment: input.comment,
       createdAt: nowIso()
     };
-    this.state.documents.push(document);
+    await this.repos.documents.add(document);
     this.audit("document", document.id, "create", undefined, document);
     return document;
   }
 
-  private createPayment(input: {
+  private async createPayment(input: {
     paymentDirection: Payment["paymentDirection"];
     paymentType: Payment["paymentType"];
     amountRub: number;
@@ -5433,13 +5435,14 @@ export class AccountingApp {
     counterpartyId?: ID;
     cashAccountId?: ID;
     comment?: string;
-  }): Payment {
+  }): Promise<Payment> {
     assertPositive(input.amountRub, "Сумма платежа должна быть положительной");
+    const cashAccounts = await this.repos.cashAccounts.all();
     const cashAccount = input.cashAccountId
-      ? this.mustFind(this.state.cashAccounts, input.cashAccountId, "cash_account_not_found")
-      : this.state.cashAccounts.find((account) => account.accountCode === "51" && account.isActive);
+      ? this.mustFind(cashAccounts, input.cashAccountId, "cash_account_not_found")
+      : cashAccounts.find((account) => account.accountCode === "51" && account.isActive);
     if (!cashAccount) throw new DomainError("cash_account_not_found", "Не найден расчетный счет");
-    const document = this.createDocument({
+    const document = await this.createDocument({
       documentType: "payment",
       accountingDate: input.paidAt,
       title: input.title,
@@ -5458,22 +5461,23 @@ export class AccountingApp {
       amountRub: input.amountRub,
       comment: input.comment
     };
-    this.state.payments.push(payment);
+    await this.repos.payments.add(payment);
     return payment;
   }
 
-  private postDocument(documentId: ID, lines: JournalLineInput[]) {
-    const document = this.mustFind(this.state.documents, documentId, "document_not_found");
+  private async postDocument(documentId: ID, lines: JournalLineInput[]) {
+    const document = this.mustFind(await this.repos.documents.all(), documentId, "document_not_found");
     if (document.status === "posted") {
-      return this.state.journalEntries.find((entry) => entry.documentId === documentId);
+      return (await this.repos.journalEntries.all()).find((entry) => entry.documentId === documentId);
     }
     const debit = round2(lines.reduce((sum, line) => sum + (line.debit ?? 0), 0));
     const credit = round2(lines.reduce((sum, line) => sum + (line.credit ?? 0), 0));
     if (debit !== credit) {
       throw new DomainError("unbalanced_journal_entry", "Проводка не сбалансирована", { debit, credit, lines });
     }
+    const chartAccounts = await this.repos.chartAccounts.all();
     lines.forEach((line) => {
-      if (!this.state.chartAccounts.some((account) => account.code === line.accountCode)) {
+      if (!chartAccounts.some((account) => account.code === line.accountCode)) {
         throw new DomainError("unknown_account", `Неизвестный счет ${line.accountCode}`);
       }
     });
@@ -5485,9 +5489,9 @@ export class AccountingApp {
       memo: document.title,
       createdAt: nowIso()
     };
-    this.state.journalEntries.push(entry);
-    lines.forEach((line) => {
-      this.state.journalLines.push({
+    await this.repos.journalEntries.add(entry);
+    for (const line of lines) {
+      await this.repos.journalLines.add({
         id: id("jl"),
         journalEntryId: entry.id,
         accountCode: line.accountCode,
@@ -5495,9 +5499,10 @@ export class AccountingApp {
         credit: round2(line.credit ?? 0),
         memo: line.memo ?? document.title
       });
-    });
+    }
     document.status = "posted";
     document.postedAt = nowIso();
+    await this.repos.documents.upsert(document);
     this.audit("document", document.id, "post", undefined, document);
     return entry;
   }
@@ -5697,7 +5702,7 @@ export class AccountingApp {
     return payment;
   }
 
-  private rollbackPaymentsForDocument(documentId: ID) {
+  private async rollbackPaymentsForDocument(documentId: ID) {
     const payments = this.state.payments.filter((candidate) => candidate.documentId === documentId);
     if (payments.length === 0) return;
     for (const payment of payments) {
@@ -5706,8 +5711,8 @@ export class AccountingApp {
       cashAccount.balanceRub = round2(cashAccount.balanceRub - direction * payment.amountRub);
     }
     const paymentIds = new Set(payments.map((payment) => payment.id));
-    this.state.paymentAllocations = this.state.paymentAllocations.filter((allocation) => !paymentIds.has(allocation.paymentId));
-    this.state.payments = this.state.payments.filter((candidate) => !paymentIds.has(candidate.id));
+    await this.repos.paymentAllocations.replaceAll((await this.repos.paymentAllocations.all()).filter((allocation) => !paymentIds.has(allocation.paymentId)));
+    await this.repos.payments.replaceAll((await this.repos.payments.all()).filter((candidate) => !paymentIds.has(candidate.id)));
   }
 
   private restoreCostApplicationsToLots(applications: CostApplication[]) {
@@ -5731,16 +5736,16 @@ export class AccountingApp {
     }
   }
 
-  private compactZeroStockStates() {
+  private async compactZeroStockStates() {
     this.state.stockStates.forEach((stockState) => {
       if (Math.abs(Number(stockState.qty ?? 0)) <= 0.0001) {
         stockState.qty = 0;
         stockState.costRub = 0;
       }
     });
-    this.state.stockStates = this.state.stockStates.filter((stockState) =>
+    await this.repos.stockStates.replaceAll((await this.repos.stockStates.all()).filter((stockState) =>
       Math.abs(Number(stockState.qty ?? 0)) > 0.0001 || Math.abs(Number(stockState.costRub ?? 0)) > 0.01
-    );
+    ));
   }
 
   private audit(entityType: string, entityId: ID, eventType: string, before?: unknown, after?: unknown, reason?: string): AuditEvent {

@@ -50,7 +50,7 @@ async function mcpRequest<T>(api: Api, token: string, method: string, params?: u
 describe("MPFlow api surface", () => {
   it("exposes major read models after demo bootstrap", async () => {
     const { app, api } = makeApi();
-    app.setupDemo();
+    await app.setupDemo();
 
     const readModels = await Promise.all([
       get<{ configured: boolean; counters: { products: number; documents: number } }>(api, "/api/dashboard"),
@@ -106,7 +106,7 @@ describe("MPFlow api surface", () => {
 
   it("runs existing-store onboarding through opening balance creation", async () => {
     const { app, api } = makeApi();
-    app.setupDemo();
+    await app.setupDemo();
     const seedProduct = app.state.products[0];
 
     const project = await post<any>(api, "/api/onboarding/existing-store/projects", { name: "QA импорт существующего магазина" });
@@ -295,7 +295,7 @@ describe("MPFlow api surface", () => {
     process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED = "true";
     const { app, api } = makeApi();
     try {
-      app.setupDemo();
+      await app.setupDemo();
       const channel = app.state.salesChannels[0];
 
       const user = await post<any>(api, "/api/settings/users/invite", {
@@ -339,7 +339,7 @@ describe("MPFlow api surface", () => {
 
   it("issues MCP keys and serves readonly API through MCP", async () => {
     const { app, api } = makeApi();
-    app.setupDemo();
+    await app.setupDemo();
 
     const issued = await post<any>(api, "/api/mcp/keys", { name: "Readonly agent", mode: "read_only" });
     expect(issued.endpoint).toBe("http://localhost/mcp");
@@ -401,7 +401,7 @@ describe("MPFlow api surface", () => {
 
   it("creates and retries recalculation jobs", async () => {
     const { app, api } = makeApi();
-    app.setupDemo();
+    await app.setupDemo();
 
     const job = await post<any>(api, "/api/recalculation-jobs", {
       jobType: "sales_profit",
@@ -418,7 +418,7 @@ describe("MPFlow api surface", () => {
 
   it("keeps document versions and correction audit", async () => {
     const { app, api } = makeApi();
-    app.setupDemo();
+    await app.setupDemo();
 
     const document = await post<any>(api, "/api/documents", {
       accountingDate: "2026-06-10",
@@ -462,7 +462,7 @@ describe("MPFlow api surface", () => {
     app.bootstrap({ displayName: "Document descendants", accountingStartDate: "2026-06-01" });
     const product = app.createProduct({ sku: "DESC-1", name: "Товар для связей" });
     const supplier = app.createCounterparty({ name: "Поставщик связей", counterpartyType: "supplier" });
-    const order = app.createPurchaseOrder({
+    const order = await app.createPurchaseOrder({
       supplierId: supplier.id,
       destinationWarehouseId: app.state.warehouses[0].id,
       supplierCurrency: "CNY",
@@ -470,7 +470,7 @@ describe("MPFlow api surface", () => {
       lines: [{ productId: product.id, qty: 5, supplierUnitPrice: 12 }],
       post: true
     });
-    const payment = app.recordSupplierPayment({ purchaseOrderId: order.id, amountRub: 60, paidAt: "2026-06-03" });
+    const payment = await app.recordSupplierPayment({ purchaseOrderId: order.id, amountRub: 60, paidAt: "2026-06-03" });
     const paymentDocument = app.state.documents.find((candidate) => candidate.id === payment.documentId);
 
     const descendants = await get<any[]>(api, `/api/documents/${order.documentId}/descendants`);

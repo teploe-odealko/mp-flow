@@ -3,10 +3,10 @@ import { AccountingApp } from "../../src/core/accounting-app";
 import { resetIds } from "../../src/core/utils";
 
 describe("journal invariants", () => {
-  it("keeps every posted journal entry balanced", () => {
+  it("keeps every posted journal entry balanced", async () => {
     resetIds();
     const app = new AccountingApp();
-    app.setupDemo();
+    await app.setupDemo();
 
     for (const entry of app.state.journalEntries) {
       const lines = app.state.journalLines.filter((line) => line.journalEntryId === entry.id);
@@ -16,7 +16,7 @@ describe("journal invariants", () => {
     }
   });
 
-  it("seeds the full account set needed by the roadmap", () => {
+  it("seeds the full account set needed by the roadmap", async () => {
     resetIds();
     const app = new AccountingApp();
     app.bootstrap({ displayName: "Тест", accountingStartDate: "2026-06-01" });

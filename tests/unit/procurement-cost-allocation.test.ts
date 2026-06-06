@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest";
 import { AccountingApp } from "../../src/core/accounting-app";
 import { resetIds } from "../../src/core/utils";
 
-function setupTwoProductReceipt() {
+async function setupTwoProductReceipt() {
   resetIds();
   const app = new AccountingApp();
   app.bootstrap({ displayName: "Landed cost", accountingStartDate: "2026-01-01" });
   const light = app.createProduct({ sku: "LIGHT", name: "Легкий товар", weightGrams: 100 });
   const heavy = app.createProduct({ sku: "HEAVY", name: "Тяжелый товар", weightGrams: 300 });
   const supplier = app.createCounterparty({ name: "Supplier", counterpartyType: "supplier" });
-  app.recordOwnerContribution({ amountRub: 100_000, paidAt: "2026-01-01" });
-  const order = app.createPurchaseOrder({
+  await app.recordOwnerContribution({ amountRub: 100_000, paidAt: "2026-01-01" });
+  const order = await app.createPurchaseOrder({
     supplierId: supplier.id,
     destinationWarehouseId: app.state.warehouses[0].id,
     supplierCurrency: "CNY",
@@ -21,9 +21,9 @@ function setupTwoProductReceipt() {
     ],
     post: true
   });
-  app.recordSupplierPayment({ purchaseOrderId: order.id, amountRub: 2_000, paidAt: "2026-01-03" });
+  await app.recordSupplierPayment({ purchaseOrderId: order.id, amountRub: 2_000, paidAt: "2026-01-03" });
   const lines = app.state.purchaseOrderLines.filter((line) => line.purchaseOrderId === order.id);
-  app.receiveGoods({
+  await app.receiveGoods({
     purchaseOrderId: order.id,
     warehouseId: app.state.warehouses[0].id,
     receiptDate: "2026-01-04",
@@ -33,8 +33,8 @@ function setupTwoProductReceipt() {
 }
 
 describe("procurement landed cost allocation", () => {
-  it("allocates delivery by product weight and prep cost by units", () => {
-    const { app, order, light, heavy } = setupTwoProductReceipt();
+  it("allocates delivery by product weight and prep cost by units", async () => {
+    const { app, order, light, heavy } = await setupTwoProductReceipt();
 
     const preview = app.previewProcurementCost({
       purchaseOrderId: order.id,
@@ -45,7 +45,7 @@ describe("procurement landed cost allocation", () => {
     expect(preview.lines.find((line) => line.productId === light.id)?.allocatedAmountRub).toBe(1_000);
     expect(preview.lines.find((line) => line.productId === heavy.id)?.allocatedAmountRub).toBe(3_000);
 
-    app.addProcurementCost({
+    await app.addProcurementCost({
       purchaseOrderId: order.id,
       costType: "delivery",
       allocationBasis: "by_weight",
@@ -53,7 +53,7 @@ describe("procurement landed cost allocation", () => {
       amountRub: 4_000,
       paidImmediately: true
     });
-    app.addProcurementCost({
+    await app.addProcurementCost({
       purchaseOrderId: order.id,
       costType: "packaging",
       allocationBasis: "by_unit",
@@ -69,13 +69,13 @@ describe("procurement landed cost allocation", () => {
     expect(app.state.procurementCosts.map((cost) => cost.allocationBasis)).toEqual(["by_weight", "by_unit"]);
   });
 
-  it("blocks weight allocation when product weight is missing", () => {
+  it("blocks weight allocation when product weight is missing", async () => {
     resetIds();
     const app = new AccountingApp();
     app.bootstrap({ displayName: "No weight", accountingStartDate: "2026-01-01" });
     const product = app.createProduct({ sku: "NO-WEIGHT", name: "Без веса" });
     const supplier = app.createCounterparty({ name: "Supplier", counterpartyType: "supplier" });
-    const order = app.createPurchaseOrder({
+    const order = await app.createPurchaseOrder({
       supplierId: supplier.id,
       destinationWarehouseId: app.state.warehouses[0].id,
       supplierCurrency: "CNY",
@@ -83,9 +83,9 @@ describe("procurement landed cost allocation", () => {
       lines: [{ productId: product.id, qty: 1, supplierUnitPrice: 1 }],
       post: true
     });
-    app.recordOwnerContribution({ amountRub: 1_000, paidAt: "2026-01-02" });
-    app.recordSupplierPayment({ purchaseOrderId: order.id, amountRub: 100, paidAt: "2026-01-03" });
-    app.receiveGoods({
+    await app.recordOwnerContribution({ amountRub: 1_000, paidAt: "2026-01-02" });
+    await app.recordSupplierPayment({ purchaseOrderId: order.id, amountRub: 100, paidAt: "2026-01-03" });
+    await app.receiveGoods({
       purchaseOrderId: order.id,
       warehouseId: app.state.warehouses[0].id,
       receiptDate: "2026-01-04",

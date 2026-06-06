@@ -23,7 +23,7 @@ describe("sync inbox workflows", () => {
     resetIds();
     const app = new AccountingApp();
     const api = createApi(app);
-    app.setupDemo();
+    await app.setupDemo();
     const state = await get<any>(api, "/api/state");
     const channel = state.salesChannels.find((candidate: any) => candidate.name.includes("Ozon"));
     const baselinePayoutCount = state.payouts.length;
@@ -70,7 +70,7 @@ describe("sync inbox workflows", () => {
     resetIds();
     const app = new AccountingApp();
     const api = createApi(app);
-    app.setupDemo();
+    await app.setupDemo();
     const before = await get<any>(api, "/api/state");
     const channel = before.salesChannels.find((candidate: any) => candidate.name.includes("Ozon"));
 
@@ -350,7 +350,7 @@ describe("sync inbox workflows", () => {
       sync: async ({ app, channelId, syncRunId, since }: any) => {
         const stats = { products: 0, events: 0, stocks: 0, sales: 0, returns: 0, finance_events: 0, payouts: 0 };
         if (since === "2026-05-05") {
-          app.ingestExternalEvent({
+          await app.ingestExternalEvent({
             channelId,
             syncRunId,
             eventType: "fee",
@@ -365,7 +365,7 @@ describe("sync inbox workflows", () => {
           stats.events += 1;
           stats.finance_events += 1;
         } else {
-          app.ingestExternalEvent({
+          await app.ingestExternalEvent({
             channelId,
             syncRunId,
             eventType: "sale",
@@ -467,7 +467,7 @@ describe("sync inbox workflows", () => {
       validateCredentials: () => ({ ok: true as const }),
       sync: async ({ app, channelId, syncRunId }: any) => {
         const stats = { products: 0, events: 0, stocks: 0, sales: 0, returns: 0, finance_events: 0, payouts: 0 };
-        app.ingestExternalEvent({
+        await app.ingestExternalEvent({
           channelId,
           syncRunId,
           eventType: "sale",
@@ -475,7 +475,7 @@ describe("sync inbox workflows", () => {
           occurredAt: "2026-04-15T12:00:00.000Z",
           payload: { postingNumber: "POST-PRE-1", lines: [{ sku: "EXT-A", qty: 1, amountRub: 1000 }] }
         });
-        app.ingestExternalEvent({
+        await app.ingestExternalEvent({
           channelId,
           syncRunId,
           eventType: "sale",
@@ -548,7 +548,7 @@ describe("sync inbox workflows", () => {
     resetIds();
     const app = new AccountingApp();
     const api = createApi(app);
-    app.setupDemo();
+    await app.setupDemo();
     const seeded = await get<any>(api, "/api/state");
     const channel = seeded.salesChannels.find((candidate: any) => candidate.name.includes("Ozon"));
     const productCountBefore = seeded.products.length;

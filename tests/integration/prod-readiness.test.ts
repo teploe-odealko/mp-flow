@@ -136,7 +136,7 @@ describe("prod-ready contracts", () => {
     }
   });
 
-  it("exports and imports channel credentials outside the public state object", () => {
+  it("exports and imports channel credentials outside the public state object", async () => {
     resetIds();
     const app = new AccountingApp();
     app.bootstrap({ displayName: "Creds", accountingStartDate: "2026-01-01" });

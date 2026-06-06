@@ -22,7 +22,7 @@ describe("hono api", () => {
     const app = new AccountingApp();
     const api = createApi(app);
 
-    app.setupDemo();
+    await app.setupDemo();
     const state = await get<any>(api, "/api/state");
     const reports = await get<any>(api, "/api/reports");
 

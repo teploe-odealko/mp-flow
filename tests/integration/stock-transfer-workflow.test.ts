@@ -33,7 +33,7 @@ describe("stock transfer workflow api", () => {
     const salesPointWarehouse = app.state.warehouses.find((warehouse) => warehouse.warehouseType === "sales_point");
     if (!ownWarehouse || !salesPointWarehouse) throw new Error("warehouses_not_seeded");
 
-    app.createOpeningBalance({
+    await app.createOpeningBalance({
       date: "2026-06-01",
       warehouseId: ownWarehouse.id,
       lines: [{ productId: product.id, qty: 10, unitCostRub: 150 }],
@@ -150,6 +150,6 @@ describe("stock transfer workflow api", () => {
     expect(preview.blockers.some((blocker: any) => blocker.code === "stock_transfer_has_downstream_usage")).toBe(true);
     expect(preview.blockers.find((blocker: any) => blocker.code === "stock_transfer_has_downstream_usage")?.relatedDocuments?.length ?? 0).toBeGreaterThan(0);
 
-    expect(() => app.deleteStockTransfer(transfer.id)).toThrow(/товар из него уже использован/);
+    await expect(app.deleteStockTransfer(transfer.id)).rejects.toThrow(/товар из него уже использован/);
   });
 });

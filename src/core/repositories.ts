@@ -22,6 +22,8 @@ export interface CollectionRepo<T> {
   upsert(item: T): Promise<T>;
   removeById(id: string): Promise<void>;
   removeWhere(pred: (item: T) => boolean): Promise<void>;
+  /** Заменить всё содержимое (мутируя на месте — ссылка на массив сохраняется). */
+  replaceAll(items: T[]): Promise<void>;
 }
 
 export class InMemoryCollectionRepo<T> implements CollectionRepo<T> {
@@ -57,6 +59,11 @@ export class InMemoryCollectionRepo<T> implements CollectionRepo<T> {
     for (let index = this.items.length - 1; index >= 0; index -= 1) {
       if (pred(this.items[index])) this.items.splice(index, 1);
     }
+  }
+
+  async replaceAll(items: T[]): Promise<void> {
+    this.items.length = 0;
+    this.items.push(...items);
   }
 }
 

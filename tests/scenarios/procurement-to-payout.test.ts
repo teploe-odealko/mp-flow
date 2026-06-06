@@ -3,16 +3,16 @@ import { AccountingApp } from "../../src/core/accounting-app";
 import { resetIds } from "../../src/core/utils";
 
 describe("full reseller accounting scenario", () => {
-  it("runs procurement -> receipt shortage -> cost -> transfer -> sale -> fee -> payout -> reports", () => {
+  it("runs procurement -> receipt shortage -> cost -> transfer -> sale -> fee -> payout -> reports", async () => {
     resetIds();
     const app = new AccountingApp();
     app.bootstrap({ displayName: "Reseller", accountingStartDate: "2026-06-01" });
 
     const product = app.createProduct({ sku: "CASE", name: "Чехол", imageUrl: "https://example.test/case.png" });
     const supplier = app.createCounterparty({ name: "China Supplier", counterpartyType: "supplier", country: "CN" });
-    app.recordOwnerContribution({ amountRub: 300_000, paidAt: "2026-06-01" });
+    await app.recordOwnerContribution({ amountRub: 300_000, paidAt: "2026-06-01" });
 
-    const po = app.createPurchaseOrder({
+    const po = await app.createPurchaseOrder({
       supplierId: supplier.id,
       destinationWarehouseId: app.state.warehouses[0].id,
       supplierCurrency: "CNY",
@@ -21,8 +21,8 @@ describe("full reseller accounting scenario", () => {
       post: true
     });
     const poLine = app.state.purchaseOrderLines[0];
-    app.recordSupplierPayment({ purchaseOrderId: po.id, amountRub: 130_000, paidAt: "2026-06-03" });
-    const receipt = app.receiveGoods({
+    await app.recordSupplierPayment({ purchaseOrderId: po.id, amountRub: 130_000, paidAt: "2026-06-03" });
+    const receipt = await app.receiveGoods({
       purchaseOrderId: po.id,
       warehouseId: app.state.warehouses[0].id,
       receiptDate: "2026-06-12",
@@ -32,7 +32,7 @@ describe("full reseller accounting scenario", () => {
     expect(receipt.goodsCostRubTotal).toBe(128_700);
     expect(app.state.inventoryLots[0].qtyRemaining).toBe(990);
 
-    app.resolveShortage({
+    await app.resolveShortage({
       purchaseOrderId: po.id,
       resolvedAt: "2026-06-13",
       reason: "Поставщик признал недопоставку",
@@ -40,7 +40,7 @@ describe("full reseller accounting scenario", () => {
     });
     expect(app.state.supplierClaims[0].amountRub).toBe(1_300);
 
-    app.addProcurementCost({
+    await app.addProcurementCost({
       purchaseOrderId: po.id,
       costType: "delivery",
       costDate: "2026-06-14",
@@ -49,15 +49,15 @@ describe("full reseller accounting scenario", () => {
     });
 
     const channel = app.createSalesChannel({ name: "Ozon FBO", channelType: "marketplace", pluginCode: "ozon" });
-    app.transferStock({
+    await app.transferStock({
       fromWarehouseId: app.state.warehouses[0].id,
       toWarehouseId: channel.salesPointWarehouseId,
       transferDate: "2026-06-15",
       lines: [{ productId: product.id, qty: 100 }]
     });
-    const sale = app.recordSale({ channelId: channel.id, saleDate: "2026-06-16", lines: [{ productId: product.id, qty: 10, priceRub: 990 }] });
-    app.recordChannelFee({ channelId: channel.id, eventKind: "commission", occurredAt: "2026-06-16", amountRub: 1_100 });
-    app.recordChannelPayout({ channelId: channel.id, payoutDate: "2026-06-20", bankReceiptRub: 8_800 });
+    const sale = await app.recordSale({ channelId: channel.id, saleDate: "2026-06-16", lines: [{ productId: product.id, qty: 10, priceRub: 990 }] });
+    await app.recordChannelFee({ channelId: channel.id, eventKind: "commission", occurredAt: "2026-06-16", amountRub: 1_100 });
+    await app.recordChannelPayout({ channelId: channel.id, payoutDate: "2026-06-20", bankReceiptRub: 8_800 });
 
     const reports = app.reports();
     const numbers = app.state.documents.map((document) => document.number);

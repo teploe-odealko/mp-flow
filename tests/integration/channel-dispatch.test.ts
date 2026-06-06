@@ -22,7 +22,7 @@ describe("channel dispatch from goods receipt", () => {
 
     const product = app.createProduct({ sku: "DSP-1", name: "Товар для Ozon", weightGrams: 100 });
     const supplier = app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
-    const order = app.createPurchaseOrder({
+    const order = await app.createPurchaseOrder({
       supplierId: supplier.id,
       destinationWarehouseId: ownWarehouse.id,
       supplierCurrency: "CNY",
@@ -31,8 +31,8 @@ describe("channel dispatch from goods receipt", () => {
       post: true
     });
     const orderLine = app.state.purchaseOrderLines[0]!;
-    app.recordSupplierPayment({ purchaseOrderId: order.id, amountRub: 8_000, paidAt: "2026-06-03" });
-    const receipt = app.receiveGoods({
+    await app.recordSupplierPayment({ purchaseOrderId: order.id, amountRub: 8_000, paidAt: "2026-06-03" });
+    const receipt = await app.receiveGoods({
       purchaseOrderId: order.id,
       warehouseId: ownWarehouse.id,
       receiptDate: "2026-06-04",

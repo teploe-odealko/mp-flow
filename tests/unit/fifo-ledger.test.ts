@@ -3,7 +3,7 @@ import { AccountingApp } from "../../src/core/accounting-app";
 import { resetIds } from "../../src/core/utils";
 
 describe("FIFO ledger", () => {
-  it("consumes the oldest lots first, including same-date creation order", () => {
+  it("consumes the oldest lots first, including same-date creation order", async () => {
     resetIds();
     const app = new AccountingApp();
     app.bootstrap({
@@ -14,18 +14,18 @@ describe("FIFO ledger", () => {
     const product = app.createProduct({ sku: "FIFO-001", name: "FIFO товар", unit: "шт" });
     const warehouseId = app.state.warehouses.find((warehouse) => warehouse.warehouseType === "own")!.id;
 
-    app.createOpeningBalance({
+    await app.createOpeningBalance({
       warehouseId,
       date: "2026-06-01",
       lines: [{ productId: product.id, qty: 100, unitCostRub: 10 }]
     });
-    app.createOpeningBalance({
+    await app.createOpeningBalance({
       warehouseId,
       date: "2026-06-01",
       lines: [{ productId: product.id, qty: 60, unitCostRub: 12 }]
     });
 
-    const outboundDocument = app.createManualDocument({
+    const outboundDocument = await app.createManualDocument({
       accountingDate: "2026-06-10",
       title: "Тестовое списание FIFO"
     });
@@ -47,7 +47,7 @@ describe("FIFO ledger", () => {
     expect(app.state.inventoryLots[1]).toMatchObject({ qtyRemaining: 40, costRemainingRub: 480, status: "open" });
   });
 
-  it("rejects FIFO consumption above available stock", () => {
+  it("rejects FIFO consumption above available stock", async () => {
     resetIds();
     const app = new AccountingApp();
     app.bootstrap({
@@ -58,13 +58,13 @@ describe("FIFO ledger", () => {
     const product = app.createProduct({ sku: "FIFO-001", name: "FIFO товар", unit: "шт" });
     const warehouseId = app.state.warehouses.find((warehouse) => warehouse.warehouseType === "own")!.id;
 
-    app.createOpeningBalance({
+    await app.createOpeningBalance({
       warehouseId,
       date: "2026-06-01",
       lines: [{ productId: product.id, qty: 10, unitCostRub: 15 }]
     });
 
-    const outboundDocument = app.createManualDocument({
+    const outboundDocument = await app.createManualDocument({
       accountingDate: "2026-06-10",
       title: "Тестовое списание FIFO"
     });

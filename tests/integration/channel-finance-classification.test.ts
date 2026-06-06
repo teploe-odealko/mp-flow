@@ -4,7 +4,7 @@ import { AccountingApp } from "../../src/core/accounting-app";
 import { resetIds } from "../../src/core/utils";
 
 describe("channel finance classification", () => {
-  it("classifies ad spend as channel operating expense", () => {
+  it("classifies ad spend as channel operating expense", async () => {
     const classified = classifyChannelFinancePayload({
       operationType: "services",
       operationTypeName: "Рекламное продвижение товара",
@@ -16,7 +16,7 @@ describe("channel finance classification", () => {
     expect(classified.treatment).toBe("channel_operating");
   });
 
-  it("classifies sale-linked logistics as variable marketplace expense", () => {
+  it("classifies sale-linked logistics as variable marketplace expense", async () => {
     const classified = classifyChannelFinancePayload({
       operationType: "delivery",
       operationTypeName: "Последняя миля по заказу",
@@ -29,7 +29,7 @@ describe("channel finance classification", () => {
     expect(classified.treatment).toBe("sale_variable");
   });
 
-  it("classifies Ozon cost per click as marketing expense", () => {
+  it("classifies Ozon cost per click as marketing expense", async () => {
     const classified = classifyChannelFinancePayload({
       operationType: "OperationMarketplaceCostPerClick",
       operationTypeName: "Оплата за клик",
@@ -41,7 +41,7 @@ describe("channel finance classification", () => {
     expect(classified.treatment).toBe("channel_operating");
   });
 
-  it("classifies Ozon FBO handling as channel operating expense even with posting number", () => {
+  it("classifies Ozon FBO handling as channel operating expense even with posting number", async () => {
     const classified = classifyChannelFinancePayload({
       operationType: "OperationMarketplaceSupplyAdditional",
       operationTypeName: "Обработка товара в составе грузоместа на FBO",
@@ -54,7 +54,7 @@ describe("channel finance classification", () => {
     expect(classified.treatment).toBe("channel_operating");
   });
 
-  it("classifies Ozon acquiring by exact operation type", () => {
+  it("classifies Ozon acquiring by exact operation type", async () => {
     const classified = classifyChannelFinancePayload({
       operationType: "MarketplaceRedistributionOfAcquiringOperation",
       operationTypeName: "Оплата эквайринга",
@@ -67,19 +67,19 @@ describe("channel finance classification", () => {
     expect(classified.treatment).toBe("sale_variable");
   });
 
-  it("defaults manually linked finance event to sale variable treatment", () => {
+  it("defaults manually linked finance event to sale variable treatment", async () => {
     resetIds();
     const app = new AccountingApp();
     app.bootstrap({ displayName: "QA", accountingStartDate: "2026-01-01" });
     const channel = app.createSalesChannel({ name: "Marketplace", channelType: "marketplace" });
-    const sale = app.recordSale({
+    const sale = await app.recordSale({
       channelId: channel.id,
       saleDate: "2026-01-02",
       post: false,
       lines: []
     });
 
-    const event = app.recordChannelFee({
+    const event = await app.recordChannelFee({
       channelId: channel.id,
       eventKind: "commission",
       occurredAt: "2026-01-03",
@@ -91,13 +91,13 @@ describe("channel finance classification", () => {
     expect(event.treatment).toBe("sale_variable");
   });
 
-  it("allows zero-amount channel finance events", () => {
+  it("allows zero-amount channel finance events", async () => {
     resetIds();
     const app = new AccountingApp();
     app.bootstrap({ displayName: "QA", accountingStartDate: "2026-01-01" });
     const channel = app.createSalesChannel({ name: "Marketplace", channelType: "marketplace" });
 
-    const event = app.recordChannelFee({
+    const event = await app.recordChannelFee({
       channelId: channel.id,
       eventKind: "commission",
       occurredAt: "2026-01-03",

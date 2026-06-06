@@ -3,13 +3,13 @@ import { AccountingApp } from "../../src/core/accounting-app";
 import { resetIds } from "../../src/core/utils";
 
 describe("corrections", () => {
-  it("decreases posted procurement cost without manual ledger edits", () => {
+  it("decreases posted procurement cost without manual ledger edits", async () => {
     resetIds();
     const app = new AccountingApp();
-    app.setupDemo();
+    await app.setupDemo();
     const cost = app.state.procurementCosts[0];
 
-    const correction = app.applyProcurementCostCorrection({
+    const correction = await app.applyProcurementCostCorrection({
       procurementCostId: cost.id,
       newAmountRub: 20_000,
       reason: "Фактический счет доставки меньше"
@@ -21,10 +21,10 @@ describe("corrections", () => {
     expect(app.state.procurementCosts[0].amountRub).toBe(20_000);
   });
 
-  it("syncs procurement cost document and allocation lines when header amount was already corrected", () => {
+  it("syncs procurement cost document and allocation lines when header amount was already corrected", async () => {
     resetIds();
     const app = new AccountingApp();
-    app.setupDemo();
+    await app.setupDemo();
     const cost = app.state.procurementCosts[0];
     const currentLineTotal = app.state.procurementCostLines
       .filter((line) => line.procurementCostId === cost.id)
@@ -32,7 +32,7 @@ describe("corrections", () => {
     const correctedAmount = currentLineTotal + 2;
     cost.amountRub = correctedAmount;
 
-    const correction = app.applyProcurementCostCorrection({
+    const correction = await app.applyProcurementCostCorrection({
       procurementCostId: cost.id,
       newAmountRub: correctedAmount,
       reason: "Синхронизация строк после исправления суммы"
@@ -54,14 +54,14 @@ describe("corrections", () => {
     ).toBe(correctedAmount);
   });
 
-  it("corrects receipt quantity down and returns missing paid share to advance workflow", () => {
+  it("corrects receipt quantity down and returns missing paid share to advance workflow", async () => {
     resetIds();
     const app = new AccountingApp();
     app.bootstrap({ displayName: "Коррекции", accountingStartDate: "2026-06-01" });
     const product = app.createProduct({ sku: "A", name: "A" });
     const supplier = app.createCounterparty({ name: "Supplier", counterpartyType: "supplier" });
-    app.recordOwnerContribution({ amountRub: 200_000, paidAt: "2026-06-01" });
-    const po = app.createPurchaseOrder({
+    await app.recordOwnerContribution({ amountRub: 200_000, paidAt: "2026-06-01" });
+    const po = await app.createPurchaseOrder({
       supplierId: supplier.id,
       destinationWarehouseId: app.state.warehouses[0].id,
       supplierCurrency: "CNY",
@@ -70,15 +70,15 @@ describe("corrections", () => {
       post: true
     });
     const poLine = app.state.purchaseOrderLines[0];
-    app.recordSupplierPayment({ purchaseOrderId: po.id, amountRub: 130_000, paidAt: "2026-06-03" });
-    const receipt = app.receiveGoods({
+    await app.recordSupplierPayment({ purchaseOrderId: po.id, amountRub: 130_000, paidAt: "2026-06-03" });
+    const receipt = await app.receiveGoods({
       purchaseOrderId: po.id,
       warehouseId: app.state.warehouses[0].id,
       receiptDate: "2026-06-04",
       lines: [{ purchaseOrderLineId: poLine.id, qtyReceived: 1000 }]
     });
 
-    const correction = app.applyReceiptQuantityCorrection({
+    const correction = await app.applyReceiptQuantityCorrection({
       goodsReceiptId: receipt.id,
       purchaseOrderLineId: poLine.id,
       newQtyReceived: 990,

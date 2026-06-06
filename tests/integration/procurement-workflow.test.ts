@@ -42,7 +42,7 @@ describe("procurement workflow api", () => {
     app.bootstrap({ displayName: "PO Edit", accountingStartDate: "2026-06-01" });
     const product = app.createProduct({ sku: "PO-1", name: "Товар для заказа" });
     const supplier = app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
-    const order = app.createPurchaseOrder({
+    const order = await app.createPurchaseOrder({
       supplierId: supplier.id,
       destinationWarehouseId: app.state.warehouses[0].id,
       supplierCurrency: "CNY",
@@ -80,7 +80,7 @@ describe("procurement workflow api", () => {
     app.bootstrap({ displayName: "PO Corrections", accountingStartDate: "2026-06-01" });
     const product = app.createProduct({ sku: "PO-2", name: "Товар с корректировкой" });
     const supplier = app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
-    const order = app.createPurchaseOrder({
+    const order = await app.createPurchaseOrder({
       supplierId: supplier.id,
       destinationWarehouseId: app.state.warehouses[0].id,
       supplierCurrency: "CNY",
@@ -89,14 +89,14 @@ describe("procurement workflow api", () => {
       post: true
     });
     const orderLine = app.state.purchaseOrderLines[0];
-    app.recordSupplierPayment({ purchaseOrderId: order.id, amountRub: 13_000, paidAt: "2026-06-03" });
-    const receipt = app.receiveGoods({
+    await app.recordSupplierPayment({ purchaseOrderId: order.id, amountRub: 13_000, paidAt: "2026-06-03" });
+    const receipt = await app.receiveGoods({
       purchaseOrderId: order.id,
       warehouseId: app.state.warehouses[0].id,
       receiptDate: "2026-06-04",
       lines: [{ purchaseOrderLineId: orderLine.id, qtyReceived: 10 }]
     });
-    const cost = app.addProcurementCost({
+    const cost = await app.addProcurementCost({
       purchaseOrderId: order.id,
       costType: "delivery",
       allocationBasis: "by_cost",
@@ -142,7 +142,7 @@ describe("procurement workflow api", () => {
     app.bootstrap({ displayName: "PO Drafts", accountingStartDate: "2026-06-01" });
     const product = app.createProduct({ sku: "PO-3", name: "Товар с черновиками", weightGrams: 100 });
     const supplier = app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
-    const order = app.createPurchaseOrder({
+    const order = await app.createPurchaseOrder({
       supplierId: supplier.id,
       destinationWarehouseId: app.state.warehouses[0].id,
       supplierCurrency: "CNY",
@@ -219,7 +219,7 @@ describe("procurement workflow api", () => {
     const warehouseId = app.state.warehouses.find((warehouse) => warehouse.warehouseType === "own")!.id;
     const product = app.createProduct({ sku: "PO-4", name: "Товар для переприемки" });
     const supplier = app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
-    const order = app.createPurchaseOrder({
+    const order = await app.createPurchaseOrder({
       supplierId: supplier.id,
       destinationWarehouseId: warehouseId,
       supplierCurrency: "CNY",
@@ -228,14 +228,14 @@ describe("procurement workflow api", () => {
       post: true
     });
     const orderLine = app.state.purchaseOrderLines[0];
-    app.recordSupplierPayment({ purchaseOrderId: order.id, amountRub: 10_000, paidAt: "2026-06-03" });
-    const receipt = app.receiveGoods({
+    await app.recordSupplierPayment({ purchaseOrderId: order.id, amountRub: 10_000, paidAt: "2026-06-03" });
+    const receipt = await app.receiveGoods({
       purchaseOrderId: order.id,
       warehouseId,
       receiptDate: "2026-06-04",
       lines: [{ purchaseOrderLineId: orderLine.id, qtyReceived: 10 }]
     });
-    const procurementCost = app.addProcurementCost({
+    const procurementCost = await app.addProcurementCost({
       purchaseOrderId: order.id,
       costType: "delivery",
       allocationBasis: "by_cost",
@@ -280,7 +280,7 @@ describe("procurement workflow api", () => {
     const warehouseId = app.state.warehouses.find((warehouse) => warehouse.warehouseType === "own")!.id;
     const product = app.createProduct({ sku: "PO-COST", name: "Товар с доставкой" });
     const supplier = app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
-    const order = app.createPurchaseOrder({
+    const order = await app.createPurchaseOrder({
       supplierId: supplier.id,
       destinationWarehouseId: warehouseId,
       supplierCurrency: "RUB",
@@ -289,7 +289,7 @@ describe("procurement workflow api", () => {
       post: true
     });
     const orderLine = app.state.purchaseOrderLines[0];
-    app.recordSupplierPayment({ purchaseOrderId: order.id, amountRub: 1000, paidAt: "2026-06-03" });
+    await app.recordSupplierPayment({ purchaseOrderId: order.id, amountRub: 1000, paidAt: "2026-06-03" });
 
     const api = createApi(app);
     const bal = (ledger: Record<string, { debit: number; credit: number }>, code: string) =>
@@ -325,7 +325,7 @@ describe("procurement workflow api", () => {
     const warehouseId = app.state.warehouses.find((warehouse) => warehouse.warehouseType === "own")!.id;
     const product = app.createProduct({ sku: "PO-5", name: "Черновик к удалению" });
     const supplier = app.createCounterparty({ name: "Поставщик", counterpartyType: "supplier" });
-    const order = app.createPurchaseOrder({
+    const order = await app.createPurchaseOrder({
       supplierId: supplier.id,
       destinationWarehouseId: warehouseId,
       supplierCurrency: "CNY",
@@ -340,7 +340,7 @@ describe("procurement workflow api", () => {
     expect(app.state.documents.some((document) => document.id === order.documentId)).toBe(false);
     expect(app.state.purchaseOrders.some((candidate) => candidate.id === order.id)).toBe(false);
 
-    const secondOrder = app.createPurchaseOrder({
+    const secondOrder = await app.createPurchaseOrder({
       supplierId: supplier.id,
       destinationWarehouseId: warehouseId,
       supplierCurrency: "CNY",
@@ -348,7 +348,7 @@ describe("procurement workflow api", () => {
       lines: [{ productId: product.id, qty: 3, supplierUnitPrice: 7 }],
       post: true
     });
-    app.recordSupplierPayment({ purchaseOrderId: secondOrder.id, amountRub: 21, paidAt: "2026-06-04" });
+    await app.recordSupplierPayment({ purchaseOrderId: secondOrder.id, amountRub: 21, paidAt: "2026-06-04" });
     const blocked = await deleteRaw(api, `/api/documents/${secondOrder.documentId}`);
     expect(blocked.ok).toBe(false);
     expect(blocked.error?.code).toBe("document_delete_not_allowed");
