@@ -141,7 +141,14 @@ promise в `c.json` починены) + пайплайн (`materializeSale/Payou
 Синглтоны `organization`/`accountingPolicy` (~16 рефов) — НЕ массивы, не «тяжёлый снэпшот»; добираются в самом конце
 (или отдельным singleton-аксессором), уже после выноса всех коллекций.
 
-### ⚠️ Алгоритм для остатка (381 реф) — слепой скрипт НЕ работает (проверено дважды)
+### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
+Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/
+addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocumentSummary(x))` — хелперы каскадно
+становятся async вопреки keep-листу (т.к. зовут другие async). Эти места требуют **ручного** `forEach→for-of`
+(с `return→continue`) и `.map→Promise.all`. Скрипт оставляю ТОЛЬКО для statement-level чтений в уже-async методах.
+**Остаток хелпер-слоя (335 рефов) добивается строго вручную, пер-методно** (как уже сделанные ~18 методов).
+
+### ⚠️ Алгоритм для остатка — слепой скрипт НЕ работает (проверено дважды)
 Массовый async-ify+await-insert упирается во **вложенные колбэки**. Правила:
 1. **Колбэк-хелперы остаются sync** (читают `this.state` in-memory): `findRollbackDocumentSummary`,
    `isDocumentPosted`, `isPaymentAllocationPosted` — вызываются внутри `.map/.filter/.some`. Их НЕ async-ить.
