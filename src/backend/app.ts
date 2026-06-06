@@ -385,7 +385,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: scopedApp.createProduct(body) });
   });
   api.get("/api/products/channel-mapping", (c) => c.json({ ok: true, data: { externalProducts: scopedApp.state.externalProducts, links: scopedApp.state.productExternalLinks, products: scopedApp.state.products, channels: scopedApp.state.salesChannels } }));
-  api.get("/api/products/:id", (c) => c.json({ ok: true, data: scopedApp.productDetails(c.req.param("id")) }));
+  api.get("/api/products/:id", async (c) => c.json({ ok: true, data: await scopedApp.productDetails(c.req.param("id")) }));
   api.post("/api/products/:id/update", async (c) => {
     const body = productSchema.partial().parse(await c.req.json());
     return c.json({ ok: true, data: scopedApp.updateProduct(c.req.param("id"), body) });
@@ -396,17 +396,17 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.post("/api/products/:id/archive", (c) => c.json({ ok: true, data: scopedApp.archiveProduct(c.req.param("id")) }));
   api.post("/api/products/:id/restore", (c) => c.json({ ok: true, data: scopedApp.restoreProduct(c.req.param("id")) }));
-  api.get("/api/products/:id/lots", (c) => c.json({ ok: true, data: scopedApp.productDetails(c.req.param("id")).lots }));
-  api.get("/api/products/:id/stock-movements", (c) => c.json({ ok: true, data: scopedApp.productDetails(c.req.param("id")).movements }));
+  api.get("/api/products/:id/lots", async (c) => c.json({ ok: true, data: (await scopedApp.productDetails(c.req.param("id"))).lots }));
+  api.get("/api/products/:id/stock-movements", async (c) => c.json({ ok: true, data: (await scopedApp.productDetails(c.req.param("id"))).movements }));
   api.post("/api/products/:id/images", async (c) => {
     const body = imageSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.setProductImage(c.req.param("id"), body.url) });
+    return c.json({ ok: true, data: await scopedApp.setProductImage(c.req.param("id"), body.url) });
   });
   api.patch("/api/products/:id/images/:imageId", async (c) => {
     const body = imageSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.setProductImage(c.req.param("id"), body.url) });
+    return c.json({ ok: true, data: await scopedApp.setProductImage(c.req.param("id"), body.url) });
   });
-  api.delete("/api/products/:id/images/:imageId", (c) => c.json({ ok: true, data: scopedApp.deleteProductImage(c.req.param("id")) }));
+  api.delete("/api/products/:id/images/:imageId", async (c) => c.json({ ok: true, data: await scopedApp.deleteProductImage(c.req.param("id")) }));
 
   const requireStudioProduct = (productId: string) => {
     const product = scopedApp.state.products.find((candidate) => candidate.id === productId);

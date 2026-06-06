@@ -4469,42 +4469,46 @@ export class AccountingApp {
     return job;
   }
 
-  productDetails(productId: ID) {
-    const product = this.mustFind(this.state.products, productId, "product_not_found");
-    const movements = this.state.stockMovements.filter((movement) => movement.productId === product.id);
+  async productDetails(productId: ID) {
+    const product = this.mustFind(await this.repos.products.all(), productId, "product_not_found");
+    const movements = (await this.repos.stockMovements.all()).filter((movement) => movement.productId === product.id);
     const relatedDocumentIds = new Set<string>();
-    this.state.inventoryLots
+    (await this.repos.inventoryLots.all())
       .filter((lot) => lot.productId === product.id)
       .forEach((lot) => relatedDocumentIds.add(lot.sourceDocumentId));
     movements.forEach((movement) => relatedDocumentIds.add(movement.documentId));
-    this.state.purchaseOrderLines
+    const purchaseOrders = await this.repos.purchaseOrders.all();
+    (await this.repos.purchaseOrderLines.all())
       .filter((line) => line.productId === product.id)
       .forEach((line) => {
-        const order = this.state.purchaseOrders.find((candidate) => candidate.id === line.purchaseOrderId);
+        const order = purchaseOrders.find((candidate) => candidate.id === line.purchaseOrderId);
         if (order) relatedDocumentIds.add(order.documentId);
       });
+    const inventoryLots = await this.repos.inventoryLots.all();
     return {
       product,
-      lots: this.state.inventoryLots.filter((lot) => lot.productId === product.id),
-      stock: this.state.stockStates.filter((stock) => stock.productId === product.id),
+      lots: inventoryLots.filter((lot) => lot.productId === product.id),
+      stock: (await this.repos.stockStates.all()).filter((stock) => stock.productId === product.id),
       movements,
-      documents: this.state.documents.filter((document) => relatedDocumentIds.has(document.id)),
-      externalLinks: this.state.productExternalLinks.filter((link) => link.productId === product.id)
+      documents: (await this.repos.documents.all()).filter((document) => relatedDocumentIds.has(document.id)),
+      externalLinks: (await this.repos.productExternalLinks.all()).filter((link) => link.productId === product.id)
     };
   }
 
-  setProductImage(productId: ID, imageUrl: string) {
-    const product = this.mustFind(this.state.products, productId, "product_not_found");
+  async setProductImage(productId: ID, imageUrl: string) {
+    const product = this.mustFind(await this.repos.products.all(), productId, "product_not_found");
     const before = { ...product };
     product.imageUrl = imageUrl;
+    await this.repos.products.upsert(product);
     this.audit("product", product.id, "image_update", before, product);
     return { id: `${product.id}:main`, productId: product.id, url: imageUrl, sortOrder: 0 };
   }
 
-  deleteProductImage(productId: ID) {
-    const product = this.mustFind(this.state.products, productId, "product_not_found");
+  async deleteProductImage(productId: ID) {
+    const product = this.mustFind(await this.repos.products.all(), productId, "product_not_found");
     const before = { ...product };
     product.imageUrl = undefined;
+    await this.repos.products.upsert(product);
     this.audit("product", product.id, "image_delete", before, product);
     return product;
   }
