@@ -4796,13 +4796,13 @@ export class AccountingApp {
         .filter((line) => line.documentId !== document.id)
         .concat(nextDocumentLines);
     }
-    const lines = this.state.purchaseOrderLines.filter((line) => line.purchaseOrderId === order.id);
+    const lines = (await this.repos.purchaseOrderLines.all()).filter((line) => line.purchaseOrderId === order.id);
     order.totalSupplierAmount = round2(lines.reduce((sum, line) => sum + line.supplierAmount, 0));
     order.totalQty = round4(lines.reduce((sum, line) => sum + line.qtyOrdered, 0));
     this.state.documentVersions.push({
       id: id("doc_version"),
       documentId: document.id,
-      versionNo: this.state.documentVersions.filter((version) => version.documentId === document.id).length + 1,
+      versionNo: (await this.repos.documentVersions.all()).filter((version) => version.documentId === document.id).length + 1,
       snapshot: before,
       reason: "Редактирование заказа поставщику",
       createdAt: nowIso()
