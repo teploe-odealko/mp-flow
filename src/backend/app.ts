@@ -325,10 +325,10 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
 
   api.get("/api/accounts", (c) => c.json({ ok: true, data: scopedApp.state.chartAccounts }));
   api.get("/api/accounting/accounts", (c) => c.json({ ok: true, data: scopedApp.state.chartAccounts }));
-  api.get("/api/accounting/accounts/:id", (c) => c.json({ ok: true, data: scopedApp.accountByIdOrCode(c.req.param("id")) }));
+  api.get("/api/accounting/accounts/:id", async (c) => c.json({ ok: true, data: await scopedApp.accountByIdOrCode(c.req.param("id")) }));
   api.get("/api/journal", (c) => c.json({ ok: true, data: { entries: scopedApp.state.journalEntries, lines: scopedApp.state.journalLines } }));
   api.get("/api/accounting/journal", (c) => c.json({ ok: true, data: { entries: scopedApp.state.journalEntries, lines: scopedApp.state.journalLines } }));
-  api.get("/api/accounting/journal/:id", (c) => c.json({ ok: true, data: scopedApp.journalEntryDetails(c.req.param("id")) }));
+  api.get("/api/accounting/journal/:id", async (c) => c.json({ ok: true, data: await scopedApp.journalEntryDetails(c.req.param("id")) }));
   api.get("/api/ledger", (c) => c.json({ ok: true, data: scopedApp.ledgerBalances() }));
   api.get("/api/accounting/ledger", (c) => c.json({ ok: true, data: scopedApp.ledgerBalances() }));
   api.get("/api/documents", (c) => c.json({ ok: true, data: scopedApp.state.documents }));
@@ -555,9 +555,9 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = warehouseSchema.parse(await c.req.json());
     return c.json({ ok: true, data: scopedApp.createWarehouse(body) });
   });
-  api.get("/api/inventory", (c) => c.json({ ok: true, data: { stock: scopedApp.stockByProduct(), lots: scopedApp.state.inventoryLots, movements: scopedApp.state.stockMovements } }));
+  api.get("/api/inventory", async (c) => c.json({ ok: true, data: { stock: await scopedApp.stockByProduct(), lots: scopedApp.state.inventoryLots, movements: scopedApp.state.stockMovements } }));
   api.get("/api/stock-states", (c) => c.json({ ok: true, data: scopedApp.state.stockStates }));
-  api.get("/api/inventory/balances", (c) => c.json({ ok: true, data: scopedApp.stockByProduct() }));
+  api.get("/api/inventory/balances", async (c) => c.json({ ok: true, data: await scopedApp.stockByProduct() }));
   api.get("/api/inventory/lots", (c) => c.json({ ok: true, data: scopedApp.state.inventoryLots }));
   api.get("/api/inventory/reconciliation", async (c) => c.json({ ok: true, data: { stocktakes: scopedApp.state.stocktakes, lines: scopedApp.state.stocktakeLines, observedStocks: await scopedApp.observedStocks.list() } }));
   api.post("/api/inventory/opening-balances", async (c) => {
@@ -906,7 +906,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/payments/:id/delete-preview", (c) => c.json({ ok: true, data: scopedApp.paymentRollbackPreview(c.req.param("id")) }));
   api.delete("/api/payments/:id", (c) => c.json({ ok: true, data: scopedApp.deletePayment(c.req.param("id")) }));
 
-  api.get("/api/inventory/transfer-preview", (c) => c.json({ ok: true, data: { stock: scopedApp.stockByProduct(), lots: scopedApp.state.inventoryLots } }));
+  api.get("/api/inventory/transfer-preview", async (c) => c.json({ ok: true, data: { stock: await scopedApp.stockByProduct(), lots: scopedApp.state.inventoryLots } }));
   api.post("/api/inventory/transfers", async (c) => {
     const body = transferSchema.parse(await c.req.json());
     return c.json({ ok: true, data: scopedApp.transferStock(body) });
@@ -916,7 +916,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/inventory/transfers/:id/delete-preview", (c) => c.json({ ok: true, data: scopedApp.stockTransferRollbackPreview(c.req.param("id")) }));
   api.delete("/api/inventory/transfers/:id", (c) => c.json({ ok: true, data: scopedApp.deleteStockTransfer(c.req.param("id")) }));
   api.post("/api/inventory/transfers/:id/post", (c) => c.json({ ok: true, data: scopedApp.postStockTransfer(c.req.param("id")) }));
-  api.get("/api/inventory/sales-points/:id/stock", (c) => c.json({ ok: true, data: scopedApp.stockForSalesPoint(c.req.param("id")) }));
+  api.get("/api/inventory/sales-points/:id/stock", async (c) => c.json({ ok: true, data: await scopedApp.stockForSalesPoint(c.req.param("id")) }));
   api.post("/api/inventory/stocktakes", async (c) => {
     const body = stocktakeSchema.parse(await c.req.json());
     return c.json({ ok: true, data: scopedApp.runStocktake(body) });

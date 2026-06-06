@@ -4162,17 +4162,18 @@ export class AccountingApp {
     return policy;
   }
 
-  accountByIdOrCode(idOrCode: ID): ChartAccount {
-    return this.state.chartAccounts.find((account) => account.id === idOrCode || account.code === idOrCode) ??
-      this.mustFind(this.state.chartAccounts, idOrCode, "account_not_found");
+  async accountByIdOrCode(idOrCode: ID): Promise<ChartAccount> {
+    const accounts = await this.repos.chartAccounts.all();
+    return accounts.find((account) => account.id === idOrCode || account.code === idOrCode) ??
+      this.mustFind(accounts, idOrCode, "account_not_found");
   }
 
-  journalEntryDetails(entryId: ID) {
-    const entry = this.mustFind(this.state.journalEntries, entryId, "journal_entry_not_found");
+  async journalEntryDetails(entryId: ID) {
+    const entry = this.mustFind(await this.repos.journalEntries.all(), entryId, "journal_entry_not_found");
     return {
       entry,
-      lines: this.state.journalLines.filter((line) => line.journalEntryId === entry.id),
-      document: this.state.documents.find((document) => document.id === entry.documentId)
+      lines: (await this.repos.journalLines.all()).filter((line) => line.journalEntryId === entry.id),
+      document: (await this.repos.documents.all()).find((document) => document.id === entry.documentId)
     };
   }
 
@@ -5280,24 +5281,25 @@ export class AccountingApp {
     return transfer;
   }
 
-  stockForSalesPoint(warehouseId: ID) {
-    const warehouse = this.mustFind(this.state.warehouses, warehouseId, "warehouse_not_found");
+  async stockForSalesPoint(warehouseId: ID) {
+    const warehouse = this.mustFind(await this.repos.warehouses.all(), warehouseId, "warehouse_not_found");
     if (warehouse.warehouseType !== "sales_point") {
       throw new DomainError("warehouse_not_sales_point", "Склад не является точкой продаж");
     }
-    const stock = this.state.stockStates
+    const products = await this.repos.products.all();
+    const stock = (await this.repos.stockStates.all())
       .filter((candidate) => candidate.warehouseId === warehouse.id)
-      .map((candidate) => ({ ...candidate, product: this.state.products.find((product) => product.id === candidate.productId), warehouse }));
+      .map((candidate) => ({ ...candidate, product: products.find((product) => product.id === candidate.productId), warehouse }));
     const transferDocumentIds = new Set(
-      this.state.stockTransfers
+      (await this.repos.stockTransfers.all())
         .filter((transfer) => transfer.toWarehouseId === warehouse.id || transfer.fromWarehouseId === warehouse.id)
         .map((transfer) => transfer.documentId)
     );
     return {
       warehouse,
       stock,
-      lots: this.state.inventoryLots.filter((lot) => lot.warehouseId === warehouse.id),
-      recentDocuments: this.state.documents
+      lots: (await this.repos.inventoryLots.all()).filter((lot) => lot.warehouseId === warehouse.id),
+      recentDocuments: (await this.repos.documents.all())
         .filter((document) => transferDocumentIds.has(document.id))
         .slice()
         .sort((left, right) => String(right.accountingDate).localeCompare(String(left.accountingDate)))
@@ -5361,11 +5363,13 @@ export class AccountingApp {
     }, {});
   }
 
-  stockByProduct() {
-    return this.state.stockStates.map((state) => ({
+  async stockByProduct() {
+    const products = await this.repos.products.all();
+    const warehouses = await this.repos.warehouses.all();
+    return (await this.repos.stockStates.all()).map((state) => ({
       ...state,
-      product: this.state.products.find((product) => product.id === state.productId),
-      warehouse: this.state.warehouses.find((warehouse) => warehouse.id === state.warehouseId)
+      product: products.find((product) => product.id === state.productId),
+      warehouse: warehouses.find((warehouse) => warehouse.id === state.warehouseId)
     }));
   }
 
