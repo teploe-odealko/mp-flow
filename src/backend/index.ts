@@ -6,6 +6,8 @@ import { serve } from "@hono/node-server";
 import { createAccountingRuntimeFromEnv } from "../infra/db/runtime-store";
 import { createApi } from "./app";
 import { AuthService } from "./auth";
+import { closePool, getPool } from "./db/pool";
+import { runMigrations } from "./db/migrate";
 import { flushObservability, initObservability } from "./observability";
 
 loadLocalEnv();
@@ -15,6 +17,7 @@ const port = Number(process.env.PORT ?? 3004);
 const hostname = process.env.HOST ?? "0.0.0.0";
 
 const runtime = await createAccountingRuntimeFromEnv();
+await runMigrations(getPool());
 const auth = new AuthService();
 const api = createApi(runtime.app, { persistence: runtime.persistence, auth });
 
@@ -27,6 +30,7 @@ const server = serve({
 const shutdown = async () => {
   await runtime.persistence?.close?.();
   await auth?.close();
+  await closePool();
   await flushObservability();
   server.close();
 };
