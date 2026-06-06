@@ -719,13 +719,14 @@ export class AccountingApp {
       throw new DomainError("opening_balance_date_must_match_start", "Дата стартового остатка должна совпадать с датой начала учета");
     }
     this.assertAccountingDateAllowed(input.date);
-    const warehouse = this.mustFind(this.state.warehouses, input.warehouseId, "warehouse_not_found");
+    const warehouse = this.mustFind(await this.repos.warehouses.all(), input.warehouseId, "warehouse_not_found");
     if (!warehouse.isActive) {
       throw new DomainError("warehouse_inactive", "Склад недоступен для стартового остатка");
     }
     const seen = new Set<string>();
+    const products = await this.repos.products.all();
     const normalizedLines = input.lines.map((line) => {
-      const product = this.mustFind(this.state.products, line.productId, "product_not_found");
+      const product = this.mustFind(products, line.productId, "product_not_found");
       if (product.status !== "active") {
         throw new DomainError("product_archived", `Архивный товар нельзя использовать: ${product.sku}`);
       }
@@ -755,8 +756,8 @@ export class AccountingApp {
       comment: input.comment
     });
 
-    normalizedLines.forEach((line, index) => {
-      this.state.documentLines.push({
+    for (const [index, line] of normalizedLines.entries()) {
+      await this.repos.documentLines.add({
         id: id("doc_line"),
         documentId: document.id,
         lineNo: index + 1,
@@ -770,7 +771,7 @@ export class AccountingApp {
           unitCostRub: line.qty > 0 ? round6(line.costRub / line.qty) : 0
         }
       });
-    });
+    }
 
     if (input.post ?? true) {
       return await this.postOpeningBalance(document.id);
@@ -779,13 +780,13 @@ export class AccountingApp {
   }
 
   async postOpeningBalance(documentId: ID) {
-    const document = this.mustFind(this.state.documents, documentId, "document_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), documentId, "document_not_found");
     if (document.documentType !== "opening_balance") {
       throw new DomainError("invalid_document_type", "Документ не является стартовым остатком");
     }
     if (document.status === "posted") return document;
 
-    const documentLines = this.state.documentLines
+    const documentLines = (await this.repos.documentLines.all())
       .filter((line) => line.documentId === document.id)
       .sort((a, b) => a.lineNo - b.lineNo);
     if (documentLines.length === 0) {
@@ -793,12 +794,12 @@ export class AccountingApp {
     }
 
     const warehouseId = String(documentLines[0].payload.warehouseId ?? "");
-    const warehouse = this.mustFind(this.state.warehouses, warehouseId, "warehouse_not_found");
+    const warehouse = this.mustFind(await this.repos.warehouses.all(), warehouseId, "warehouse_not_found");
     const amountRub = round2(documentLines.reduce((sum, line) => sum + Number(line.amountRub ?? 0), 0));
 
     for (const line of documentLines) {
       const payload = line.payload as Record<string, unknown>;
-      const existingLot = this.state.inventoryLots.find((lot) => lot.sourceLineId === line.id);
+      const existingLot = (await this.repos.inventoryLots.all()).find((lot) => lot.sourceLineId === line.id);
       if (existingLot) continue;
       await this.createLot({
         productId: String(payload.productId),
@@ -856,11 +857,12 @@ export class AccountingApp {
       totalQty,
       comment: input.comment
     };
-    this.state.purchaseOrders.push(purchaseOrder);
+    await this.repos.purchaseOrders.add(purchaseOrder);
+    const purchaseOrderLines: PurchaseOrderLine[] = [];
     input.lines.forEach((line, index) => {
       assertPositive(line.qty, "Количество в заказе должно быть положительным");
       assertNonNegative(line.supplierUnitPrice, "Цена поставщика не может быть отрицательной");
-      this.state.purchaseOrderLines.push({
+      purchaseOrderLines.push({
         id: id("po_line"),
         purchaseOrderId: purchaseOrder.id,
         productId: line.productId,
@@ -871,18 +873,17 @@ export class AccountingApp {
         lineNote: line.lineNote
       });
     });
-    this.state.documentLines.push(
-      ...this.state.purchaseOrderLines
-        .filter((line) => line.purchaseOrderId === purchaseOrder.id)
-        .map((line) => ({
-          id: id("doc_line"),
-          documentId: document.id,
-          lineNo: line.lineNo,
-          lineType: "purchase_order_line",
-          qty: line.qtyOrdered,
-          payload: { purchaseOrderLineId: line.id, productId: line.productId, supplierAmount: line.supplierAmount }
-        }))
-    );
+    for (const line of purchaseOrderLines) {
+      await this.repos.purchaseOrderLines.add(line);
+      await this.repos.documentLines.add({
+        id: id("doc_line"),
+        documentId: document.id,
+        lineNo: line.lineNo,
+        lineType: "purchase_order_line",
+        qty: line.qtyOrdered,
+        payload: { purchaseOrderLineId: line.id, productId: line.productId, supplierAmount: line.supplierAmount }
+      });
+    }
     if (input.post) {
       document.status = "posted";
       document.postedAt = nowIso();
@@ -903,7 +904,7 @@ export class AccountingApp {
       comment: input.comment,
       title: "Пополнение счета личными средствами"
     });
-    this.state.ownerTransactions.push({
+    await this.repos.ownerTransactions.add({
       id: id("owner_tx"),
       organizationId: this.currentOrgId(),
       documentId: payment.documentId,
@@ -919,7 +920,7 @@ export class AccountingApp {
 
   async recordSupplierPayment(input: { purchaseOrderId: ID; amountRub: number; paidAt: string; comment?: string; post?: boolean }): Promise<Payment> {
     assertPositive(input.amountRub, "Сумма оплаты поставщику должна быть положительной");
-    const order = this.mustFind(this.state.purchaseOrders, input.purchaseOrderId, "purchase_order_not_found");
+    const order = this.mustFind(await this.repos.purchaseOrders.all(), input.purchaseOrderId, "purchase_order_not_found");
     const payment = await this.createPayment({
       paymentDirection: "outgoing",
       paymentType: "supplier_payment",
@@ -937,7 +938,7 @@ export class AccountingApp {
       documentId: order.documentId,
       amountRub: input.amountRub
     };
-    this.state.paymentAllocations.push(allocation);
+    await this.repos.paymentAllocations.add(allocation);
     this.ensureDocumentLink(payment.documentId, order.documentId, "payment");
     if (input.post !== false) {
       await this.postSupplierPayment(payment.id);
@@ -997,15 +998,16 @@ export class AccountingApp {
     manualCostReason?: string;
     post?: boolean;
   }): Promise<GoodsReceipt> {
-    const order = this.mustFind(this.state.purchaseOrders, input.purchaseOrderId, "purchase_order_not_found");
-    input.lines.forEach((line) => {
+    const order = this.mustFind(await this.repos.purchaseOrders.all(), input.purchaseOrderId, "purchase_order_not_found");
+    const purchaseOrderLines = await this.repos.purchaseOrderLines.all();
+    for (const line of input.lines) {
       assertPositive(line.qtyReceived, "Принимаемое количество должно быть положительным");
-      const ordered = this.mustFind(this.state.purchaseOrderLines, line.purchaseOrderLineId, "purchase_order_line_not_found");
+      const ordered = this.mustFind(purchaseOrderLines, line.purchaseOrderLineId, "purchase_order_line_not_found");
       const alreadyReceived = this.receivedQtyForLine(line.purchaseOrderLineId);
       if (line.qtyReceived > ordered.qtyOrdered - alreadyReceived + 0.0001) {
         throw new DomainError("receipt_qty_exceeds_order", "Нельзя принять больше, чем осталось по заказу");
       }
-    });
+    }
     const preview = this.previewGoodsReceipt({ purchaseOrderId: order.id, lines: input.lines });
     const source = input.source ?? "linked_supplier_payments";
     const goodsCostRubTotal = round2(input.goodsCostRubTotal ?? preview.suggestedGoodsCostRub);
@@ -1037,8 +1039,8 @@ export class AccountingApp {
       suggestedGoodsCostRub: preview.suggestedGoodsCostRub,
       manualCostReason: input.manualCostReason
     };
-    this.state.goodsReceipts.push(receipt);
-    allocationLines.forEach((line, index) => {
+    await this.repos.goodsReceipts.add(receipt);
+    for (const [index, line] of allocationLines.entries()) {
       const receiptLine: GoodsReceiptLine = {
         id: id("receipt_line"),
         goodsReceiptId: receipt.id,
@@ -1049,8 +1051,8 @@ export class AccountingApp {
         allocatedGoodsCostRub: line.allocatedGoodsCostRub,
         unitCostRub: line.unitCostRub
       };
-      this.state.goodsReceiptLines.push(receiptLine);
-      this.state.documentLines.push({
+      await this.repos.goodsReceiptLines.add(receiptLine);
+      await this.repos.documentLines.add({
         id: id("doc_line"),
         documentId: document.id,
         lineNo: index + 1,
@@ -1059,7 +1061,7 @@ export class AccountingApp {
         amountRub: receiptLine.allocatedGoodsCostRub,
         payload: { receiptLineId: receiptLine.id, productId: receiptLine.productId }
       });
-    });
+    }
     if (input.post !== false) {
       await this.postGoodsReceipt(receipt.id);
     }
@@ -1102,10 +1104,10 @@ export class AccountingApp {
       comment: input.comment,
       pendingAllocation: hasLots ? undefined : true
     };
-    this.state.procurementCosts.push(cost);
+    await this.repos.procurementCosts.add(cost);
 
     if (hasLots) {
-      this.buildProcurementCostLines(cost, document, this.previewProcurementCost({
+      await this.buildProcurementCostLines(cost, document, this.previewProcurementCost({
         purchaseOrderId: input.purchaseOrderId,
         allocationBasis,
         amountRub: input.amountRub
@@ -1117,9 +1119,10 @@ export class AccountingApp {
     return cost;
   }
 
-  private buildProcurementCostLines(cost: ProcurementCost, document: Document, preview: ProcurementCostPreview) {
-    preview.lines.forEach((line) => {
-      this.state.procurementCostLines.push({
+  private async buildProcurementCostLines(cost: ProcurementCost, document: Document, preview: ProcurementCostPreview) {
+    let lineNo = (await this.repos.documentLines.all()).filter((candidate) => candidate.documentId === document.id).length + 1;
+    for (const line of preview.lines) {
+      await this.repos.procurementCostLines.add({
         id: id("proc_cost_line"),
         procurementCostId: cost.id,
         productId: line.productId,
@@ -1133,10 +1136,10 @@ export class AccountingApp {
         remainingInventoryAmountRub: line.remainingInventoryAmountRub,
         soldCostAmountRub: line.soldCostAmountRub
       });
-      this.state.documentLines.push({
+      await this.repos.documentLines.add({
         id: id("doc_line"),
         documentId: document.id,
-        lineNo: this.state.documentLines.filter((candidate) => candidate.documentId === document.id).length + 1,
+        lineNo: lineNo++,
         lineType: "procurement_cost_line",
         amountRub: line.allocatedAmountRub,
         payload: {
@@ -1147,7 +1150,7 @@ export class AccountingApp {
           soldCostAmountRub: line.soldCostAmountRub
         }
       });
-    });
+    }
   }
 
   previewProcurementCost(input: {
@@ -1242,9 +1245,10 @@ export class AccountingApp {
       reason: input.reason,
       resolvedAt: input.resolvedAt
     };
-    this.state.shortageResolutions.push(resolution);
-    input.lines.forEach((line, index) => {
-      const orderLine = this.mustFind(this.state.purchaseOrderLines, line.purchaseOrderLineId, "purchase_order_line_not_found");
+    await this.repos.shortageResolutions.add(resolution);
+    const purchaseOrderLines = await this.repos.purchaseOrderLines.all();
+    for (const [index, line] of input.lines.entries()) {
+      const orderLine = this.mustFind(purchaseOrderLines, line.purchaseOrderLineId, "purchase_order_line_not_found");
       const openQty = this.openShortageQtyForLine(order.id, orderLine.id);
       const qtyShortage = round4(line.qtyShortage ?? openQty);
       const paidShareRub = this.paidShareForOrderLine(order.id, orderLine, qtyShortage);
@@ -1257,8 +1261,8 @@ export class AccountingApp {
         paidShareRub,
         action: line.action
       };
-      this.state.shortageResolutionLines.push(resolutionLine);
-      this.state.documentLines.push({
+      await this.repos.shortageResolutionLines.add(resolutionLine);
+      await this.repos.documentLines.add({
         id: id("doc_line"),
         documentId: document.id,
         lineNo: index + 1,
@@ -1267,7 +1271,7 @@ export class AccountingApp {
         amountRub: paidShareRub,
         payload: { ...resolutionLine }
       });
-    });
+    }
     if (input.post !== false) {
       await this.postShortage(resolution.id);
     }
@@ -1306,8 +1310,9 @@ export class AccountingApp {
       amountRub: 0,
       comment: input.comment
     });
-    const fromWarehouse = this.mustFind(this.state.warehouses, input.fromWarehouseId, "warehouse_not_found");
-    const toWarehouse = this.mustFind(this.state.warehouses, input.toWarehouseId, "warehouse_not_found");
+    const warehouses = await this.repos.warehouses.all();
+    const fromWarehouse = this.mustFind(warehouses, input.fromWarehouseId, "warehouse_not_found");
+    const toWarehouse = this.mustFind(warehouses, input.toWarehouseId, "warehouse_not_found");
     const transferType = input.transferType
       ?? (toWarehouse.warehouseType === "sales_point"
         ? fromWarehouse.warehouseType === "transit"
@@ -1333,10 +1338,10 @@ export class AccountingApp {
       transferDate: input.transferDate,
       comment: input.comment
     };
-    this.state.stockTransfers.push(transfer);
-    input.lines.forEach((line, index) => {
+    await this.repos.stockTransfers.add(transfer);
+    for (const [index, line] of input.lines.entries()) {
       assertPositive(line.qty, "Количество перемещения должно быть положительным");
-      this.state.stockTransferLines.push({
+      await this.repos.stockTransferLines.add({
         id: id("transfer_line"),
         stockTransferId: transfer.id,
         productId: line.productId,
@@ -1346,7 +1351,7 @@ export class AccountingApp {
         sourcePurchaseOrderLineId: line.sourcePurchaseOrderLineId,
         providerMetadata: line.providerMetadata
       });
-      this.state.documentLines.push({
+      await this.repos.documentLines.add({
         id: id("doc_line"),
         documentId: document.id,
         lineNo: index + 1,
@@ -1365,7 +1370,7 @@ export class AccountingApp {
           providerMetadata: line.providerMetadata ?? input.providerMetadata
         }
       });
-    });
+    }
     if (input.post !== false) {
       await this.postStockTransfer(transfer.id);
     }
@@ -1813,7 +1818,7 @@ export class AccountingApp {
     qtyObserved: number;
   }) {
     const link = this.findActiveLink(input.externalProductId);
-    const channel = this.mustFind(this.state.salesChannels, input.channelId, "channel_not_found");
+    const channel = this.mustFind(await this.repos.salesChannels.all(), input.channelId, "channel_not_found");
     const warehouseId = channel.salesPointWarehouseId;
     const existing = await this.observedStocks.findByKey(input.channelId, input.externalProductId, warehouseId, input.observedAt);
     if (existing) {
@@ -1954,9 +1959,9 @@ export class AccountingApp {
       grossProfitRub: revenueRub,
       status: "draft"
     };
-    this.state.sales.push(sale);
+    await this.repos.sales.add(sale);
     this.invalidateSaleLookup();
-    input.lines.forEach((line, index) => {
+    for (const [index, line] of input.lines.entries()) {
       const saleLine: SaleLine = {
         id: id("sale_line"),
         saleId: sale.id,
@@ -1968,8 +1973,8 @@ export class AccountingApp {
         costRub: 0,
         grossProfitRub: round2(line.qty * line.priceRub)
       };
-      this.state.saleLines.push(saleLine);
-      this.state.documentLines.push({
+      await this.repos.saleLines.add(saleLine);
+      await this.repos.documentLines.add({
         id: id("doc_line"),
         documentId: document.id,
         lineNo: index + 1,
@@ -1987,7 +1992,7 @@ export class AccountingApp {
           grossProfitRub: saleLine.grossProfitRub
         }
       });
-    });
+    }
     if (input.post === false) return sale;
     return await this.postSale(sale.id);
   }
@@ -2003,7 +2008,7 @@ export class AccountingApp {
     lines?: Array<{ saleLineId: ID; qty: number }>;
     externalEventId?: ID;
   }): Promise<SalesReturn> {
-    const sale = this.mustFind(this.state.sales, input.saleId, "sale_not_found");
+    const sale = this.mustFind(await this.repos.sales.all(), input.saleId, "sale_not_found");
     const saleLines = (await this.repos.saleLines.all()).filter((line) => line.saleId === sale.id);
     const returnLines = input.lines ?? saleLines.map((line) => ({ saleLineId: line.id, qty: line.qty }));
     const warehouseId = input.warehouseId ?? sale.warehouseId;
@@ -2030,12 +2035,12 @@ export class AccountingApp {
     const totalQty = round4(prepared.reduce((sum, line) => sum + line.qty, 0));
     const refundRub = round2(input.refundRub ?? proportionalRefundRub);
     let refundAllocated = 0;
-    prepared.forEach((line, index) => {
+    for (const [index, line] of prepared.entries()) {
       const lineRefundRub = index === prepared.length - 1
         ? round2(refundRub - refundAllocated)
         : round2(refundRub * (proportionalRefundRub > 0 ? line.revenuePart / proportionalRefundRub : line.qty / Math.max(totalQty, 1)));
       refundAllocated = round2(refundAllocated + lineRefundRub);
-      this.state.documentLines.push({
+      await this.repos.documentLines.add({
         id: id("doc_line"),
         documentId: document.id,
         lineNo: index + 1,
@@ -2053,7 +2058,7 @@ export class AccountingApp {
           restoredCostRub: 0
         }
       });
-    });
+    }
     document.amountRub = refundRub;
     const salesReturn: SalesReturn = {
       id: id("return"),
@@ -2070,7 +2075,7 @@ export class AccountingApp {
       restoredCostRub: 0,
       comment: input.comment
     };
-    this.state.salesReturns.push(salesReturn);
+    await this.repos.salesReturns.add(salesReturn);
     if (input.post === false) return salesReturn;
     return await this.postReturn(salesReturn.id);
   }
@@ -2122,7 +2127,7 @@ export class AccountingApp {
       status: input.eventKind ? "classified" : "new",
       comment: input.comment
     };
-    this.state.channelFinanceEvents.push(event);
+    await this.repos.channelFinanceEvents.add(event);
     if (input.post === false) return event;
     return await this.postChannelFinanceEvent(event.id);
   }
@@ -2139,7 +2144,7 @@ export class AccountingApp {
     periodTo?: string;
     post?: boolean;
   }): Promise<Payout> {
-    const channel = this.mustFind(this.state.salesChannels, input.channelId, "channel_not_found");
+    const channel = this.mustFind(await this.repos.salesChannels.all(), input.channelId, "channel_not_found");
     const compositionMode = input.compositionMode ?? "auto";
     const expectedAmountRub = round2(input.expectedAmountRub ?? 0);
     const bankReceiptRub = round2(input.bankReceiptRub ?? input.expectedAmountRub ?? 0);
@@ -2171,9 +2176,9 @@ export class AccountingApp {
       differenceAccepted: false,
       status: "draft"
     };
-    this.state.payouts.push(payout);
+    await this.repos.payouts.add(payout);
     if (compositionMode === "manual" && expectedAmountRub !== 0) {
-      this.state.payoutLines.push({
+      await this.repos.payoutLines.add({
         id: id("payout_line"),
         payoutId: payout.id,
         sourceType: "manual_adjustment",
@@ -2184,7 +2189,7 @@ export class AccountingApp {
     if (bankReceiptRub > 0) {
       await this.linkBankPaymentToPayout({ payoutId: payout.id, bankReceiptRub });
     }
-    this.rebuildPayout(payout.id);
+    await this.rebuildPayout(payout.id);
     this.markExternalEventProcessed(input.externalEventId, document.id);
     if (input.post) return await this.postChannelPayout(payout.id);
     return payout;
@@ -5105,7 +5110,7 @@ export class AccountingApp {
       if (this.procurementCostTargets(purchaseOrderId, cost.allocationBasis).length === 0) continue;
       const document = this.mustFind(this.state.documents, cost.documentId, "document_not_found");
       const preview = this.previewProcurementCost({ purchaseOrderId, allocationBasis: cost.allocationBasis, amountRub: cost.amountRub });
-      this.buildProcurementCostLines(cost, document, preview);
+      await this.buildProcurementCostLines(cost, document, preview);
       const remainingByAccount = new Map<string, number>();
       for (const line of preview.lines) {
         const lot = line.lotId ? this.state.inventoryLots.find((candidate) => candidate.id === line.lotId) : undefined;
@@ -5559,9 +5564,9 @@ export class AccountingApp {
       unitCostRub: round6(input.costRub / input.qty),
       status: "open"
     };
-    this.state.inventoryLots.push(lot);
+    await this.repos.inventoryLots.add(lot);
     await this.addStockState(input.productId, input.warehouseId, input.qty, input.costRub, input.stateCode);
-    this.state.stockMovements.push({
+    await this.repos.stockMovements.add({
       id: id("stock_move"),
       organizationId: this.currentOrgId(),
       productId: input.productId,
@@ -5589,7 +5594,7 @@ export class AccountingApp {
   }): Promise<CostApplication[]> {
     assertPositive(input.qty, "Количество списания должно быть положительным");
     let remainingQty = round4(input.qty);
-    const lots = this.state.inventoryLots
+    const lots = (await this.repos.inventoryLots.all())
       .filter((lot) =>
         lot.productId === input.productId &&
         lot.warehouseId === input.warehouseId &&
@@ -5613,6 +5618,7 @@ export class AccountingApp {
         lot.costRemainingRub = 0;
         lot.status = "depleted";
       }
+      await this.repos.inventoryLots.upsert(lot);
       await this.addStockState(input.productId, input.warehouseId, -qty, -costRub, lot.stockStateCode);
       const application: CostApplication = {
         id: id("cost_app"),
@@ -5626,8 +5632,8 @@ export class AccountingApp {
         applicationType: input.applicationType,
         createdAt: nowIso()
       };
-      this.state.costApplications.push(application);
-      this.state.stockMovements.push({
+      await this.repos.costApplications.add(application);
+      await this.repos.stockMovements.add({
         id: id("stock_move"),
         organizationId: this.currentOrgId(),
         productId: input.productId,
@@ -5741,11 +5747,12 @@ export class AccountingApp {
 
   private async restoreCostApplicationsToLots(applications: CostApplication[]) {
     for (const application of applications) {
-      const lot = this.state.inventoryLots.find((candidate) => candidate.id === application.fromLotId);
+      const lot = (await this.repos.inventoryLots.all()).find((candidate) => candidate.id === application.fromLotId);
       if (!lot) continue;
       lot.qtyRemaining = round4(lot.qtyRemaining + application.qty);
       lot.costRemainingRub = round2(lot.costRemainingRub + application.costRub);
       if (lot.qtyRemaining > 0 || lot.costRemainingRub > 0) lot.status = "open";
+      await this.repos.inventoryLots.upsert(lot);
       await this.addStockState(lot.productId, lot.warehouseId, application.qty, application.costRub, lot.stockStateCode);
     }
   }
