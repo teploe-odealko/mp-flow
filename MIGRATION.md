@@ -133,8 +133,13 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
 → `repos.X.replaceAll` (мутация на месте, ссылка цела) + delete-for-resync. app.ts-хендлеры (55 floating-
 promise в `c.json` починены) + пайплайн (`materializeSale/Payout/Return`) + тесты на `await`; sync test-
 коллбэки → async; async-throw → `rejects.toThrow`. **Двойная запись/AVCO/удаления корректны (тесты зелёные).**
-Остаток `this.state.` в домене: **464** (было 565) — в основном sync-хелперы (`ledgerBalances`, `audit`,
-`consumeFifo`, `addStockState`, `nextDocumentNumber`, index-хелперы, `findActiveLink`, остаточные чтения).
+Остаток `this.state.` в домене: **449** (было 565); из них ~215 в 81 sync-хелпере, ~234 — внутренние чтения
+уже-async команд + синглтоны. Переведены reporting (`reports`/`ledgerBalances`) и `dashboard`.
+Топ sync-хелперов на конверсию: `updatePurchaseOrderDraft`(12), `receiptDispatchContext`(9),
+`paymentRollbackPreview`(9), `goodsReceiptRollbackPreview`(9), `purchaseOrderDetails`(7), `consumeFifo`(мутирует!),
+`appendJournalEntry`, `documentDescendants`, `findActiveLink`, `receivedQtyForLine`, `paidShareForOrderLine` и т.д.
+Синглтоны `organization`/`accountingPolicy` (~16 рефов) — НЕ массивы, не «тяжёлый снэпшот»; добираются в самом конце
+(или отдельным singleton-аксессором), уже после выноса всех коллекций.
 
 ### План исполнения ядра (для отдельного захода, с чистым контекстом)
 1. Завести `Repositories`-фасад (как уже сделанные сторы) для оставшихся коллекций: `documents`, `documentLines`,
