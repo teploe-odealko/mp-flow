@@ -15,15 +15,15 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Kpi } from "@/components/ui/kpi";
 import { PageHeader } from "@/components/ui/page-header";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { rub } from "@/lib/format";
 
 export function HomePage() {
-  const { state } = useAppState();
-  if (!state.organization) {
+  const organization = useCollection<any>("organization");
+  if (!organization) {
     return <HomeBeforeSetup />;
   }
-  return <HomeDashboard state={state} />;
+  return <HomeDashboard />;
 }
 
 function HomeBeforeSetup() {
@@ -135,13 +135,19 @@ function HomeBeforeSetup() {
   );
 }
 
-function HomeDashboard({ state }: { state: any }) {
-  const productsCount = state.products?.length ?? 0;
-  const documentsCount = state.documents?.length ?? 0;
-  const openLots = state.inventoryLots?.filter((l: any) => l.qtyRemaining > 0).length ?? 0;
-  const salesCount = state.sales?.length ?? 0;
-  const totalCost = (state.stockStates ?? []).reduce((s: number, x: any) => s + (x.costRub ?? 0), 0);
-  const recentDocs = (state.documents ?? []).slice().reverse().slice(0, 6);
+function HomeDashboard() {
+  const products = useCollection<any[]>("products") ?? [];
+  const documents = useCollection<any[]>("documents") ?? [];
+  const inventoryLots = useCollection<any[]>("inventoryLots") ?? [];
+  const sales = useCollection<any[]>("sales") ?? [];
+  const stockStates = useCollection<any[]>("stockStates") ?? [];
+  const purchaseOrders = useCollection<any[]>("purchaseOrders") ?? [];
+  const productsCount = products.length;
+  const documentsCount = documents.length;
+  const openLots = inventoryLots.filter((l: any) => l.qtyRemaining > 0).length;
+  const salesCount = sales.length;
+  const totalCost = stockStates.reduce((s: number, x: any) => s + (x.costRub ?? 0), 0);
+  const recentDocs = documents.slice().reverse().slice(0, 6);
 
   return (
     <div className="flex flex-col gap-6">
@@ -212,7 +218,7 @@ function HomeDashboard({ state }: { state: any }) {
               to="/products/new"
             />
             <NextAction
-              done={state.purchaseOrders?.length > 0}
+              done={purchaseOrders.length > 0}
               title="Создать поставку"
               text="Зафиксировать заказ и оплату."
               to="/procurement/purchase-orders/new"

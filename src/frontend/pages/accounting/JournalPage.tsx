@@ -10,18 +10,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Pagination } from "@/components/ui/pagination";
 import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { date } from "@/lib/format";
 import { rub } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { paginateRows } from "@/lib/pagination";
 
 export function JournalPage() {
-  const { state, workingPeriodId } = useAppState();
-  const entries = state.journalEntries ?? [];
-  const lines = state.journalLines ?? [];
-  const periods = state.periods ?? [];
-  const accounts = state.chartAccounts ?? [];
-  const docs = state.documents ?? [];
+  const { workingPeriodId } = useAppState();
+  const entries = useCollection<any[]>("journalEntries") ?? [];
+  const lines = useCollection<any[]>("journalLines") ?? [];
+  const periods = useCollection<any[]>("periods") ?? [];
+  const accounts = useCollection<any[]>("chartAccounts") ?? [];
+  const docs = useCollection<any[]>("documents") ?? [];
 
   const [search, setSearch] = useState("");
   const [periodId, setPeriodId] = useState(workingPeriodId);
@@ -274,11 +275,13 @@ export function JournalPage() {
 
 export function JournalEntryPage() {
   const { entryId } = useParams();
-  const { state } = useAppState();
   const navigate = useNavigate();
-  const entry = (state.journalEntries ?? []).find((candidate: any) => candidate.id === entryId);
-  const doc = (state.documents ?? []).find((candidate: any) => candidate.id === entry?.documentId);
-  const lines = (state.journalLines ?? []).filter((line: any) => line.journalEntryId === entryId);
+  const entries = useCollection<any[]>("journalEntries") ?? [];
+  const documents = useCollection<any[]>("documents") ?? [];
+  const journalLines = useCollection<any[]>("journalLines") ?? [];
+  const entry = entries.find((candidate: any) => candidate.id === entryId);
+  const doc = documents.find((candidate: any) => candidate.id === entry?.documentId);
+  const lines = journalLines.filter((line: any) => line.journalEntryId === entryId);
 
   if (!entry) {
     return (
@@ -291,9 +294,9 @@ export function JournalEntryPage() {
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
-        title={`Запись журнала ${journalEntryNumber(state.journalEntries ?? [], entry.id)}`}
+        title={`Запись журнала ${journalEntryNumber(entries, entry.id)}`}
         subtitle={entry.memo}
-        breadcrumbs={[{ label: "Журнал", to: "/reports/journal" }, { label: journalEntryNumber(state.journalEntries ?? [], entry.id) }]}
+        breadcrumbs={[{ label: "Журнал", to: "/reports/journal" }, { label: journalEntryNumber(entries, entry.id) }]}
         actions={
           doc ? (
             <Button variant="ghost" onClick={() => navigate(`/documents/${doc.id}`)}>
@@ -306,7 +309,7 @@ export function JournalEntryPage() {
         <CardContent className="py-4">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <Metric label="Дата" value={date(entry.accountingDate)} />
-            <Metric label="Статус" value={state.journalEntries.some((candidate: any) => candidate.reversalOfEntryId === entry.id) ? "reversed" : "posted"} />
+            <Metric label="Статус" value={entries.some((candidate: any) => candidate.reversalOfEntryId === entry.id) ? "reversed" : "posted"} />
             <Metric label="Источник" value={sourceLabel(doc?.source ?? "system")} />
             <Metric label="Документ" value={doc ? doc.number : "—"} />
           </div>

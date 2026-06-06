@@ -13,7 +13,7 @@ import { Field, Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { PageHeader } from "@/components/ui/page-header";
 import { apiPut } from "@/api";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 
 const TIMEZONES = [
   { value: "Europe/Moscow", label: "Москва (UTC+3)" },
@@ -30,25 +30,26 @@ const TIMEZONES = [
 ];
 
 export function SetupPage() {
-  const { state } = useAppState();
+  const organization = useCollection<any>("organization");
+  const accountingPolicy = useCollection<any>("accountingPolicy");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const isEditing = Boolean(state.organization);
-  const [displayName, setDisplayName] = useState(state.organization?.displayName ?? "");
-  const [timezone, setTimezone] = useState(state.organization?.timezone ?? "Europe/Moscow");
+  const isEditing = Boolean(organization);
+  const [displayName, setDisplayName] = useState(organization?.displayName ?? "");
+  const [timezone, setTimezone] = useState(organization?.timezone ?? "Europe/Moscow");
   const [accountingStartDate, setAccountingStartDate] = useState(
-    state.accountingPolicy?.accountingStartDate || defaultStartDate()
+    accountingPolicy?.accountingStartDate || defaultStartDate()
   );
 
   useEffect(() => {
-    if (state.organization?.displayName) setDisplayName(state.organization.displayName);
-  }, [state.organization?.displayName]);
+    if (organization?.displayName) setDisplayName(organization.displayName);
+  }, [organization?.displayName]);
   useEffect(() => {
-    if (state.accountingPolicy?.accountingStartDate) {
-      setAccountingStartDate(state.accountingPolicy.accountingStartDate);
+    if (accountingPolicy?.accountingStartDate) {
+      setAccountingStartDate(accountingPolicy.accountingStartDate);
     }
-  }, [state.accountingPolicy?.accountingStartDate]);
+  }, [accountingPolicy?.accountingStartDate]);
 
   const orgValid = displayName.trim().length > 0;
   const startValid = Boolean(accountingStartDate);

@@ -13,21 +13,20 @@ import { Kpi } from "@/components/ui/kpi";
 import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { apiGet, apiPost } from "@/api";
 import { date, dateTime } from "@/lib/format";
 
 export function ControlsWorkspace() {
-  const { state } = useAppState();
   const queryClient = useQueryClient();
   const auditQuery = useQuery({ queryKey: ["audit-events"], queryFn: () => apiGet<any[]>("/api/controls/audit-events") });
   const auditEvents = auditQuery.data ?? [];
-  const corrections = state.correctionCases ?? [];
-  const jobs = state.recalculationJobs ?? [];
-  const periods = state.periods ?? [];
-  const documents = state.documents ?? [];
-  const products = state.products ?? [];
-  const lines = state.documentLines ?? [];
+  const corrections = useCollection<any[]>("correctionCases") ?? [];
+  const jobs = useCollection<any[]>("recalculationJobs") ?? [];
+  const periods = useCollection<any[]>("periods") ?? [];
+  const documents = useCollection<any[]>("documents") ?? [];
+  const products = useCollection<any[]>("products") ?? [];
+  const lines = useCollection<any[]>("documentLines") ?? [];
   const [periodFilter, setPeriodFilter] = useState("");
   const [documentTypeFilter, setDocumentTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
