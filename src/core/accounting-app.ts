@@ -796,11 +796,11 @@ export class AccountingApp {
     const warehouse = this.mustFind(this.state.warehouses, warehouseId, "warehouse_not_found");
     const amountRub = round2(documentLines.reduce((sum, line) => sum + Number(line.amountRub ?? 0), 0));
 
-    documentLines.forEach((line) => {
+    for (const line of documentLines) {
       const payload = line.payload as Record<string, unknown>;
       const existingLot = this.state.inventoryLots.find((lot) => lot.sourceLineId === line.id);
-      if (existingLot) return;
-      this.createLot({
+      if (existingLot) continue;
+      await this.createLot({
         productId: String(payload.productId),
         warehouseId,
         stateCode: typeof payload.stateCode === "string" ? payload.stateCode : "sellable",
@@ -811,7 +811,7 @@ export class AccountingApp {
         date: document.accountingDate,
         movementType: "opening"
       });
-    });
+    }
 
     const entry = await this.postDocument(document.id, [
       { accountCode: accountForWarehouse(warehouse), debit: amountRub, memo: "Стартовый остаток товаров" },
@@ -2218,8 +2218,8 @@ export class AccountingApp {
     }
 
     let costRubTotal = 0;
-    saleLines.forEach((line) => {
-      const applications = this.consumeFifo({
+    for (const line of saleLines) {
+      const applications = await this.consumeFifo({
         productId: line.productId,
         warehouseId: sale.warehouseId,
         qty: line.qty,
@@ -2250,7 +2250,7 @@ export class AccountingApp {
           grossProfitRub: line.grossProfitRub
         };
       }
-    });
+    }
 
     sale.costAmountRub = round2(costRubTotal);
     sale.grossProfitRub = round2(sale.grossAmountRub - costRubTotal);
@@ -2591,8 +2591,8 @@ export class AccountingApp {
     );
     const inboundLots = (await this.repos.inventoryLots.all()).filter((lot) => lot.sourceDocumentId === document.id);
 
-    this.restoreCostApplicationsToLots(outboundApplications);
-    this.removeLotsFromStockStates(inboundLots);
+    await this.restoreCostApplicationsToLots(outboundApplications);
+    await this.removeLotsFromStockStates(inboundLots);
 
     await this.repos.costApplications.replaceAll((await this.repos.costApplications.all()).filter((application) => application.outboundDocumentId !== document.id));
     await this.repos.inventoryLots.replaceAll((await this.repos.inventoryLots.all()).filter((lot) => lot.sourceDocumentId !== document.id));
@@ -2806,7 +2806,7 @@ export class AccountingApp {
     const document = this.mustFind(this.state.documents, receipt.documentId, "document_not_found");
     const before = { ...receipt };
     const lots = (await this.repos.inventoryLots.all()).filter((lot) => lot.sourceDocumentId === document.id);
-    this.removeLotsFromStockStates(lots);
+    await this.removeLotsFromStockStates(lots);
     await this.repos.inventoryLots.replaceAll((await this.repos.inventoryLots.all()).filter((lot) => lot.sourceDocumentId !== document.id));
     await this.repos.stockMovements.replaceAll((await this.repos.stockMovements.all()).filter((movement) => movement.documentId !== document.id));
     await this.repos.goodsReceiptLines.replaceAll((await this.repos.goodsReceiptLines.all()).filter((line) => line.goodsReceiptId !== receipt.id));
@@ -2876,7 +2876,7 @@ export class AccountingApp {
       lot.costInitialRub = round2(Math.max(0, lot.costInitialRub - line.allocatedAmountRub));
       lot.costRemainingRub = round2(Math.max(0, lot.costRemainingRub - line.remainingInventoryAmountRub));
       lot.unitCostRub = lot.qtyRemaining > 0 ? round6(lot.costRemainingRub / lot.qtyRemaining) : 0;
-      this.addStockState(lot.productId, lot.warehouseId, 0, -line.remainingInventoryAmountRub, lot.stockStateCode);
+      await this.addStockState(lot.productId, lot.warehouseId, 0, -line.remainingInventoryAmountRub, lot.stockStateCode);
     }
     await this.rollbackPaymentsForDocument(document.id);
     await this.repos.procurementCostLines.replaceAll((await this.repos.procurementCostLines.all()).filter((line) => line.procurementCostId !== cost.id));
@@ -2940,10 +2940,10 @@ export class AccountingApp {
     const saleCostApplications = (await this.repos.costApplications.all()).filter((application) =>
       saleDocumentIds.has(application.outboundDocumentId) && application.applicationType === "sale"
     );
-    this.restoreCostApplicationsToLots(saleCostApplications);
+    await this.restoreCostApplicationsToLots(saleCostApplications);
 
     const returnLots = (await this.repos.inventoryLots.all()).filter((lot) => salesReturnDocumentIds.has(lot.sourceDocumentId));
-    this.removeLotsFromStockStates(returnLots);
+    await this.removeLotsFromStockStates(returnLots);
 
     for (const paymentDocumentId of payoutPaymentDocumentIds) {
       await this.rollbackPaymentsForDocument(paymentDocumentId);
@@ -3012,10 +3012,10 @@ export class AccountingApp {
     const saleCostApplications = (await this.repos.costApplications.all()).filter((application) =>
       saleDocumentIds.has(application.outboundDocumentId) && application.applicationType === "sale"
     );
-    this.restoreCostApplicationsToLots(saleCostApplications);
+    await this.restoreCostApplicationsToLots(saleCostApplications);
 
     const returnLots = (await this.repos.inventoryLots.all()).filter((lot) => salesReturnDocumentIds.has(lot.sourceDocumentId));
-    this.removeLotsFromStockStates(returnLots);
+    await this.removeLotsFromStockStates(returnLots);
 
     await this.repos.costApplications.replaceAll((await this.repos.costApplications.all()).filter((application) => !saleDocumentIds.has(application.outboundDocumentId)));
     await this.repos.inventoryLots.replaceAll((await this.repos.inventoryLots.all()).filter((lot) => !salesReturnDocumentIds.has(lot.sourceDocumentId)));
@@ -3076,7 +3076,7 @@ export class AccountingApp {
 
     let refundRub = 0;
     let restoredCostRub = 0;
-    returnDocumentLines.forEach((documentLine) => {
+    for (const documentLine of returnDocumentLines) {
       const payload = (documentLine.payload ?? {}) as Record<string, unknown>;
       const saleLineId = String(payload.saleLineId ?? "");
       const saleLine = this.mustFind(saleLines, saleLineId, "sale_line_not_found");
@@ -3090,7 +3090,7 @@ export class AccountingApp {
         if (!salesReturn.externalEventId) {
           throw new DomainError("return_qty_exceeds_sale", reason, { saleLineId: saleLine.id, returnableQty, qtyToReturn });
         }
-        return;
+        continue;
       }
 
       const saleApplications = this.state.costApplications
@@ -3107,7 +3107,7 @@ export class AccountingApp {
         if (!salesReturn.externalEventId) {
           throw new DomainError("sale_cost_not_found", reason, { saleLineId: saleLine.id });
         }
-        return;
+        continue;
       }
 
       const targetStateCode = String(payload.stockStateCode ?? salesReturn.stockStateCode ?? "sellable");
@@ -3116,17 +3116,17 @@ export class AccountingApp {
 
       let qtyRemaining = qtyToReturn;
       let lineRestoredCostRub = 0;
-      saleApplications.forEach((application, index) => {
-        if (qtyRemaining <= 0) return;
+      for (const [index, application] of saleApplications.entries()) {
+        if (qtyRemaining <= 0) break;
         const rawQty = index === saleApplications.length - 1
           ? qtyRemaining
           : round4(qtyToReturn * (application.qty / saleLine.qty));
         const restoreQty = round4(Math.min(qtyRemaining, rawQty));
-        if (restoreQty <= 0) return;
+        if (restoreQty <= 0) continue;
         const restoreCostRub = index === saleApplications.length - 1
           ? round2((saleLine.costRub * qtyToReturn) / saleLine.qty - lineRestoredCostRub)
           : round2(application.costRub * (restoreQty / application.qty));
-        this.createLot({
+        await this.createLot({
           productId: saleLine.productId,
           warehouseId: salesReturn.warehouseId,
           stateCode: targetStateCode,
@@ -3139,7 +3139,7 @@ export class AccountingApp {
         });
         qtyRemaining = round4(qtyRemaining - restoreQty);
         lineRestoredCostRub = round2(lineRestoredCostRub + restoreCostRub);
-      });
+      }
 
       const expectedRestoredCostRub = round2((saleLine.costRub * qtyToReturn) / saleLine.qty);
       const normalizedRestoredCostRub = round2(expectedRestoredCostRub);
@@ -3150,7 +3150,7 @@ export class AccountingApp {
         refundRub: lineRefundRub,
         restoredCostRub: normalizedRestoredCostRub
       };
-    });
+    }
 
     salesReturn.refundRub = round2(refundRub);
     salesReturn.restoredCostRub = round2(restoredCostRub);
@@ -3622,9 +3622,9 @@ export class AccountingApp {
     const lines = (await this.repos.stocktakeLines.all()).filter((line) => line.stocktakeId === stocktake.id);
     const inventoryAccount = accountForWarehouse(this.mustFind(this.state.warehouses, stocktake.warehouseId, "warehouse_not_found"));
 
-    lines.forEach((line) => {
+    for (const line of lines) {
       if (line.differenceQty < 0) {
-        this.consumeFifo({
+        await this.consumeFifo({
           productId: line.productId,
           warehouseId: stocktake.warehouseId,
           qty: Math.abs(line.differenceQty),
@@ -3641,7 +3641,7 @@ export class AccountingApp {
         }
       }
       if (line.differenceQty > 0) {
-        this.createLot({
+        await this.createLot({
           productId: line.productId,
           warehouseId: stocktake.warehouseId,
           documentId: document.id,
@@ -3657,7 +3657,7 @@ export class AccountingApp {
           );
         }
       }
-    });
+    }
 
     if (journalLines.length > 0) {
       await this.postDocument(document.id, journalLines);
@@ -3810,7 +3810,7 @@ export class AccountingApp {
     });
     const inventoryDeltasByAccount = new Map<string, number>();
     let soldCostDeltaRub = 0;
-    currentLines.forEach((line, index) => {
+    for (const [index, line] of currentLines.entries()) {
       const nextLine = nextLines[index];
       const allocatedDelta = round2(nextLine.allocatedAmountRub - Number(line.allocatedAmountRub ?? 0));
       const remainingDelta = round2(nextLine.remainingInventoryAmountRub - Number(line.remainingInventoryAmountRub ?? 0));
@@ -3821,7 +3821,7 @@ export class AccountingApp {
         if (remainingDelta !== 0) {
           lot.costRemainingRub = round2(Math.max(0, lot.costRemainingRub + remainingDelta));
           lot.unitCostRub = lot.qtyRemaining > 0 ? round6(lot.costRemainingRub / lot.qtyRemaining) : 0;
-          this.addStockState(lot.productId, lot.warehouseId, 0, remainingDelta, lot.stockStateCode);
+          await this.addStockState(lot.productId, lot.warehouseId, 0, remainingDelta, lot.stockStateCode);
           const warehouse = this.mustFind(this.state.warehouses, lot.warehouseId, "warehouse_not_found");
           const accountCode = accountForWarehouse(warehouse);
           inventoryDeltasByAccount.set(accountCode, round2((inventoryDeltasByAccount.get(accountCode) ?? 0) + remainingDelta));
@@ -3835,7 +3835,7 @@ export class AccountingApp {
       line.allocatedAmountRub = nextLine.allocatedAmountRub;
       line.remainingInventoryAmountRub = nextLine.remainingInventoryAmountRub;
       line.soldCostAmountRub = nextLine.soldCostAmountRub;
-    });
+    }
     this.syncProcurementCostDocumentLines(sourceDocument.id, currentLines);
     sourceDocument.amountRub = nextAmountRub;
     this.syncProcurementCostPayment(cost, nextAmountRub);
@@ -4062,7 +4062,7 @@ export class AccountingApp {
       amountRub: amountDelta,
       comment: input.reason
     });
-    this.consumeFifo({
+    await this.consumeFifo({
       productId: receiptLine.productId,
       warehouseId: receipt.warehouseId,
       qty: qtyDelta,
@@ -4789,12 +4789,16 @@ export class AccountingApp {
           }
         });
       });
-      this.state.purchaseOrderLines = this.state.purchaseOrderLines
-        .filter((line) => line.purchaseOrderId !== order.id)
-        .concat(nextPurchaseOrderLines);
-      this.state.documentLines = this.state.documentLines
-        .filter((line) => line.documentId !== document.id)
-        .concat(nextDocumentLines);
+      await this.repos.purchaseOrderLines.replaceAll(
+        (await this.repos.purchaseOrderLines.all())
+          .filter((line) => line.purchaseOrderId !== order.id)
+          .concat(nextPurchaseOrderLines)
+      );
+      await this.repos.documentLines.replaceAll(
+        (await this.repos.documentLines.all())
+          .filter((line) => line.documentId !== document.id)
+          .concat(nextDocumentLines)
+      );
     }
     const lines = (await this.repos.purchaseOrderLines.all()).filter((line) => line.purchaseOrderId === order.id);
     order.totalSupplierAmount = round2(lines.reduce((sum, line) => sum + line.supplierAmount, 0));
@@ -4928,9 +4932,9 @@ export class AccountingApp {
     const receiptLines = (await this.repos.goodsReceiptLines.all()).filter((line) => line.goodsReceiptId === receipt.id);
     const documentLines = (await this.repos.documentLines.all()).filter((line) => line.documentId === document.id);
 
-    receiptLines.forEach((receiptLine) => {
+    for (const receiptLine of receiptLines) {
       const existingLine = documentLines.find((line) => (line.payload as Record<string, unknown>)?.receiptLineId === receiptLine.id);
-      const lot = this.createLot({
+      const lot = await this.createLot({
         productId: receiptLine.productId,
         warehouseId: receipt.warehouseId,
         documentId: document.id,
@@ -4943,7 +4947,7 @@ export class AccountingApp {
       if (existingLine) {
         existingLine.payload = { ...(existingLine.payload ?? {}), lotId: lot.id };
       }
-    });
+    }
 
     const setoff = round2(Math.min(receipt.goodsCostRubTotal, await this.supplierAdvanceBalance(order.id)));
     const journalLines: JournalLineInput[] = [
@@ -4981,7 +4985,7 @@ export class AccountingApp {
       });
     }
     // Распределяем расходы закупки, добавленные до этой приёмки («товары в пути»), на новые партии.
-    this.capitalizePendingProcurementCosts(order.id);
+    await this.capitalizePendingProcurementCosts(order.id);
     receipt.status = "posted";
     return receipt;
   }
@@ -5018,16 +5022,16 @@ export class AccountingApp {
       return cost;
     }
     const previewLines = (await this.repos.procurementCostLines.all()).filter((line) => line.procurementCostId === cost.id);
-    previewLines.forEach((line) => {
+    for (const line of previewLines) {
       const lot = line.lotId ? this.mustFind(this.state.inventoryLots, line.lotId, "lot_not_found") : undefined;
-      if (!lot) return;
+      if (!lot) continue;
       lot.costInitialRub = round2(lot.costInitialRub + line.allocatedAmountRub);
       if (line.remainingInventoryAmountRub > 0 && lot.qtyRemaining > 0) {
         lot.costRemainingRub = round2(lot.costRemainingRub + line.remainingInventoryAmountRub);
         lot.unitCostRub = round6(lot.costRemainingRub / lot.qtyRemaining);
-        this.addStockState(lot.productId, lot.warehouseId, 0, line.remainingInventoryAmountRub);
+        await this.addStockState(lot.productId, lot.warehouseId, 0, line.remainingInventoryAmountRub);
       }
-    });
+    }
 
     const creditAccount = cost.paidImmediately ? "51" : "60.01";
     const journalLines: JournalLineInput[] = [];
@@ -5092,7 +5096,7 @@ export class AccountingApp {
   }
 
   // Распределяет «висящие» расходы заказа (41.02) на партии новой приёмки: Дт 41.0x / Кт 41.02.
-  private capitalizePendingProcurementCosts(purchaseOrderId: ID) {
+  private async capitalizePendingProcurementCosts(purchaseOrderId: ID) {
     const pending = this.state.procurementCosts.filter((cost) => cost.purchaseOrderId === purchaseOrderId && cost.pendingAllocation && cost.status !== "cancelled");
     for (const cost of pending) {
       // Если расход нельзя распределить (например «по весу» без заполненного веса товара) —
@@ -5103,14 +5107,14 @@ export class AccountingApp {
       const preview = this.previewProcurementCost({ purchaseOrderId, allocationBasis: cost.allocationBasis, amountRub: cost.amountRub });
       this.buildProcurementCostLines(cost, document, preview);
       const remainingByAccount = new Map<string, number>();
-      preview.lines.forEach((line) => {
+      for (const line of preview.lines) {
         const lot = line.lotId ? this.state.inventoryLots.find((candidate) => candidate.id === line.lotId) : undefined;
         if (lot) {
           lot.costInitialRub = round2(lot.costInitialRub + line.allocatedAmountRub);
           if (line.remainingInventoryAmountRub > 0 && lot.qtyRemaining > 0) {
             lot.costRemainingRub = round2(lot.costRemainingRub + line.remainingInventoryAmountRub);
             lot.unitCostRub = round6(lot.costRemainingRub / lot.qtyRemaining);
-            this.addStockState(lot.productId, lot.warehouseId, 0, line.remainingInventoryAmountRub);
+            await this.addStockState(lot.productId, lot.warehouseId, 0, line.remainingInventoryAmountRub);
           }
         }
         if (line.warehouseId && line.remainingInventoryAmountRub > 0) {
@@ -5118,7 +5122,7 @@ export class AccountingApp {
           const accountCode = accountForWarehouse(warehouse);
           remainingByAccount.set(accountCode, round2((remainingByAccount.get(accountCode) ?? 0) + line.remainingInventoryAmountRub));
         }
-      });
+      }
       const journalLines: JournalLineInput[] = [];
       remainingByAccount.forEach((amount, accountCode) => {
         if (amount > 0) journalLines.push({ accountCode, debit: amount, memo: "Капитализация расхода закупки" });
@@ -5263,8 +5267,8 @@ export class AccountingApp {
     }
     const transferLines = (await this.repos.stockTransferLines.all()).filter((line) => line.stockTransferId === transfer.id);
     let totalCost = 0;
-    transferLines.forEach((line) => {
-      const applications = this.consumeFifo({
+    for (const line of transferLines) {
+      const applications = await this.consumeFifo({
         productId: line.productId,
         warehouseId: transfer.fromWarehouseId,
         stateCode: transfer.fromStockStateCode ?? "sellable",
@@ -5277,7 +5281,7 @@ export class AccountingApp {
       const costRub = round2(applications.reduce((sum, application) => sum + application.costRub, 0));
       totalCost = round2(totalCost + costRub);
       line.costRub = costRub;
-      const lot = this.createLot({
+      const lot = await this.createLot({
         productId: line.productId,
         warehouseId: transfer.toWarehouseId,
         stateCode: transfer.toStockStateCode ?? "sellable",
@@ -5298,7 +5302,7 @@ export class AccountingApp {
         documentLine.amountRub = costRub;
         documentLine.payload = { ...(documentLine.payload ?? {}), transferLineId: line.id, lotId: lot.id };
       }
-    });
+    }
     document.amountRub = totalCost;
     const fromAccount = accountForWarehouse(this.mustFind(this.state.warehouses, transfer.fromWarehouseId, "warehouse_not_found"));
     const toAccount = accountForWarehouse(this.mustFind(this.state.warehouses, transfer.toWarehouseId, "warehouse_not_found"));
@@ -5526,7 +5530,7 @@ export class AccountingApp {
     return entry;
   }
 
-  private createLot(input: {
+  private async createLot(input: {
     productId: ID;
     warehouseId: ID;
     stateCode?: string;
@@ -5536,7 +5540,7 @@ export class AccountingApp {
     costRub: number;
     date: string;
     movementType: StockMovement["movementType"];
-  }): InventoryLot {
+  }): Promise<InventoryLot> {
     assertPositive(input.qty, "Количество партии должно быть положительным");
     assertNonNegative(input.costRub, "Стоимость партии не может быть отрицательной");
     const lot: InventoryLot = {
@@ -5556,7 +5560,7 @@ export class AccountingApp {
       status: "open"
     };
     this.state.inventoryLots.push(lot);
-    this.addStockState(input.productId, input.warehouseId, input.qty, input.costRub, input.stateCode);
+    await this.addStockState(input.productId, input.warehouseId, input.qty, input.costRub, input.stateCode);
     this.state.stockMovements.push({
       id: id("stock_move"),
       organizationId: this.currentOrgId(),
@@ -5573,7 +5577,7 @@ export class AccountingApp {
     return lot;
   }
 
-  private consumeFifo(input: {
+  private async consumeFifo(input: {
     productId: ID;
     warehouseId: ID;
     stateCode?: string;
@@ -5582,7 +5586,7 @@ export class AccountingApp {
     occurredAt: string;
     applicationType: CostApplication["applicationType"];
     movementType: StockMovement["movementType"];
-  }): CostApplication[] {
+  }): Promise<CostApplication[]> {
     assertPositive(input.qty, "Количество списания должно быть положительным");
     let remainingQty = round4(input.qty);
     const lots = this.state.inventoryLots
@@ -5609,7 +5613,7 @@ export class AccountingApp {
         lot.costRemainingRub = 0;
         lot.status = "depleted";
       }
-      this.addStockState(input.productId, input.warehouseId, -qty, -costRub, lot.stockStateCode);
+      await this.addStockState(input.productId, input.warehouseId, -qty, -costRub, lot.stockStateCode);
       const application: CostApplication = {
         id: id("cost_app"),
         organizationId: this.currentOrgId(),
@@ -5642,18 +5646,19 @@ export class AccountingApp {
     return applications;
   }
 
-  private addStockState(productId: ID, warehouseId: ID, qtyDelta: number, costDelta: number, stateCode = "sellable"): StockState {
-    let state = this.state.stockStates.find((candidate) =>
+  private async addStockState(productId: ID, warehouseId: ID, qtyDelta: number, costDelta: number, stateCode = "sellable"): Promise<StockState> {
+    let state = (await this.repos.stockStates.all()).find((candidate) =>
       candidate.productId === productId &&
       candidate.warehouseId === warehouseId &&
       (candidate.stateCode ?? "sellable") === stateCode
     );
     if (!state) {
       state = { productId, warehouseId, stateCode, qty: 0, costRub: 0 };
-      this.state.stockStates.push(state);
+      await this.repos.stockStates.add(state);
     }
     state.qty = round4(state.qty + qtyDelta);
     state.costRub = round2(state.costRub + costDelta);
+    await this.repos.stockStates.upsert(state);
     return state;
   }
 
@@ -5734,23 +5739,23 @@ export class AccountingApp {
     await this.repos.payments.replaceAll((await this.repos.payments.all()).filter((candidate) => !paymentIds.has(candidate.id)));
   }
 
-  private restoreCostApplicationsToLots(applications: CostApplication[]) {
+  private async restoreCostApplicationsToLots(applications: CostApplication[]) {
     for (const application of applications) {
       const lot = this.state.inventoryLots.find((candidate) => candidate.id === application.fromLotId);
       if (!lot) continue;
       lot.qtyRemaining = round4(lot.qtyRemaining + application.qty);
       lot.costRemainingRub = round2(lot.costRemainingRub + application.costRub);
       if (lot.qtyRemaining > 0 || lot.costRemainingRub > 0) lot.status = "open";
-      this.addStockState(lot.productId, lot.warehouseId, application.qty, application.costRub, lot.stockStateCode);
+      await this.addStockState(lot.productId, lot.warehouseId, application.qty, application.costRub, lot.stockStateCode);
     }
   }
 
-  private removeLotsFromStockStates(lots: InventoryLot[]) {
+  private async removeLotsFromStockStates(lots: InventoryLot[]) {
     for (const lot of lots) {
       const qtyToRemove = round4(lot.qtyRemaining);
       const costToRemove = round2(lot.costRemainingRub);
       if (qtyToRemove > 0 || costToRemove > 0) {
-        this.addStockState(lot.productId, lot.warehouseId, -qtyToRemove, -costToRemove, lot.stockStateCode);
+        await this.addStockState(lot.productId, lot.warehouseId, -qtyToRemove, -costToRemove, lot.stockStateCode);
       }
     }
   }

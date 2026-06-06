@@ -30,7 +30,7 @@ describe("FIFO ledger", () => {
       title: "Тестовое списание FIFO"
     });
 
-    const applications = (app as any).consumeFifo({
+    const applications = await (app as any).consumeFifo({
       productId: product.id,
       warehouseId,
       qty: 120,
@@ -69,7 +69,7 @@ describe("FIFO ledger", () => {
       title: "Тестовое списание FIFO"
     });
 
-    expect(() => (app as any).consumeFifo({
+    await expect((app as any).consumeFifo({
       productId: product.id,
       warehouseId,
       qty: 11,
@@ -77,7 +77,7 @@ describe("FIFO ledger", () => {
       occurredAt: "2026-06-10",
       applicationType: "sale",
       movementType: "sale"
-    })).toThrow("Недостаточно товара");
+    })).rejects.toThrow("Недостаточно товара");
     expect(app.state.inventoryLots[0]).toMatchObject({ qtyRemaining: 10, costRemainingRub: 150 });
   });
 });

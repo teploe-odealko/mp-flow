@@ -44,7 +44,9 @@ export class InMemoryCollectionRepo<T> implements CollectionRepo<T> {
 
   async upsert(item: T): Promise<T> {
     const id = (item as { id?: string }).id;
-    const index = this.items.findIndex((candidate) => (candidate as { id?: string }).id === id);
+    const index = id
+      ? this.items.findIndex((candidate) => (candidate as { id?: string }).id === id)
+      : this.items.indexOf(item);
     if (index >= 0) this.items[index] = item;
     else this.items.push(item);
     return item;
