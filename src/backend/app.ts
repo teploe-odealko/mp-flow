@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { z } from "zod";
 import { AccountingApp } from "../core/accounting-app";
@@ -15,6 +15,8 @@ import { classifyChannelFinancePayload } from "../shared/channel-finance";
 import { AuthService, createAuthMiddleware, ensureAppUser, publicUser } from "./auth";
 import { initHttpMetrics, metricsMiddleware, renderMetrics } from "./metrics";
 import { captureException } from "./observability";
+import { getPool } from "./db/pool";
+import { ExternalEventRepository } from "./repositories/external-event-repository";
 
 interface CreateApiOptions {
   persistence?: RuntimePersistence;
@@ -185,6 +187,41 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       return next();
     });
   }
+
+  // Поток событий маркетплейса читается классическим репозиторием, минуя snapshot.
+  // Эти роуты зарегистрированы ДО snapshot-middleware, поэтому не грузят весь state.
+  // В тестах без persistence — fallback на in-memory app (переходный shim).
+  const eventsWorkspaceId = (c: Context) => (c.get("authUser") as PublicAuthUser | undefined)?.workspaceId ?? "default";
+  api.get("/api/integrations/events", async (c) => {
+    const channelId = c.req.query("channelId");
+    const status = c.req.query("status");
+    const eventType = c.req.query("eventType");
+    const limit = c.req.query("limit") ? Number(c.req.query("limit")) : undefined;
+    const offset = c.req.query("offset") ? Number(c.req.query("offset")) : undefined;
+    if (options.persistence) {
+      const repo = new ExternalEventRepository(getPool(), eventsWorkspaceId(c));
+      return c.json({ ok: true, data: await repo.list({ channelId, status, eventType, limit, offset }) });
+    }
+    let items = scopedApp.state.externalEvents;
+    if (channelId) items = items.filter((event) => event.channelId === channelId);
+    if (status) items = items.filter((event) => event.status === status);
+    if (eventType) items = items.filter((event) => event.eventType === eventType);
+    if (offset !== undefined) items = items.slice(offset);
+    if (limit !== undefined) items = items.slice(0, limit);
+    return c.json({ ok: true, data: items });
+  });
+  api.get("/api/integrations/events/:id", async (c) => {
+    if (options.persistence) {
+      const repo = new ExternalEventRepository(getPool(), eventsWorkspaceId(c));
+      const event = await repo.getById(c.req.param("id"));
+      if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
+      return c.json({ ok: true, data: event });
+    }
+    const event = scopedApp.state.externalEvents.find((candidate) => candidate.id === c.req.param("id"));
+    if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
+    return c.json({ ok: true, data: event });
+  });
+
   api.use("/api/*", async (c, next) => {
     const authUser = c.get("authUser") as PublicAuthUser | undefined;
     const authAgent = c.get("authAgent") as McpAgentPrincipal | undefined;
@@ -1219,12 +1256,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/channels/:id/observed-stock", async (c) => {
     const body = observedStockSchema.parse(await c.req.json());
     return c.json({ ok: true, data: scopedApp.recordObservedStock({ ...body, channelId: c.req.param("id") }) });
-  });
-  api.get("/api/integrations/events", (c) => c.json({ ok: true, data: scopedApp.state.externalEvents }));
-  api.get("/api/integrations/events/:id", (c) => {
-    const event = scopedApp.state.externalEvents.find((candidate) => candidate.id === c.req.param("id"));
-    if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
-    return c.json({ ok: true, data: event });
   });
   api.post("/api/integrations/events/:id/reprocess", (c) => {
     return c.json({ ok: true, data: scopedApp.reprocessExternalEvent(c.req.param("id")) });
