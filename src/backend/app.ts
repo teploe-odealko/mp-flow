@@ -308,6 +308,30 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/procurement/purchase-orders", async (c) => c.json({ ok: true, data: { orders: await collectionFor(c, "purchaseOrders"), lines: await collectionFor(c, "purchaseOrderLines") } }));
   api.get("/api/channels", async (c) => c.json({ ok: true, data: { plugins: await collectionFor(c, "integrationPlugins"), channels: await collectionFor(c, "salesChannels") } }));
   api.get("/api/integrations/channels", async (c) => c.json({ ok: true, data: { plugins: await collectionFor(c, "integrationPlugins"), channels: await collectionFor(c, "salesChannels") } }));
+  api.get("/api/integrations/channels/:id", async (c) => {
+    const readModelApp = await readModelAppFor(c);
+    const channel = await readModelApp.repos.salesChannels.getById(c.req.param("id"));
+    if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
+    const installedPlugin = channel.pluginId ? await readModelApp.repos.integrationPlugins.getById(channel.pluginId) : undefined;
+    const plugin = installedPlugin ? pluginRegistry.get(installedPlugin.code) : undefined;
+    const sales = await readModelApp.repos.sales.all();
+    const payouts = await readModelApp.repos.payouts.all();
+    const externalProducts = await readModelApp.repos.externalProducts.all();
+    return c.json({ ok: true, data: {
+      channel,
+      credentialStatus: readModelApp.channelCredentialStatus(channel.id),
+      warehouse: await readModelApp.repos.warehouses.getById(channel.salesPointWarehouseId),
+      plugin: plugin ? serializePluginMeta(plugin) : null,
+      syncRuns: (await readModelApp.syncRuns.listByChannel(channel.id)).slice(-20).reverse(),
+      counts: {
+        externalProducts: externalProducts.filter((ep) => ep.channelId === channel.id).length,
+        observedStocks: await readModelApp.observedStocks.count({ channelId: channel.id }),
+        externalEvents: await readModelApp.externalEvents.count({ channelId: channel.id }),
+        sales: sales.filter((sale) => sale.channelId === channel.id).length,
+        payouts: payouts.filter((payout) => payout.channelId === channel.id).length
+      }
+    } });
+  });
 
   api.use("/api/*", async (c, next) => {
     const authUser = c.get("authUser") as PublicAuthUser | undefined;
@@ -1018,27 +1042,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = channelSchema.parse(await c.req.json());
     const channel = await scopedApp.createSalesChannel(body);
     return c.json({ ok: true, data: channel });
-  });
-  api.get("/api/integrations/channels/:id", async (c) => {
-    const channel = scopedApp.state.salesChannels.find((candidate) => candidate.id === c.req.param("id"));
-    if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
-    const plugin = resolveChannelPlugin(scopedApp, channel);
-    const externalEventsCount = await scopedApp.externalEvents.count({ channelId: channel.id });
-    const observedStocksCount = await scopedApp.observedStocks.count({ channelId: channel.id });
-    return c.json({ ok: true, data: {
-      channel,
-      credentialStatus: scopedApp.channelCredentialStatus(channel.id),
-      warehouse: scopedApp.state.warehouses.find((warehouse) => warehouse.id === channel.salesPointWarehouseId),
-      plugin: plugin ? serializePluginMeta(plugin) : null,
-      syncRuns: (await scopedApp.syncRuns.listByChannel(channel.id)).slice(-20).reverse(),
-      counts: {
-        externalProducts: scopedApp.state.externalProducts.filter((ep) => ep.channelId === channel.id).length,
-        observedStocks: observedStocksCount,
-        externalEvents: externalEventsCount,
-        sales: scopedApp.state.sales.filter((s) => s.channelId === channel.id).length,
-        payouts: scopedApp.state.payouts.filter((p) => p.channelId === channel.id).length
-      }
-    } });
   });
   api.delete("/api/integrations/channels/:id/credentials", (c) => {
     const channel = scopedApp.state.salesChannels.find((candidate) => candidate.id === c.req.param("id"));

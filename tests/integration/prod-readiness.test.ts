@@ -133,6 +133,7 @@ describe("prod-ready contracts", () => {
     const dashboard = await get<any>(api, "/api/dashboard");
     const reports = await get<any>(api, "/api/reports");
     const channel = app.state.salesChannels.find((candidate) => candidate.name.includes("Ozon"));
+    const channelDetail = await get<any>(api, `/api/integrations/channels/${channel?.id}`);
     const syncRuns = await get<any[]>(api, `/api/integrations/channels/${channel?.id}/sync-runs`);
     const observedStocks = await get<any[]>(api, "/api/integrations/observed-stock");
     const auditEvents = await get<any[]>(api, "/api/controls/audit-events");
@@ -140,11 +141,12 @@ describe("prod-ready contracts", () => {
     expect(organization.displayName).toBe("ИП Иванов");
     expect(dashboard.configured).toBe(true);
     expect(reports.pnl.revenue).toBeGreaterThan(0);
+    expect(channelDetail.channel.id).toBe(channel?.id);
     expect(syncRuns).toEqual(expect.any(Array));
     expect(observedStocks).toEqual(expect.any(Array));
     expect(auditEvents.length).toBeGreaterThan(0);
     expect(collectionReads).toBe(1);
-    expect(readModelApps).toBe(5);
+    expect(readModelApps).toBe(6);
     expect(readSessions).toBe(0);
   });
 

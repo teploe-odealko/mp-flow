@@ -1019,7 +1019,11 @@ export class PostgresRuntimeStore implements RuntimePersistence {
 
   async openReadModelApp(workspaceId = DEFAULT_WORKSPACE_ID): Promise<AccountingApp> {
     await this.init();
-    return await openPostgresReadModelApp(this.pool, normalizeWorkspaceId(workspaceId));
+    const scope = normalizeWorkspaceId(workspaceId);
+    const app = await openPostgresReadModelApp(this.pool, scope);
+    app.importChannelCredentials(await this.loadChannelCredentials(this.pool, scope));
+    app.importPluginSecrets(await this.loadPluginSecrets(this.pool, scope));
+    return app;
   }
 
   async openReadSession(workspaceId = DEFAULT_WORKSPACE_ID): Promise<RuntimeSession> {
