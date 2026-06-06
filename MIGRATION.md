@@ -55,6 +55,18 @@
 Остаток-полиш — 2 доменные мутации (`updateChannel` смена sales-point склада; `refreshExternalReferencesForProduct`):
 читают пустой state в Postgres (edge; следующий sync перезаписывает остатки и чинит).
 
+### ✅ `syncRuns` ВЫНЕСЕН из снэпшота (4-я коллекция) — Этап 1 (append-only потоки) закрыт
+`SyncRunStore` порт + in-memory ([sync-run-store.ts](src/core/sync-run-store.ts)); жизненный цикл
+sync в app.ts сохраняется через `store.upsert` (а не `state.push` + `saveState`): create + один upsert
+перед общим `return` (покрывает success/fail/catch; ветка validation-throw откатывается транзакцией);
+чтения (recent для канала, list-by-channel, detail, cancel) на стор; `PostgresSyncRunStore` в сессиях;
+`syncRuns` в `SNAPSHOT_APPEND_ONLY`. Фронт `ChannelSyncPage` снят с `state.syncRuns` →
+`useQuery(/api/integrations/channels/:id/sync-runs)`.
+
+**Итог Этапа 1:** тяжёлый event-log (9887 событий, ~14.8 МБ) + остатки + прогоны больше НЕ грузятся
+и НЕ диффятся в snapshot на каждый запрос — это и был корень тормозов «создание товара ~4с».
+Из snapshot вынесены: `auditEvents`, `externalEvents`, `observedStocks`, `syncRuns`.
+
 ## Уточнение стратегии (важный вывод из кода)
 Домен — **синхронный in-memory движок**: почти каждая коллекция читается ПОСРЕДИ
 операций. `auditEvents` вынесся легко только потому, что он чисто append-only
