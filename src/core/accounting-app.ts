@@ -4599,7 +4599,7 @@ export class AccountingApp {
     return { id: asset.id, deleted: true };
   }
 
-  createCashAccount(input: { name: string; accountCode: "50" | "51"; openingBalanceRub?: number }): CashAccount {
+  async createCashAccount(input: { name: string; accountCode: "50" | "51"; openingBalanceRub?: number }): Promise<CashAccount> {
     const organizationId = this.currentOrgId();
     const account: CashAccount = {
       id: id("cash"),
@@ -4609,16 +4609,17 @@ export class AccountingApp {
       balanceRub: round2(input.openingBalanceRub ?? 0),
       isActive: true
     };
-    this.state.cashAccounts.push(account);
+    await this.repos.cashAccounts.add(account);
     this.audit("cash_account", account.id, "create", undefined, account);
     return account;
   }
 
-  updateCashAccount(accountId: ID, patch: Partial<Pick<CashAccount, "name" | "isActive">>): CashAccount {
-    const account = this.mustFind(this.state.cashAccounts, accountId, "cash_account_not_found");
+  async updateCashAccount(accountId: ID, patch: Partial<Pick<CashAccount, "name" | "isActive">>): Promise<CashAccount> {
+    const account = this.mustFind(await this.repos.cashAccounts.all(), accountId, "cash_account_not_found");
     const before = { ...account };
     if (patch.name !== undefined) account.name = patch.name;
     if (patch.isActive !== undefined) account.isActive = patch.isActive;
+    await this.repos.cashAccounts.upsert(account);
     this.audit("cash_account", account.id, "update", before, account);
     return account;
   }

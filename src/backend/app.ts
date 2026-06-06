@@ -895,11 +895,11 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/money/cash-accounts", (c) => c.json({ ok: true, data: scopedApp.state.cashAccounts }));
   api.post("/api/money/cash-accounts", async (c) => {
     const body = cashAccountSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.createCashAccount(body) });
+    return c.json({ ok: true, data: await scopedApp.createCashAccount(body) });
   });
   api.patch("/api/money/cash-accounts/:id", async (c) => {
     const body = cashAccountPatchSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.updateCashAccount(c.req.param("id"), body) });
+    return c.json({ ok: true, data: await scopedApp.updateCashAccount(c.req.param("id"), body) });
   });
   api.get("/api/money/payments", (c) => c.json({ ok: true, data: { cashAccounts: scopedApp.state.cashAccounts, payments: scopedApp.state.payments, allocations: scopedApp.state.paymentAllocations } }));
   api.post("/api/payments/:id/post", (c) => c.json({ ok: true, data: scopedApp.postPayment(c.req.param("id")) }));
