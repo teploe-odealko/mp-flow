@@ -2658,9 +2658,9 @@ export class AccountingApp {
     await this.repos.documents.replaceAll((await this.repos.documents.all()).filter((document) => document.id !== documentId));
   }
 
-  paymentRollbackPreview(paymentId: ID): EntityRollbackPreview {
-    const payment = this.mustFind(this.state.payments, paymentId, "payment_not_found");
-    const document = this.mustFind(this.state.documents, payment.documentId, "document_not_found");
+  async paymentRollbackPreview(paymentId: ID): Promise<EntityRollbackPreview> {
+    const payment = this.mustFind(await this.repos.payments.all(), paymentId, "payment_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), payment.documentId, "document_not_found");
     const blockers: EntityRollbackBlockerSummary[] = [];
     const descendants = this.documentDescendants(document.id);
     if (descendants.length > 0) {
@@ -2670,9 +2670,9 @@ export class AccountingApp {
         relatedDocuments: this.rollbackRelatedFromDescendants(descendants)
       });
     }
-    const allocation = this.state.paymentAllocations.find((candidate) => candidate.paymentId === payment.id && candidate.allocationPurpose === "goods_purchase");
+    const allocation = (await this.repos.paymentAllocations.all()).find((candidate) => candidate.paymentId === payment.id && candidate.allocationPurpose === "goods_purchase");
     if (allocation?.purchaseOrderId) {
-      const postedReceipts = this.state.goodsReceipts.filter((receipt) =>
+      const postedReceipts = (await this.repos.goodsReceipts.all()).filter((receipt) =>
         receipt.purchaseOrderId === allocation.purchaseOrderId && receipt.status === "posted" && this.isDocumentPosted(receipt.documentId)
       );
       if (postedReceipts.length > 0) {
@@ -2683,13 +2683,16 @@ export class AccountingApp {
         });
       }
     }
-    if (payment.paymentType === "channel_payout" && this.state.payouts.some((payout) => payout.paymentId === payment.id)) {
+    if (payment.paymentType === "channel_payout" && (await this.repos.payouts.all()).some((payout) => payout.paymentId === payment.id)) {
       blockers.push({
         code: "payment_belongs_to_payout",
         message: "Оплата относится к выплате маркетплейса — управляйте ею в разделе «Выплаты»."
       });
     }
-    const journalEntryIds = new Set(this.state.journalEntries.filter((entry) => entry.documentId === document.id).map((entry) => entry.id));
+    const journalEntryIds = new Set((await this.repos.journalEntries.all()).filter((entry) => entry.documentId === document.id).map((entry) => entry.id));
+    const allJournalLines = await this.repos.journalLines.all();
+    const allSettlementEntries = await this.repos.settlementEntries.all();
+    const allPaymentAllocations = await this.repos.paymentAllocations.all();
     return {
       entityType: "payment",
       entityId: payment.id,
@@ -2706,25 +2709,25 @@ export class AccountingApp {
         documents: 1,
         payments: 1,
         journalEntries: journalEntryIds.size,
-        journalLines: this.state.journalLines.filter((line) => journalEntryIds.has(line.journalEntryId)).length,
-        settlementEntries: this.state.settlementEntries.filter((entry) => entry.documentId === document.id).length,
-        paymentAllocations: this.state.paymentAllocations.filter((candidate) => candidate.paymentId === payment.id).length
+        journalLines: allJournalLines.filter((line) => journalEntryIds.has(line.journalEntryId)).length,
+        settlementEntries: allSettlementEntries.filter((entry) => entry.documentId === document.id).length,
+        paymentAllocations: allPaymentAllocations.filter((candidate) => candidate.paymentId === payment.id).length
       }
     };
   }
 
   async deletePayment(paymentId: ID) {
-    const preview = this.paymentRollbackPreview(paymentId);
+    const preview = await this.paymentRollbackPreview(paymentId);
     if (!preview.canDelete) {
       const blocker = preview.blockers[0];
       throw new DomainError(blocker.code, blocker.message, { blockers: preview.blockers });
     }
-    const payment = this.mustFind(this.state.payments, paymentId, "payment_not_found");
+    const payment = this.mustFind(await this.repos.payments.all(), paymentId, "payment_not_found");
     const before = { ...payment };
     const documentId = payment.documentId;
     await this.repos.ownerTransactions.replaceAll((await this.repos.ownerTransactions.all()).filter((transaction) => transaction.paymentId !== payment.id));
-    this.rollbackPaymentsForDocument(documentId); // касса + аллокации + сам платёж
-    this.removeDocumentGraph(documentId);
+    await this.rollbackPaymentsForDocument(documentId); // касса + аллокации + сам платёж
+    await this.removeDocumentGraph(documentId);
     this.audit("payment", payment.id, "delete", before, undefined, "Удаление оплаты");
     return { paymentId: payment.id, deleted: { payments: 1, documents: 1 } };
   }
@@ -2808,16 +2811,16 @@ export class AccountingApp {
     await this.repos.stockMovements.replaceAll((await this.repos.stockMovements.all()).filter((movement) => movement.documentId !== document.id));
     await this.repos.goodsReceiptLines.replaceAll((await this.repos.goodsReceiptLines.all()).filter((line) => line.goodsReceiptId !== receipt.id));
     await this.repos.goodsReceipts.replaceAll((await this.repos.goodsReceipts.all()).filter((candidate) => candidate.id !== receipt.id));
-    this.removeDocumentGraph(document.id);
+    await this.removeDocumentGraph(document.id);
     this.compactZeroStockStates();
     this.audit("goods_receipt", receipt.id, "delete", before, undefined, "Удаление приёмки");
     return { receiptId: receipt.id, deleted: { goodsReceipts: 1, documents: 1, inventoryLots: lots.length } };
   }
 
-  procurementCostRollbackPreview(costId: ID): EntityRollbackPreview {
-    const cost = this.mustFind(this.state.procurementCosts, costId, "procurement_cost_not_found");
-    const document = this.mustFind(this.state.documents, cost.documentId, "document_not_found");
-    const lines = this.state.procurementCostLines.filter((line) => line.procurementCostId === cost.id);
+  async procurementCostRollbackPreview(costId: ID): Promise<EntityRollbackPreview> {
+    const cost = this.mustFind(await this.repos.procurementCosts.all(), costId, "procurement_cost_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), cost.documentId, "document_not_found");
+    const lines = (await this.repos.procurementCostLines.all()).filter((line) => line.procurementCostId === cost.id);
     const blockers: EntityRollbackBlockerSummary[] = [];
     if (lines.some((line) => (line.soldCostAmountRub ?? 0) > 0 || (line.qtySold ?? 0) > 0)) {
       blockers.push({
@@ -2833,7 +2836,9 @@ export class AccountingApp {
         relatedDocuments: this.rollbackRelatedFromDescendants(descendants)
       });
     }
-    const journalEntryIds = new Set(this.state.journalEntries.filter((entry) => entry.documentId === document.id).map((entry) => entry.id));
+    const journalEntryIds = new Set((await this.repos.journalEntries.all()).filter((entry) => entry.documentId === document.id).map((entry) => entry.id));
+    const allJournalLines = await this.repos.journalLines.all();
+    const allPayments = await this.repos.payments.all();
     return {
       entityType: "procurement_cost",
       entityId: cost.id,
@@ -2849,14 +2854,14 @@ export class AccountingApp {
         ...this.emptyRollbackEffects(),
         documents: 1,
         journalEntries: journalEntryIds.size,
-        journalLines: this.state.journalLines.filter((line) => journalEntryIds.has(line.journalEntryId)).length,
-        payments: this.state.payments.filter((payment) => payment.documentId === document.id).length
+        journalLines: allJournalLines.filter((line) => journalEntryIds.has(line.journalEntryId)).length,
+        payments: allPayments.filter((payment) => payment.documentId === document.id).length
       }
     };
   }
 
   async deleteProcurementCost(costId: ID) {
-    const preview = this.procurementCostRollbackPreview(costId);
+    const preview = await this.procurementCostRollbackPreview(costId);
     if (!preview.canDelete) {
       const blocker = preview.blockers[0];
       throw new DomainError(blocker.code, blocker.message, { blockers: preview.blockers });
@@ -2873,10 +2878,10 @@ export class AccountingApp {
       lot.unitCostRub = lot.qtyRemaining > 0 ? round6(lot.costRemainingRub / lot.qtyRemaining) : 0;
       this.addStockState(lot.productId, lot.warehouseId, 0, -line.remainingInventoryAmountRub, lot.stockStateCode);
     }
-    this.rollbackPaymentsForDocument(document.id);
+    await this.rollbackPaymentsForDocument(document.id);
     await this.repos.procurementCostLines.replaceAll((await this.repos.procurementCostLines.all()).filter((line) => line.procurementCostId !== cost.id));
     await this.repos.procurementCosts.replaceAll((await this.repos.procurementCosts.all()).filter((candidate) => candidate.id !== cost.id));
-    this.removeDocumentGraph(document.id);
+    await this.removeDocumentGraph(document.id);
     this.compactZeroStockStates();
     this.audit("procurement_cost", cost.id, "delete", before, undefined, "Удаление расхода закупки");
     return { costId: cost.id, deleted: { procurementCosts: 1, documents: 1 } };
@@ -2941,7 +2946,7 @@ export class AccountingApp {
     this.removeLotsFromStockStates(returnLots);
 
     for (const paymentDocumentId of payoutPaymentDocumentIds) {
-      this.rollbackPaymentsForDocument(paymentDocumentId);
+      await this.rollbackPaymentsForDocument(paymentDocumentId);
     }
 
     await this.repos.costApplications.replaceAll((await this.repos.costApplications.all()).filter((application) => !saleDocumentIds.has(application.outboundDocumentId)));
