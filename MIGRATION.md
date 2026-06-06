@@ -103,6 +103,18 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
 **Вывод:** вынести ядро = сделать `AccountingApp` async по всему графу операций. async вирусен — это не
 держится «зелёным» пошагово, значит делается одним крупным заходом со сборкой в конце (разрешено «можно ломать»).
 
+### Прогресс конверсии ядра (идёт)
+- ✅ Шаг 1: async-фасад `Repositories` ([repositories.ts](src/core/repositories.ts)) + `buildInMemoryRepositories`,
+  инжектнут как `this.repos`, бэкается массивами `this.state` (поведение идентично, тесты зелёные).
+- ✅ Переведено методов: `retryRecalculationJob`, `accountByIdOrCode`, `journalEntryDetails`, `stockForSalesPoint`,
+  `stockByProduct`, `productDetails`, `setProductImage`, `deleteProductImage` (+ их вызовы в app.ts на `await`;
+  floating-promise в `c.json({data})` tsc НЕ ловит — каждый caller проверять вручную/grep'ом).
+- ⏳ Осталось ~129 методов (из 137). Порядок: листовые чтения/CRUD → постинг → AVCO/recalculate.
+  Каждый: `async` + `this.state.X` → `await this.repos.X.all()`/`.add`/`.upsert`/`.removeWhere`; `mustFind(this.state.X,…)`
+  → `mustFind(await this.repos.X.all(),…)`; после мутации на месте — `await this.repos.X.upsert(entity)`; callers `await`.
+  Общие sync-хелперы (`mustFind`, `ledgerBalances`, `audit`, `createDocument`/`postJournalEntry` пока) читают
+  `this.state` напрямую — валидно в in-memory фазе; конвертируются в свою очередь (каскад вверх).
+
 ### План исполнения ядра (для отдельного захода, с чистым контекстом)
 1. Завести `Repositories`-фасад (как уже сделанные сторы) для оставшихся коллекций: `documents`, `documentLines`,
    `documentVersions`, `documentLinks`, `journalEntries`, `journalLines`, `sales`, `saleLines`, `salesReturns`,
