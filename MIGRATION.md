@@ -15,18 +15,31 @@
 
 ### Остаток по `externalEvents` (механический хвост → выпил из снэпшота)
 - ✅ materialize/payout-роуты читают через `getById` (коммит после `23f5c31`).
-1. Оставшиеся прямые ЧТЕНИЯ `state.externalEvents` → на стор (`await app.externalEvents.list/count`),
-   все в async-контекстах: app.ts 979 (count), 3017/3437/3539/3545/3722/3746 (sync-pipeline);
-   accounting-app 1840 (refresh→async), 2910 (reset, уже async), 3731, 4387.
+1. Оставшиеся прямые ЧТЕНИЯ `state.externalEvents` → на стор. Сделано: 979/3539/3545/3722/3746/
+   channel-count, reset, payout-rollback (через буфер), recordChannelFee externalId. **Осталось 4**
+   (в sync edge-методах → малый async-каскад): app.ts `3018` (historical-qty helper),
+   `3438` (reset out-of-scope, мутирует статус), accounting-app `1841` (`refreshExternalReferences\
+   ForProduct` → async, каскад в `linkExternalProduct`), `3723` (`saleResetExternalEventIds` →
+   async, каскад в sale-resync). Мутации-статусы можно через `bufferExternalEventUpdate` (sync),
+   но сами выборки событий нужны async.
 2. ✅ **Узел: запись статуса события — СДЕЛАНО** (отложенная запись). `markExternalEventProcessed`/
    `markExternalEventNeedsAttention` теперь буферят patch (`pendingExternalEventUpdates`) и сразу
    мутируют in-memory; `flushPendingExternalEventUpdates()` применяет через стор (для Postgres).
    Posting-методы (`postSale`/`postReturn`/`recognizeSaleFromFinance`/payout) остались sync — каскада
    на `recordSale` нет. Осталось: `recordChannelFee` (2100 — externalId передать из контроллера, не
    искать по state); вызвать `flushPendingExternalEventUpdates()` в сессии перед commit (см. п.4).
-3. `PostgresExternalEventStore` (реализует `ExternalEventStore` + `flush`) поверх `external_event`.
-4. Инъекция стора в сессии (`runtime-store` openRead/WriteSession), flush буфера на commit.
-5. Исключить `external_event` из snapshot load/save. PG-тесты: события вне снэпшота, write ~50мс.
+3. **Postgres-флип (точный рецепт):**
+   - `PostgresExternalEventStore implements ExternalEventStore` в `runtime-store.ts` (там entityUuid +
+     external_event TableSpec.serialize + hydrateEntity). Чтение: `select state_json ...` (как
+     `ExternalEventRepository`). Запись: `upsertRow(client,"external_event",["id"],{...spec.serialize(e),
+     workspace_id})`; delete: `delete ... where state_json->>'id' = any($ids)`. Конструктор `(Queryable, workspaceId)`.
+   - Инъекция: в `openReadSession` (≈1011) `snapshot.app.externalEvents = new PostgresExternalEventStore(this.pool, scope)`;
+     в `openWriteSession` (≈1027) — с `client`. 
+   - В `finalize("commit")` (≈1034) ПЕРЕД `saveState`: `await app.flushPendingExternalEventUpdates()`.
+   - Добавить `"externalEvents"` в `SNAPSHOT_APPEND_ONLY` → loadSnapshot не грузит, saveState не
+     удаляет; upsert-цикл no-op (state.externalEvents пуст). Стор владеет таблицей целиком.
+   - PG-тест: после write событие в таблице, но `openReadSession().app.state.externalEvents == []`;
+     любой не-событийный write — без загрузки 9887 событий (~50мс).
 
 ## Уточнение стратегии (важный вывод из кода)
 Домен — **синхронный in-memory движок**: почти каждая коллекция читается ПОСРЕДИ
