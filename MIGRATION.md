@@ -14,14 +14,22 @@
   (поведение сохранено: in-memory стор оборачивает `state.externalEvents`; всё зелёное).
 
 ### Остаток по `externalEvents` (механический хвост → выпил из снэпшота)
-1. Оставшиеся прямые чтения `state.externalEvents` → на стор (`await app.externalEvents.list/getById/count`):
-   - app.ts (async-контексты): 979 (count канала), 1317/1322/1367/1372/1452 (materialize/payout
-     роуты → getById), 3017/3437/3539/3545/3722/3746 (sync-pipeline aggregations).
-   - accounting-app.ts: 1840 (refresh — async), 2099/2179 (recordSale/Return — externalId
-     передавать из контроллера, не искать), 2910 (reset — list), 3731, 4387 (payout), 5858/5869.
-2. `PostgresExternalEventStore` (реализует `ExternalEventStore`) поверх таблицы `external_event`.
-3. Инъекция стора в сессии (`runtime-store` openRead/WriteSession).
-4. Исключить `external_event` из snapshot load/save. PG-тесты: события вне снэпшота, write ~50мс.
+- ✅ materialize/payout-роуты читают через `getById` (коммит после `23f5c31`).
+1. Оставшиеся прямые ЧТЕНИЯ `state.externalEvents` → на стор (`await app.externalEvents.list/count`),
+   все в async-контекстах: app.ts 979 (count), 3017/3437/3539/3545/3722/3746 (sync-pipeline);
+   accounting-app 1840 (refresh→async), 2910 (reset, уже async), 3731, 4387.
+2. **Узел: запись статуса события.** `markExternalEventProcessed`/`markExternalEventNeedsAttention`
+   (`accounting-app` 5856/5867) зовутся из СИНХРОННЫХ posting-методов: `postSale` (2213/2280),
+   `recognizeSaleFromFinance` (2294/2306/2349), `postReturn` (3068/3085/3147), payout (3279).
+   Async-ить нельзя (каскад на весь `recordSale`/`recordReturn` — горячий путь, везде+тесты).
+   Решение: **отложенная запись** — `mark*` пишет patch события в sync-буфер на app
+   (`pendingExternalEventUpdates`), а сессия/контроллер делает `await store.flush(buffer)` в конце
+   (in-memory: применяет к массиву; Postgres: upsert). Так posting-методы остаются sync.
+   Также убрать прямые мутации события в `recordChannelFee` (2099 — externalId передать внутрь),
+   payout (2179), recordSale/Return → перевести на буфер.
+3. `PostgresExternalEventStore` (реализует `ExternalEventStore` + `flush`) поверх `external_event`.
+4. Инъекция стора в сессии (`runtime-store` openRead/WriteSession), flush буфера на commit.
+5. Исключить `external_event` из snapshot load/save. PG-тесты: события вне снэпшота, write ~50мс.
 
 ## Уточнение стратегии (важный вывод из кода)
 Домен — **синхронный in-memory движок**: почти каждая коллекция читается ПОСРЕДИ
