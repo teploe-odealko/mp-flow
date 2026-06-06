@@ -935,20 +935,19 @@ const TABLES: TableSpec[] = [
 ];
 
 export async function createAccountingRuntimeFromEnv(): Promise<AccountingRuntime> {
-  const persistenceMode = process.env.ACCOUNTING_PERSISTENCE ?? (process.env.DATABASE_URL ? "postgres" : "memory");
-  if (persistenceMode === "memory") {
-    return { app: new AccountingApp() };
-  }
-  if (persistenceMode !== "postgres") {
-    throw new Error(`Неизвестный ACCOUNTING_PERSISTENCE=${persistenceMode}`);
-  }
   if (!process.env.DATABASE_URL) {
-    throw new Error("Для ACCOUNTING_PERSISTENCE=postgres нужен DATABASE_URL");
+    throw new Error(
+      "MPFlow работает только с PostgreSQL: задайте DATABASE_URL. Локально — `docker compose up -d`, затем скопируйте DATABASE_URL из .env.example."
+    );
+  }
+  const persistenceMode = process.env.ACCOUNTING_PERSISTENCE ?? "postgres";
+  if (persistenceMode !== "postgres") {
+    throw new Error(`Неподдерживаемый ACCOUNTING_PERSISTENCE=${persistenceMode}: доступен только postgres.`);
   }
 
   const secret = process.env.ACCOUNTING_ENCRYPTION_KEY ?? (process.env.NODE_ENV === "production" ? undefined : "mpflow-local-dev-key");
   if (!secret) {
-    throw new Error("Для production-хранения кредов нужен ACCOUNTING_ENCRYPTION_KEY");
+    throw new Error("Для хранения кредов каналов нужен ACCOUNTING_ENCRYPTION_KEY");
   }
 
   const store = new PostgresRuntimeStore(new Pool({ connectionString: process.env.DATABASE_URL }), secret);

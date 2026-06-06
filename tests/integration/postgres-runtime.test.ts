@@ -301,6 +301,64 @@ describePostgres("postgres runtime store", () => {
     }
   }, 30_000);
 
+  it("owner signup auto-verifies and starts a session (n8n-style)", async () => {
+    await resetRuntimeTables();
+
+    const previousEnv = {
+      DATABASE_URL: process.env.DATABASE_URL,
+      ACCOUNTING_AUTH_PUBLIC_SIGNUP: process.env.ACCOUNTING_AUTH_PUBLIC_SIGNUP,
+      ACCOUNTING_SAAS_WORKSPACES_ENABLED: process.env.ACCOUNTING_SAAS_WORKSPACES_ENABLED,
+      ACCOUNTING_AUTH_BOOTSTRAP_EMAILS: process.env.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS
+    };
+    process.env.DATABASE_URL = connectionString;
+    process.env.ACCOUNTING_AUTH_PUBLIC_SIGNUP = "true";
+    process.env.ACCOUNTING_SAAS_WORKSPACES_ENABLED = "true";
+    process.env.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS = "";
+
+    const auth = new AuthService();
+    const api = createApi(new AccountingApp(), { auth });
+    try {
+      const signupResponse = await api.request("/api/auth/signup", {
+        method: "POST",
+        body: JSON.stringify({ email: "owner@example.com", password: "password123" }),
+        headers: { "Content-Type": "application/json" }
+      });
+      const signupPayload = await signupResponse.json() as {
+        ok: boolean;
+        data: { verificationRequired: boolean; user: { email: string; roleCode: string; workspaceId: string } };
+      };
+      expect(signupPayload.ok).toBe(true);
+      expect(signupPayload.data.verificationRequired).toBe(false);
+      expect(signupPayload.data.user.email).toBe("owner@example.com");
+      expect(signupPayload.data.user.roleCode).toBe("owner");
+
+      const cookie = signupResponse.headers.get("set-cookie")?.split(";")[0];
+      expect(cookie).toBeTruthy();
+
+      // Сессия активна сразу — без подтверждения почты и без отдельного логина.
+      const sessionResponse = await api.request("/api/auth/session", { headers: { cookie: cookie! } });
+      const sessionPayload = await sessionResponse.json() as { ok: boolean; data: { user: { email: string } | null } };
+      expect(sessionPayload.data.user?.email).toBe("owner@example.com");
+
+      const inspectPool = new Pool({ connectionString: connectionString! });
+      try {
+        const rows = await inspectPool.query<{ email_verified: boolean }>(
+          "select email_verified from auth_user where email = $1",
+          ["owner@example.com"]
+        );
+        expect(rows.rows[0]?.email_verified).toBe(true);
+      } finally {
+        await inspectPool.end();
+      }
+    } finally {
+      await auth.close();
+      restoreEnv("DATABASE_URL", previousEnv.DATABASE_URL);
+      restoreEnv("ACCOUNTING_AUTH_PUBLIC_SIGNUP", previousEnv.ACCOUNTING_AUTH_PUBLIC_SIGNUP);
+      restoreEnv("ACCOUNTING_SAAS_WORKSPACES_ENABLED", previousEnv.ACCOUNTING_SAAS_WORKSPACES_ENABLED);
+      restoreEnv("ACCOUNTING_AUTH_BOOTSTRAP_EMAILS", previousEnv.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS);
+    }
+  }, 30_000);
+
   it("moves legacy default auth members to personal workspaces", async () => {
     await resetRuntimeTables();
 

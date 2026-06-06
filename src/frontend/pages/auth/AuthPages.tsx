@@ -90,6 +90,8 @@ export function LoginPage() {
 }
 
 export function SignupPage() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const setupQuery = useSetupQuery();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -102,8 +104,18 @@ export function SignupPage() {
     setError("");
     setPending(true);
     try {
-      const response = await apiPost<{ email: string }>("/api/auth/signup", { email, password }, { notifyOnError: false });
-      setSentTo(response.email);
+      const response = await apiPost<{ email?: string; verificationRequired?: boolean; user?: AuthUser }>(
+        "/api/auth/signup",
+        { email, password },
+        { notifyOnError: false }
+      );
+      if (response.verificationRequired === false && response.user) {
+        // Владелец инстанса вошёл сразу — без подтверждения почты.
+        queryClient.setQueryData<AuthSession>(authSessionQueryKey, { user: response.user });
+        navigate("/", { replace: true });
+        return;
+      }
+      setSentTo(response.email ?? email);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -140,7 +152,7 @@ export function SignupPage() {
           {setupQuery.data?.bootstrapEmailRequired ? (
             <p className="text-xs text-[var(--color-muted-foreground)]">Регистрация ограничена email из списка первого доступа.</p>
           ) : null}
-          {setupQuery.data?.emailDeliveryMode === "missing" ? (
+          {!ownerSignup && setupQuery.data?.emailDeliveryMode === "missing" ? (
             <p className="text-sm text-[var(--color-danger)]">SMTP для писем не настроен. Регистрация в проде не завершится.</p>
           ) : null}
           {error ? <p className="text-sm text-[var(--color-danger)]">{error}</p> : null}

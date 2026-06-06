@@ -135,7 +135,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/auth/signup", async (c) => {
     if (!auth) throw new DomainError("auth_unavailable", "Авторизация не настроена");
     const body = authSignupSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: await auth.signup(body) });
+    return c.json({ ok: true, data: await auth.signup(body, c) });
   });
   api.post("/api/auth/verify-email", async (c) => {
     if (!auth) throw new DomainError("auth_unavailable", "Авторизация не настроена");

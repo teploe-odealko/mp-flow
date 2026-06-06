@@ -77,7 +77,7 @@ export class AuthService {
     };
   }
 
-  async signup(input: SignupInput) {
+  async signup(input: SignupInput, c?: Context) {
     await this.init();
     const email = normalizeEmail(input.email);
     if (!email) throw new DomainError("invalid_email", "Укажите email");
@@ -92,6 +92,9 @@ export class AuthService {
       throw new DomainError("sign_up_forbidden", "Этот email не входит в список первого доступа");
     }
 
+    // Первый владелец инстанса (signUpMode === "owner") создаётся без подтверждения почты
+    // и сразу входит — как owner-setup в n8n. Остальные пользователи подтверждают email.
+    const ownerSetup = setup.signUpMode === "owner";
     const roleCode = "owner" as const;
     const name = input.name?.trim() || email;
     const passwordHash = hashPassword(input.password);
@@ -109,6 +112,23 @@ export class AuthService {
       [userId, email, name, passwordHash, roleCode]
     );
     const persistedUserId = userResult.rows[0]?.id ?? userId;
+
+    if (ownerSetup) {
+      await this.pool.query("update auth_user set email_verified = true, updated_at = now() where id = $1", [persistedUserId]);
+      const membership = await this.ensureWorkspaceMembership(this.pool, { id: persistedUserId, email, roleCode });
+      const token = randomToken();
+      const sessionId = id("auth_session");
+      await this.pool.query(
+        `insert into auth_session (id, user_id, token_hash, expires_at, created_at, last_seen_at)
+         values ($1, $2, $3, now() + interval '30 days', now(), now())`,
+        [sessionId, persistedUserId, hashToken(token)]
+      );
+      if (c) setSessionCookie(c, token);
+      return {
+        verificationRequired: false,
+        user: publicUser({ id: persistedUserId, email, name, roleCode: membership.roleCode, workspaceId: membership.workspaceId })
+      };
+    }
 
     await this.createVerification(email, persistedUserId, name);
     return { email, verificationRequired: true, emailDeliveryMode: emailDeliveryMode() };

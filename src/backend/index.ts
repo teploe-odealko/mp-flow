@@ -15,7 +15,7 @@ const port = Number(process.env.PORT ?? 3004);
 const hostname = process.env.HOST ?? "0.0.0.0";
 
 const runtime = await createAccountingRuntimeFromEnv();
-const auth = process.env.DATABASE_URL ? new AuthService() : null;
+const auth = new AuthService();
 const api = createApi(runtime.app, { persistence: runtime.persistence, auth });
 
 const server = serve({

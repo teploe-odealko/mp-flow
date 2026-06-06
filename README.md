@@ -24,39 +24,24 @@ MPFlow — open-source система управленческого учёта 
 
 - **Node.js 22 LTS** (минимум 20.19) — версия зафиксирована в `.nvmrc`, `nvm use` подхватит её.
 - **npm** (идёт вместе с Node).
-- **Docker + Docker Compose** — только для режима с PostgreSQL; для быстрого старта не нужен.
+- **Docker + Docker Compose** — для PostgreSQL, на которой работает приложение.
 
 ## Быстрый старт
 
-Режим выбирается автоматически по переменным окружения, флагов не нужно:
-
-| `DATABASE_URL` | Persistence | Авторизация |
-| --- | --- | --- |
-| не задан | in-memory (данные живут до перезапуска) | выключена, автоматический вход как `Local dev` |
-| задан | PostgreSQL | реальная регистрация/вход по email + паролю |
-
-### Режим A — без БД (посмотреть продукт / разработка UI)
+MPFlow работает на PostgreSQL. Поднимите БД, запустите dev и создайте владельца — без почтового сервера.
 
 ```bash
+cp .env.example .env      # шаблон настроен на локальный Docker-Postgres
+docker compose up -d      # PostgreSQL на 127.0.0.1:54322
 npm install
 npm run dev
 ```
 
-Откройте `http://127.0.0.1:5174`. Поднимется in-memory хранилище, вход автоматический. Данные не сохраняются между перезапусками.
+Откройте `http://127.0.0.1:5174`. На первом старте — экран **«Первый доступ»**: введите email и пароль и нажмите «Создать владельца». Аккаунт владельца создаётся **без подтверждения почты** и сразу входит (owner-setup как в n8n).
 
-### Режим B — полный стек (PostgreSQL + авторизация)
-
-```bash
-cp .env.example .env      # шаблон уже настроен на локальный Docker-Postgres
-docker compose up -d      # PostgreSQL на 127.0.0.1:54322
-npm run dev
-```
-
-Откройте `http://127.0.0.1:5174` и зарегистрируйте аккаунт.
-
-- SMTP в dev намеренно не настроен: письмо не отправляется, а ссылка подтверждения **печатается в консоль backend** (строки `[auth:mail] …`) — скопируйте её и откройте.
-- Первым регистрируется только email из `ACCOUNTING_AUTH_BOOTSTRAP_EMAILS` (по умолчанию `owner@example.com`); дальше публичная регистрация открыта (`ACCOUNTING_AUTH_PUBLIC_SIGNUP=true`).
-- Полностью изолированная база (без основного volume): `docker compose -f docker-compose.standalone.yml up -d` (Postgres на `127.0.0.1:55432`, пропишите его в `DATABASE_URL`).
+- Следующие пользователи (мультиаккаунт/cloud) подтверждают email. SMTP в dev не настроен — ссылка подтверждения печатается в консоль backend (строки `[auth:mail] …`).
+- Кто может стать владельцем, ограничивается через `ACCOUNTING_AUTH_BOOTSTRAP_EMAILS` (по умолчанию пусто — владельцем становится первый зарегистрировавшийся; для публичного сервера задайте список).
+- Изолированная база (без основного volume): `docker compose -f docker-compose.standalone.yml up -d` (Postgres на `127.0.0.1:55432`, пропишите его в `DATABASE_URL`).
 
 Адреса и порты:
 
@@ -73,7 +58,7 @@ npm run dev
 npm run dev               # backend (tsx watch) + frontend (Vite) с hot reload
 npm test                  # все vitest-тесты
 npm run test:unit         # только unit
-npm run test:integration  # integration (in-memory, без Docker)
+npm run test:integration  # integration: API + доменный движок, без Docker
 npm run test:scenarios    # сквозные сценарии учёта
 npm run build             # dist/frontend + dist/server
 npm start                 # node dist/server/index.js — API и фронт одним процессом на :3004

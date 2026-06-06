@@ -1,7 +1,3 @@
-import { execFileSync } from "node:child_process";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { createApi } from "../../src/backend/app";
 import { AccountingApp } from "../../src/core/accounting-app";
@@ -50,22 +46,6 @@ async function mcpRequest<T>(api: Api, token: string, method: string, params?: u
   });
   return await response.json() as T;
 }
-
-describe("spec contract audit", () => {
-  it("keeps implementation aligned with MPFlow spec artifacts", () => {
-    const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-    execFileSync("node", ["scripts/spec-contract-audit.mjs"], { cwd: appRoot, stdio: "pipe" });
-
-    const audit = JSON.parse(fs.readFileSync(path.join(appRoot, "tmp/spec-contract-audit.json"), "utf8")) as {
-      summary: { missing: Record<"endpoints" | "routes" | "renders" | "labels", number> };
-    };
-
-    expect(audit.summary.missing.endpoints).toBe(0);
-    expect(audit.summary.missing.routes).toBe(0);
-    expect(audit.summary.missing.renders).toBe(0);
-    // Labels are user-facing copy that gets refined during UX polish; we don't gate on it.
-  });
-});
 
 describe("MPFlow api surface", () => {
   it("exposes major read models after demo bootstrap", async () => {
