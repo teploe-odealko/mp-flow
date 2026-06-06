@@ -460,7 +460,7 @@ export class AccountingApp {
   }
 
   async setupDemo() {
-    this.bootstrap({
+    await this.bootstrap({
       displayName: "ИП Иванов",
       accountingStartDate: "2026-06-01"
     });
@@ -4122,7 +4122,7 @@ export class AccountingApp {
   }
 
 
-  createAgentToken(input: { name: string; scopes?: string[]; mode?: "read_only" | "read_write"; maskedToken?: string; tokenHash?: string }): AgentToken {
+  async createAgentToken(input: { name: string; scopes?: string[]; mode?: "read_only" | "read_write"; maskedToken?: string; tokenHash?: string }): Promise<AgentToken> {
     const mode = input.mode ?? (input.scopes?.some((scope) => /write|post|patch|delete|sync/i.test(scope)) ? "read_write" : "read_only");
     const scopes = input.scopes?.length ? input.scopes : (mode === "read_only" ? ["reports:read", "documents:read", "channels:read"] : ["reports:read", "documents:write", "channels:sync"]);
     const token: AgentToken = {
@@ -4136,17 +4136,17 @@ export class AccountingApp {
       tokenHash: input.tokenHash,
       createdAt: nowIso()
     };
-    this.state.agentTokens.push(token);
+    await this.repos.agentTokens.add(token);
     return token;
   }
 
-  setupSnapshot() {
+  async setupSnapshot() {
     return {
       organization: this.state.organization,
       accountingPolicy: this.state.accountingPolicy,
-      periods: this.state.periods,
-      cashAccounts: this.state.cashAccounts,
-      warehouses: this.state.warehouses,
+      periods: await this.repos.periods.all(),
+      cashAccounts: await this.repos.cashAccounts.all(),
+      warehouses: await this.repos.warehouses.all(),
       configured: Boolean(this.state.organization)
     };
   }
@@ -4164,9 +4164,10 @@ export class AccountingApp {
     return organization;
   }
 
-  updateSetup(input: BootstrapInput) {
+  async updateSetup(input: BootstrapInput) {
     const { organization, policy } = this.ensureBootstrapped();
-    this.validateSetupInput(input, this.state.documents.length > 0);
+    const documentsExist = (await this.repos.documents.all()).length > 0;
+    this.validateSetupInput(input, documentsExist);
 
     const organizationBefore = { ...organization };
     const policyBefore = { ...policy };
@@ -4181,17 +4182,17 @@ export class AccountingApp {
     policy.allowOpenPeriodEdits = input.allowOpenPeriodEdits ?? policy.allowOpenPeriodEdits ?? true;
     policy.comment = input.comment || undefined;
 
-    if (this.state.documents.length === 0 && input.accountingStartDate !== policy.accountingStartDate) {
+    if (!documentsExist && input.accountingStartDate !== policy.accountingStartDate) {
       policy.accountingStartDate = input.accountingStartDate;
-      this.state.periods = monthPeriods(organization.id, input.accountingStartDate, 24);
+      await this.repos.periods.replaceAll(monthPeriods(organization.id, input.accountingStartDate, 24));
     }
 
     this.audit("organization", organization.id, "update", organizationBefore, organization, "Обновление первичной настройки");
     this.audit("accounting_policy", policy.id, "update", policyBefore, policy, "Обновление первичной настройки");
-    return this.setupSnapshot();
+    return await this.setupSnapshot();
   }
 
-  extendAccountingStartDateBackward(accountingStartDate: string, reason = "Расширение горизонта учета") {
+  async extendAccountingStartDateBackward(accountingStartDate: string, reason = "Расширение горизонта учета") {
     const { organization, policy } = this.ensureBootstrapped();
     if (!accountingStartDate) {
       throw new DomainError("accounting_start_required", "Укажите дату старта учета");
@@ -4203,20 +4204,21 @@ export class AccountingApp {
     if (accountingStartDate >= policy.accountingStartDate) return policy;
 
     const before = { ...policy };
-    const existingPeriodsByStart = new Map(this.state.periods.map((period) => [period.startsOn, period]));
-    const latestPeriodEnd = this.state.periods.reduce(
+    const periods = await this.repos.periods.all();
+    const existingPeriodsByStart = new Map(periods.map((period) => [period.startsOn, period]));
+    const latestPeriodEnd = periods.reduce(
       (latest, period) => period.endsOn > latest ? period.endsOn : latest,
       policy.accountingStartDate
     );
     const months = Math.max(24, this.monthsBetweenInclusive(accountingStartDate, latestPeriodEnd));
 
     policy.accountingStartDate = accountingStartDate;
-    this.state.periods = monthPeriods(organization.id, accountingStartDate, months).map((period) => {
+    await this.repos.periods.replaceAll(monthPeriods(organization.id, accountingStartDate, months).map((period) => {
       const existing = existingPeriodsByStart.get(period.startsOn);
       return existing
         ? { ...period, id: existing.id }
         : period;
-    });
+    }));
 
     this.audit("accounting_policy", policy.id, "update", before, policy, reason);
     return policy;

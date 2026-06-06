@@ -300,20 +300,20 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: { document: scopedApp.state.documents.find((document) => document.id === documentId), journalEntries: scopedApp.state.journalEntries.filter((entry) => entry.documentId === documentId), stockMovements: scopedApp.state.stockMovements.filter((movement) => movement.documentId === documentId) } });
   });
   api.post("/api/reports/recalculate", (c) => c.json({ ok: true, data: scopedApp.createRecalculationJob({ jobType: "reports", scope: { requestedAt: nowIso() } }) }));
-  api.get("/api/setup", (c) => c.json({ ok: true, data: scopedApp.setupSnapshot() }));
+  api.get("/api/setup", async (c) => c.json({ ok: true, data: await scopedApp.setupSnapshot() }));
   api.get("/api/organization", (c) => c.json({ ok: true, data: scopedApp.state.organization }));
   api.get("/api/periods", (c) => c.json({ ok: true, data: scopedApp.state.periods }));
 
   api.post("/api/setup", async (c) => {
     const body = bootstrapSchema.parse(await c.req.json());
-    const data = scopedApp.bootstrap(body);
+    const data = await scopedApp.bootstrap(body);
     const authUser = c.get("authUser") as ReturnType<typeof publicUser> | undefined;
     if (authUser) ensureAppUser(scopedApp, { ...authUser, status: "active" });
     return c.json({ ok: true, data });
   });
   api.put("/api/setup", async (c) => {
     const body = bootstrapSchema.parse(await c.req.json());
-    const data = scopedApp.state.organization ? scopedApp.updateSetup(body) : scopedApp.bootstrap(body);
+    const data = scopedApp.state.organization ? await scopedApp.updateSetup(body) : await scopedApp.bootstrap(body);
     const authUser = c.get("authUser") as ReturnType<typeof publicUser> | undefined;
     if (authUser) ensureAppUser(scopedApp, { ...authUser, status: "active" });
     return c.json({ ok: true, data });
@@ -1715,7 +1715,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       ? String(project.payload.accountingStartDate)
       : undefined;
     if (historicalStartDate) {
-      scopedApp.extendAccountingStartDateBackward(
+      await scopedApp.extendAccountingStartDateBackward(
         historicalStartDate,
         `Исторический старт магазина ${project.name}`
       );
@@ -1786,15 +1786,15 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: await scopedApp.applyReceiptQuantityCorrection({ goodsReceiptId: c.req.param("id"), ...body }) });
   });
 
-  api.get("/api/mcp/config", (c) => {
-    return c.json({ ok: true, data: mcpSettingsPayload(scopedApp, publicMcpEndpoint(c)) });
+  api.get("/api/mcp/config", async (c) => {
+    return c.json({ ok: true, data: await mcpSettingsPayload(scopedApp, publicMcpEndpoint(c)) });
   });
-  api.get("/api/mcp/keys", (c) => {
-    return c.json({ ok: true, data: mcpSettingsPayload(scopedApp, publicMcpEndpoint(c)) });
+  api.get("/api/mcp/keys", async (c) => {
+    return c.json({ ok: true, data: await mcpSettingsPayload(scopedApp, publicMcpEndpoint(c)) });
   });
   api.post("/api/mcp/keys", async (c) => {
     const body = agentTokenCreateSchema.parse(await c.req.json());
-    const issued = issueMcpAgentToken(scopedApp, c.get("authUser")?.workspaceId ?? "default", body);
+    const issued = await issueMcpAgentToken(scopedApp, c.get("authUser")?.workspaceId ?? "default", body);
     return c.json({
       ok: true,
       data: {
@@ -1805,11 +1805,12 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       }
     });
   });
-  api.post("/api/mcp/keys/:id/revoke", (c) => {
-    const token = scopedApp.state.agentTokens.find((candidate) => candidate.id === c.req.param("id"));
+  api.post("/api/mcp/keys/:id/revoke", async (c) => {
+    const token = await scopedApp.repos.agentTokens.getById(c.req.param("id"));
     if (!token) throw new DomainError("agent_token_not_found", "Ключ MCP не найден");
     token.status = "revoked";
     token.revokedAt = nowIso();
+    await scopedApp.repos.agentTokens.upsert(token);
     return c.json({ ok: true, data: publicAgentToken(token) });
   });
   api.get("/api/users", async (c) => {
@@ -1817,16 +1818,16 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const auditEvents = postgresBacked()
       ? await new AuditEventRepository(getPool(), eventsWorkspaceId(c)).listAll()
       : scopedApp.state.auditEvents;
-    return c.json({ ok: true, data: { users: scopedApp.state.users, roles: scopedApp.state.roles, agentTokens: scopedApp.state.agentTokens.map(publicAgentToken), auditEvents } });
+    return c.json({ ok: true, data: { users: scopedApp.state.users, roles: scopedApp.state.roles, agentTokens: (await scopedApp.repos.agentTokens.all()).map(publicAgentToken), auditEvents } });
   });
-  api.get("/api/settings/users", (c) => {
+  api.get("/api/settings/users", async (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
     return c.json({
       ok: true,
       data: {
         users: scopedApp.state.users,
         roles: scopedApp.state.roles,
-        agentTokens: scopedApp.state.agentTokens.map(publicAgentToken),
+        agentTokens: (await scopedApp.repos.agentTokens.all()).map(publicAgentToken),
         channelAgentPermissions: scopedApp.state.channelAgentPermissions
       }
     });
@@ -1879,22 +1880,23 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.get("/api/controls/audit-events", async (c) =>
     c.json({ ok: true, data: postgresBacked() ? await new AuditEventRepository(getPool(), eventsWorkspaceId(c)).listAll() : scopedApp.state.auditEvents }));
-  api.get("/api/agent-tokens", (c) => {
+  api.get("/api/agent-tokens", async (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
-    return c.json({ ok: true, data: scopedApp.state.agentTokens.map(publicAgentToken) });
+    return c.json({ ok: true, data: (await scopedApp.repos.agentTokens.all()).map(publicAgentToken) });
   });
   api.post("/api/agent-tokens", async (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
     const body = agentTokenCreateSchema.parse(await c.req.json());
-    const issued = issueMcpAgentToken(scopedApp, c.get("authUser")?.workspaceId ?? "default", body);
+    const issued = await issueMcpAgentToken(scopedApp, c.get("authUser")?.workspaceId ?? "default", body);
     return c.json({ ok: true, data: { ...publicAgentToken(issued.token), secret: issued.secret } });
   });
-  api.post("/api/agent-tokens/:id/revoke", (c) => {
+  api.post("/api/agent-tokens/:id/revoke", async (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
-    const token = scopedApp.state.agentTokens.find((candidate) => candidate.id === c.req.param("id"));
+    const token = await scopedApp.repos.agentTokens.getById(c.req.param("id"));
     if (!token) throw new DomainError("agent_token_not_found", "Токен агента не найден");
     token.status = "revoked";
     token.revokedAt = nowIso();
+    await scopedApp.repos.agentTokens.upsert(token);
     return c.json({ ok: true, data: publicAgentToken(token) });
   });
   api.post("/api/channels/:id/agent-permission", async (c) => {
@@ -2071,13 +2073,14 @@ const MCP_TOOL_DEFINITIONS = [
   }
 ];
 
-function issueMcpAgentToken(app: AccountingApp, workspaceId: string, input: z.infer<typeof agentTokenCreateSchema>) {
+async function issueMcpAgentToken(app: AccountingApp, workspaceId: string, input: z.infer<typeof agentTokenCreateSchema>) {
   const mode = input.mode ?? (input.scopes?.some((scope) => /write|post|patch|delete|sync/i.test(scope)) ? "read_write" : "read_only");
   const scopes = input.scopes?.length ? input.scopes : defaultMcpScopes(mode);
-  const token = app.createAgentToken({ name: input.name, mode, scopes });
+  const token = await app.createAgentToken({ name: input.name, mode, scopes });
   const key = createMcpKey(workspaceId, token.id);
   token.maskedToken = key.maskedToken;
   token.tokenHash = key.tokenHash;
+  await app.repos.agentTokens.upsert(token);
   return { token, secret: key.secret };
 }
 
@@ -2090,12 +2093,15 @@ async function authenticateMcpKey(
   const parsed = parseMcpKey(rawKey);
   if (!parsed) return null;
 
-  const verify = (targetApp: AccountingApp) => {
-    const token = targetApp.state.agentTokens.find((candidate) => candidate.id === parsed.tokenId);
+  const verify = async (targetApp: AccountingApp) => {
+    const token = await targetApp.repos.agentTokens.getById(parsed.tokenId);
     if (!token || token.status !== "active" || !token.tokenHash || !safeEqual(token.tokenHash, hashToken(rawKey))) {
       return null;
     }
-    if (touch) token.lastUsedAt = nowIso();
+    if (touch) {
+      token.lastUsedAt = nowIso();
+      await targetApp.repos.agentTokens.upsert(token);
+    }
     return {
       tokenId: token.id,
       workspaceId: parsed.workspaceId,
@@ -2107,7 +2113,7 @@ async function authenticateMcpKey(
 
   if (!persistence?.openReadSession && !persistence?.openWriteSession) {
     if (parsed.workspaceId !== "default") return null;
-    return verify(app);
+    return await verify(app);
   }
 
   const session = touch && persistence.openWriteSession
@@ -2116,7 +2122,7 @@ async function authenticateMcpKey(
   if (!session) return null;
 
   try {
-    const principal = verify(session.app);
+    const principal = await verify(session.app);
     if (principal && touch && session.commit) {
       await session.commit();
     } else {
@@ -2190,10 +2196,10 @@ function publicAccountingState(state: AccountingState): AccountingState {
   };
 }
 
-function mcpSettingsPayload(app: AccountingApp, endpoint: string) {
+async function mcpSettingsPayload(app: AccountingApp, endpoint: string) {
   return {
     endpoint,
-    keys: app.state.agentTokens.map(publicAgentToken),
+    keys: (await app.repos.agentTokens.all()).map(publicAgentToken),
     tools: MCP_TOOL_DEFINITIONS.map(({ name, description }) => ({ name, description })),
     instructions: mcpConnectionInstructions(endpoint)
   };
