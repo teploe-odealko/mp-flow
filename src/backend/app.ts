@@ -549,7 +549,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/stock-states", (c) => c.json({ ok: true, data: scopedApp.state.stockStates }));
   api.get("/api/inventory/balances", (c) => c.json({ ok: true, data: scopedApp.stockByProduct() }));
   api.get("/api/inventory/lots", (c) => c.json({ ok: true, data: scopedApp.state.inventoryLots }));
-  api.get("/api/inventory/reconciliation", (c) => c.json({ ok: true, data: { stocktakes: scopedApp.state.stocktakes, lines: scopedApp.state.stocktakeLines, observedStocks: scopedApp.state.observedStocks } }));
+  api.get("/api/inventory/reconciliation", async (c) => c.json({ ok: true, data: { stocktakes: scopedApp.state.stocktakes, lines: scopedApp.state.stocktakeLines, observedStocks: await scopedApp.observedStocks.list() } }));
   api.post("/api/inventory/opening-balances", async (c) => {
     const body = openingBalanceSchema.parse(await c.req.json());
     return c.json({ ok: true, data: scopedApp.createOpeningBalance(body) });
@@ -932,9 +932,12 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/inventory/adjustments/:id/post", (c) => {
     return c.json({ ok: true, data: scopedApp.postStocktake(c.req.param("id")) });
   });
-  api.post("/api/inventory/reconciliation/:id/ignore", (c) => {
-    const observed = scopedApp.state.observedStocks.find((candidate) => candidate.id === c.req.param("id"));
-    if (observed) observed.locationStatus = "needs_location";
+  api.post("/api/inventory/reconciliation/:id/ignore", async (c) => {
+    const observed = await scopedApp.observedStocks.getById(c.req.param("id"));
+    if (observed) {
+      observed.locationStatus = "needs_location";
+      await scopedApp.observedStocks.upsert(observed);
+    }
     return c.json({ ok: true, data: observed ?? { id: c.req.param("id"), status: "ignored" } });
   });
 
@@ -968,6 +971,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
     const plugin = resolveChannelPlugin(scopedApp, channel);
     const externalEventsCount = await scopedApp.externalEvents.count({ channelId: channel.id });
+    const observedStocksCount = await scopedApp.observedStocks.count({ channelId: channel.id });
     return c.json({ ok: true, data: {
       channel,
       credentialStatus: scopedApp.channelCredentialStatus(channel.id),
@@ -976,7 +980,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       syncRuns: scopedApp.state.syncRuns.filter((run) => run.channelId === channel.id).slice(-20).reverse(),
       counts: {
         externalProducts: scopedApp.state.externalProducts.filter((ep) => ep.channelId === channel.id).length,
-        observedStocks: scopedApp.state.observedStocks.filter((o) => o.channelId === channel.id).length,
+        observedStocks: observedStocksCount,
         externalEvents: externalEventsCount,
         sales: scopedApp.state.sales.filter((s) => s.channelId === channel.id).length,
         payouts: scopedApp.state.payouts.filter((p) => p.channelId === channel.id).length
@@ -1273,7 +1277,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = z.object({ reason: z.string().min(3) }).parse(await c.req.json().catch(() => ({})));
     return c.json({ ok: true, data: await scopedApp.ignoreExternalEvent(c.req.param("id"), body.reason) });
   });
-  api.get("/api/integrations/observed-stock", (c) => c.json({ ok: true, data: scopedApp.state.observedStocks }));
+  api.get("/api/integrations/observed-stock", async (c) => c.json({ ok: true, data: await scopedApp.observedStocks.list() }));
 
   api.get("/api/sales", (c) => c.json({ ok: true, data: { sales: scopedApp.state.sales, lines: scopedApp.state.saleLines } }));
   api.post("/api/sales", async (c) => {
@@ -1552,7 +1556,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       });
     } else if (salesChannelId) {
       const externalProducts = scopedApp.state.externalProducts.filter((candidate) => candidate.channelId === salesChannelId);
-      const observedByExternal = scopedApp.state.observedStocks.filter((candidate) => candidate.channelId === salesChannelId);
+      const observedByExternal = await scopedApp.observedStocks.list({ channelId: salesChannelId });
       externalProducts.forEach((externalProduct) => {
         const rows = observedByExternal.filter((stock) => stock.externalProductId === externalProduct.id);
         // Observed stock is a point-in-time LEVEL, not a flow. Each sync writes a fresh
@@ -3719,7 +3723,7 @@ function syncBackfillProjectStatus(app: AccountingApp, project: any) {
 async function captureSyncRunBaseline(app: AccountingApp, channelId: string) {
   return {
     externalProductIds: new Set(app.state.externalProducts.filter((item) => item.channelId === channelId).map((item) => item.id)),
-    observedStockIds: new Set(app.state.observedStocks.filter((item) => item.channelId === channelId).map((item) => item.id)),
+    observedStockIds: new Set((await app.observedStocks.list({ channelId })).map((item) => item.id)),
     externalEventIds: new Set((await app.externalEvents.list({ channelId })).map((item) => item.id))
   };
 }
@@ -3743,7 +3747,7 @@ function initSyncRunStreams(syncRunId: string, streams: ChannelStreamCode[], sta
 
 async function finalizeSyncRun(app: AccountingApp, syncRun: SyncRun, baseline: Awaited<ReturnType<typeof captureSyncRunBaseline>>, selectedStreams: ChannelStreamCode[], errors: string[]) {
   const createdProducts = app.state.externalProducts.filter((item) => item.channelId === syncRun.channelId && !baseline.externalProductIds.has(item.id)).length;
-  const createdStocks = app.state.observedStocks.filter((item) => item.channelId === syncRun.channelId && !baseline.observedStockIds.has(item.id)).length;
+  const createdStocks = (await app.observedStocks.list({ channelId: syncRun.channelId })).filter((item) => !baseline.observedStockIds.has(item.id)).length;
   const createdEvents = (await app.externalEvents.list({ channelId: syncRun.channelId })).filter((item) => !baseline.externalEventIds.has(item.id));
   const createdEventsByType = {
     sale: createdEvents.filter((item) => item.eventType === "sale").length,

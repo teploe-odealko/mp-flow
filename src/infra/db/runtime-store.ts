@@ -2,8 +2,9 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { readFile } from "node:fs/promises";
 import { Pool, type PoolClient } from "pg";
 import { AccountingApp } from "../../core/accounting-app";
-import type { AccountingState, ExternalEvent, ID } from "../../core/models";
+import type { AccountingState, ExternalEvent, ObservedStock, ID } from "../../core/models";
 import type { ExternalEventStore, ExternalEventListFilter } from "../../core/external-event-store";
+import type { ObservedStockStore, ObservedStockListFilter } from "../../core/observed-stock-store";
 import { createEmptyState, currentIdSequence, restoreIdSequence } from "../../core/utils";
 
 export interface RuntimeSession {
@@ -81,7 +82,7 @@ const GLOBAL_REFERENCE_TABLES = new Set(["document_type_registry"]);
 // Коллекции, вынесенные из snapshot в классические репозитории: их НЕ грузим в state
 // на запрос и НЕ удаляем при сохранении. Append-only потоки (пишутся через loop-upsert,
 // читаются репозиторием напрямую). Это шаг переезда на controllers→services→repositories.
-const SNAPSHOT_APPEND_ONLY = new Set<RuntimeCollectionName>(["auditEvents", "externalEvents"]);
+const SNAPSHOT_APPEND_ONLY = new Set<RuntimeCollectionName>(["auditEvents", "externalEvents", "observedStocks"]);
 
 const COLLECTIONS: RuntimeCollectionName[] = [
   "periods",
@@ -1012,6 +1013,7 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     const scope = normalizeWorkspaceId(workspaceId);
     const snapshot = await this.loadSnapshot(this.pool, scope);
     snapshot.app.externalEvents = new PostgresExternalEventStore(this.pool, scope);
+    snapshot.app.observedStocks = new PostgresObservedStockStore(this.pool, scope);
     return {
       app: snapshot.app,
       nextId: snapshot.nextId,
@@ -1029,6 +1031,7 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     restoreIdSequence(snapshot.nextId);
     const app = snapshot.app;
     app.externalEvents = new PostgresExternalEventStore(client, scope);
+    app.observedStocks = new PostgresObservedStockStore(client, scope);
     const baseline = snapshot.baseline;
     let finished = false;
 
@@ -1655,6 +1658,80 @@ export class PostgresExternalEventStore implements ExternalEventStore {
   async deleteByIds(ids: ID[]): Promise<void> {
     if (ids.length === 0) return;
     await this.q.query("delete from external_event where workspace_id = $1 and state_json->>'id' = any($2)", [this.workspaceId, ids]);
+  }
+}
+
+const observedStockTableSpec = TABLES.find((table) => table.collection === "observedStocks")!;
+
+/** Postgres-реализация ObservedStockStore: остатки в таблице observed_stock, вне snapshot. */
+export class PostgresObservedStockStore implements ObservedStockStore {
+  constructor(private readonly q: Queryable, private readonly workspaceId: string) {}
+
+  async getById(id: ID): Promise<ObservedStock | undefined> {
+    const result = await this.q.query<{ state_json: ObservedStock }>(
+      "select state_json from observed_stock where workspace_id = $1 and state_json->>'id' = $2 limit 1",
+      [this.workspaceId, id]
+    );
+    return result.rows[0]?.state_json;
+  }
+
+  async findByKey(channelId: ID, externalProductId: ID, warehouseId: ID | undefined, observedAt: string): Promise<ObservedStock | undefined> {
+    const result = await this.q.query<{ state_json: ObservedStock }>(
+      `select state_json from observed_stock
+       where workspace_id = $1 and state_json->>'channelId' = $2 and state_json->>'externalProductId' = $3
+         and state_json->>'observedAt' = $4 and (state_json->>'warehouseId') is not distinct from $5
+       limit 1`,
+      [this.workspaceId, channelId, externalProductId, observedAt, warehouseId ?? null]
+    );
+    return result.rows[0]?.state_json;
+  }
+
+  async list(filter: ObservedStockListFilter = {}): Promise<ObservedStock[]> {
+    const conditions = ["workspace_id = $1"];
+    const params: unknown[] = [this.workspaceId];
+    if (filter.channelId) {
+      params.push(filter.channelId);
+      conditions.push(`state_json->>'channelId' = $${params.length}`);
+    }
+    if (filter.externalProductId) {
+      params.push(filter.externalProductId);
+      conditions.push(`state_json->>'externalProductId' = $${params.length}`);
+    }
+    const result = await this.q.query<{ state_json: ObservedStock }>(
+      `select state_json from observed_stock where ${conditions.join(" and ")} order by observed_at, id`,
+      params
+    );
+    return result.rows.map((row) => row.state_json);
+  }
+
+  async count(filter: { channelId?: ID } = {}): Promise<number> {
+    const conditions = ["workspace_id = $1"];
+    const params: unknown[] = [this.workspaceId];
+    if (filter.channelId) {
+      params.push(filter.channelId);
+      conditions.push(`state_json->>'channelId' = $${params.length}`);
+    }
+    const result = await this.q.query<{ count: string }>(
+      `select count(*)::text as count from observed_stock where ${conditions.join(" and ")}`,
+      params
+    );
+    return Number(result.rows[0]?.count ?? "0");
+  }
+
+  async upsert(observed: ObservedStock): Promise<void> {
+    const row = { ...observedStockTableSpec.serialize(observed as unknown as RuntimeEntity), workspace_id: this.workspaceId } as RowRecord;
+    const columns = Object.keys(row);
+    const placeholders = columns.map((_, index) => `$${index + 1}`).join(", ");
+    const updates = columns.filter((column) => column !== "id").map((column) => `${column} = excluded.${column}`).join(", ");
+    await this.q.query(
+      `insert into observed_stock (${columns.join(", ")}) values (${placeholders}) on conflict (id) do update set ${updates}`,
+      columns.map((column) => row[column])
+    );
+  }
+
+  async deleteByIds(ids: ID[]): Promise<void> {
+    if (ids.length === 0) return;
+    await this.q.query("delete from observed_stock where workspace_id = $1 and state_json->>'id' = any($2)", [this.workspaceId, ids]);
   }
 }
 
