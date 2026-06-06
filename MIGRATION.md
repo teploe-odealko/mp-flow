@@ -77,13 +77,21 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   React Query кэширует по `["collection", name]`. Замена механическая: `state.X` → `useCollection("X")`.
 - ✅ Уже на запросах (dedicated): события (`/api/integrations/events`+`/:id`), остатки (`/api/integrations/observed-stock`),
   аудит (`/api/controls/audit-events`), sync-runs (`/api/integrations/channels/:id/sync-runs`).
-- ✅ Переведены на `useCollection`: Products, ProductForm, ChartAccounts, Audit.
-- ⏳ Осталось ~25 страниц (тот же swap; внутри `useMemo`/функций — поднять чтение в top-level хук):
-  AccountingWorkspace, Ledger, Journal, ChannelDetail, ChannelsPages, FinanceWorkspace, ChannelMapping,
-  ProductCard, SettingsOverview, Setup, Documents, DocumentCard, InventoryWorkspace, inventory/forms,
-  ProcurementWorkspace, PurchaseOrderCard, procurement/forms, ControlsPages, Home, Onboarding, Money,
-  Expenses, Reports, Sales.
-- ⏳ Финал фронта: когда все страницы сняты — удалить `/api/state`, `use-app-state`, `AppState`-проп в `AppShell`.
+- ✅ **ВСЕ страницы переведены** (28 файлов): Products, ProductForm, ChartAccounts, Audit, Accounting/
+  Inventory/Procurement-Workspaces, Ledger, Journal, Documents, Settings, ChannelDetail, ChannelsPages (5 комп.),
+  FinanceWorkspace, ChannelMapping, ProductCard, Setup, DocumentCard, Money, Expenses, Onboarding, Controls,
+  Home, PurchaseOrderCard, Reports, procurement/forms, inventory/forms, Sales. Приём для многокомпонентных
+  файлов: `replace_all` `const { state } = useAppState()` → локальный `const state = { X: useCollection("X") }`
+  (полный набор файла; React Query дедупит по ключу) — все `state.X` ниже работают без правок. Хелперы,
+  берущие весь `state` (getPurchaseOrderMetrics, buildFinanceOperations, buildReconciliationRows, report-билдеры),
+  получают собранный partial-state.
+- ✅ **God-объект убран целиком:** `AppShell` больше НЕ дёргает `/api/state`; `workingPeriodId` берётся из
+  `useCollection("periods")`; `Topbar`/`App` берут organization через `useCollection`; `AppCtx` без `state`.
+  Ни одна строка фронта не держит всесущий снимок. Дымовой тест (live): Home/Products/Reports/Procurement/
+  Sales/Inventory/Inbox рендерятся, консоль чистая.
+- ℹ️ Бэкенд `/api/state` оставлен как есть — его используют ~20 интеграционных тестов (удобное полное чтение);
+  это тонкий сериализатор над внутренним снэпшотом, не god-объект на проводе для UI. Уберётся вместе с
+  ядром-снэпшотом (ниже).
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,
