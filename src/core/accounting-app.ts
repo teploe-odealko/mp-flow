@@ -4375,14 +4375,13 @@ export class AccountingApp {
             if (financeEvent?.payoutId === payout.id) financeEvent.payoutId = undefined;
           });
         if (payout.externalEventId) {
-          const externalEvent = this.state.externalEvents.find((candidate) => candidate.id === payout.externalEventId);
-          if (externalEvent?.materializedDocumentId === document.id) {
-            externalEvent.materializedDocumentId = undefined;
-            externalEvent.reason = undefined;
-            externalEvent.lastError = undefined;
-            externalEvent.status = "ignored";
-            externalEvent.updatedAt = nowIso();
-          }
+          this.bufferExternalEventUpdate(payout.externalEventId, {
+            materializedDocumentId: undefined,
+            reason: undefined,
+            lastError: undefined,
+            status: "ignored",
+            updatedAt: nowIso()
+          });
         }
         this.state.payoutLines = this.state.payoutLines.filter((line) => line.payoutId !== payout.id);
         this.state.payouts = this.state.payouts.filter((candidate) => candidate.id !== payout.id);
