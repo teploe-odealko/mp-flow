@@ -47,6 +47,14 @@
    - PG-тест: после write событие в таблице, но `openReadSession().app.state.externalEvents == []`;
      любой не-событийный write — без загрузки 9887 событий (~50мс).
 
+### ✅ `observedStocks` ВЫНЕСЕН из снэпшота (3-я коллекция)
+`ObservedStockStore` порт + in-memory ([observed-stock-store.ts](src/core/observed-stock-store.ts));
+`recordObservedStock` через стор (async, await в плагинах/роуте); все endpoint/pipeline-чтения
+(reconciliation, ignore, observed-stock list, channel-count, onboarding-seed, sync baseline/telemetry)
+на стор; `PostgresObservedStockStore` инжектится в сессии; `observedStocks` в `SNAPSHOT_APPEND_ONLY`.
+Остаток-полиш — 2 доменные мутации (`updateChannel` смена sales-point склада; `refreshExternalReferencesForProduct`):
+читают пустой state в Postgres (edge; следующий sync перезаписывает остатки и чинит).
+
 ## Уточнение стратегии (важный вывод из кода)
 Домен — **синхронный in-memory движок**: почти каждая коллекция читается ПОСРЕДИ
 операций. `auditEvents` вынесся легко только потому, что он чисто append-only
