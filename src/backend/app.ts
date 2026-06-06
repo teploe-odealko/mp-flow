@@ -439,7 +439,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       imageUrl: product.imageUrl
     };
   };
-  const buildStudioView = (productId: string) => {
+  const buildStudioView = async (productId: string) => {
     const channels = studioChannelRows(productId);
     const linkedRow = channels[0];
     return {
@@ -452,15 +452,15 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
         externalName: linkedRow.external.externalName,
         externalProductId: linkedRow.external.id
       } : null,
-      assets: scopedApp.listProductAssets(productId),
+      assets: await scopedApp.listProductAssets(productId),
       channels,
       plan: readCardStudioPlan(scopedApp, productId),
       storageReady: isStorageConfigured()
     };
   };
-  const buildStudioBrief = (productId: string) => {
+  const buildStudioBrief = async (productId: string) => {
     const ozon = pluginRegistry.get("ozon");
-    const studio = buildStudioView(productId);
+    const studio = await buildStudioView(productId);
     return {
       ...studio,
       marketplace: studio.marketplace ?? "ozon",
@@ -471,13 +471,13 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   };
 
   // --- Фотостудия: исходники, план и слайды ---
-  api.get("/api/products/:id/card", (c) => {
+  api.get("/api/products/:id/card", async (c) => {
     const productId = c.req.param("id");
-    return c.json({ ok: true, data: buildStudioView(productId) });
+    return c.json({ ok: true, data: await buildStudioView(productId) });
   });
-  api.get("/api/products/:id/card/brief", (c) => {
+  api.get("/api/products/:id/card/brief", async (c) => {
     const productId = c.req.param("id");
-    return c.json({ ok: true, data: buildStudioBrief(productId) });
+    return c.json({ ok: true, data: await buildStudioBrief(productId) });
   });
   api.put("/api/products/:id/card/plan", async (c) => {
     const productId = c.req.param("id");
@@ -514,7 +514,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (!isAllowedImageType(body.contentType)) throw new DomainError("unsupported_media_type", "Поддерживаются только изображения: png, jpg, webp");
     const key = buildMediaKey({ productId, role: body.role, contentType: body.contentType });
     const { uploadUrl, publicUrl } = await createPresignedUpload({ key, contentType: body.contentType });
-    const asset = scopedApp.createProductAsset({
+    const asset = await scopedApp.createProductAsset({
       productId,
       role: body.role,
       storageKey: key,
@@ -529,7 +529,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.post("/api/products/:id/card/assets/:assetId/confirm", async (c) => {
     const assetId = c.req.param("assetId");
-    const asset = scopedApp.state.productAssets.find((candidate) => candidate.id === assetId);
+    const asset = await scopedApp.repos.productAssets.getById(assetId);
     if (!asset) throw new DomainError("product_asset_not_found", "Медиа не найдено");
     const body = cardConfirmSchema.parse(await c.req.json().catch(() => ({})));
     if (isStorageConfigured()) {
@@ -537,14 +537,14 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       if (!head) throw new DomainError("asset_not_uploaded", "Файл не найден в хранилище — загрузка не завершена");
       if (!body.mimeType && head.contentType) body.mimeType = head.contentType;
     }
-    return c.json({ ok: true, data: scopedApp.confirmProductAsset(assetId, body) });
+    return c.json({ ok: true, data: await scopedApp.confirmProductAsset(assetId, body) });
   });
-  api.post("/api/products/:id/card/assets/:assetId/approve", (c) => {
-    return c.json({ ok: true, data: scopedApp.updateProductAsset(c.req.param("assetId"), { role: "approved", status: "ready" }) });
+  api.post("/api/products/:id/card/assets/:assetId/approve", async (c) => {
+    return c.json({ ok: true, data: await scopedApp.updateProductAsset(c.req.param("assetId"), { role: "approved", status: "ready" }) });
   });
   api.patch("/api/products/:id/card/assets/:assetId", async (c) => {
     const body = cardAssetPatchSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.updateProductAsset(c.req.param("assetId"), body) });
+    return c.json({ ok: true, data: await scopedApp.updateProductAsset(c.req.param("assetId"), body) });
   });
   api.delete("/api/products/:id/card/assets/:assetId", async (c) => {
     return c.json({ ok: true, data: await scopedApp.deleteProductAsset(c.req.param("assetId")) });

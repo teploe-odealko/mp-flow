@@ -4574,13 +4574,13 @@ export class AccountingApp {
 
   // --- Фотостудия: медиа товара (исходники + сгенерированные слайды) ---
 
-  listProductAssets(productId: ID): ProductAsset[] {
-    return this.state.productAssets
+  async listProductAssets(productId: ID): Promise<ProductAsset[]> {
+    return (await this.repos.productAssets.all())
       .filter((asset) => asset.productId === productId)
       .sort((left, right) => left.sortOrder - right.sortOrder || left.createdAt.localeCompare(right.createdAt));
   }
 
-  createProductAsset(input: {
+  async createProductAsset(input: {
     productId: ID;
     role: ProductAssetRole;
     storageKey: string;
@@ -4591,10 +4591,10 @@ export class AccountingApp {
     createdBy?: "user" | "agent";
     sortOrder?: number;
     meta?: Record<string, unknown>;
-  }): ProductAsset {
+  }): Promise<ProductAsset> {
     const organizationId = this.currentOrgId();
-    const product = this.mustFind(this.state.products, input.productId, "product_not_found");
-    const existing = this.state.productAssets.filter((asset) => asset.productId === product.id);
+    const product = this.mustFind(await this.repos.products.all(), input.productId, "product_not_found");
+    const existing = (await this.repos.productAssets.all()).filter((asset) => asset.productId === product.id);
     const sortOrder = input.sortOrder ?? existing.reduce((max, asset) => Math.max(max, asset.sortOrder + 1), 0);
     const asset: ProductAsset = {
       id: id("asset"),
@@ -4611,31 +4611,32 @@ export class AccountingApp {
       createdAt: nowIso(),
       meta: input.meta
     };
-    this.state.productAssets.push(asset);
+    await this.repos.productAssets.add(asset);
     this.audit("product_asset", asset.id, "create", undefined, asset);
     return asset;
   }
 
-  confirmProductAsset(
+  async confirmProductAsset(
     assetId: ID,
     patch: { width?: number; height?: number; mimeType?: string } = {}
-  ): ProductAsset {
-    const asset = this.mustFind(this.state.productAssets, assetId, "product_asset_not_found");
+  ): Promise<ProductAsset> {
+    const asset = this.mustFind(await this.repos.productAssets.all(), assetId, "product_asset_not_found");
     const before = { ...asset };
     asset.status = "ready";
     if (patch.width !== undefined) asset.width = patch.width;
     if (patch.height !== undefined) asset.height = patch.height;
     if (patch.mimeType) asset.mimeType = patch.mimeType;
     asset.updatedAt = nowIso();
+    await this.repos.productAssets.upsert(asset);
     this.audit("product_asset", asset.id, "confirm", before, asset);
     return asset;
   }
 
-  updateProductAsset(
+  async updateProductAsset(
     assetId: ID,
     patch: { role?: ProductAssetRole; status?: ProductAssetStatus; slideType?: string; sortOrder?: number; meta?: Record<string, unknown> }
-  ): ProductAsset {
-    const asset = this.mustFind(this.state.productAssets, assetId, "product_asset_not_found");
+  ): Promise<ProductAsset> {
+    const asset = this.mustFind(await this.repos.productAssets.all(), assetId, "product_asset_not_found");
     const before = { ...asset };
     if (patch.role) asset.role = patch.role;
     if (patch.status) asset.status = patch.status;
@@ -4643,12 +4644,13 @@ export class AccountingApp {
     if (patch.sortOrder !== undefined) asset.sortOrder = patch.sortOrder;
     if (patch.meta) asset.meta = { ...(asset.meta ?? {}), ...patch.meta };
     asset.updatedAt = nowIso();
+    await this.repos.productAssets.upsert(asset);
     this.audit("product_asset", asset.id, "update", before, asset);
     return asset;
   }
 
   async deleteProductAsset(assetId: ID): Promise<{ id: ID; deleted: true }> {
-    const asset = this.mustFind(this.state.productAssets, assetId, "product_asset_not_found");
+    const asset = this.mustFind(await this.repos.productAssets.all(), assetId, "product_asset_not_found");
     await this.repos.productAssets.replaceAll((await this.repos.productAssets.all()).filter((candidate) => candidate.id !== asset.id));
     this.audit("product_asset", asset.id, "delete", asset, undefined);
     return { id: asset.id, deleted: true };
