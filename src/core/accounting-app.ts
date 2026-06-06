@@ -181,6 +181,7 @@ export class AccountingApp {
    * в Postgres-рантайме сюда инжектится репозиторий, и события не живут в snapshot.
    */
   externalEvents: ExternalEventStore;
+  private pendingExternalEventUpdates = new Map<ID, Partial<ExternalEvent>>();
   private saleLookup?: {
     exact: Map<string, Sale>;
     parent: Map<string, Sale | null>;
@@ -2175,16 +2176,7 @@ export class AccountingApp {
       this.linkBankPaymentToPayout({ payoutId: payout.id, bankReceiptRub });
     }
     this.rebuildPayout(payout.id);
-    if (input.externalEventId) {
-      const event = this.state.externalEvents.find((candidate) => candidate.id === input.externalEventId);
-      if (event) {
-        event.status = "processed";
-        event.materializedDocumentId = document.id;
-        event.reason = undefined;
-        event.lastError = undefined;
-        event.updatedAt = nowIso();
-      }
-    }
+    this.markExternalEventProcessed(input.externalEventId, document.id);
     if (input.post) return this.postChannelPayout(payout.id);
     return payout;
   }
@@ -5855,24 +5847,45 @@ export class AccountingApp {
 
   private markExternalEventProcessed(eventId: ID | undefined, documentId: ID) {
     if (!eventId) return;
-    const event = this.state.externalEvents.find((candidate) => candidate.id === eventId);
-    if (!event) return;
-    event.status = "processed";
-    event.materializedDocumentId = documentId;
-    event.reason = undefined;
-    event.lastError = undefined;
-    event.updatedAt = nowIso();
+    this.bufferExternalEventUpdate(eventId, {
+      status: "processed",
+      materializedDocumentId: documentId,
+      reason: undefined,
+      lastError: undefined,
+      updatedAt: nowIso()
+    });
   }
 
   private markExternalEventNeedsAttention(eventId: ID | undefined, documentId: ID, reason: string) {
     if (!eventId) return;
-    const event = this.state.externalEvents.find((candidate) => candidate.id === eventId);
-    if (!event) return;
-    event.status = "needs_attention";
-    event.materializedDocumentId = documentId;
-    event.reason = reason;
-    event.lastError = reason;
-    event.updatedAt = nowIso();
+    this.bufferExternalEventUpdate(eventId, {
+      status: "needs_attention",
+      materializedDocumentId: documentId,
+      reason,
+      lastError: reason,
+      updatedAt: nowIso()
+    });
+  }
+
+  // Запись статуса события отложена, чтобы posting-методы (postSale/postReturn/...) оставались
+  // синхронными. Для in-memory сразу мутируем объект в state (тесты видят результат); для
+  // Postgres патч копится и применяется в flushPendingExternalEventUpdates() на commit сессии.
+  private bufferExternalEventUpdate(eventId: ID, patch: Partial<ExternalEvent>) {
+    this.pendingExternalEventUpdates.set(eventId, { ...this.pendingExternalEventUpdates.get(eventId), ...patch });
+    const inState = this.state.externalEvents.find((candidate) => candidate.id === eventId);
+    if (inState) Object.assign(inState, patch);
+  }
+
+  async flushPendingExternalEventUpdates() {
+    if (this.pendingExternalEventUpdates.size === 0) return;
+    const updates = Array.from(this.pendingExternalEventUpdates.entries());
+    this.pendingExternalEventUpdates.clear();
+    for (const [eventId, patch] of updates) {
+      const event = await this.externalEvents.getById(eventId);
+      if (!event) continue;
+      Object.assign(event, patch);
+      await this.externalEvents.upsert(event);
+    }
   }
 
   private receivedQtyForLine(purchaseOrderLineId: ID): number {
