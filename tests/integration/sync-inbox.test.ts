@@ -3,6 +3,7 @@ import { createApi } from "../../src/backend/app";
 import { AccountingApp } from "../../src/core/accounting-app";
 import { resetIds } from "../../src/core/utils";
 import { pluginRegistry } from "../../src/plugins/registry";
+import { readStateViaCollections } from "../support/api-state";
 
 async function request<T>(api: ReturnType<typeof createApi>, method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
   const response = await api.request(path, {
@@ -24,7 +25,7 @@ describe("sync inbox workflows", () => {
     const app = new AccountingApp();
     const api = createApi(app);
     await app.setupDemo();
-    const state = await get<any>(api, "/api/state");
+    const state = await readStateViaCollections(api);
     const channel = state.salesChannels.find((candidate: any) => candidate.name.includes("Ozon"));
     const baselinePayoutCount = state.payouts.length;
 
@@ -33,13 +34,13 @@ describe("sync inbox workflows", () => {
       mode: "incremental",
       streams: ["products", "stocks", "sales", "finance_events"]
     });
-    const afterFirst = await get<any>(api, "/api/state");
+    const afterFirst = await readStateViaCollections(api);
     const secondRun = await post<any>(api, `/api/integrations/channels/${channel.id}/sync-runs`, {
       credentials: { clientId: "demo-client", apiKey: "demo-key" },
       mode: "incremental",
       streams: ["products", "stocks", "sales", "finance_events"]
     });
-    const afterSecond = await get<any>(api, "/api/state");
+    const afterSecond = await readStateViaCollections(api);
 
     expect(firstRun.status).toBe("completed");
     expect(firstRun.summary.processed).toBeGreaterThan(0);
@@ -71,7 +72,7 @@ describe("sync inbox workflows", () => {
     const app = new AccountingApp();
     const api = createApi(app);
     await app.setupDemo();
-    const before = await get<any>(api, "/api/state");
+    const before = await readStateViaCollections(api);
     const channel = before.salesChannels.find((candidate: any) => candidate.name.includes("Ozon"));
 
     const run = await post<any>(api, `/api/integrations/channels/${channel.id}/sync-runs`, {
@@ -80,7 +81,7 @@ describe("sync inbox workflows", () => {
       streams: ["products", "stocks", "sales", "finance_events"],
       autoProcess: false
     });
-    const after = await get<any>(api, "/api/state");
+    const after = await readStateViaCollections(api);
     const saleEvent = after.externalEvents.find((event: any) => event.externalId === "ozon-sale-demo-1");
     const feeEvent = after.externalEvents.find((event: any) => event.externalId === "ozon-fee-demo-1");
 
@@ -139,7 +140,7 @@ describe("sync inbox workflows", () => {
     const externalB = await post<any>(api, `/api/channels/${channel.id}/external-products`, { externalSku: "EXT-B", externalName: "External B" });
     await post(api, `/api/external-products/${externalA.id}/link`, { productId: productA.id });
     await post(api, `/api/external-products/${externalB.id}/link`, { productId: productB.id });
-    const state = await get<any>(api, "/api/state");
+    const state = await readStateViaCollections(api);
     const ownWarehouse = state.warehouses.find((warehouse: any) => warehouse.warehouseType === "own");
     await post(api, "/api/inventory/opening-balances", {
       date: "2026-01-01",
@@ -198,7 +199,7 @@ describe("sync inbox workflows", () => {
       }
     });
     const salesReturn = await post<any>(api, `/api/integrations/events/${returnEvent.id}/materialize-return`);
-    const after = await get<any>(api, "/api/state");
+    const after = await readStateViaCollections(api);
 
     expect(salesReturn.saleId).toBe(sale.id);
     expect(after.externalEvents.find((event: any) => event.id === saleEvent.id).status).toBe("processed");
@@ -217,7 +218,7 @@ describe("sync inbox workflows", () => {
     const product = await post<any>(api, "/api/products", { sku: "SKU-A", name: "Товар A" });
     const externalProduct = await post<any>(api, `/api/channels/${channel.id}/external-products`, { externalSku: "EXT-A", externalName: "External A" });
     await post(api, `/api/external-products/${externalProduct.id}/link`, { productId: product.id });
-    const state = await get<any>(api, "/api/state");
+    const state = await readStateViaCollections(api);
     const ownWarehouse = state.warehouses.find((warehouse: any) => warehouse.warehouseType === "own");
     await post(api, "/api/inventory/opening-balances", {
       date: "2026-01-01",
@@ -254,7 +255,7 @@ describe("sync inbox workflows", () => {
     });
     const financeEvent = await post<any>(api, `/api/integrations/events/${feeEvent.id}/materialize-fee`);
     const postedFinanceEvent = await post<any>(api, `/api/integrations/finance-events/${financeEvent.id}/post`);
-    const after = await get<any>(api, "/api/state");
+    const after = await readStateViaCollections(api);
 
     expect(postedFinanceEvent.linkedSaleId).toBe(sale.id);
     expect(after.externalEvents.find((event: any) => event.id === feeEvent.id).status).toBe("processed");
@@ -272,7 +273,7 @@ describe("sync inbox workflows", () => {
     const product = await post<any>(api, "/api/products", { sku: "SKU-A", name: "Товар A" });
     const externalProduct = await post<any>(api, `/api/channels/${channel.id}/external-products`, { externalSku: "EXT-A", externalName: "External A" });
     await post(api, `/api/external-products/${externalProduct.id}/link`, { productId: product.id });
-    const state = await get<any>(api, "/api/state");
+    const state = await readStateViaCollections(api);
     const ownWarehouse = state.warehouses.find((warehouse: any) => warehouse.warehouseType === "own");
     await post(api, "/api/inventory/opening-balances", {
       date: "2026-01-01",
@@ -320,7 +321,7 @@ describe("sync inbox workflows", () => {
     });
     const financeEvent = await post<any>(api, `/api/integrations/events/${feeEvent.id}/materialize-fee`);
     const postedFinanceEvent = await post<any>(api, `/api/integrations/finance-events/${financeEvent.id}/post`);
-    const after = await get<any>(api, "/api/state");
+    const after = await readStateViaCollections(api);
 
     expect(postedFinanceEvent.linkedSaleId).toBeUndefined();
     expect(postedFinanceEvent.saleAllocations).toHaveLength(2);
@@ -396,7 +397,7 @@ describe("sync inbox workflows", () => {
       const product = await post<any>(api, "/api/products", { sku: "SKU-A", name: "Товар A" });
       const externalProduct = await post<any>(api, `/api/channels/${channel.id}/external-products`, { externalSku: "EXT-A", externalName: "External A" });
       await post(api, `/api/external-products/${externalProduct.id}/link`, { productId: product.id });
-      const initial = await get<any>(api, "/api/state");
+      const initial = await readStateViaCollections(api);
       const ownWarehouse = initial.warehouses.find((warehouse: any) => warehouse.warehouseType === "own");
       await post(api, "/api/inventory/opening-balances", {
         date: "2026-01-01",
@@ -415,7 +416,7 @@ describe("sync inbox workflows", () => {
         since: "2026-05-05",
         streams: ["finance_events"]
       });
-      const afterFirst = await get<any>(api, "/api/state");
+      const afterFirst = await readStateViaCollections(api);
       const deferredEvent = afterFirst.externalEvents.find((event: any) => event.externalId === "mock-fee-1");
       expect(firstRun.stats.auto_finance_posted).toBe(0);
       expect(firstRun.stats.auto_needs_attention).toBe(0);
@@ -426,7 +427,7 @@ describe("sync inbox workflows", () => {
         since: "2026-05-01",
         streams: ["sales"]
       });
-      const afterSecond = await get<any>(api, "/api/state");
+      const afterSecond = await readStateViaCollections(api);
       const sale = afterSecond.sales.find((candidate: any) => candidate.externalOrderId === "POST-500-1");
       const replayedEvent = afterSecond.externalEvents.find((event: any) => event.externalId === "mock-fee-1");
       const financeEvent = afterSecond.channelFinanceEvents.find((event: any) => event.externalEventId === replayedEvent.id);
@@ -502,7 +503,7 @@ describe("sync inbox workflows", () => {
       const product = await post<any>(api, "/api/products", { sku: "SKU-A", name: "Товар A" });
       const externalProduct = await post<any>(api, `/api/channels/${channel.id}/external-products`, { externalSku: "EXT-A", externalName: "External A" });
       await post(api, `/api/external-products/${externalProduct.id}/link`, { productId: product.id });
-      const initial = await get<any>(api, "/api/state");
+      const initial = await readStateViaCollections(api);
       const ownWarehouse = initial.warehouses.find((warehouse: any) => warehouse.warehouseType === "own");
       await post(api, "/api/inventory/opening-balances", {
         date: "2026-05-01",
@@ -520,7 +521,7 @@ describe("sync inbox workflows", () => {
         mode: "incremental",
         streams: ["sales"]
       });
-      const after = await get<any>(api, "/api/state");
+      const after = await readStateViaCollections(api);
       const beforeEvent = after.externalEvents.find((event: any) => event.externalId === "mock-sale-before-start");
       const inRangeEvent = after.externalEvents.find((event: any) => event.externalId === "mock-sale-in-range");
       const postedSale = after.sales.find((sale: any) => sale.externalEventId === inRangeEvent.id);
@@ -549,7 +550,7 @@ describe("sync inbox workflows", () => {
     const app = new AccountingApp();
     const api = createApi(app);
     await app.setupDemo();
-    const seeded = await get<any>(api, "/api/state");
+    const seeded = await readStateViaCollections(api);
     const channel = seeded.salesChannels.find((candidate: any) => candidate.name.includes("Ozon"));
     const productCountBefore = seeded.products.length;
     expect(channel).toBeTruthy();
@@ -563,7 +564,7 @@ describe("sync inbox workflows", () => {
       streams: ["products", "stocks", "sales", "finance_events"],
       autoLinkProducts: false
     });
-    const afterImport = await get<any>(api, "/api/state");
+    const afterImport = await readStateViaCollections(api);
     const externalCard = afterImport.externalProducts.find((candidate: any) => candidate.channelId === channel.id);
     const saleEvent = afterImport.externalEvents.find((event: any) => event.externalId === "ozon-sale-demo-1");
 
@@ -585,7 +586,7 @@ describe("sync inbox workflows", () => {
       mode: "incremental",
       streams: ["products", "stocks", "sales", "finance_events"]
     });
-    const afterOngoing = await get<any>(api, "/api/state");
+    const afterOngoing = await readStateViaCollections(api);
 
     expect(ongoingRun.status).toBe("completed");
     expect(afterOngoing.productExternalLinks.length).toBe(1);

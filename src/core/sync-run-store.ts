@@ -8,6 +8,7 @@ import type { ID, SyncRun } from "./models";
  */
 export interface SyncRunStore {
   getById(id: ID): Promise<SyncRun | undefined>;
+  listAll(): Promise<SyncRun[]>;
   listByChannel(channelId: ID): Promise<SyncRun[]>;
   upsert(run: SyncRun): Promise<void>;
   deleteByIds(ids: ID[]): Promise<void>;
@@ -23,6 +24,10 @@ export class InMemorySyncRunStore implements SyncRunStore {
 
   async getById(id: ID): Promise<SyncRun | undefined> {
     return this.byId.get(id);
+  }
+
+  async listAll(): Promise<SyncRun[]> {
+    return this.items;
   }
 
   async listByChannel(channelId: ID): Promise<SyncRun[]> {

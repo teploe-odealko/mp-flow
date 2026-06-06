@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createApi } from "../../src/backend/app";
 import { AccountingApp } from "../../src/core/accounting-app";
 import { resetIds } from "../../src/core/utils";
+import { readStateViaCollections } from "../support/api-state";
 
 async function post<T>(api: ReturnType<typeof createApi>, path: string, body: unknown = {}): Promise<T> {
   const response = await api.request(path, { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } });
@@ -23,7 +24,7 @@ describe("hono api", () => {
     const api = createApi(app);
 
     await app.setupDemo();
-    const state = await get<any>(api, "/api/state");
+    const state = await readStateViaCollections(api);
     const reports = await get<any>(api, "/api/reports");
 
     expect(state.organization.displayName).toBe("ИП Иванов");

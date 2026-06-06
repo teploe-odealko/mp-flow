@@ -4,7 +4,7 @@ import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { z } from "zod";
 import { AccountingApp } from "../core/accounting-app";
-import type { AccountingState, AgentToken, ChannelFinanceEvent, ChannelStreamCode, ExternalEvent, Payout, Sale, SalesChannel, SalesReturn, SyncRun } from "../core/models";
+import type { AgentToken, ChannelFinanceEvent, ChannelStreamCode, ExternalEvent, Payout, Sale, SalesChannel, SalesReturn, SyncRun } from "../core/models";
 import { DomainError, id, nowIso, runWithIdSequence } from "../core/utils";
 import type { RuntimePersistence } from "../infra/db/runtime-store";
 import { pluginRegistry } from "../plugins/registry";
@@ -278,16 +278,13 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
 
 
   api.get("/api/dashboard", async (c) => c.json({ ok: true, data: await scopedApp.dashboard() }));
-  api.get("/api/state", (c) => c.json({ ok: true, data: publicAccountingState(scopedApp.state) }));
-  // Классический пер-ресурсный доступ: фронт уходит от всесущего /api/state к точечным
-  // коллекциям (useCollection). Тот же public-шейпинг, что и /api/state (креды не утекают).
-  api.get("/api/collections/:name", (c) => {
+  api.get("/api/collections/:name", async (c) => {
     const name = c.req.param("name");
-    const publicState = publicAccountingState(scopedApp.state) as unknown as Record<string, unknown>;
-    if (!Object.prototype.hasOwnProperty.call(publicState, name)) {
-      throw new DomainError("collection_not_found", `Неизвестная коллекция: ${name}`);
-    }
-    return c.json({ ok: true, data: publicState[name] });
+    return c.json({ ok: true, data: await collectionPayload(scopedApp, name, {
+      loadAuditEvents: () => postgresBacked()
+        ? new AuditEventRepository(getPool(), eventsWorkspaceId(c)).listAll()
+        : scopedApp.repos.auditEvents.all()
+    }) });
   });
   api.get("/api/reports", async (c) => c.json({ ok: true, data: await scopedApp.reports() }));
   api.get("/api/reports/profit-and-loss", async (c) => c.json({ ok: true, data: (await scopedApp.reports()).pnl }));
@@ -2189,11 +2186,23 @@ function publicAgentToken(token: AgentToken) {
   return publicToken;
 }
 
-function publicAccountingState(state: AccountingState): AccountingState {
-  return {
-    ...state,
-    agentTokens: state.agentTokens.map(publicAgentToken)
-  };
+async function collectionPayload(
+  app: AccountingApp,
+  name: string,
+  options: { loadAuditEvents: () => Promise<unknown[]> }
+): Promise<unknown> {
+  if (name === "organization") return app.state.organization;
+  if (name === "accountingPolicy") return app.state.accountingPolicy;
+  if (name === "auditEvents") return await options.loadAuditEvents();
+  if (name === "externalEvents") return await app.externalEvents.list();
+  if (name === "observedStocks") return await app.observedStocks.list();
+  if (name === "syncRuns") return await app.syncRuns.listAll();
+
+  const repo = (app.repos as Record<string, { all(): Promise<unknown[]> } | undefined>)[name];
+  if (!repo) throw new DomainError("collection_not_found", `Неизвестная коллекция: ${name}`);
+  const items = await repo.all();
+  if (name === "agentTokens") return (items as AgentToken[]).map(publicAgentToken);
+  return items;
 }
 
 async function mcpSettingsPayload(app: AccountingApp, endpoint: string) {

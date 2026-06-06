@@ -1752,6 +1752,14 @@ export class PostgresSyncRunStore implements SyncRunStore {
     return result.rows[0]?.state_json;
   }
 
+  async listAll(): Promise<SyncRun[]> {
+    const result = await this.q.query<{ state_json: SyncRun }>(
+      "select state_json from sync_run where workspace_id = $1 order by started_at, id",
+      [this.workspaceId]
+    );
+    return result.rows.map((row) => row.state_json);
+  }
+
   async listByChannel(channelId: ID): Promise<SyncRun[]> {
     const result = await this.q.query<{ state_json: SyncRun }>(
       "select state_json from sync_run where workspace_id = $1 and state_json->>'channelId' = $2 order by started_at, id",

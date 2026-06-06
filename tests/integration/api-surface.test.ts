@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createApi } from "../../src/backend/app";
 import { AccountingApp } from "../../src/core/accounting-app";
 import { resetIds } from "../../src/core/utils";
+import { readStateViaCollections } from "../support/api-state";
 
 type Api = ReturnType<typeof createApi>;
 type ApiEnvelope<T> = { ok: boolean; data: T; error?: { code: string; message: string; details?: unknown } };
@@ -347,7 +348,7 @@ describe("MPFlow api surface", () => {
     expect(issued.token.status).toBe("active");
     expect(issued.token.tokenHash).toBeUndefined();
 
-    const state = await get<any>(api, "/api/state");
+    const state = await readStateViaCollections(api);
     expect(state.agentTokens[0].tokenHash).toBeUndefined();
 
     const initialized = await mcpRequest<any>(api, issued.secret, "initialize", {

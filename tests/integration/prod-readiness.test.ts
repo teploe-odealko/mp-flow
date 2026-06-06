@@ -96,7 +96,7 @@ describe("prod-ready contracts", () => {
     });
 
     await post(api, "/api/setup", { displayName: "Persisted", accountingStartDate: "2026-01-01" });
-    await get(api, "/api/state");
+    await get(api, "/api/collections/organization");
 
     expect(savedSnapshots).toHaveLength(1);
     expect(JSON.parse(savedSnapshots[0]).organization.displayName).toBe("Persisted");

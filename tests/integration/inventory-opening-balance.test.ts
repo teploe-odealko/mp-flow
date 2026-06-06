@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createApi } from "../../src/backend/app";
 import { AccountingApp } from "../../src/core/accounting-app";
 import { resetIds } from "../../src/core/utils";
+import { readStateViaCollections } from "../support/api-state";
 
 async function post<T>(api: ReturnType<typeof createApi>, path: string, body: unknown = {}): Promise<T> {
   const response = await api.request(path, {
@@ -11,12 +12,6 @@ async function post<T>(api: ReturnType<typeof createApi>, path: string, body: un
   });
   const payload = await response.json() as { ok: boolean; data: T; error?: { message: string } };
   if (!payload.ok) throw new Error(payload.error?.message);
-  return payload.data;
-}
-
-async function getState(api: ReturnType<typeof createApi>) {
-  const response = await api.request("/api/state");
-  const payload = await response.json() as { ok: boolean; data: any };
   return payload.data;
 }
 
@@ -32,7 +27,7 @@ describe("opening balances", () => {
 
     const productA = await post<any>(api, "/api/products", { sku: "QA-001", name: "Товар 1", unit: "шт" });
     const productB = await post<any>(api, "/api/products", { sku: "QA-002", name: "Товар 2", unit: "шт" });
-    const stateAfterSetup = await getState(api);
+    const stateAfterSetup = await readStateViaCollections(api);
     const warehouse = stateAfterSetup.warehouses.find((candidate: any) => candidate.warehouseType === "own");
 
     const opening = await post<any>(api, "/api/inventory/opening-balances", {
@@ -49,7 +44,7 @@ describe("opening balances", () => {
 
     expect(opening.status).toBe("draft");
 
-    let state = await getState(api);
+    let state = await readStateViaCollections(api);
     expect(state.warehouses.map((candidate: any) => candidate.warehouseType)).toEqual(expect.arrayContaining(["own", "transit", "sales_point"]));
     expect(state.documents.filter((document: any) => document.documentType === "opening_balance")).toHaveLength(1);
     expect(state.inventoryLots).toHaveLength(0);
@@ -59,7 +54,7 @@ describe("opening balances", () => {
     await post(api, `/api/inventory/opening-balances/${opening.id}/post`);
     await post(api, `/api/inventory/opening-balances/${opening.id}/post`);
 
-    state = await getState(api);
+    state = await readStateViaCollections(api);
     const posted = state.documents.find((document: any) => document.id === opening.id);
     expect(posted.status).toBe("posted");
     expect(state.inventoryLots).toHaveLength(2);
@@ -84,7 +79,7 @@ describe("opening balances", () => {
     });
 
     const product = await post<any>(api, "/api/products", { sku: "QA-001", name: "Товар 1", unit: "шт" });
-    const state = await getState(api);
+    const state = await readStateViaCollections(api);
     const warehouse = state.warehouses.find((candidate: any) => candidate.warehouseType === "own");
 
     const response = await api.request("/api/inventory/opening-balances", {

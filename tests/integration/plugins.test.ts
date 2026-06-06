@@ -3,6 +3,7 @@ import { createApi } from "../../src/backend/app";
 import { AccountingApp } from "../../src/core/accounting-app";
 import { resetIds } from "../../src/core/utils";
 import { expandOzonFinanceEvents } from "../../src/plugins/ozon";
+import { readStateViaCollections } from "../support/api-state";
 
 async function post<T>(api: ReturnType<typeof createApi>, path: string, body: unknown = {}): Promise<T> {
   const response = await api.request(path, { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } });
@@ -82,14 +83,14 @@ describe("marketplace plugins", () => {
     const app = new AccountingApp();
     const api = createApi(app);
     await app.setupDemo();
-    const state = await get<any>(api, "/api/state");
+    const state = await readStateViaCollections(api);
     const channel = state.salesChannels.find((candidate: any) => candidate.name.includes("Ozon"));
 
     const result = await post<any>(api, `/api/channels/${channel.id}/sync`, {
       credentials: { clientId: "demo-client", apiKey: "demo-key" },
       streams: ["products", "stocks", "sales", "finance_events"]
     });
-    const after = await get<any>(api, "/api/state");
+    const after = await readStateViaCollections(api);
 
     expect(result.stats.events).toBe(2);
     expect(after.externalEvents.some((event: any) => event.externalId === "ozon-sale-demo-1")).toBe(true);
