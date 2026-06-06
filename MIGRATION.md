@@ -34,6 +34,22 @@ Async-граница: `ingestExternalEvent`, `findExternalEventById`,
 Sync остаётся: `recordSale` (externalId передаём внутрь). Плагины — `await`.
 В конце: `external_event` исключён из snapshot, перф любого write возвращается к ~50мс.
 
+**WIP-ветка `wip/events-write-path`:** доменная async-конверсия уже сделана (методы
+`findExternalEventById/Identity`, `ingest`, `reprocess`, `ignore`, `ensureSaleLookup`
+→ через `ExternalEventStore`), но НЕ завершена (red, ~36 tsc-ошибок). `main` зелёный;
+доделать каскад в один проход на этой ветке:
+- `app.ts`: `resolveSaleByPostingNumber` → async (вызовы 3171/3195/3232/3355/3670, все в
+  async-функциях материализации/финансов); `findExternalEventById` → `await` (в `for...of`
+  на 3668/3683/3692 — просто `await`; на 3375 он внутри `.filter()` — переструктурировать:
+  преднагрузить события в `Map` до фильтра, фильтровать sync); `materialize*`/finance-функции
+  → async → их роуты `await`.
+- Плагины: `await app.ingestExternalEvent(...)` — `ozon.ts` (264/286/811/825), `wildberries.ts` (30).
+- Тесты (~32 места): `await` на `ingestExternalEvent`/`findExternalEventById`
+  (sales-finance-payout, api-surface, sync-inbox и др.); helper-сидеры тоже async.
+- Затем: `PostgresExternalEventStore` (репозиторий + write), инъекция стора в сессию
+  (`runtime-store` openRead/WriteSession), исключение `external_event` из snapshot
+  load/save (как `auditEvents`, но с upsert+delete через стор), PG-тесты.
+
 ## Откуда уходим (текущее состояние)
 
 - `src/core/accounting-app.ts` — 6227 строк, 137 методов: весь домен (проводки,
