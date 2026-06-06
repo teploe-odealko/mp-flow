@@ -629,7 +629,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/procurement/purchase-orders/:id/receipts", (c) => c.json({ ok: true, data: scopedApp.state.goodsReceipts.filter((receipt) => receipt.purchaseOrderId === c.req.param("id")) }));
   api.get("/api/procurement/receipts/:id", async (c) => c.json({ ok: true, data: await scopedApp.receiptDetails(c.req.param("id")) }));
   api.post("/api/procurement/receipts/:id/post", async (c) => c.json({ ok: true, data: await scopedApp.postGoodsReceipt(c.req.param("id")) }));
-  api.get("/api/procurement/receipts/:id/delete-preview", (c) => c.json({ ok: true, data: scopedApp.goodsReceiptRollbackPreview(c.req.param("id")) }));
+  api.get("/api/procurement/receipts/:id/delete-preview", async (c) => c.json({ ok: true, data: await scopedApp.goodsReceiptRollbackPreview(c.req.param("id")) }));
   api.delete("/api/procurement/receipts/:id", async (c) => c.json({ ok: true, data: await scopedApp.deleteGoodsReceipt(c.req.param("id")) }));
   api.get("/api/procurement/receipts/:id/dispatch-context", (c) => {
     const channelId = c.req.query("channelId");

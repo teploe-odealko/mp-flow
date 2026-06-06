@@ -2729,10 +2729,10 @@ export class AccountingApp {
     return { paymentId: payment.id, deleted: { payments: 1, documents: 1 } };
   }
 
-  goodsReceiptRollbackPreview(receiptId: ID): EntityRollbackPreview {
-    const receipt = this.mustFind(this.state.goodsReceipts, receiptId, "receipt_not_found");
-    const document = this.mustFind(this.state.documents, receipt.documentId, "document_not_found");
-    const lots = this.state.inventoryLots.filter((lot) => lot.sourceDocumentId === document.id);
+  async goodsReceiptRollbackPreview(receiptId: ID): Promise<EntityRollbackPreview> {
+    const receipt = this.mustFind(await this.repos.goodsReceipts.all(), receiptId, "receipt_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), receipt.documentId, "document_not_found");
+    const lots = (await this.repos.inventoryLots.all()).filter((lot) => lot.sourceDocumentId === document.id);
     const lotIds = new Set(lots.map((lot) => lot.id));
     const blockers: EntityRollbackBlockerSummary[] = [];
     const descendants = this.documentDescendants(document.id);
@@ -2744,10 +2744,11 @@ export class AccountingApp {
         relatedDocuments: downstream
       });
     }
+    const allProcurementCosts = await this.repos.procurementCosts.all();
     const costDocuments = Array.from(new Set(
-      this.state.procurementCostLines
+      (await this.repos.procurementCostLines.all())
         .filter((line) => line.lotId && lotIds.has(line.lotId))
-        .map((line) => this.state.procurementCosts.find((cost) => cost.id === line.procurementCostId))
+        .map((line) => allProcurementCosts.find((cost) => cost.id === line.procurementCostId))
         .filter((cost): cost is ProcurementCost => Boolean(cost && cost.status !== "cancelled"))
         .map((cost) => cost.documentId)
     ));
@@ -2765,7 +2766,10 @@ export class AccountingApp {
         relatedDocuments: this.rollbackRelatedFromDescendants(descendants)
       });
     }
-    const journalEntryIds = new Set(this.state.journalEntries.filter((entry) => entry.documentId === document.id).map((entry) => entry.id));
+    const journalEntryIds = new Set((await this.repos.journalEntries.all()).filter((entry) => entry.documentId === document.id).map((entry) => entry.id));
+    const allStockMovements = await this.repos.stockMovements.all();
+    const allJournalLines = await this.repos.journalLines.all();
+    const allSettlementEntries = await this.repos.settlementEntries.all();
     return {
       entityType: "goods_receipt",
       entityId: receipt.id,
@@ -2781,16 +2785,16 @@ export class AccountingApp {
         ...this.emptyRollbackEffects(),
         documents: 1,
         inventoryLots: lots.length,
-        stockMovements: this.state.stockMovements.filter((movement) => movement.documentId === document.id).length,
+        stockMovements: allStockMovements.filter((movement) => movement.documentId === document.id).length,
         journalEntries: journalEntryIds.size,
-        journalLines: this.state.journalLines.filter((line) => journalEntryIds.has(line.journalEntryId)).length,
-        settlementEntries: this.state.settlementEntries.filter((entry) => entry.documentId === document.id).length
+        journalLines: allJournalLines.filter((line) => journalEntryIds.has(line.journalEntryId)).length,
+        settlementEntries: allSettlementEntries.filter((entry) => entry.documentId === document.id).length
       }
     };
   }
 
   async deleteGoodsReceipt(receiptId: ID) {
-    const preview = this.goodsReceiptRollbackPreview(receiptId);
+    const preview = await this.goodsReceiptRollbackPreview(receiptId);
     if (!preview.canDelete) {
       const blocker = preview.blockers[0];
       throw new DomainError(blocker.code, blocker.message, { blockers: preview.blockers });
