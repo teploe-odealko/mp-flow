@@ -2073,6 +2073,7 @@ export class AccountingApp {
     occurredAt: string;
     amountRub: number;
     externalEventId?: ID;
+    externalId?: string;
     linkedSaleId?: ID;
     saleAllocations?: Array<{ saleId: ID; amountRub: number }>;
     linkedReturnId?: ID;
@@ -2096,9 +2097,7 @@ export class AccountingApp {
       channelId: input.channelId,
       externalEventId: input.externalEventId,
       documentId: document.id,
-      externalId: input.externalEventId
-        ? this.state.externalEvents.find((candidate) => candidate.id === input.externalEventId)?.externalId
-        : undefined,
+      externalId: input.externalId,
       payoutId: undefined,
       eventKind: input.eventKind,
       treatment: input.treatment ?? (input.linkedReturnId ? "return_variable" : input.linkedSaleId ? "sale_variable" : defaultFinanceTreatment(input.eventKind)),

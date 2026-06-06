@@ -3275,6 +3275,7 @@ async function materializeFinanceEvent(
   return app.recordChannelFee({
     channelId: event.channelId,
     externalEventId: event.id,
+    externalId: event.externalId,
     occurredAt: event.occurredAt.slice(0, 10),
     eventKind: derived.eventKind,
     category: derived.category,
