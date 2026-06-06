@@ -4,14 +4,13 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Kpi } from "@/components/ui/kpi";
 import { Button } from "@/components/ui/button";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { rub } from "@/lib/format";
 
 export function AccountingWorkspace() {
-  const { state } = useAppState();
-  const journalEntries = state.journalEntries ?? [];
-  const journalLines = state.journalLines ?? [];
-  const accounts = state.chartAccounts ?? [];
+  const journalEntries = useCollection<any[]>("journalEntries") ?? [];
+  const journalLines = useCollection<any[]>("journalLines") ?? [];
+  const accounts = useCollection<any[]>("chartAccounts") ?? [];
   const totalDebit = journalLines.reduce((s: number, l: any) => s + l.debit, 0);
   const totalCredit = journalLines.reduce((s: number, l: any) => s + l.credit, 0);
   const balanced = Math.abs(totalDebit - totalCredit) < 0.01;

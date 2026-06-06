@@ -13,18 +13,19 @@ import { Pagination } from "@/components/ui/pagination";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { DocumentStatusBadge } from "@/components/status-badge";
 import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { date, rub, dateTime } from "@/lib/format";
 import { apiPost } from "@/api";
 import { EmptyState } from "@/components/ui/empty-state";
 import { paginateRows } from "@/lib/pagination";
 
 export function DocumentsPage() {
-  const { state, workingPeriodId } = useAppState();
-  const docs = state.documents ?? [];
-  const lines = state.journalLines ?? [];
-  const entries = state.journalEntries ?? [];
-  const links = state.documentLinks ?? [];
-  const periods = state.periods ?? [];
+  const { workingPeriodId } = useAppState();
+  const docs = useCollection<any[]>("documents") ?? [];
+  const lines = useCollection<any[]>("journalLines") ?? [];
+  const entries = useCollection<any[]>("journalEntries") ?? [];
+  const links = useCollection<any[]>("documentLinks") ?? [];
+  const periods = useCollection<any[]>("periods") ?? [];
   const [params, setParams] = useSearchParams();
 
   const [search, setSearch] = useState("");

@@ -10,19 +10,25 @@ import { Select } from "@/components/ui/select";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Pagination } from "@/components/ui/pagination";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { rub, qty, date } from "@/lib/format";
 import { purchaseOrderStatusLabel } from "@/lib/i18n";
 import { getPurchaseOrderMetrics } from "./metrics";
 import { paginateRows } from "@/lib/pagination";
 
 export function ProcurementWorkspace() {
-  const { state } = useAppState();
-  const orders = state.purchaseOrders ?? [];
-  const lines = state.purchaseOrderLines ?? [];
-  const counterparties = state.counterparties ?? [];
-  const docs = state.documents ?? [];
-  const procurementCosts = state.procurementCosts ?? [];
+  const orders = useCollection<any[]>("purchaseOrders") ?? [];
+  const lines = useCollection<any[]>("purchaseOrderLines") ?? [];
+  const counterparties = useCollection<any[]>("counterparties") ?? [];
+  const docs = useCollection<any[]>("documents") ?? [];
+  const procurementCosts = useCollection<any[]>("procurementCosts") ?? [];
+  const goodsReceipts = useCollection<any[]>("goodsReceipts") ?? [];
+  const goodsReceiptLines = useCollection<any[]>("goodsReceiptLines") ?? [];
+  const payments = useCollection<any[]>("payments") ?? [];
+  const paymentAllocations = useCollection<any[]>("paymentAllocations") ?? [];
+  const shortageResolutions = useCollection<any[]>("shortageResolutions") ?? [];
+  const shortageResolutionLines = useCollection<any[]>("shortageResolutionLines") ?? [];
+  const metricsState = { documents: docs, goodsReceipts, goodsReceiptLines, payments, paymentAllocations, procurementCosts, purchaseOrderLines: lines, shortageResolutions, shortageResolutionLines };
 
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
@@ -34,7 +40,7 @@ export function ProcurementWorkspace() {
     const orderLines = lines.filter((l: any) => l.purchaseOrderId === o.id);
     const supplier = counterparties.find((c: any) => c.id === o.supplierId);
     const doc = docs.find((d: any) => d.id === o.documentId);
-    const metrics = getPurchaseOrderMetrics(state, o.id);
+    const metrics = getPurchaseOrderMetrics(metricsState as any, o.id);
     return { order: o, doc, supplier, lines: orderLines, metrics };
   });
 

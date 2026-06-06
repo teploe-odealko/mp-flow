@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Pagination } from "@/components/ui/pagination";
 import { ProductCell } from "@/components/product-thumb";
 import { EmptyState } from "@/components/ui/empty-state";
-import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { date, qty, rub } from "@/lib/format";
 import { stockStateLabel, warehouseTypeLabel } from "@/lib/i18n";
 import { paginateRows } from "@/lib/pagination";
@@ -20,12 +20,11 @@ import { paginateRows } from "@/lib/pagination";
 const STOCK_STATE_OPTIONS = ["sellable", "damaged", "lost_pending", "reserved"] as const;
 
 export function InventoryWorkspace() {
-  const { state } = useAppState();
-  const stocks = state.stockStates ?? [];
-  const products = state.products ?? [];
-  const warehouses = state.warehouses ?? [];
-  const documents = state.documents ?? [];
-  const movements = state.stockMovements ?? [];
+  const stocks = useCollection<any[]>("stockStates") ?? [];
+  const products = useCollection<any[]>("products") ?? [];
+  const warehouses = useCollection<any[]>("warehouses") ?? [];
+  const documents = useCollection<any[]>("documents") ?? [];
+  const movements = useCollection<any[]>("stockMovements") ?? [];
 
   const [search, setSearch] = useState("");
   const [warehouseFilter, setWarehouseFilter] = useState("");

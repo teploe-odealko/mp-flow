@@ -10,15 +10,16 @@ import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useAppState } from "@/lib/use-app-state";
+import { useCollection } from "@/lib/use-collection";
 import { date, rub } from "@/lib/format";
 import { accountKindLabel } from "@/lib/i18n";
 
 export function LedgerPage() {
-  const { state, workingPeriodId } = useAppState();
-  const accounts = state.chartAccounts ?? [];
-  const periods = state.periods ?? [];
-  const entries = state.journalEntries ?? [];
-  const lines = state.journalLines ?? [];
+  const { workingPeriodId } = useAppState();
+  const accounts = useCollection<any[]>("chartAccounts") ?? [];
+  const periods = useCollection<any[]>("periods") ?? [];
+  const entries = useCollection<any[]>("journalEntries") ?? [];
+  const lines = useCollection<any[]>("journalLines") ?? [];
 
   const [searchParams, setSearchParams] = useSearchParams();
   const initialAccount = searchParams.get("account") ?? "";
