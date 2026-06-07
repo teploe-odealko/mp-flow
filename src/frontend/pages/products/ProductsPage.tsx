@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, ArrowUpRight, ExternalLink, Plus, Search } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,9 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Pagination } from "@/components/ui/pagination";
-import { ProductCell, ProductThumb } from "@/components/product-thumb";
-import { useCollection } from "@/lib/use-collection";
-import { apiPost } from "@/api";
+import { ProductThumb } from "@/components/product-thumb";
+import { apiGet, apiPost } from "@/api";
 import { date } from "@/lib/format";
 import { qty } from "@/lib/format";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -20,8 +19,12 @@ import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTi
 import { paginateRows } from "@/lib/pagination";
 
 export function ProductsPage() {
-  const products = useCollection<any[]>("products") ?? [];
-  const stockStates = useCollection<any[]>("stockStates") ?? [];
+  const workspaceQuery = useQuery({
+    queryKey: ["products-workspace"],
+    queryFn: () => apiGet<{ products: any[]; stockStates: any[] }>("/api/products/workspace")
+  });
+  const products = workspaceQuery.data?.products ?? [];
+  const stockStates = workspaceQuery.data?.stockStates ?? [];
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -54,11 +57,17 @@ export function ProductsPage() {
   const selected = paged.find((p: any) => p.id === selectedId) ?? paged[0];
   const archive = useMutation({
     mutationFn: (id: string) => apiPost(`/api/products/${id}/archive`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: (_data, id) => {
+      void queryClient.invalidateQueries({ queryKey: ["products-workspace"] });
+      void queryClient.invalidateQueries({ queryKey: ["product-card-workspace", id] });
+    }
   });
   const restore = useMutation({
     mutationFn: (id: string) => apiPost(`/api/products/${id}/restore`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: (_data, id) => {
+      void queryClient.invalidateQueries({ queryKey: ["products-workspace"] });
+      void queryClient.invalidateQueries({ queryKey: ["product-card-workspace", id] });
+    }
   });
 
   const stockForSelected = stockStates.filter((s: any) => s.productId === selected?.id);

@@ -261,6 +261,24 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       externalEvents: await readModelApp.externalEvents.list()
     }, productId);
   };
+  const productListWorkspaceFor = async (c: Context): Promise<any> => {
+    const readModelApp = await readModelAppFor(c);
+    return {
+      products: await readModelApp.repos.products.all(),
+      stockStates: await readModelApp.repos.stockStates.all()
+    };
+  };
+  const productChannelMappingFor = async (c: Context): Promise<any> => {
+    const readModelApp = await readModelAppFor(c);
+    const [externalProducts, links, products, channels, externalEvents] = await Promise.all([
+      readModelApp.repos.externalProducts.all(),
+      readModelApp.repos.productExternalLinks.all(),
+      readModelApp.repos.products.all(),
+      readModelApp.repos.salesChannels.all(),
+      readModelApp.externalEvents.list()
+    ]);
+    return { externalProducts, links, products, channels, externalEvents };
+  };
   const ledgerBalancesFor = async (c: Context): Promise<Record<string, { debit: number; credit: number }>> => {
     const workspaceId = eventsWorkspaceId(c);
     if (options.persistence?.readLedgerBalances) return await options.persistence.readLedgerBalances(workspaceId);
@@ -465,15 +483,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/accounting/ledger", async (c) => c.json({ ok: true, data: await ledgerBalancesFor(c) }));
   api.get("/api/documents", async (c) => c.json({ ok: true, data: await collectionFor(c, "documents") }));
   api.get("/api/products", async (c) => c.json({ ok: true, data: await collectionFor(c, "products") }));
-  api.get("/api/products/channel-mapping", async (c) => c.json({
-    ok: true,
-    data: {
-      externalProducts: await collectionFor(c, "externalProducts"),
-      links: await collectionFor(c, "productExternalLinks"),
-      products: await collectionFor(c, "products"),
-      channels: await collectionFor(c, "salesChannels")
-    }
-  }));
+  api.get("/api/products/workspace", async (c) => c.json({ ok: true, data: await productListWorkspaceFor(c) }));
+  api.get("/api/products/channel-mapping", async (c) => c.json({ ok: true, data: await productChannelMappingFor(c) }));
   api.get("/api/products/:id/workspace", async (c) => c.json({ ok: true, data: await productWorkspaceFor(c, c.req.param("id")) }));
   api.get("/api/products/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).productDetails(c.req.param("id")) }));
   api.get("/api/products/:id/lots", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).productDetails(c.req.param("id"))).lots }));

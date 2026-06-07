@@ -9,7 +9,6 @@ import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { ProductCell } from "@/components/product-thumb";
-import { useCollection } from "@/lib/use-collection";
 import { apiDelete, apiGet, apiPost } from "@/api";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -17,12 +16,15 @@ import { Select } from "@/components/ui/select";
 export function ChannelMappingPage() {
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const externals = useCollection<any[]>("externalProducts") ?? [];
-  const links = useCollection<any[]>("productExternalLinks") ?? [];
-  const channels = useCollection<any[]>("salesChannels") ?? [];
-  const products = useCollection<any[]>("products") ?? [];
-  const eventsQuery = useQuery({ queryKey: ["events"], queryFn: () => apiGet<any[]>("/api/integrations/events") });
-  const externalEvents = eventsQuery.data ?? [];
+  const mappingQuery = useQuery({
+    queryKey: ["product-channel-mapping"],
+    queryFn: () => apiGet<{ externalProducts: any[]; links: any[]; products: any[]; channels: any[]; externalEvents: any[] }>("/api/products/channel-mapping")
+  });
+  const externals = mappingQuery.data?.externalProducts ?? [];
+  const links = mappingQuery.data?.links ?? [];
+  const channels = mappingQuery.data?.channels ?? [];
+  const products = mappingQuery.data?.products ?? [];
+  const externalEvents = mappingQuery.data?.externalEvents ?? [];
   const focusedExternalProductId = searchParams.get("externalProductId");
   const initialSearch = searchParams.get("search") ?? "";
   const [channelFilter, setChannelFilter] = useState("");
@@ -76,23 +78,36 @@ export function ChannelMappingPage() {
 
   const linkMutation = useMutation({
     mutationFn: (payload: { externalProductId: string; productId: string }) => apiPost(`/api/external-products/${payload.externalProductId}/link`, { productId: payload.productId }),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: (_data, payload) => {
+      void queryClient.invalidateQueries({ queryKey: ["product-channel-mapping"] });
+      void queryClient.invalidateQueries({ queryKey: ["product-card-workspace", payload.productId] });
+    }
   });
   const createFromExternalMutation = useMutation({
     mutationFn: (externalProductId: string) => apiPost(`/api/external-products/${externalProductId}/create-internal-product`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["product-channel-mapping"] });
+      void queryClient.invalidateQueries({ queryKey: ["products-workspace"] });
+    }
   });
   const ignoreMutation = useMutation({
     mutationFn: (externalProductId: string) => apiPost(`/api/external-products/${externalProductId}/ignore`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["product-channel-mapping"] });
+    }
   });
   const reprocessMutation = useMutation({
     mutationFn: (externalProductId: string) => apiPost(`/api/external-products/${externalProductId}/reprocess-events`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["product-channel-mapping"] });
+    }
   });
   const unlinkMutation = useMutation({
     mutationFn: (payload: { productId: string; linkId: string }) => apiDelete(`/api/products/${payload.productId}/external-links/${payload.linkId}`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: (_data, payload) => {
+      void queryClient.invalidateQueries({ queryKey: ["product-channel-mapping"] });
+      void queryClient.invalidateQueries({ queryKey: ["product-card-workspace", payload.productId] });
+    }
   });
 
   return (

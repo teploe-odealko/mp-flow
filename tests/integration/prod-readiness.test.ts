@@ -217,6 +217,8 @@ describe("prod-ready contracts", () => {
     const corrections = await get<any>(api, "/api/controls/corrections");
     const recalculationJobs = await get<any[]>(api, "/api/recalculation-jobs");
     const mcpConfig = await get<any>(api, "/api/mcp/config");
+    const productListWorkspace = await get<any>(api, "/api/products/workspace");
+    const productChannelMapping = await get<any>(api, "/api/products/channel-mapping");
     const productWorkspace = await get<any>(api, `/api/products/${product.id}/workspace`);
     const card = await get<any>(api, `/api/products/${product.id}/card`);
     const cardBrief = await get<any>(api, `/api/products/${product.id}/card/brief`);
@@ -258,6 +260,8 @@ describe("prod-ready contracts", () => {
     expect(corrections.corrections).toEqual(expect.any(Array));
     expect(recalculationJobs).toEqual(expect.any(Array));
     expect(mcpConfig.tools.length).toBeGreaterThan(0);
+    expect(productListWorkspace.products).toEqual(expect.any(Array));
+    expect(productChannelMapping.products).toEqual(expect.any(Array));
     expect(productWorkspace.product.id).toBe(product.id);
     expect(productWorkspace.lots).toEqual(expect.any(Array));
     expect(card.product.id).toBe(product.id);

@@ -1,25 +1,29 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Save } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, Input, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { useCollection } from "@/lib/use-collection";
-import { apiPatch, apiPost } from "@/api";
+import { apiGet, apiPatch, apiPost } from "@/api";
 import { ProductThumb } from "@/components/product-thumb";
 import { Badge } from "@/components/ui/badge";
 
 export function ProductFormPage() {
   const { id } = useParams();
-  const products = useCollection<any[]>("products") ?? [];
-  const existing = id ? products.find((p: any) => p.id === id) : null;
+  const isEdit = Boolean(id);
+  const productQuery = useQuery({
+    queryKey: ["product", id],
+    queryFn: () => apiGet<any>(`/api/products/${encodeURIComponent(id ?? "")}`),
+    enabled: isEdit
+  });
+  const existing = isEdit ? productQuery.data?.product : null;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const [sku, setSku] = useState(existing?.sku ?? `SKU-${Math.floor(Math.random() * 1e6)}`);
+  const [sku, setSku] = useState(() => `SKU-${Math.floor(Math.random() * 1e6)}`);
   const [name, setName] = useState(existing?.name ?? "");
   const [unit, setUnit] = useState(existing?.unit ?? "шт");
   const [barcode, setBarcode] = useState(existing?.barcode ?? "");
@@ -34,6 +38,24 @@ export function ProductFormPage() {
   const [manufacturerArticle, setManufacturerArticle] = useState(existing?.manufacturerArticle ?? "");
   const [comment, setComment] = useState(existing?.comment ?? "");
   const [openAfterSave, setOpenAfterSave] = useState(true);
+
+  useEffect(() => {
+    if (!existing) return;
+    setSku(existing.sku ?? "");
+    setName(existing.name ?? "");
+    setUnit(existing.unit ?? "шт");
+    setBarcode(existing.barcode ?? "");
+    setImageUrl(existing.imageUrl ?? "");
+    setCategory(existing.category ?? "");
+    setDescription(existing.description ?? "");
+    setWeight(existing.weightGrams ?? "");
+    setLength(existing.lengthMm ?? "");
+    setWidth(existing.widthMm ?? "");
+    setHeight(existing.heightMm ?? "");
+    setBrand(existing.brand ?? "");
+    setManufacturerArticle(existing.manufacturerArticle ?? "");
+    setComment(existing.comment ?? "");
+  }, [existing]);
 
   const nameError = !name.trim() ? "Укажите название товара" : "";
   const skuError = !sku.trim() ? "Укажите внутренний SKU" : "";
@@ -59,18 +81,21 @@ export function ProductFormPage() {
       return existing ? apiPatch(`/api/products/${existing.id}`, body) : apiPost("/api/products", body);
     },
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries();
+      void queryClient.invalidateQueries({ queryKey: ["products-workspace"] });
+      void queryClient.invalidateQueries({ queryKey: ["product", id] });
       const targetId = data?.id ?? existing?.id ?? "";
+      void queryClient.invalidateQueries({ queryKey: ["product-card-workspace", targetId] });
       navigate(openAfterSave ? `/products/${targetId}` : "/products");
     }
   });
+  const loadingExisting = isEdit && productQuery.isLoading;
 
   return (
     <div className="max-w-5xl mx-auto flex flex-col gap-5">
       <PageHeader
-        breadcrumbs={[{ label: "Товары", to: "/products" }, { label: existing ? "Редактирование" : "Новый товар" }]}
-        title={existing ? `Редактирование · ${existing.name}` : "Новый товар"}
-        subtitle={existing ? "Учёт ведётся по внутреннему SKU. Бренд и фото — необязательны." : "Сохранение карточки не меняет деньги, склад и себестоимость"}
+        breadcrumbs={[{ label: "Товары", to: "/products" }, { label: isEdit ? "Редактирование" : "Новый товар" }]}
+        title={isEdit ? `Редактирование · ${existing?.name ?? "товар"}` : "Новый товар"}
+        subtitle={isEdit ? "Учёт ведётся по внутреннему SKU. Бренд и фото — необязательны." : "Сохранение карточки не меняет деньги, склад и себестоимость"}
         actions={
           <Button variant="ghost" asChild>
             <Link to="/products"><ArrowLeft size={14} /> К списку</Link>
@@ -168,7 +193,7 @@ export function ProductFormPage() {
                 setOpenAfterSave(true);
                 save.mutate();
               }}
-              disabled={save.isPending || Boolean(nameError || skuError || dimensionError || imageUrlError)}
+              disabled={loadingExisting || save.isPending || Boolean(nameError || skuError || dimensionError || imageUrlError)}
             >
               <Save size={14} /> {existing ? "Сохранить изменения" : "Сохранить и открыть"}
             </Button>
@@ -178,7 +203,7 @@ export function ProductFormPage() {
                 setOpenAfterSave(false);
                 save.mutate();
               }}
-              disabled={save.isPending || Boolean(nameError || skuError || dimensionError || imageUrlError)}
+              disabled={loadingExisting || save.isPending || Boolean(nameError || skuError || dimensionError || imageUrlError)}
             >
               {existing ? "Сохранить" : "Сохранить"}
             </Button>

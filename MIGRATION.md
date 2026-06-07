@@ -96,6 +96,13 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   stream-чтения (sync-runs/observed-stock/audit), legacy-списки, channel detail и detail-чтения account/journal/product.
 - ⚠️ Это промежуточный слой: Postgres read-model сейчас читает те же таблицы `state_json` по коллекциям. Он убирает
   большой API-snapshot и лишние read-session загрузки, но не заменяет финальный переход на нормализованные таблицы.
+- ✅ Product area двигается от generic collections к dedicated DTO:
+  `ProductCardPage` → `/api/products/:id/workspace`, `ProductsPage` → `/api/products/workspace`,
+  `ProductFormPage` → `/api/products/:id`, `ChannelMappingPage` → `/api/products/channel-mapping`.
+  Эти страницы больше не используют `useCollection` и не вызывают `/api/collections/*` на фронте.
+- ⚠️ Фактический текущий остаток фронта: `useCollection` ещё есть в channel/finance/procurement/inventory/
+  accounting/setup/controls/sales/expenses/money/onboarding pages. Поэтому заявка «ВСЕ страницы переведены»
+  выше относится к старому промежуточному состоянию и не является финальным критерием завершения.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,
