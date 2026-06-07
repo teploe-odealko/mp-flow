@@ -79,6 +79,7 @@ describePostgres("postgres runtime store", () => {
 
     await request(api, "POST", "/api/setup", { displayName: "Postgres Runtime", accountingStartDate: "2026-01-01" });
     const product = await request<any>(api, "POST", "/api/products", { sku: "PG-001", name: "Postgres товар" });
+    const productImage = await request<any>(api, "POST", `/api/products/${product.id}/images`, { url: "https://example.test/pg-product.jpg" });
     const channel = await request<any>(api, "POST", "/api/integrations/channels", {
       name: "Ozon PG",
       channelType: "marketplace",
@@ -128,6 +129,14 @@ describePostgres("postgres runtime store", () => {
       const products = await inspectPool.query<{ sku: string; public_id: string }>(
         "select sku, public_id from product order by sku"
       );
+      const productRows = await inspectPool.query<{ image_url: string | null }>(
+        "select image_url from product where public_id = $1",
+        [product.id]
+      );
+      const productImageAudit = await inspectPool.query<{ event_type: string; entity_public_id: string }>(
+        "select event_type, entity_public_id from audit_event where entity_type = 'product' and entity_public_id = $1 and event_type = 'image_update'",
+        [product.id]
+      );
       const credentials = await inspectPool.query<{ encrypted_credentials: unknown; fields: string[] }>(
         `
           select cc.encrypted_credentials, cc.fields
@@ -139,6 +148,9 @@ describePostgres("postgres runtime store", () => {
       );
 
       expect(products.rows).toContainEqual({ sku: "PG-001", public_id: product.id });
+      expect(productImage).toEqual({ id: `${product.id}:main`, productId: product.id, url: "https://example.test/pg-product.jpg", sortOrder: 0 });
+      expect(productRows.rows[0]?.image_url).toBe("https://example.test/pg-product.jpg");
+      expect(productImageAudit.rows).toContainEqual({ entity_public_id: product.id, event_type: "image_update" });
       expect(dashboard.configured).toBe(true);
       expect(dashboard.counters.products).toBe(1);
       expect(documentsWorkspace.documents).toContainEqual(expect.objectContaining({

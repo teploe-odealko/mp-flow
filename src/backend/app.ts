@@ -6,7 +6,7 @@ import { z } from "zod";
 import { AccountingApp } from "../core/accounting-app";
 import type { AgentToken, ChannelFinanceEvent, ChannelStreamCode, ExternalEvent, Payout, Sale, SalesChannel, SalesReturn, SyncRun } from "../core/models";
 import { DomainError, id, nowIso, runWithIdSequence } from "../core/utils";
-import { openPostgresReadContext, readRuntimeDashboard, readRuntimeLedgerBalances, readRuntimeReports, readRuntimeReportWorkspace, readRuntimeProductWorkspace, type RuntimePersistence, type RuntimeReadContext } from "../infra/db/runtime-store";
+import { openPostgresReadContext, readRuntimeDashboard, readRuntimeLedgerBalances, readRuntimeReports, readRuntimeReportWorkspace, readRuntimeProductWorkspace, type RuntimePersistence, type RuntimeReadContext, type RuntimeWriteContext } from "../infra/db/runtime-store";
 import { pluginRegistry } from "../plugins/registry";
 import { createPluginSecretApi, createPluginStateApi, pluginStateKey } from "../plugins/runtime";
 import { buildMediaKey, createPresignedUpload, headObject, isAllowedImageType, isStorageConfigured } from "../infra/storage/s3";
@@ -21,6 +21,7 @@ import { getPool } from "./db/pool";
 import { ExternalEventRepository } from "./repositories/external-event-repository";
 import { onboardingProjectDetailsFor } from "./services/onboarding-project-service";
 import { defaultReceiptPreviewFor, receiptPreviewFor } from "./services/procurement-preview-service";
+import { deleteProductImage, setProductImage } from "./services/product-image-service";
 import {
   goodsReceiptRollbackPreviewFor,
   paymentRollbackPreviewFor,
@@ -213,19 +214,31 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     }
     return app;
   };
+  const runtimeContextFromApp = (targetApp: AccountingApp): RuntimeWriteContext => ({
+    repos: targetApp.repos,
+    externalEvents: targetApp.externalEvents,
+    observedStocks: targetApp.observedStocks,
+    syncRuns: targetApp.syncRuns,
+    channelCredentialStatus: async (channelId) => targetApp.channelCredentialStatus(channelId),
+    setupMetadata: () => targetApp.setupMetadata()
+  });
   const readContextFor = async (c: Context): Promise<RuntimeReadContext> => {
     const workspaceId = eventsWorkspaceId(c);
     if (options.persistence?.openReadContext) return await options.persistence.openReadContext(workspaceId);
     if (postgresBacked()) return await openPostgresReadContext(getPool(), workspaceId);
     const readModelApp = await readModelAppFor(c);
-    return {
-      repos: readModelApp.repos,
-      externalEvents: readModelApp.externalEvents,
-      observedStocks: readModelApp.observedStocks,
-      syncRuns: readModelApp.syncRuns,
-      channelCredentialStatus: async (channelId) => readModelApp.channelCredentialStatus(channelId),
-      setupMetadata: () => readModelApp.setupMetadata()
-    };
+    return runtimeContextFromApp(readModelApp);
+  };
+  const writeContextFor = async <T>(c: Context, handler: (writeContext: RuntimeWriteContext) => Promise<T>): Promise<T> => {
+    const workspaceId = eventsWorkspaceId(c);
+    if (options.persistence?.runWriteContext) return await options.persistence.runWriteContext(workspaceId, handler);
+    if (postgresBacked()) {
+      throw new Error("Postgres write path must use RuntimePersistence.runWriteContext, not AccountingApp sessions");
+    }
+    const targetApp = await readModelAppFor(c);
+    const result = await handler(runtimeContextFromApp(targetApp));
+    if (options.persistence?.save) await options.persistence.save(targetApp, workspaceId);
+    return result;
   };
   const reportsFor = async (c: Context): Promise<any> => {
     const workspaceId = eventsWorkspaceId(c);
@@ -1381,6 +1394,17 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/products/:id/stock-movements", async (c) => c.json({ ok: true, data: (await productDetailsFor(await readContextFor(c), c.req.param("id"))).movements }));
   api.get("/api/products/:id/card", async (c) => c.json({ ok: true, data: await studioViewFor(await readContextFor(c), c.req.param("id")) }));
   api.get("/api/products/:id/card/brief", async (c) => c.json({ ok: true, data: await studioBriefFor(await readContextFor(c), c.req.param("id")) }));
+  api.post("/api/products/:id/images", async (c) => {
+    const body = imageSchema.parse(await c.req.json());
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => setProductImage(writeContext, c.req.param("id"), body.url)) });
+  });
+  api.patch("/api/products/:id/images/:imageId", async (c) => {
+    const body = imageSchema.parse(await c.req.json());
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => setProductImage(writeContext, c.req.param("id"), body.url)) });
+  });
+  api.delete("/api/products/:id/images/:imageId", async (c) => {
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => deleteProductImage(writeContext, c.req.param("id"))) });
+  });
   api.get("/api/warehouses", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.warehouses.all() }));
   api.get("/api/inventory", async (c) => {
     const readContext = await readContextFor(c);
@@ -1726,16 +1750,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.post("/api/products/:id/archive", async (c) => c.json({ ok: true, data: await scopedApp.archiveProduct(c.req.param("id")) }));
   api.post("/api/products/:id/restore", async (c) => c.json({ ok: true, data: await scopedApp.restoreProduct(c.req.param("id")) }));
-  api.post("/api/products/:id/images", async (c) => {
-    const body = imageSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: await scopedApp.setProductImage(c.req.param("id"), body.url) });
-  });
-  api.patch("/api/products/:id/images/:imageId", async (c) => {
-    const body = imageSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: await scopedApp.setProductImage(c.req.param("id"), body.url) });
-  });
-  api.delete("/api/products/:id/images/:imageId", async (c) => c.json({ ok: true, data: await scopedApp.deleteProductImage(c.req.param("id")) }));
-
   const requireStudioProduct = async (productId: string) => {
     const product = await scopedApp.repos.products.getById(productId);
     if (!product) throw new DomainError("product_not_found", "Товар не найден");

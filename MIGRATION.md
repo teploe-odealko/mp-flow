@@ -218,6 +218,13 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   summary через `RuntimeReadContext`, клонируя вычисленные статусы/payload без `upsert`. Write/control
   endpoints онбординга (`import`, `match-products`, `patch item`, `review`, `create-opening-balances`)
   остаются в session-зоне до следующего транзакционного слоя.
+- ✅ Начат перенос write/control на обычные сервисы без `AccountingApp` session: добавлен
+  `RuntimeWriteContext` и `PostgresRuntimeStore.runWriteContext`, который открывает транзакцию,
+  отдаёт сервису `repos + typed stores`, сохраняет `next_id` и коммитит без request-scoped app facade.
+  `POST/PATCH/DELETE /api/products/:id/images...` теперь зарегистрированы до session middleware и
+  обслуживаются `src/backend/services/product-image-service.ts` по схеме
+  `controller → service → repositories → Postgres`; prod-readiness фиксирует `writeSessions = 0`,
+  Postgres-тест проверяет запись `product.image_url` и audit row.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,

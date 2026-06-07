@@ -114,6 +114,8 @@ describe("prod-ready contracts", () => {
     let productWorkspaceReads = 0;
     let readContexts = 0;
     let readSessions = 0;
+    let writeContexts = 0;
+    let writeSessions = 0;
     const api = createApi(app, {
       persistence: {
         async readDashboard() {
@@ -170,9 +172,23 @@ describe("prod-ready contracts", () => {
             setupMetadata: () => app.setupMetadata()
           };
         },
+        async runWriteContext(_workspaceId, handler) {
+          writeContexts += 1;
+          return await handler({
+            repos: app.repos,
+            externalEvents: app.externalEvents,
+            observedStocks: app.observedStocks,
+            syncRuns: app.syncRuns,
+            setupMetadata: () => app.setupMetadata()
+          });
+        },
         async openReadSession() {
           readSessions += 1;
           return { app, nextId: 1, close: async () => undefined };
+        },
+        async openWriteSession() {
+          writeSessions += 1;
+          return { app, nextId: 1, commit: async () => undefined, rollback: async () => undefined, close: async () => undefined };
         }
       }
     });
@@ -200,6 +216,7 @@ describe("prod-ready contracts", () => {
     const sale = app.state.sales[0];
     const financeEvent = app.state.channelFinanceEvents[0];
     const payout = app.state.payouts[0];
+    const productImage = await post<any>(api, `/api/products/${product.id}/images`, { url: "https://example.test/product-image.jpg" });
     const documentsWorkspace = await get<any>(api, "/api/documents/workspace");
     const documentDetail = await get<any>(api, `/api/documents/${document.id}`);
     const documentDescendants = await get<any[]>(api, `/api/documents/${document.id}/descendants`);
@@ -274,6 +291,8 @@ describe("prod-ready contracts", () => {
     expect(observedStocks).toEqual(expect.any(Array));
     expect(auditEvents.length).toBeGreaterThan(0);
     expect(products[0]?.id).toBe(product.id);
+    expect(productImage).toEqual({ id: `${product.id}:main`, productId: product.id, url: "https://example.test/product-image.jpg", sortOrder: 0 });
+    expect(app.state.products.find((candidate) => candidate.id === product.id)?.imageUrl).toBe("https://example.test/product-image.jpg");
     expect(documents[0]?.id).toBe(document.id);
     expect(journal.entries).toEqual(expect.any(Array));
     expect(journal.lines).toEqual(expect.any(Array));
@@ -380,6 +399,8 @@ describe("prod-ready contracts", () => {
     expect(productWorkspaceReads).toBe(1);
     expect(readContexts).toBeGreaterThanOrEqual(10);
     expect(readSessions).toBe(0);
+    expect(writeContexts).toBe(1);
+    expect(writeSessions).toBe(0);
   });
 
   it("keeps access sharing endpoints disabled by default", async () => {

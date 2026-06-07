@@ -7,7 +7,7 @@ import type { ExternalEventStore, ExternalEventListFilter } from "../../core/ext
 import type { ObservedStockStore, ObservedStockListFilter } from "../../core/observed-stock-store";
 import type { SyncRunStore } from "../../core/sync-run-store";
 import type { CollectionRepo, Repositories } from "../../core/repositories";
-import { createEmptyState, currentIdSequence, restoreIdSequence, round2 } from "../../core/utils";
+import { createEmptyState, currentIdSequence, restoreIdSequence, round2, runWithIdSequence } from "../../core/utils";
 import { buildReportsWorkspacePayload, type ReportsWorkspaceOptions } from "../../shared/reports-workspace";
 import { buildProductCardWorkspacePayload } from "../../shared/product-card-workspace";
 import { stableUuid } from "./ids";
@@ -286,6 +286,8 @@ export interface RuntimeReadContext {
   };
 }
 
+export interface RuntimeWriteContext extends RuntimeReadContext {}
+
 export interface RuntimeAgentTokenPrincipal {
   tokenId: string;
   workspaceId: string;
@@ -302,6 +304,7 @@ export interface RuntimePersistence {
   readProductWorkspace?(workspaceId: string | undefined, productId: string): Promise<unknown>;
   readLedgerBalances?(workspaceId?: string): Promise<RuntimeLedgerBalances>;
   openReadContext?(workspaceId?: string): Promise<RuntimeReadContext>;
+  runWriteContext?<T>(workspaceId: string | undefined, handler: (context: RuntimeWriteContext) => Promise<T>): Promise<T>;
   authenticateAgentToken?(workspaceId: string, tokenId: string, tokenHash: string, options?: { touchAt?: string }): Promise<RuntimeAgentTokenPrincipal | null>;
   openReadSession?(workspaceId?: string): Promise<RuntimeSession>;
   openWriteSession?(workspaceId?: string): Promise<RuntimeSession>;
@@ -1961,6 +1964,31 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     return await openPostgresReadContext(this.pool, normalizeWorkspaceId(workspaceId));
   }
 
+  async runWriteContext<T>(
+    workspaceId: string | undefined = DEFAULT_WORKSPACE_ID,
+    handler: (context: RuntimeWriteContext) => Promise<T>
+  ): Promise<T> {
+    await this.init();
+    const scope = normalizeWorkspaceId(workspaceId);
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      const meta = await this.loadMetaForUpdate(client);
+      return await runWithIdSequence(meta?.next_id ?? 1, async () => {
+        const context = await openPostgresWriteContext(client, scope);
+        const result = await handler(context);
+        await this.saveMeta(client, currentIdSequence());
+        await client.query("commit");
+        return result;
+      });
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async openReadSession(workspaceId = DEFAULT_WORKSPACE_ID): Promise<RuntimeSession> {
     await this.init();
     const scope = normalizeWorkspaceId(workspaceId);
@@ -1978,7 +2006,7 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     const scope = normalizeWorkspaceId(workspaceId);
     const client = await this.pool.connect();
     await client.query("begin");
-    const meta = await this.loadMeta(client);
+    const meta = await this.loadMetaForUpdate(client);
     restoreIdSequence(meta?.next_id ?? 1);
     const app = await this.openRepositoryBackedApp(client, scope);
     let finished = false;
@@ -2069,6 +2097,14 @@ export class PostgresRuntimeStore implements RuntimePersistence {
   private async loadMeta(source: Queryable) {
     const result = await source.query<RuntimeMetaRow>(
       "select next_id, singletons from accounting_runtime_meta where key = $1",
+      [RUNTIME_ROW_KEY]
+    );
+    return result.rows[0];
+  }
+
+  private async loadMetaForUpdate(client: PoolClient) {
+    const result = await client.query<RuntimeMetaRow>(
+      "select next_id, singletons from accounting_runtime_meta where key = $1 for update",
       [RUNTIME_ROW_KEY]
     );
     return result.rows[0];
@@ -2959,6 +2995,10 @@ export async function openPostgresReadContext(source: Queryable, workspaceId: st
       configured: Boolean(organization)
     })
   };
+}
+
+export async function openPostgresWriteContext(source: Queryable, workspaceId: string | undefined): Promise<RuntimeWriteContext> {
+  return await openPostgresReadContext(source, workspaceId);
 }
 
 export function buildPostgresRuntimeRepositories(source: Queryable, workspaceId: string | undefined): Repositories {
