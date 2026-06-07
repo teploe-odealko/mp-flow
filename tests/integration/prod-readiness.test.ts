@@ -110,6 +110,7 @@ describe("prod-ready contracts", () => {
     let dashboardReads = 0;
     let reportWorkspaceReads = 0;
     let productWorkspaceReads = 0;
+    let readContexts = 0;
     let readModelApps = 0;
     let readSessions = 0;
     const api = createApi(app, {
@@ -154,6 +155,16 @@ describe("prod-ready contracts", () => {
             externalEvents: app.state.externalEvents
           }, productId);
         },
+        async openReadContext() {
+          readContexts += 1;
+          return {
+            repos: app.repos,
+            externalEvents: app.externalEvents,
+            observedStocks: app.observedStocks,
+            syncRuns: app.syncRuns,
+            setupMetadata: () => app.setupMetadata()
+          };
+        },
         async openReadModelApp() {
           readModelApps += 1;
           return app;
@@ -174,6 +185,9 @@ describe("prod-ready contracts", () => {
     const syncRuns = await get<any[]>(api, `/api/integrations/channels/${channel?.id}/sync-runs`);
     const observedStocks = await get<any[]>(api, "/api/integrations/observed-stock");
     const auditEvents = await get<any[]>(api, "/api/controls/audit-events");
+    const products = await get<any[]>(api, "/api/products");
+    const documents = await get<any[]>(api, "/api/documents");
+    const journal = await get<any>(api, "/api/accounting/journal");
     const document = app.state.documents[0];
     const purchaseOrder = app.state.purchaseOrders[0];
     const receipt = app.state.goodsReceipts[0];
@@ -231,6 +245,10 @@ describe("prod-ready contracts", () => {
     expect(syncRuns).toEqual(expect.any(Array));
     expect(observedStocks).toEqual(expect.any(Array));
     expect(auditEvents.length).toBeGreaterThan(0);
+    expect(products[0]?.id).toBe(product.id);
+    expect(documents[0]?.id).toBe(document.id);
+    expect(journal.entries).toEqual(expect.any(Array));
+    expect(journal.lines).toEqual(expect.any(Array));
     expect(documentsWorkspace.documents).toContainEqual(expect.objectContaining({
       id: document.id,
       entryCount: expect.any(Number),
@@ -294,6 +312,7 @@ describe("prod-ready contracts", () => {
     expect(dashboardReads).toBe(1);
     expect(reportWorkspaceReads).toBe(1);
     expect(productWorkspaceReads).toBe(1);
+    expect(readContexts).toBeGreaterThanOrEqual(10);
     expect(readModelApps).toBeGreaterThan(6);
     expect(readSessions).toBe(0);
   });

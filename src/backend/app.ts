@@ -6,7 +6,7 @@ import { z } from "zod";
 import { AccountingApp } from "../core/accounting-app";
 import type { AgentToken, ChannelFinanceEvent, ChannelStreamCode, ExternalEvent, Payout, Sale, SalesChannel, SalesReturn, SyncRun } from "../core/models";
 import { DomainError, id, nowIso, runWithIdSequence } from "../core/utils";
-import { openPostgresReadModelApp, readRuntimeDashboard, readRuntimeLedgerBalances, readRuntimeReports, readRuntimeReportWorkspace, readRuntimeProductWorkspace, type RuntimePersistence } from "../infra/db/runtime-store";
+import { openPostgresReadContext, openPostgresReadModelApp, readRuntimeDashboard, readRuntimeLedgerBalances, readRuntimeReports, readRuntimeReportWorkspace, readRuntimeProductWorkspace, type RuntimePersistence, type RuntimeReadContext } from "../infra/db/runtime-store";
 import { pluginRegistry } from "../plugins/registry";
 import { createPluginSecretApi, createPluginStateApi, pluginStateKey } from "../plugins/runtime";
 import { buildMediaKey, createPresignedUpload, headObject, isAllowedImageType, isStorageConfigured } from "../infra/storage/s3";
@@ -203,6 +203,19 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (postgresBacked()) return await openPostgresReadModelApp(getPool(), workspaceId);
     return app;
   };
+  const readContextFor = async (c: Context): Promise<RuntimeReadContext> => {
+    const workspaceId = eventsWorkspaceId(c);
+    if (options.persistence?.openReadContext) return await options.persistence.openReadContext(workspaceId);
+    if (postgresBacked()) return await openPostgresReadContext(getPool(), workspaceId);
+    const readModelApp = await readModelAppFor(c);
+    return {
+      repos: readModelApp.repos,
+      externalEvents: readModelApp.externalEvents,
+      observedStocks: readModelApp.observedStocks,
+      syncRuns: readModelApp.syncRuns,
+      setupMetadata: () => readModelApp.setupMetadata()
+    };
+  };
   const reportsFor = async (c: Context): Promise<any> => {
     const workspaceId = eventsWorkspaceId(c);
     if (options.persistence?.readReports) return await options.persistence.readReports(workspaceId);
@@ -234,25 +247,25 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       return payload;
     }
 
-    const readModelApp = await readModelAppFor(c);
-    const product = await readModelApp.repos.products.getById(productId);
+    const readContext = await readContextFor(c);
+    const product = await readContext.repos.products.getById(productId);
     if (!product) throw new DomainError("product_not_found", "Товар не найден");
     return buildProductCardWorkspacePayload({
-      accountingPolicy: readModelApp.state.accountingPolicy,
+      accountingPolicy: readContext.setupMetadata().accountingPolicy,
       products: [product],
-      warehouses: await readModelApp.repos.warehouses.all(),
-      documents: await readModelApp.repos.documents.all(),
-      journalEntries: await readModelApp.repos.journalEntries.all(),
-      costApplications: await readModelApp.repos.costApplications.all(),
-      externalProducts: await readModelApp.repos.externalProducts.all(),
-      productExternalLinks: await readModelApp.repos.productExternalLinks.all(),
-      salesChannels: await readModelApp.repos.salesChannels.all(),
-      inventoryLots: await readModelApp.repos.inventoryLots.all(),
-      stockMovements: await readModelApp.repos.stockMovements.all(),
-      stockStates: await readModelApp.repos.stockStates.all(),
-      purchaseOrders: await readModelApp.repos.purchaseOrders.all(),
-      purchaseOrderLines: await readModelApp.repos.purchaseOrderLines.all(),
-      externalEvents: await readModelApp.externalEvents.list()
+      warehouses: await readContext.repos.warehouses.all(),
+      documents: await readContext.repos.documents.all(),
+      journalEntries: await readContext.repos.journalEntries.all(),
+      costApplications: await readContext.repos.costApplications.all(),
+      externalProducts: await readContext.repos.externalProducts.all(),
+      productExternalLinks: await readContext.repos.productExternalLinks.all(),
+      salesChannels: await readContext.repos.salesChannels.all(),
+      inventoryLots: await readContext.repos.inventoryLots.all(),
+      stockMovements: await readContext.repos.stockMovements.all(),
+      stockStates: await readContext.repos.stockStates.all(),
+      purchaseOrders: await readContext.repos.purchaseOrders.all(),
+      purchaseOrderLines: await readContext.repos.purchaseOrderLines.all(),
+      externalEvents: await readContext.externalEvents.list()
     }, productId);
   };
   const productListWorkspaceFor = async (c: Context): Promise<any> => {
@@ -993,39 +1006,50 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/reports/cash-flow", async (c) => c.json({ ok: true, data: (await reportsFor(c)).cashFlow }));
   api.get("/api/reports/unit-economics", async (c) => c.json({ ok: true, data: (await reportsFor(c)).unitEconomics }));
   api.get("/api/reports/inventory", async (c) => c.json({ ok: true, data: (await reportsFor(c)).inventory }));
-  api.get("/api/integrations/channels/:id/sync-runs", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).syncRuns.listByChannel(c.req.param("id")) }));
+  api.get("/api/integrations/channels/:id/sync-runs", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).syncRuns.listByChannel(c.req.param("id")) }));
   api.get("/api/integrations/sync-runs/:id", async (c) => {
-    const run = await (await readModelAppFor(c)).syncRuns.getById(c.req.param("id"));
+    const run = await (await readContextFor(c)).syncRuns.getById(c.req.param("id"));
     if (!run) throw new DomainError("sync_run_not_found", "Запуск синхронизации не найден");
     return c.json({ ok: true, data: run });
   });
-  api.get("/api/integrations/observed-stock", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).observedStocks.list() }));
+  api.get("/api/integrations/observed-stock", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).observedStocks.list() }));
   api.get("/api/integrations/inbox/workspace", async (c) => c.json({ ok: true, data: await syncInboxWorkspaceFor(c) }));
-  api.get("/api/controls/audit-events", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).repos.auditEvents.all() }));
-  api.get("/api/setup", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).setupSnapshot() }));
-  api.get("/api/organization", async (c) => c.json({ ok: true, data: (await readModelAppFor(c)).setupMetadata().organization }));
-  api.get("/api/periods", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).repos.periods.all() }));
-  api.get("/api/accounts", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).repos.chartAccounts.all() }));
-  api.get("/api/accounting/accounts", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).repos.chartAccounts.all() }));
+  api.get("/api/controls/audit-events", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.auditEvents.all() }));
+  api.get("/api/setup", async (c) => {
+    const readContext = await readContextFor(c);
+    return c.json({
+      ok: true,
+      data: {
+        ...readContext.setupMetadata(),
+        periods: await readContext.repos.periods.all(),
+        cashAccounts: await readContext.repos.cashAccounts.all(),
+        warehouses: await readContext.repos.warehouses.all()
+      }
+    });
+  });
+  api.get("/api/organization", async (c) => c.json({ ok: true, data: (await readContextFor(c)).setupMetadata().organization }));
+  api.get("/api/periods", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.periods.all() }));
+  api.get("/api/accounts", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.chartAccounts.all() }));
+  api.get("/api/accounting/accounts", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.chartAccounts.all() }));
   api.get("/api/accounting/accounts/workspace", async (c) => c.json({ ok: true, data: await chartAccountsWorkspaceFor(c) }));
   api.get("/api/accounting/accounts/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).accountByIdOrCode(c.req.param("id")) }));
   api.get("/api/journal", async (c) => {
-    const readModelApp = await readModelAppFor(c);
-    const [entries, lines] = await Promise.all([readModelApp.repos.journalEntries.all(), readModelApp.repos.journalLines.all()]);
+    const readContext = await readContextFor(c);
+    const [entries, lines] = await Promise.all([readContext.repos.journalEntries.all(), readContext.repos.journalLines.all()]);
     return c.json({ ok: true, data: { entries, lines } });
   });
   api.get("/api/accounting/journal", async (c) => {
-    const readModelApp = await readModelAppFor(c);
-    const [entries, lines] = await Promise.all([readModelApp.repos.journalEntries.all(), readModelApp.repos.journalLines.all()]);
+    const readContext = await readContextFor(c);
+    const [entries, lines] = await Promise.all([readContext.repos.journalEntries.all(), readContext.repos.journalLines.all()]);
     return c.json({ ok: true, data: { entries, lines } });
   });
   api.get("/api/accounting/journal/workspace", async (c) => c.json({ ok: true, data: await journalWorkspaceFor(c) }));
   api.get("/api/accounting/journal/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).journalEntryDetails(c.req.param("id")) }));
   api.get("/api/ledger", async (c) => c.json({ ok: true, data: await ledgerBalancesFor(c) }));
   api.get("/api/accounting/ledger", async (c) => c.json({ ok: true, data: await ledgerBalancesFor(c) }));
-  api.get("/api/documents", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).repos.documents.all() }));
+  api.get("/api/documents", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.documents.all() }));
   api.get("/api/documents/workspace", async (c) => c.json({ ok: true, data: await documentsWorkspaceFor(c) }));
-  api.get("/api/products", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).repos.products.all() }));
+  api.get("/api/products", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.products.all() }));
   api.get("/api/products/workspace", async (c) => c.json({ ok: true, data: await productListWorkspaceFor(c) }));
   api.get("/api/products/channel-mapping", async (c) => c.json({ ok: true, data: await productChannelMappingFor(c) }));
   api.get("/api/products/:id/workspace", async (c) => c.json({ ok: true, data: await productWorkspaceFor(c, c.req.param("id")) }));
@@ -1034,37 +1058,37 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/products/:id/stock-movements", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).productDetails(c.req.param("id"))).movements }));
   api.get("/api/products/:id/card", async (c) => c.json({ ok: true, data: await studioViewFor(await readModelAppFor(c), c.req.param("id")) }));
   api.get("/api/products/:id/card/brief", async (c) => c.json({ ok: true, data: await studioBriefFor(await readModelAppFor(c), c.req.param("id")) }));
-  api.get("/api/warehouses", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).repos.warehouses.all() }));
+  api.get("/api/warehouses", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.warehouses.all() }));
   api.get("/api/inventory", async (c) => {
     const readModelApp = await readModelAppFor(c);
     return c.json({ ok: true, data: { stock: await readModelApp.stockByProduct(), lots: await readModelApp.repos.inventoryLots.all(), movements: await readModelApp.repos.stockMovements.all() } });
   });
   api.get("/api/inventory/workspace", async (c) => c.json({ ok: true, data: await inventoryWorkspaceFor(c) }));
   api.get("/api/inventory/forms/workspace", async (c) => c.json({ ok: true, data: await inventoryFormsWorkspaceFor(c) }));
-  api.get("/api/stock-states", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).repos.stockStates.all() }));
+  api.get("/api/stock-states", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.stockStates.all() }));
   api.get("/api/inventory/balances", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).stockByProduct() }));
-  api.get("/api/inventory/lots", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).repos.inventoryLots.all() }));
+  api.get("/api/inventory/lots", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.inventoryLots.all() }));
   api.get("/api/inventory/reconciliation", async (c) => {
     const readModelApp = await readModelAppFor(c);
     return c.json({ ok: true, data: { stocktakes: await readModelApp.repos.stocktakes.all(), lines: await readModelApp.repos.stocktakeLines.all(), observedStocks: await readModelApp.observedStocks.list() } });
   });
-  api.get("/api/counterparties", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).repos.counterparties.all() }));
+  api.get("/api/counterparties", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.counterparties.all() }));
   api.get("/api/procurement/purchase-orders", async (c) => {
-    const readModelApp = await readModelAppFor(c);
-    const [orders, lines] = await Promise.all([readModelApp.repos.purchaseOrders.all(), readModelApp.repos.purchaseOrderLines.all()]);
+    const readContext = await readContextFor(c);
+    const [orders, lines] = await Promise.all([readContext.repos.purchaseOrders.all(), readContext.repos.purchaseOrderLines.all()]);
     return c.json({ ok: true, data: { orders, lines } });
   });
   api.get("/api/procurement/workspace", async (c) => c.json({ ok: true, data: await procurementWorkspaceFor(c) }));
   api.get("/api/procurement/forms/workspace", async (c) => c.json({ ok: true, data: await procurementFormsWorkspaceFor(c) }));
   api.get("/api/channels", async (c) => {
-    const readModelApp = await readModelAppFor(c);
-    const [plugins, channels] = await Promise.all([readModelApp.repos.integrationPlugins.all(), readModelApp.repos.salesChannels.all()]);
+    const readContext = await readContextFor(c);
+    const [plugins, channels] = await Promise.all([readContext.repos.integrationPlugins.all(), readContext.repos.salesChannels.all()]);
     return c.json({ ok: true, data: { plugins, channels } });
   });
   api.get("/api/channels/workspace", async (c) => c.json({ ok: true, data: await channelsWorkspaceFor(c) }));
   api.get("/api/integrations/channels", async (c) => {
-    const readModelApp = await readModelAppFor(c);
-    const [plugins, channels] = await Promise.all([readModelApp.repos.integrationPlugins.all(), readModelApp.repos.salesChannels.all()]);
+    const readContext = await readContextFor(c);
+    const [plugins, channels] = await Promise.all([readContext.repos.integrationPlugins.all(), readContext.repos.salesChannels.all()]);
     return c.json({ ok: true, data: { plugins, channels } });
   });
   api.get("/api/integrations/channels/workspace", async (c) => c.json({ ok: true, data: await channelsWorkspaceFor(c) }));
@@ -1110,7 +1134,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/procurement/purchase-orders/:id/costs", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).repos.procurementCosts.all()).filter((cost) => cost.purchaseOrderId === c.req.param("id")) }));
   api.get("/api/procurement/costs/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).procurementCostDetails(c.req.param("id")) }));
   api.get("/api/procurement/shortages/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).shortageDetails(c.req.param("id")) }));
-  api.get("/api/money/cash-accounts", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).repos.cashAccounts.all() }));
+  api.get("/api/money/cash-accounts", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.cashAccounts.all() }));
   api.get("/api/money/payments", async (c) => {
     const readModelApp = await readModelAppFor(c);
     return c.json({ ok: true, data: { cashAccounts: await readModelApp.repos.cashAccounts.all(), payments: await readModelApp.repos.payments.all(), allocations: await readModelApp.repos.paymentAllocations.all() } });
@@ -1159,7 +1183,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (!sale) throw new DomainError("sale_not_found", "Продажа не найдена");
     return c.json({ ok: true, data: (await readModelApp.repos.costApplications.all()).filter((application) => application.outboundDocumentId === sale.documentId) });
   });
-  api.get("/api/returns", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).repos.salesReturns.all() }));
+  api.get("/api/returns", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.salesReturns.all() }));
   api.get("/api/returns/:id", async (c) => {
     const readModelApp = await readModelAppFor(c);
     const salesReturn = await readModelApp.repos.salesReturns.getById(c.req.param("id"));
@@ -1178,7 +1202,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (!event) throw new DomainError("finance_event_not_found", "Финансовое событие не найдено");
     return c.json({ ok: true, data: event });
   });
-  api.get("/api/finance/payouts", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).repos.payouts.all() }));
+  api.get("/api/finance/payouts", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.payouts.all() }));
   api.get("/api/finance/payouts/workspace", async (c) => c.json({ ok: true, data: await payoutsWorkspaceFor(await readModelAppFor(c)) }));
   api.get("/api/finance/payouts/form-workspace", async (c) => c.json({ ok: true, data: await payoutFormWorkspaceFor(await readModelAppFor(c)) }));
   api.get("/api/finance/payouts/:id/workspace", async (c) => c.json({ ok: true, data: await payoutReconciliationWorkspaceFor(await readModelAppFor(c), c.req.param("id")) }));
@@ -1205,7 +1229,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.get("/api/controls/workspace", async (c) => c.json({ ok: true, data: await controlsWorkspaceFor(c) }));
   api.get("/api/onboarding/existing-store/workspace", async (c) => c.json({ ok: true, data: await onboardingWorkspaceFor(c) }));
-  api.get("/api/recalculation-jobs", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).repos.recalculationJobs.all() }));
+  api.get("/api/recalculation-jobs", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.recalculationJobs.all() }));
   api.get("/api/mcp/config", async (c) => c.json({ ok: true, data: await mcpSettingsPayload(await readModelAppFor(c), publicMcpEndpoint(c)) }));
   api.get("/api/mcp/keys", async (c) => c.json({ ok: true, data: await mcpSettingsPayload(await readModelAppFor(c), publicMcpEndpoint(c)) }));
   api.get("/api/users", async (c) => {

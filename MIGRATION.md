@@ -162,6 +162,12 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   public `/api/collections/:name` тоже удалён. Legacy list endpoints (`/api/products`, `/api/documents`
   и т.п.) теперь читают явные `readModelApp.repos.*`, без внутреннего `collectionFor` helper в HTTP-слое.
   Это ещё не финальная раскладка controllers/services, но публичный API больше не шейпится generic collection helper'ом.
+- ✅ Legacy read-list endpoints сняты с `AccountingApp` в Postgres path:
+  добавлен `RuntimeReadContext` (`repos + typed stores + setupMetadata`) и `PostgresRuntimeStore.openReadContext`.
+  `/api/setup`, `/api/products`, `/api/documents`, `/api/accounting/journal`, `/api/returns`, `/api/finance/payouts`
+  и похожие простые read-list ручки читают репозитории/typed stores без создания доменного app facade.
+  In-memory fallback остаётся только для тестового контура. Следующий backend-долг — detail/workspace read paths
+  и write use-cases, где всё ещё нужен `AccountingApp`.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,

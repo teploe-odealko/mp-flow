@@ -273,6 +273,18 @@ export interface RuntimeSession {
 
 export type RuntimeLedgerBalances = Record<string, { debit: number; credit: number }>;
 
+export interface RuntimeReadContext {
+  repos: Repositories;
+  externalEvents: ExternalEventStore;
+  observedStocks: ObservedStockStore;
+  syncRuns: SyncRunStore;
+  setupMetadata(): {
+    organization: AccountingState["organization"];
+    accountingPolicy: AccountingState["accountingPolicy"];
+    configured: boolean;
+  };
+}
+
 export interface RuntimePersistence {
   save?(app: AccountingApp, workspaceId?: string): Promise<void>;
   readDashboard?(workspaceId?: string): Promise<unknown>;
@@ -280,6 +292,7 @@ export interface RuntimePersistence {
   readReportWorkspace?(workspaceId: string | undefined, options: ReportsWorkspaceOptions): Promise<unknown>;
   readProductWorkspace?(workspaceId: string | undefined, productId: string): Promise<unknown>;
   readLedgerBalances?(workspaceId?: string): Promise<RuntimeLedgerBalances>;
+  openReadContext?(workspaceId?: string): Promise<RuntimeReadContext>;
   openReadModelApp?(workspaceId?: string): Promise<AccountingApp>;
   openReadSession?(workspaceId?: string): Promise<RuntimeSession>;
   openWriteSession?(workspaceId?: string): Promise<RuntimeSession>;
@@ -1915,6 +1928,11 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     return app;
   }
 
+  async openReadContext(workspaceId = DEFAULT_WORKSPACE_ID): Promise<RuntimeReadContext> {
+    await this.init();
+    return await openPostgresReadContext(this.pool, normalizeWorkspaceId(workspaceId));
+  }
+
   async openReadSession(workspaceId = DEFAULT_WORKSPACE_ID): Promise<RuntimeSession> {
     await this.init();
     const scope = normalizeWorkspaceId(workspaceId);
@@ -2036,10 +2054,11 @@ export class PostgresRuntimeStore implements RuntimePersistence {
   }
 
   private async saveAppSideEffects(client: PoolClient, workspaceId: string, app: AccountingApp) {
-    await saveRuntimeSingleton(client, workspaceId, "organization", app.state.organization as unknown as RuntimeEntity | undefined);
-    await saveRuntimeSingleton(client, workspaceId, "accounting_policy", app.state.accountingPolicy as unknown as RuntimeEntity | undefined);
+    const setup = app.setupMetadata();
+    await saveRuntimeSingleton(client, workspaceId, "organization", setup.organization as unknown as RuntimeEntity | undefined);
+    await saveRuntimeSingleton(client, workspaceId, "accounting_policy", setup.accountingPolicy as unknown as RuntimeEntity | undefined);
     await this.saveChannelCredentials(client, workspaceId, app.exportChannelCredentials());
-    await this.savePluginSecrets(client, workspaceId, app.state.organization?.id, app.exportPluginSecrets());
+    await this.savePluginSecrets(client, workspaceId, setup.organization?.id, app.exportPluginSecrets());
     await this.saveMeta(client, currentIdSequence());
   }
 
@@ -2892,6 +2911,25 @@ export async function openPostgresReadModelApp(source: Queryable, workspaceId: s
   app.syncRuns = new PostgresSyncRunStore(source, scope);
   await app.ensureRequiredSystemMetadata();
   return app;
+}
+
+export async function openPostgresReadContext(source: Queryable, workspaceId: string | undefined): Promise<RuntimeReadContext> {
+  const scope = normalizeWorkspaceId(workspaceId);
+  const [organization, accountingPolicy] = await Promise.all([
+    readRuntimeSingleton(source, scope, "organization") as Promise<AccountingState["organization"]>,
+    readRuntimeSingleton(source, scope, "accounting_policy") as Promise<AccountingState["accountingPolicy"]>
+  ]);
+  return {
+    repos: buildPostgresRuntimeRepositories(source, scope),
+    externalEvents: new PostgresExternalEventStore(source, scope),
+    observedStocks: new PostgresObservedStockStore(source, scope),
+    syncRuns: new PostgresSyncRunStore(source, scope),
+    setupMetadata: () => ({
+      organization,
+      accountingPolicy,
+      configured: Boolean(organization)
+    })
+  };
 }
 
 export function buildPostgresRuntimeRepositories(source: Queryable, workspaceId: string | undefined): Repositories {
