@@ -159,9 +159,9 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   `/api/inventory/forms/workspace`. В `src/frontend/pages/inventory/forms.tsx` больше нет `useCollection`
   и глобального `queryClient.invalidateQueries()`.
 - ✅ Фронтовый transitional hook `useCollection` удалён. `src/frontend` больше не вызывает `/api/collections/*`;
-  public `/api/collections/:name` тоже удалён. Оставшиеся legacy list endpoints (`/api/products`,
-  `/api/documents` и т.п.) — обычные ресурсные URL, но часть из них всё ещё использует внутренний
-  `collectionFor` helper до финальной раскладки controllers/services.
+  public `/api/collections/:name` тоже удалён. Legacy list endpoints (`/api/products`, `/api/documents`
+  и т.п.) теперь читают явные `readModelApp.repos.*`, без внутреннего `collectionFor` helper в HTTP-слое.
+  Это ещё не финальная раскладка controllers/services, но публичный API больше не шейпится generic collection helper'ом.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,
