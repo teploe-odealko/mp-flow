@@ -64,6 +64,7 @@ describe("MPFlow api surface", () => {
       get<{ stock: unknown[]; lots: unknown[]; movements: unknown[] }>(api, "/api/inventory"),
       get<{ stockStates: unknown[]; products: unknown[]; warehouses: unknown[]; documents: unknown[]; stockMovements: unknown[] }>(api, "/api/inventory/workspace"),
       get<{ orders: unknown[]; lines: unknown[] }>(api, "/api/procurement/purchase-orders"),
+      get<{ purchaseOrders: unknown[]; purchaseOrderLines: unknown[]; counterparties: unknown[]; documents: unknown[]; procurementCosts: unknown[]; goodsReceipts: unknown[]; goodsReceiptLines: unknown[]; payments: unknown[]; paymentAllocations: unknown[]; shortageResolutions: unknown[]; shortageResolutionLines: unknown[] }>(api, "/api/procurement/workspace"),
       get<{ cashAccounts: unknown[]; payments: unknown[]; allocations: unknown[] }>(api, "/api/money/payments"),
       get<{ cashAccounts: unknown[]; payments: unknown[]; documents: unknown[]; operatingExpenses: unknown[]; payouts: unknown[] }>(api, "/api/finance/workspace"),
       get<{ plugins: unknown[]; channels: unknown[] }>(api, "/api/channels"),
@@ -77,7 +78,7 @@ describe("MPFlow api surface", () => {
       get<unknown[]>(api, "/api/controls/audit-events")
     ]);
 
-    const [dashboard, setup, accounts, journal, ledger, documents, products, inventory, inventoryWorkspace, purchaseOrders, money, financeWorkspace, channels, mapping, events, sales, returns, payouts, expenses, corrections, auditEvents] = readModels;
+    const [dashboard, setup, accounts, journal, ledger, documents, products, inventory, inventoryWorkspace, purchaseOrders, procurementWorkspace, money, financeWorkspace, channels, mapping, events, sales, returns, payouts, expenses, corrections, auditEvents] = readModels;
     expect(dashboard.configured).toBe(true);
     expect(dashboard.counters.products).toBeGreaterThan(0);
     expect(dashboard.counters.documents).toBeGreaterThan(0);
@@ -97,6 +98,17 @@ describe("MPFlow api surface", () => {
     expect(inventoryWorkspace.stockMovements.length).toBeGreaterThan(0);
     expect(purchaseOrders.orders.length).toBe(1);
     expect(purchaseOrders.lines.length).toBe(2);
+    expect(procurementWorkspace.purchaseOrders.length).toBe(1);
+    expect(procurementWorkspace.purchaseOrderLines.length).toBe(2);
+    expect(procurementWorkspace.counterparties.length).toBeGreaterThan(0);
+    expect(procurementWorkspace.documents.length).toBeGreaterThan(0);
+    expect(procurementWorkspace.procurementCosts.length).toBeGreaterThan(0);
+    expect(procurementWorkspace.goodsReceipts.length).toBeGreaterThan(0);
+    expect(procurementWorkspace.goodsReceiptLines.length).toBeGreaterThan(0);
+    expect(procurementWorkspace.payments.length).toBeGreaterThan(0);
+    expect(procurementWorkspace.paymentAllocations.length).toBeGreaterThan(0);
+    expect(procurementWorkspace.shortageResolutions).toEqual(expect.any(Array));
+    expect(procurementWorkspace.shortageResolutionLines).toEqual(expect.any(Array));
     expect(money.cashAccounts.length).toBeGreaterThan(0);
     expect(money.payments.length).toBeGreaterThan(0);
     expect(financeWorkspace.cashAccounts.length).toBeGreaterThan(0);

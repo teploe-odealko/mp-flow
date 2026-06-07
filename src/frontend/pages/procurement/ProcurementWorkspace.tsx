@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { ClipboardList, Wallet, FileCheck, Plus, Search, AlertTriangle } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,25 +11,55 @@ import { Select } from "@/components/ui/select";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Pagination } from "@/components/ui/pagination";
-import { useCollection } from "@/lib/use-collection";
+import { apiGet } from "@/api";
 import { rub, qty, date } from "@/lib/format";
 import { purchaseOrderStatusLabel } from "@/lib/i18n";
 import { getPurchaseOrderMetrics } from "./metrics";
 import { paginateRows } from "@/lib/pagination";
 
+const PROCUREMENT_WORKSPACE_QUERY_KEY = ["procurement-workspace"] as const;
+
+interface ProcurementWorkspacePayload {
+  purchaseOrders: any[];
+  purchaseOrderLines: any[];
+  counterparties: any[];
+  documents: any[];
+  procurementCosts: any[];
+  goodsReceipts: any[];
+  goodsReceiptLines: any[];
+  payments: any[];
+  paymentAllocations: any[];
+  shortageResolutions: any[];
+  shortageResolutionLines: any[];
+}
+
 export function ProcurementWorkspace() {
-  const orders = useCollection<any[]>("purchaseOrders") ?? [];
-  const lines = useCollection<any[]>("purchaseOrderLines") ?? [];
-  const counterparties = useCollection<any[]>("counterparties") ?? [];
-  const docs = useCollection<any[]>("documents") ?? [];
-  const procurementCosts = useCollection<any[]>("procurementCosts") ?? [];
-  const goodsReceipts = useCollection<any[]>("goodsReceipts") ?? [];
-  const goodsReceiptLines = useCollection<any[]>("goodsReceiptLines") ?? [];
-  const payments = useCollection<any[]>("payments") ?? [];
-  const paymentAllocations = useCollection<any[]>("paymentAllocations") ?? [];
-  const shortageResolutions = useCollection<any[]>("shortageResolutions") ?? [];
-  const shortageResolutionLines = useCollection<any[]>("shortageResolutionLines") ?? [];
-  const metricsState = { documents: docs, goodsReceipts, goodsReceiptLines, payments, paymentAllocations, procurementCosts, purchaseOrderLines: lines, shortageResolutions, shortageResolutionLines };
+  const workspaceQuery = useQuery({
+    queryKey: PROCUREMENT_WORKSPACE_QUERY_KEY,
+    queryFn: () => apiGet<ProcurementWorkspacePayload>("/api/procurement/workspace")
+  });
+  const orders = workspaceQuery.data?.purchaseOrders ?? [];
+  const lines = workspaceQuery.data?.purchaseOrderLines ?? [];
+  const counterparties = workspaceQuery.data?.counterparties ?? [];
+  const docs = workspaceQuery.data?.documents ?? [];
+  const procurementCosts = workspaceQuery.data?.procurementCosts ?? [];
+  const goodsReceipts = workspaceQuery.data?.goodsReceipts ?? [];
+  const goodsReceiptLines = workspaceQuery.data?.goodsReceiptLines ?? [];
+  const payments = workspaceQuery.data?.payments ?? [];
+  const paymentAllocations = workspaceQuery.data?.paymentAllocations ?? [];
+  const shortageResolutions = workspaceQuery.data?.shortageResolutions ?? [];
+  const shortageResolutionLines = workspaceQuery.data?.shortageResolutionLines ?? [];
+  const metricsState = useMemo(() => ({
+    documents: docs,
+    goodsReceipts,
+    goodsReceiptLines,
+    payments,
+    paymentAllocations,
+    procurementCosts,
+    purchaseOrderLines: lines,
+    shortageResolutions,
+    shortageResolutionLines
+  }), [docs, goodsReceiptLines, goodsReceipts, lines, paymentAllocations, payments, procurementCosts, shortageResolutionLines, shortageResolutions]);
 
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
@@ -36,13 +67,13 @@ export function ProcurementWorkspace() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
-  const enriched = orders.map((o: any) => {
+  const enriched = useMemo(() => orders.map((o: any) => {
     const orderLines = lines.filter((l: any) => l.purchaseOrderId === o.id);
     const supplier = counterparties.find((c: any) => c.id === o.supplierId);
     const doc = docs.find((d: any) => d.id === o.documentId);
     const metrics = getPurchaseOrderMetrics(metricsState as any, o.id);
     return { order: o, doc, supplier, lines: orderLines, metrics };
-  });
+  }), [counterparties, docs, lines, metricsState, orders]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();

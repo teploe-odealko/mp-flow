@@ -129,9 +129,13 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   `InventoryWorkspace` → `/api/inventory/workspace` с явным складским payload
   (`stockStates`, `products`, `warehouses`, `documents`, `stockMovements`).
   Главный экран склада больше не собирает состояние из пяти `useCollection(...)`.
+- ✅ Procurement workspace снят с generic collections:
+  `ProcurementWorkspace` → `/api/procurement/workspace` с явным payload по заказам,
+  строкам, поставщикам, документам, оплатам, приемкам, расходам поставки и закрытию недопоставок.
+  Главный экран поставок больше не собирает состояние из 11 `useCollection(...)`.
 - ⚠️ Фактический текущий остаток фронта: `useCollection` ещё есть в channel/procurement/
   inventory/sales pages:
-  `ChannelDetailPage`, `ChannelsPages`, `inventory/forms`, `ProcurementWorkspace`,
+  `ChannelDetailPage`, `ChannelsPages`, `inventory/forms`,
   `PurchaseOrderCardPage`, `procurement/forms`, `SalesPages`.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое

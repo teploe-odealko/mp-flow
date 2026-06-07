@@ -279,6 +279,47 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     ]);
     return { stockStates, products, warehouses, documents, stockMovements };
   };
+  const procurementWorkspaceFor = async (c: Context): Promise<any> => {
+    const readModelApp = await readModelAppFor(c);
+    const [
+      purchaseOrders,
+      purchaseOrderLines,
+      counterparties,
+      documents,
+      procurementCosts,
+      goodsReceipts,
+      goodsReceiptLines,
+      payments,
+      paymentAllocations,
+      shortageResolutions,
+      shortageResolutionLines
+    ] = await Promise.all([
+      readModelApp.repos.purchaseOrders.all(),
+      readModelApp.repos.purchaseOrderLines.all(),
+      readModelApp.repos.counterparties.all(),
+      readModelApp.repos.documents.all(),
+      readModelApp.repos.procurementCosts.all(),
+      readModelApp.repos.goodsReceipts.all(),
+      readModelApp.repos.goodsReceiptLines.all(),
+      readModelApp.repos.payments.all(),
+      readModelApp.repos.paymentAllocations.all(),
+      readModelApp.repos.shortageResolutions.all(),
+      readModelApp.repos.shortageResolutionLines.all()
+    ]);
+    return {
+      purchaseOrders,
+      purchaseOrderLines,
+      counterparties,
+      documents,
+      procurementCosts,
+      goodsReceipts,
+      goodsReceiptLines,
+      payments,
+      paymentAllocations,
+      shortageResolutions,
+      shortageResolutionLines
+    };
+  };
   const productChannelMappingFor = async (c: Context): Promise<any> => {
     const readModelApp = await readModelAppFor(c);
     const [externalProducts, links, products, channels, externalEvents] = await Promise.all([
@@ -637,6 +678,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.get("/api/counterparties", async (c) => c.json({ ok: true, data: await collectionFor(c, "counterparties") }));
   api.get("/api/procurement/purchase-orders", async (c) => c.json({ ok: true, data: { orders: await collectionFor(c, "purchaseOrders"), lines: await collectionFor(c, "purchaseOrderLines") } }));
+  api.get("/api/procurement/workspace", async (c) => c.json({ ok: true, data: await procurementWorkspaceFor(c) }));
   api.get("/api/channels", async (c) => c.json({ ok: true, data: { plugins: await collectionFor(c, "integrationPlugins"), channels: await collectionFor(c, "salesChannels") } }));
   api.get("/api/integrations/channels", async (c) => c.json({ ok: true, data: { plugins: await collectionFor(c, "integrationPlugins"), channels: await collectionFor(c, "salesChannels") } }));
   api.get("/api/integrations/channels/:id", async (c) => {

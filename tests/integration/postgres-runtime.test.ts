@@ -95,6 +95,7 @@ describePostgres("postgres runtime store", () => {
     const onboardingWorkspace = await request<any>(api, "GET", "/api/onboarding/existing-store/workspace");
     const productListWorkspace = await request<any>(api, "GET", "/api/products/workspace");
     const inventoryWorkspace = await request<any>(api, "GET", "/api/inventory/workspace");
+    const procurementWorkspace = await request<any>(api, "GET", "/api/procurement/workspace");
     const productChannelMapping = await request<any>(api, "GET", "/api/products/channel-mapping");
     const productWorkspace = await request<any>(api, "GET", `/api/products/${product.id}/workspace`);
     const accountsWorkspace = await request<any>(api, "GET", "/api/accounting/accounts/workspace");
@@ -147,6 +148,17 @@ describePostgres("postgres runtime store", () => {
       expect(inventoryWorkspace.warehouses).toEqual(expect.any(Array));
       expect(inventoryWorkspace.documents).toEqual(expect.any(Array));
       expect(inventoryWorkspace.stockMovements).toEqual(expect.any(Array));
+      expect(procurementWorkspace.purchaseOrders).toEqual(expect.any(Array));
+      expect(procurementWorkspace.purchaseOrderLines).toEqual(expect.any(Array));
+      expect(procurementWorkspace.counterparties).toEqual(expect.any(Array));
+      expect(procurementWorkspace.documents).toEqual(expect.any(Array));
+      expect(procurementWorkspace.procurementCosts).toEqual(expect.any(Array));
+      expect(procurementWorkspace.goodsReceipts).toEqual(expect.any(Array));
+      expect(procurementWorkspace.goodsReceiptLines).toEqual(expect.any(Array));
+      expect(procurementWorkspace.payments).toEqual(expect.any(Array));
+      expect(procurementWorkspace.paymentAllocations).toEqual(expect.any(Array));
+      expect(procurementWorkspace.shortageResolutions).toEqual(expect.any(Array));
+      expect(procurementWorkspace.shortageResolutionLines).toEqual(expect.any(Array));
       expect(productChannelMapping.products).toContainEqual(expect.objectContaining({ id: product.id, sku: "PG-001" }));
       expect(productChannelMapping.channels).toContainEqual(expect.objectContaining({ id: channel.id }));
       expect(productWorkspace.product).toEqual(expect.objectContaining({ id: product.id, sku: "PG-001" }));
