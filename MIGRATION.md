@@ -262,6 +262,15 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   при смене точки продаж больше не пишут через request-scoped `AccountingApp`; prod-readiness
   фиксирует `writeSessions = 0`, Postgres runtime проверяет typed rows в `sales_channel`
   и связанном `warehouse`.
+- ✅ Channel credentials/check/disable commands сняты с session middleware:
+  `/api/integrations/channels/validate`, POST/DELETE `/api/integrations/channels/:id/credentials`,
+  `/api/integrations/channels/:id/check`, `/api/integrations/channels/:id/disable`
+  обслуживаются `src/backend/services/channel-credential-service.ts` через `RuntimeWriteContext`.
+  `RuntimeWriteContext.channelCredentials` теперь умеет читать, сохранять и очищать
+  `channel_credential` напрямую: Postgres пишет encrypted credentials точечно, без
+  request-scoped `AccountingApp` и без session-side-effect сохранения всего credential map.
+  Prod-readiness фиксирует `writeSessions = 0`, Postgres runtime проверяет encrypted row,
+  отсутствие сырого ключа, очистку credentials и статус канала.
 - ✅ Начат перенос write/control на обычные сервисы без `AccountingApp` session: добавлен
   `RuntimeWriteContext` и `PostgresRuntimeStore.runWriteContext`, который открывает транзакцию,
   отдаёт сервису `repos + typed stores`, сохраняет `next_id` и коммитит без request-scoped app facade.

@@ -21,6 +21,7 @@ import { getPool } from "./db/pool";
 import { ExternalEventRepository } from "./repositories/external-event-repository";
 import { disableUser, inviteUser, resendUserInvite, updateUserRole } from "./services/access-management-service";
 import { hashToken, issueMcpAgentToken, publicAgentToken, revokeAgentToken, setChannelAgentPermission } from "./services/agent-token-service";
+import { checkChannelAccess, clearChannelCredentials, disableSalesChannel, saveChannelCredentials } from "./services/channel-credential-service";
 import { createSalesChannel, updateSalesChannel } from "./services/channel-service";
 import { ignoreExternalEvent, ingestExternalEvent, reprocessExternalEvent } from "./services/external-event-service";
 import { createExternalProduct, createInternalProductFromExternal, ignoreExternalProduct, linkExternalProduct, reprocessEventsForExternalProduct, unlinkExternalProduct } from "./services/external-product-service";
@@ -232,6 +233,11 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     observedStocks: targetApp.observedStocks,
     syncRuns: targetApp.syncRuns,
     channelCredentialStatus: async (channelId) => targetApp.channelCredentialStatus(channelId),
+    channelCredentials: {
+      channelCredentialsFor: async (channelId) => targetApp.credentialsForChannel(channelId),
+      saveChannelCredentials: async (channelId, credentials) => await targetApp.saveChannelCredentials(channelId, credentials),
+      clearChannelCredentials: async (channelId) => targetApp.clearCredentialsForChannel(channelId)
+    },
     setupMetadata: () => targetApp.setupMetadata()
   });
   const readContextFor = async (c: Context): Promise<RuntimeReadContext> => {
@@ -1375,6 +1381,17 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => ignoreExternalEvent(writeContext, c.req.param("id"), body.reason)) });
   });
   api.get("/api/integrations/observed-stock", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).observedStocks.list() }));
+  api.post("/api/integrations/channels/validate", async (c) => {
+    const body = channelValidationSchema.parse(await c.req.json());
+    const plugin = body.pluginCode ? pluginRegistry.get(body.pluginCode) : undefined;
+    if (!plugin) return c.json({ ok: true, data: { ok: true } });
+    const shape = plugin.validateCredentials(body.credentials ?? {});
+    if (!shape.ok || !body.online || !plugin.checkAccess) {
+      return c.json({ ok: true, data: shape });
+    }
+    const online = await plugin.checkAccess(body.credentials ?? {});
+    return c.json({ ok: true, data: online });
+  });
   api.post("/api/channels", async (c) => {
     const body = channelSchema.parse(await c.req.json());
     const channel = await writeContextFor(c, (writeContext) => createSalesChannel(writeContext, body));
@@ -1388,6 +1405,20 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.patch("/api/integrations/channels/:id", async (c) => {
     const body = channelPatchSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => updateSalesChannel(writeContext, c.req.param("id"), body)) });
+  });
+  api.delete("/api/integrations/channels/:id/credentials", async (c) => {
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => clearChannelCredentials(writeContext, c.req.param("id"))) });
+  });
+  api.post("/api/integrations/channels/:id/credentials", async (c) => {
+    const body = pluginSyncSchema.parse(await c.req.json());
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => saveChannelCredentials(writeContext, c.req.param("id"), body.credentials ?? {})) });
+  });
+  api.post("/api/integrations/channels/:id/check", async (c) => {
+    const body = pluginSyncSchema.parse(await c.req.json().catch(() => ({})));
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => checkChannelAccess(writeContext, c.req.param("id"), body.credentials)) });
+  });
+  api.post("/api/integrations/channels/:id/disable", async (c) => {
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => disableSalesChannel(writeContext, c.req.param("id"))) });
   });
   api.post("/api/channels/:id/observed-stock", async (c) => {
     const body = observedStockSchema.parse(await c.req.json());
@@ -2266,91 +2297,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.post("/api/inventory/adjustments/:id/post", async (c) => {
     return c.json({ ok: true, data: await scopedApp.postStocktake(c.req.param("id")) });
-  });
-  api.post("/api/integrations/channels/validate", async (c) => {
-    const body = channelValidationSchema.parse(await c.req.json());
-    const plugin = body.pluginCode ? pluginRegistry.get(body.pluginCode) : undefined;
-    if (!plugin) return c.json({ ok: true, data: { ok: true } });
-    const shape = plugin.validateCredentials(body.credentials ?? {});
-    if (!shape.ok || !body.online || !plugin.checkAccess) {
-      return c.json({ ok: true, data: shape });
-    }
-    const online = await plugin.checkAccess(body.credentials ?? {});
-    return c.json({ ok: true, data: online });
-  });
-  api.delete("/api/integrations/channels/:id/credentials", async (c) => {
-    const channel = await scopedApp.repos.salesChannels.getById(c.req.param("id"));
-    if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
-    const data = scopedApp.clearCredentialsForChannel(channel.id);
-    if (channel.status === "active") channel.status = "needs_setup";
-    await scopedApp.repos.salesChannels.upsert(channel);
-    return c.json({ ok: true, data });
-  });
-  api.post("/api/integrations/channels/:id/credentials", async (c) => {
-    const channel = await scopedApp.repos.salesChannels.getById(c.req.param("id"));
-    if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
-    const installedPlugin = channel.pluginId ? await scopedApp.repos.integrationPlugins.getById(channel.pluginId) : undefined;
-    if (!installedPlugin) throw new DomainError("plugin_not_found", "У канала не выбран плагин");
-    const body = pluginSyncSchema.parse(await c.req.json());
-    const plugin = pluginRegistry.get(installedPlugin.code);
-    const validation = plugin.validateCredentials(body.credentials ?? {});
-    if (!validation.ok) throw new DomainError("plugin_credentials_invalid", validation.message);
-    const saved = await scopedApp.saveChannelCredentials(channel.id, body.credentials ?? {});
-    // After saving creds, run an online check; flip channel status accordingly.
-    if (plugin.checkAccess) {
-      const online = await plugin.checkAccess(body.credentials ?? {});
-      channel.lastCheckedAt = nowIso();
-      if (online.ok) {
-        channel.status = "active";
-        channel.lastError = undefined;
-      } else {
-        channel.status = "error";
-        channel.lastError = online.message;
-        await scopedApp.repos.salesChannels.upsert(channel);
-        return c.json({ ok: true, data: { ...saved, online } });
-      }
-    } else if (channel.status === "needs_setup") {
-      channel.status = "active";
-    }
-    await scopedApp.repos.salesChannels.upsert(channel);
-    return c.json({ ok: true, data: { ...saved, online: { ok: true } } });
-  });
-  api.post("/api/integrations/channels/:id/check", async (c) => {
-    const channel = await scopedApp.repos.salesChannels.getById(c.req.param("id"));
-    if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
-    const installedPlugin = channel.pluginId ? await scopedApp.repos.integrationPlugins.getById(channel.pluginId) : undefined;
-    const body = pluginSyncSchema.parse(await c.req.json().catch(() => ({})));
-    const credentials = body.credentials ?? scopedApp.credentialsForChannel(channel.id);
-    if (!installedPlugin) {
-      return c.json({ ok: true, data: { channelId: channel.id, validation: { ok: true } } });
-    }
-    const plugin = pluginRegistry.get(installedPlugin.code);
-    const shape = plugin.validateCredentials(credentials ?? {});
-    if (!shape.ok) {
-      channel.status = "error";
-      channel.lastError = shape.message;
-      channel.lastCheckedAt = nowIso();
-      await scopedApp.repos.salesChannels.upsert(channel);
-      return c.json({ ok: true, data: { channelId: channel.id, validation: shape } });
-    }
-    const online = plugin.checkAccess ? await plugin.checkAccess(credentials ?? {}) : { ok: true as const };
-    channel.lastCheckedAt = nowIso();
-    if (online.ok) {
-      channel.lastError = undefined;
-      if (channel.status !== "disabled") channel.status = "active";
-    } else {
-      channel.status = "error";
-      channel.lastError = online.message;
-    }
-    await scopedApp.repos.salesChannels.upsert(channel);
-    return c.json({ ok: true, data: { channelId: channel.id, validation: online, status: channel.status } });
-  });
-  api.post("/api/integrations/channels/:id/disable", async (c) => {
-    const channel = await scopedApp.repos.salesChannels.getById(c.req.param("id"));
-    if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
-    channel.status = "disabled";
-    await scopedApp.repos.salesChannels.upsert(channel);
-    return c.json({ ok: true, data: channel });
   });
   api.post("/api/integrations/channels/:id/reset-sales-data", async (c) => {
     const channel = await scopedApp.repos.salesChannels.getById(c.req.param("id"));

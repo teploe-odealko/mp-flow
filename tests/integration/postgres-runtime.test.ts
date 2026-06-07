@@ -130,6 +130,25 @@ describePostgres("postgres runtime store", () => {
       enabledStreams: ["products", "stocks"],
       status: "disabled"
     });
+    const credentialChannel = await request<any>(api, "POST", "/api/integrations/channels", {
+      name: "Ozon credential service PG",
+      channelType: "marketplace",
+      pluginCode: "ozon"
+    });
+    const savedChannelCredentials = await request<any>(api, "POST", `/api/integrations/channels/${credentialChannel.id}/credentials`, {
+      credentials: { clientId: "demo-client", apiKey: "demo-key" }
+    });
+    const checkedChannelCredentials = await request<any>(api, "POST", `/api/integrations/channels/${credentialChannel.id}/check`, {});
+    const clearedCredentialChannel = await request<any>(api, "POST", "/api/integrations/channels", {
+      name: "Ozon credential clear PG",
+      channelType: "marketplace",
+      pluginCode: "ozon"
+    });
+    await request<any>(api, "POST", `/api/integrations/channels/${clearedCredentialChannel.id}/credentials`, {
+      credentials: { clientId: "demo-client", apiKey: "demo-key" }
+    });
+    const clearedChannelCredentials = await request<any>(api, "DELETE", `/api/integrations/channels/${clearedCredentialChannel.id}/credentials`);
+    const disabledCredentialChannel = await request<any>(api, "POST", `/api/integrations/channels/${clearedCredentialChannel.id}/disable`);
     const previousAccessForToken = process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED;
     process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED = "true";
     let accessToken: any;
@@ -352,6 +371,25 @@ describePostgres("postgres runtime store", () => {
         `,
         [serviceChannel.id]
       );
+      const serviceCredentialRows = await inspectPool.query<{ fields: string[]; encrypted_credentials: unknown; channel_status: string }>(
+        `
+          select cc.fields, cc.encrypted_credentials, sc.status as channel_status
+          from channel_credential cc
+          join sales_channel sc on sc.id = cc.channel_id
+          where sc.public_id = $1
+        `,
+        [credentialChannel.id]
+      );
+      const clearedCredentialRows = await inspectPool.query<{ credential_count: number; channel_status: string }>(
+        `
+          select count(cc.id)::int as credential_count, sc.status as channel_status
+          from sales_channel sc
+          left join channel_credential cc on cc.channel_id = sc.id and cc.workspace_id = sc.workspace_id
+          where sc.public_id = $1
+          group by sc.status
+        `,
+        [clearedCredentialChannel.id]
+      );
       const reportRecalculationJobRows = await inspectPool.query<{ job_type: string; status: string; progress: number }>(
         "select job_type, status, progress::float8 as progress from recalculation_job where public_id = $1",
         [reportRecalculationJob.id]
@@ -428,6 +466,14 @@ describePostgres("postgres runtime store", () => {
         warehouse_public_id: serviceChannel.salesPointWarehouseId,
         warehouse_channel_public_id: serviceChannel.id
       });
+      expect(savedChannelCredentials).toEqual(expect.objectContaining({ channelId: credentialChannel.id, saved: true, fields: ["clientId", "apiKey"], online: { ok: true } }));
+      expect(checkedChannelCredentials).toEqual(expect.objectContaining({ channelId: credentialChannel.id, validation: { ok: true }, status: "active" }));
+      expect(clearedChannelCredentials).toEqual({ channelId: clearedCredentialChannel.id, saved: false, fields: [] });
+      expect(disabledCredentialChannel).toEqual(expect.objectContaining({ id: clearedCredentialChannel.id, status: "disabled" }));
+      expect(serviceCredentialRows.rows[0]?.fields.sort()).toEqual(["apiKey", "clientId"]);
+      expect(JSON.stringify(serviceCredentialRows.rows[0]?.encrypted_credentials)).not.toContain("demo-key");
+      expect(serviceCredentialRows.rows[0]?.channel_status).toBe("active");
+      expect(clearedCredentialRows.rows[0]).toEqual({ credential_count: 0, channel_status: "disabled" });
       expect(reportRecalculationJob).toEqual(expect.objectContaining({ jobType: "reports", status: "completed", progress: 100 }));
       expect(reportRecalculationJobRows.rows[0]).toEqual({ job_type: "reports", status: "completed", progress: 100 });
       expect(dashboard.configured).toBe(true);

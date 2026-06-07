@@ -286,7 +286,15 @@ export interface RuntimeReadContext {
   };
 }
 
-export interface RuntimeWriteContext extends RuntimeReadContext {}
+export interface RuntimeChannelCredentialAccess {
+  channelCredentialsFor(channelId: string): Promise<Record<string, string | undefined> | undefined>;
+  saveChannelCredentials(channelId: string, credentials: Record<string, string | undefined>): Promise<{ channelId: string; saved: boolean; fields: string[] }>;
+  clearChannelCredentials(channelId: string): Promise<{ channelId: string; saved: boolean; fields: string[] }>;
+}
+
+export interface RuntimeWriteContext extends RuntimeReadContext {
+  channelCredentials?: RuntimeChannelCredentialAccess;
+}
 
 export interface RuntimeAgentTokenPrincipal {
   tokenId: string;
@@ -1976,6 +1984,7 @@ export class PostgresRuntimeStore implements RuntimePersistence {
       const meta = await this.loadMetaForUpdate(client);
       return await runWithIdSequence(meta?.next_id ?? 1, async () => {
         const context = await openPostgresWriteContext(client, scope);
+        context.channelCredentials = this.createChannelCredentialAccess(client, scope);
         const result = await handler(context);
         await this.saveMeta(client, currentIdSequence());
         await client.query("commit");
@@ -2213,6 +2222,91 @@ export class PostgresRuntimeStore implements RuntimePersistence {
         ]
       );
     }
+  }
+
+  private createChannelCredentialAccess(source: Queryable, workspaceId: string): RuntimeChannelCredentialAccess {
+    return {
+      channelCredentialsFor: async (channelId) => await this.loadSingleChannelCredentials(source, workspaceId, channelId),
+      saveChannelCredentials: async (channelId, credentials) => await this.saveSingleChannelCredentials(source, workspaceId, channelId, credentials),
+      clearChannelCredentials: async (channelId) => await this.clearSingleChannelCredentials(source, workspaceId, channelId)
+    };
+  }
+
+  private async loadSingleChannelCredentials(source: Queryable, workspaceId: string, channelId: string): Promise<Record<string, string> | undefined> {
+    const result = await source.query<{ encrypted_credentials: unknown }>(
+      `
+        select channel_credential.encrypted_credentials
+        from channel_credential
+        join sales_channel on sales_channel.id = channel_credential.channel_id
+        where channel_credential.workspace_id = $1
+          and sales_channel.workspace_id = $1
+          and sales_channel.public_id = $2
+          and channel_credential.encrypted_credentials is not null
+        limit 1
+      `,
+      [workspaceId, channelId]
+    );
+    if (!result.rows[0]) return undefined;
+    const credentials = this.decryptCredentialsSafe(result.rows[0].encrypted_credentials, {
+      workspaceId,
+      secretType: "channel_credentials",
+      scopeId: channelId
+    });
+    return Object.keys(credentials).length > 0 ? credentials : undefined;
+  }
+
+  private async saveSingleChannelCredentials(
+    source: Queryable,
+    workspaceId: string,
+    channelId: string,
+    credentials: Record<string, string | undefined>
+  ): Promise<{ channelId: string; saved: boolean; fields: string[] }> {
+    const cleaned = cleanCredentials(credentials);
+    const fields = Object.keys(cleaned);
+    if (fields.length === 0) {
+      await this.clearSingleChannelCredentials(source, workspaceId, channelId);
+      return { channelId, saved: false, fields: [] };
+    }
+
+    const encrypted = this.encryptCredentials(cleaned);
+    await source.query(
+      `
+        insert into channel_credential
+          (id, channel_id, secret_ref, status, encrypted_credentials, fields, workspace_id, created_at, updated_at)
+        values
+          ($1, $2, $3, $4, $5::jsonb, $6::text[], $7, now(), now())
+        on conflict (id) do update set
+          channel_id = excluded.channel_id,
+          secret_ref = excluded.secret_ref,
+          status = excluded.status,
+          encrypted_credentials = excluded.encrypted_credentials,
+          fields = excluded.fields,
+          workspace_id = excluded.workspace_id,
+          updated_at = now()
+      `,
+      [
+        stableUuid(`channel_credential:${workspaceId}:${channelId}`),
+        entityUuid(channelId),
+        "encrypted_credentials",
+        "active",
+        JSON.stringify(encrypted),
+        fields,
+        workspaceId
+      ]
+    );
+    return { channelId, saved: true, fields };
+  }
+
+  private async clearSingleChannelCredentials(
+    source: Queryable,
+    workspaceId: string,
+    channelId: string
+  ): Promise<{ channelId: string; saved: false; fields: string[] }> {
+    await source.query(
+      "delete from channel_credential where id = $1 and workspace_id = $2",
+      [stableUuid(`channel_credential:${workspaceId}:${channelId}`), workspaceId]
+    );
+    return { channelId, saved: false, fields: [] };
   }
 
   private async loadPluginSecrets(source: Queryable, workspaceId: string): Promise<PluginSecretRecords> {

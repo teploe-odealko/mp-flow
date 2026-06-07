@@ -134,6 +134,64 @@ describe("prod-ready contracts", () => {
     expect(writeSessions).toBe(0);
   });
 
+  it("writes channel credential commands through runtime write contexts", async () => {
+    resetIds();
+    const app = new AccountingApp();
+    await app.setupDemo();
+    let writeContexts = 0;
+    let writeSessions = 0;
+    const api = createApi(app, {
+      persistence: {
+        async runWriteContext(_workspaceId, handler) {
+          writeContexts += 1;
+          return await handler({
+            repos: app.repos,
+            externalEvents: app.externalEvents,
+            observedStocks: app.observedStocks,
+            syncRuns: app.syncRuns,
+            channelCredentialStatus: async (channelId) => app.channelCredentialStatus(channelId),
+            channelCredentials: {
+              channelCredentialsFor: async (channelId) => app.credentialsForChannel(channelId),
+              saveChannelCredentials: async (channelId, credentials) => await app.saveChannelCredentials(channelId, credentials),
+              clearChannelCredentials: async (channelId) => app.clearCredentialsForChannel(channelId)
+            },
+            setupMetadata: () => app.setupMetadata()
+          });
+        },
+        async openWriteSession() {
+          writeSessions += 1;
+          return { app, nextId: 1, commit: async () => undefined, rollback: async () => undefined, close: async () => undefined };
+        }
+      }
+    });
+
+    const validation = await post<any>(api, "/api/integrations/channels/validate", {
+      pluginCode: "ozon",
+      online: true,
+      credentials: { clientId: "demo-client", apiKey: "demo-key" }
+    });
+    const channel = await post<any>(api, "/api/integrations/channels", {
+      name: "Ozon credentials runtime",
+      channelType: "marketplace",
+      pluginCode: "ozon"
+    });
+    const saved = await post<any>(api, `/api/integrations/channels/${channel.id}/credentials`, {
+      credentials: { clientId: "demo-client", apiKey: "demo-key" }
+    });
+    const checked = await post<any>(api, `/api/integrations/channels/${channel.id}/check`, {});
+    const cleared = await del<any>(api, `/api/integrations/channels/${channel.id}/credentials`);
+    const disabled = await post<any>(api, `/api/integrations/channels/${channel.id}/disable`);
+
+    expect(validation).toEqual({ ok: true });
+    expect(saved).toEqual(expect.objectContaining({ channelId: channel.id, saved: true, fields: ["clientId", "apiKey"], online: { ok: true } }));
+    expect(checked).toEqual(expect.objectContaining({ channelId: channel.id, validation: { ok: true }, status: "active" }));
+    expect(cleared).toEqual({ channelId: channel.id, saved: false, fields: [] });
+    expect(disabled).toEqual(expect.objectContaining({ id: channel.id, status: "disabled" }));
+    expect(app.channelCredentialStatus(channel.id)).toEqual({ channelId: channel.id, saved: false, fields: [] });
+    expect(writeContexts).toBe(5);
+    expect(writeSessions).toBe(0);
+  });
+
   it("persists after successful mutating requests and leaves reads untouched", async () => {
     resetIds();
     const app = new AccountingApp();
