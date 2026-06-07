@@ -112,7 +112,6 @@ describe("prod-ready contracts", () => {
     let reportWorkspaceReads = 0;
     let productWorkspaceReads = 0;
     let readContexts = 0;
-    let readModelApps = 0;
     let readSessions = 0;
     const api = createApi(app, {
       persistence: {
@@ -169,10 +168,6 @@ describe("prod-ready contracts", () => {
             syncRuns: app.syncRuns,
             setupMetadata: () => app.setupMetadata()
           };
-        },
-        async openReadModelApp() {
-          readModelApps += 1;
-          return app;
         },
         async openReadSession() {
           readSessions += 1;
@@ -319,7 +314,6 @@ describe("prod-ready contracts", () => {
     expect(reportWorkspaceReads).toBe(1);
     expect(productWorkspaceReads).toBe(1);
     expect(readContexts).toBeGreaterThanOrEqual(10);
-    expect(readModelApps).toBe(0);
     expect(readSessions).toBe(0);
   });
 

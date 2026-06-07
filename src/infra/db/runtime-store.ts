@@ -294,7 +294,6 @@ export interface RuntimePersistence {
   readProductWorkspace?(workspaceId: string | undefined, productId: string): Promise<unknown>;
   readLedgerBalances?(workspaceId?: string): Promise<RuntimeLedgerBalances>;
   openReadContext?(workspaceId?: string): Promise<RuntimeReadContext>;
-  openReadModelApp?(workspaceId?: string): Promise<AccountingApp>;
   openReadSession?(workspaceId?: string): Promise<RuntimeSession>;
   openWriteSession?(workspaceId?: string): Promise<RuntimeSession>;
   checkReady?(): Promise<{ ok: boolean; schemaVersion?: number; message?: string }>;
@@ -1920,15 +1919,6 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     return await readRuntimeLedgerBalances(this.pool, normalizeWorkspaceId(workspaceId));
   }
 
-  async openReadModelApp(workspaceId = DEFAULT_WORKSPACE_ID): Promise<AccountingApp> {
-    await this.init();
-    const scope = normalizeWorkspaceId(workspaceId);
-    const app = await openPostgresReadModelApp(this.pool, scope);
-    app.importChannelCredentials(await this.loadChannelCredentials(this.pool, scope));
-    app.importPluginSecrets(await this.loadPluginSecrets(this.pool, scope));
-    return app;
-  }
-
   async openReadContext(workspaceId = DEFAULT_WORKSPACE_ID): Promise<RuntimeReadContext> {
     await this.init();
     return await openPostgresReadContext(this.pool, normalizeWorkspaceId(workspaceId));
@@ -2048,7 +2038,7 @@ export class PostgresRuntimeStore implements RuntimePersistence {
   }
 
   private async openRepositoryBackedApp(source: Queryable, workspaceId: string) {
-    const app = await openPostgresReadModelApp(source, workspaceId);
+    const app = await openPostgresRepositoryBackedApp(source, workspaceId);
     app.importChannelCredentials(await this.loadChannelCredentials(source, workspaceId));
     app.importPluginSecrets(await this.loadPluginSecrets(source, workspaceId));
     return app;
@@ -2900,7 +2890,7 @@ function creditTurnover(balance?: { debit: number; credit: number }): number {
   return round2(balance.credit - balance.debit);
 }
 
-export async function openPostgresReadModelApp(source: Queryable, workspaceId: string | undefined): Promise<AccountingApp> {
+async function openPostgresRepositoryBackedApp(source: Queryable, workspaceId: string | undefined): Promise<AccountingApp> {
   const scope = normalizeWorkspaceId(workspaceId);
   const state = createEmptyState();
   state.organization = await readRuntimeSingleton(source, scope, "organization") as AccountingState["organization"];

@@ -198,11 +198,9 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   // В тестах без БД — fallback на in-memory snapshot. Переходный признак на время переезда.
   const postgresBacked = () => Boolean(process.env.DATABASE_URL);
   const readModelAppFor = async (c: Context) => {
-    const workspaceId = eventsWorkspaceId(c);
     if (postgresBacked()) {
       throw new Error("Postgres read path must use RuntimeReadContext or typed read-model helpers, not AccountingApp");
     }
-    if (options.persistence?.openReadModelApp) return await options.persistence.openReadModelApp(workspaceId);
     return app;
   };
   const readContextFor = async (c: Context): Promise<RuntimeReadContext> => {

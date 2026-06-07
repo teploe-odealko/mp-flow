@@ -180,9 +180,14 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   product lots/stock movements/card/brief, procurement purchase-order/receipt/cost/shortage details,
   transfer detail, sales-point stock и channel detail теперь собираются через `RuntimeReadContext`
   (`repos + typed stores + channelCredentialStatus`). `readModelAppFor` в Postgres runtime теперь
-  намеренно падает, а prod-readiness фиксирует `openReadModelApp = 0` для dashboard/workspace reads.
+  намеренно падает, а prod-readiness фиксирует, что dashboard/workspace reads не открывают read session.
   Оставшиеся `readModelAppFor` в HTTP-слое — только in-memory/test fallback для старого app facade,
-  reports/dashboard/ledger fallback без БД и write use-cases.
+  reports/dashboard/ledger fallback без БД.
+- ✅ Production persistence-контракт больше не публикует `openReadModelApp`: `PostgresRuntimeStore`
+  не умеет отдавать read-model `AccountingApp` наружу. Внутренний factory переименован в
+  `openPostgresRepositoryBackedApp` и используется только для repository-backed `openReadSession`/
+  `openWriteSession`, то есть для write/control use-cases до финального удаления `AccountingApp`.
+  HTTP `readModelAppFor` теперь только локальный in-memory fallback без БД.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,
@@ -241,7 +246,7 @@ async `previewProcurementCost`, setup metadata fields, `audit`/`createCorrection
 
 ### ✅ REQUEST-TIME SNAPSHOT STORE снят с сессий runtime
 `PostgresRuntimeStore.openReadSession/openWriteSession` теперь открывают `AccountingApp` сразу с
-Postgres repositories (`openPostgresReadModelApp`) и не вызывают `loadSnapshot/saveState`. Удалён
+Postgres repositories (`openPostgresRepositoryBackedApp`) и не вызывают `loadSnapshot/saveState`. Удалён
 глобальный `WRITE_LOCK_SQL`: write-session держит обычную транзакцию, а доменные коллекции пишутся
 через repositories во время операции; commit сохраняет только singleton metadata, credentials/secrets
 и id meta. Legacy snapshot/entity-store остаётся только одноразовым importer'ом при миграции старой БД.
