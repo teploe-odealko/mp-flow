@@ -248,6 +248,10 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   `src/backend/services/organization-service.ts`: singleton `organization` сохраняется через
   `repos.saveSingletons` и audit пишется без request-scoped `AccountingApp`. Prod-readiness проверяет
   отсутствие `openWriteSession`, Postgres runtime проверяет typed singleton row в `organization`.
+- ✅ Setup lifecycle (`POST/PUT /api/setup`) вынесен в `src/backend/services/setup-service.ts`.
+  Bootstrap/update setup создают singleton `organization/accounting_policy`, periods, системные
+  справочники, роли/пользователя владельца и audit через `RuntimeWriteContext`; seed helpers вынесены
+  в `src/core/setup-seeds.ts`, чтобы `AccountingApp` и сервис использовали один источник.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,

@@ -27,6 +27,7 @@ import { deleteProductImage, setProductImage } from "./services/product-image-se
 import { archiveProduct, createProduct, restoreProduct, updateProduct } from "./services/product-service";
 import { createRecalculationJob, retryRecalculationJob } from "./services/recalculation-service";
 import { createCashAccount, createCounterparty, createWarehouse, updateCashAccount } from "./services/reference-data-service";
+import { bootstrapSetup, updateSetup } from "./services/setup-service";
 import {
   goodsReceiptRollbackPreviewFor,
   paymentRollbackPreviewFor,
@@ -1371,6 +1372,16 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       }
     });
   });
+  api.post("/api/setup", async (c) => {
+    const body = bootstrapSchema.parse(await c.req.json());
+    const authUser = c.get("authUser") as ReturnType<typeof publicUser> | undefined;
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => bootstrapSetup(writeContext, body, authUser ? { ...authUser, status: "active" } : undefined)) });
+  });
+  api.put("/api/setup", async (c) => {
+    const body = bootstrapSchema.parse(await c.req.json());
+    const authUser = c.get("authUser") as ReturnType<typeof publicUser> | undefined;
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => updateSetup(writeContext, body, authUser ? { ...authUser, status: "active" } : undefined)) });
+  });
   api.get("/api/organization", async (c) => c.json({ ok: true, data: (await readContextFor(c)).setupMetadata().organization }));
   api.patch("/api/organization", async (c) => {
     const body = organizationPatchSchema.parse(await c.req.json());
@@ -1791,21 +1802,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     } finally {
       await session.close?.();
     }
-  });
-  api.post("/api/setup", async (c) => {
-    const body = bootstrapSchema.parse(await c.req.json());
-    const data = await scopedApp.bootstrap(body);
-    const authUser = c.get("authUser") as ReturnType<typeof publicUser> | undefined;
-    if (authUser) await ensureAppUser(scopedApp, { ...authUser, status: "active" });
-    return c.json({ ok: true, data });
-  });
-  api.put("/api/setup", async (c) => {
-    const body = bootstrapSchema.parse(await c.req.json());
-    const setup = await scopedApp.setupSnapshot();
-    const data = setup.organization ? await scopedApp.updateSetup(body) : await scopedApp.bootstrap(body);
-    const authUser = c.get("authUser") as ReturnType<typeof publicUser> | undefined;
-    if (authUser) await ensureAppUser(scopedApp, { ...authUser, status: "active" });
-    return c.json({ ok: true, data });
   });
   api.post("/api/documents", async (c) => {
     const body = documentCreateSchema.parse(await c.req.json());

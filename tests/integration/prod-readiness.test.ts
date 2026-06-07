@@ -5,7 +5,7 @@ import { resetIds } from "../../src/core/utils";
 import { buildReportsWorkspacePayload } from "../../src/shared/reports-workspace";
 import { buildProductCardWorkspacePayload } from "../../src/shared/product-card-workspace";
 
-async function request<T>(api: ReturnType<typeof createApi>, method: "GET" | "POST" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<T> {
+async function request<T>(api: ReturnType<typeof createApi>, method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<T> {
   const response = await api.request(path, {
     method,
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -18,6 +18,7 @@ async function request<T>(api: ReturnType<typeof createApi>, method: "GET" | "PO
 
 const get = <T>(api: ReturnType<typeof createApi>, path: string) => request<T>(api, "GET", path);
 const post = <T>(api: ReturnType<typeof createApi>, path: string, body?: unknown) => request<T>(api, "POST", path, body);
+const put = <T>(api: ReturnType<typeof createApi>, path: string, body?: unknown) => request<T>(api, "PUT", path, body);
 const patch = <T>(api: ReturnType<typeof createApi>, path: string, body?: unknown) => request<T>(api, "PATCH", path, body);
 const del = <T>(api: ReturnType<typeof createApi>, path: string) => request<T>(api, "DELETE", path);
 const keyPart = (value: string) => Buffer.from(value).toString("base64url");
@@ -306,6 +307,7 @@ describe("prod-ready contracts", () => {
       await app.repos.backfillProjects.add(backfillProject);
     }
     const onboardingProject = await get<any>(api, `/api/onboarding/existing-store/projects/${backfillProject.id}`);
+    const updatedSetup = await put<any>(api, "/api/setup", { displayName: "ИП Иванов Setup API", accountingStartDate: "2026-06-01", inn: "123456789012" });
     const updatedOrganization = await patch<any>(api, "/api/organization", { displayName: "ИП Иванов API", inn: "123456789012" });
     const card = await get<any>(api, `/api/products/${product.id}/card`);
     const cardBrief = await get<any>(api, `/api/products/${product.id}/card/brief`);
@@ -334,6 +336,7 @@ describe("prod-ready contracts", () => {
     expect(createdRecalculationJob).toEqual(expect.objectContaining({ jobType: "sales_profit", scope: { channelId: "all" }, status: "completed", progress: 100 }));
     expect(retriedRecalculationJob).toEqual(expect.objectContaining({ id: createdRecalculationJob.id, status: "completed", progress: 100 }));
     expect(reportsRecalculationJob).toEqual(expect.objectContaining({ jobType: "reports", status: "completed", progress: 100 }));
+    expect(updatedSetup.organization).toEqual(expect.objectContaining({ displayName: "ИП Иванов Setup API", inn: "123456789012" }));
     expect(updatedOrganization).toEqual(expect.objectContaining({ displayName: "ИП Иванов API", inn: "123456789012" }));
     expect(app.state.organization).toEqual(expect.objectContaining({ displayName: "ИП Иванов API", inn: "123456789012" }));
     expect(productImage).toEqual({ id: `${product.id}:main`, productId: product.id, url: "https://example.test/product-image.jpg", sortOrder: 0 });
@@ -449,7 +452,7 @@ describe("prod-ready contracts", () => {
     expect(productWorkspaceReads).toBe(1);
     expect(readContexts).toBeGreaterThanOrEqual(10);
     expect(readSessions).toBe(0);
-    expect(writeContexts).toBe(17);
+    expect(writeContexts).toBe(18);
     expect(writeSessions).toBe(0);
   });
 
