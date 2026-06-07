@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ArrowLeft, Plus, Save, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,16 +9,96 @@ import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { ProductCell } from "@/components/product-thumb";
-import { useCollection } from "@/lib/use-collection";
 import { apiGet, apiPatch, apiPost } from "@/api";
 import { rub, qty } from "@/lib/format";
 import { allocationBasisLabel, procurementCostTypeLabel, shortageActionLabel } from "@/lib/i18n";
 
 const today = () => new Date().toISOString().slice(0, 10);
+const PROCUREMENT_FORMS_QUERY_KEY = "procurement-forms-workspace";
+const PROCUREMENT_FORM_COLLECTION_KEYS = [
+  "counterparties",
+  "documents",
+  "goodsReceiptLines",
+  "goodsReceipts",
+  "inventoryLots",
+  "paymentAllocations",
+  "payments",
+  "procurementCostLines",
+  "procurementCosts",
+  "products",
+  "purchaseOrderLines",
+  "purchaseOrders",
+  "shortageResolutionLines",
+  "shortageResolutions",
+  "stockMovements",
+  "stockStates",
+  "warehouses"
+] as const;
+
+interface ProcurementFormsWorkspacePayload {
+  accountingPolicy?: any;
+  counterparties: any[];
+  documents: any[];
+  goodsReceiptLines: any[];
+  goodsReceipts: any[];
+  inventoryLots: any[];
+  paymentAllocations: any[];
+  products: any[];
+  purchaseOrderLines: any[];
+  purchaseOrders: any[];
+  warehouses: any[];
+}
+
+function procurementFormsWorkspaceQueryKey(purchaseOrderId?: string) {
+  return [PROCUREMENT_FORMS_QUERY_KEY, purchaseOrderId ?? "all"] as const;
+}
+
+function useProcurementFormsWorkspace(purchaseOrderId?: string) {
+  return useQuery({
+    queryKey: procurementFormsWorkspaceQueryKey(purchaseOrderId),
+    queryFn: () => apiGet<ProcurementFormsWorkspacePayload>(`/api/procurement/forms/workspace${purchaseOrderId ? `?purchaseOrderId=${encodeURIComponent(purchaseOrderId)}` : ""}`)
+  });
+}
+
+function procurementFormsState(data?: ProcurementFormsWorkspacePayload) {
+  return {
+    accountingPolicy: data?.accountingPolicy,
+    counterparties: data?.counterparties ?? [],
+    documents: data?.documents ?? [],
+    goodsReceiptLines: data?.goodsReceiptLines ?? [],
+    goodsReceipts: data?.goodsReceipts ?? [],
+    inventoryLots: data?.inventoryLots ?? [],
+    paymentAllocations: data?.paymentAllocations ?? [],
+    products: data?.products ?? [],
+    purchaseOrderLines: data?.purchaseOrderLines ?? [],
+    purchaseOrders: data?.purchaseOrders ?? [],
+    warehouses: data?.warehouses ?? []
+  };
+}
+
+function invalidateProcurementFormsArea(queryClient: QueryClient, purchaseOrderId?: string) {
+  void queryClient.invalidateQueries({ queryKey: [PROCUREMENT_FORMS_QUERY_KEY] });
+  void queryClient.invalidateQueries({ queryKey: ["procurement-workspace"] });
+  void queryClient.invalidateQueries({ queryKey: ["inventory-workspace"] });
+  void queryClient.invalidateQueries({ queryKey: ["finance-workspace"] });
+  void queryClient.invalidateQueries({ queryKey: ["documents-workspace"] });
+  void queryClient.invalidateQueries({ queryKey: ["accounting-journal-workspace"] });
+  if (purchaseOrderId) {
+    void queryClient.invalidateQueries({ queryKey: ["purchase-order-card-workspace", purchaseOrderId] });
+    void queryClient.invalidateQueries({ queryKey: ["purchase-order-shortage-preview", purchaseOrderId] });
+    void queryClient.invalidateQueries({ queryKey: ["procurement-receipt-preview", purchaseOrderId] });
+    void queryClient.invalidateQueries({ queryKey: ["procurement-cost-preview", purchaseOrderId] });
+    void queryClient.invalidateQueries({ queryKey: ["shortage-preview-form", purchaseOrderId] });
+  }
+  PROCUREMENT_FORM_COLLECTION_KEYS.forEach((name) => {
+    void queryClient.invalidateQueries({ queryKey: ["collection", name] });
+  });
+}
 
 export function PurchaseOrderFormPage() {
   const { id } = useParams();
-  const state = { accountingPolicy: useCollection<any>("accountingPolicy"), counterparties: useCollection<any[]>("counterparties") ?? [], documents: useCollection<any[]>("documents") ?? [], goodsReceiptLines: useCollection<any[]>("goodsReceiptLines") ?? [], goodsReceipts: useCollection<any[]>("goodsReceipts") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], paymentAllocations: useCollection<any[]>("paymentAllocations") ?? [], products: useCollection<any[]>("products") ?? [], purchaseOrderLines: useCollection<any[]>("purchaseOrderLines") ?? [], purchaseOrders: useCollection<any[]>("purchaseOrders") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
+  const workspaceQuery = useProcurementFormsWorkspace(id);
+  const state = useMemo(() => procurementFormsState(workspaceQuery.data), [workspaceQuery.data]);
   const products = state.products ?? [];
   const counterparties = state.counterparties ?? [];
   const warehouses = (state.warehouses ?? []).filter((w: any) => w.warehouseType !== "sales_point");
@@ -42,6 +122,16 @@ export function PurchaseOrderFormPage() {
     { productId: products[0]?.id ?? "", qtyOrdered: 300, supplierUnitPrice: 9.5, lineNote: "" }
   ]);
   const [hydratedOrderId, setHydratedOrderId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isEditing) return;
+    if (!destinationWarehouseId && defaultWarehouseId) setDestinationWarehouseId(defaultWarehouseId);
+  }, [defaultWarehouseId, destinationWarehouseId, isEditing]);
+
+  useEffect(() => {
+    if (isEditing || !products[0]?.id) return;
+    setLines((current) => current.map((line) => line.productId ? line : { ...line, productId: products[0].id }));
+  }, [isEditing, products]);
 
   useEffect(() => {
     if (!isEditing || !order || hydratedOrderId === order.id) return;
@@ -85,12 +175,23 @@ export function PurchaseOrderFormPage() {
       return apiPost("/api/procurement/purchase-orders", payload);
     },
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries();
+      invalidateProcurementFormsArea(queryClient, data.id ?? id);
       navigate(`/procurement/purchase-orders/${data.id}`);
     }
   });
 
-  if (isEditing && !order) return null;
+  if (isEditing && !order) {
+    return (
+      <div className="max-w-6xl mx-auto flex flex-col gap-5">
+        <PageHeader
+          breadcrumbs={[{ label: "Поставки", to: "/procurement" }, { label: "Редактирование" }]}
+          title={workspaceQuery.isLoading ? "Загружаем заказ" : "Заказ не найден"}
+          subtitle={workspaceQuery.isLoading ? "Подгружаем данные формы." : "Возможно, заказ был удален или недоступен."}
+          actions={<Button variant="ghost" asChild><Link to="/procurement"><ArrowLeft size={14} /> Назад</Link></Button>}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto flex flex-col gap-5">
@@ -246,7 +347,8 @@ function mutationMessage(error: unknown) {
 
 export function SupplierPaymentFormPage() {
   const { id } = useParams();
-  const state = { accountingPolicy: useCollection<any>("accountingPolicy"), counterparties: useCollection<any[]>("counterparties") ?? [], documents: useCollection<any[]>("documents") ?? [], goodsReceiptLines: useCollection<any[]>("goodsReceiptLines") ?? [], goodsReceipts: useCollection<any[]>("goodsReceipts") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], paymentAllocations: useCollection<any[]>("paymentAllocations") ?? [], products: useCollection<any[]>("products") ?? [], purchaseOrderLines: useCollection<any[]>("purchaseOrderLines") ?? [], purchaseOrders: useCollection<any[]>("purchaseOrders") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
+  const workspaceQuery = useProcurementFormsWorkspace(id);
+  const state = useMemo(() => procurementFormsState(workspaceQuery.data), [workspaceQuery.data]);
   const purchaseOrders = (state.purchaseOrders ?? []).filter((candidate: any) => candidate.status !== "cancelled");
   const docs = state.documents ?? [];
   const counterparties = state.counterparties ?? [];
@@ -283,7 +385,7 @@ export function SupplierPaymentFormPage() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries();
+      invalidateProcurementFormsArea(queryClient, purchaseOrderId);
       navigate(purchaseOrderId ? `/procurement/purchase-orders/${purchaseOrderId}` : "/money");
     }
   });
@@ -363,7 +465,8 @@ export function SupplierPaymentFormPage() {
 
 export function GoodsReceiptFormPage() {
   const { id } = useParams();
-  const state = { accountingPolicy: useCollection<any>("accountingPolicy"), counterparties: useCollection<any[]>("counterparties") ?? [], documents: useCollection<any[]>("documents") ?? [], goodsReceiptLines: useCollection<any[]>("goodsReceiptLines") ?? [], goodsReceipts: useCollection<any[]>("goodsReceipts") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], paymentAllocations: useCollection<any[]>("paymentAllocations") ?? [], products: useCollection<any[]>("products") ?? [], purchaseOrderLines: useCollection<any[]>("purchaseOrderLines") ?? [], purchaseOrders: useCollection<any[]>("purchaseOrders") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
+  const workspaceQuery = useProcurementFormsWorkspace(id);
+  const state = useMemo(() => procurementFormsState(workspaceQuery.data), [workspaceQuery.data]);
   const order = (state.purchaseOrders ?? []).find((o: any) => o.id === id);
   const orderLines = (state.purchaseOrderLines ?? []).filter((l: any) => l.purchaseOrderId === id);
   const receiptLines = state.goodsReceiptLines ?? [];
@@ -405,6 +508,14 @@ export function GoodsReceiptFormPage() {
   const [items, setItems] = useState(
     receivableLines.map((l: any) => ({ purchaseOrderLineId: l.id, qtyReceived: l.qtyRemainingToReceive }))
   );
+  useEffect(() => {
+    if (receivableLines.length === 0) return;
+    setItems((current) => {
+      const currentIds = new Set(current.map((line) => line.purchaseOrderLineId));
+      if (current.length > 0 && receivableLines.every((line: any) => currentIds.has(line.id))) return current;
+      return receivableLines.map((line: any) => ({ purchaseOrderLineId: line.id, qtyReceived: line.qtyRemainingToReceive }));
+    });
+  }, [receivableLines]);
   const previewInputLines = useMemo(
     () => receivableLines
       .map((line: any, index: number) => ({
@@ -450,7 +561,7 @@ export function GoodsReceiptFormPage() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries();
+      invalidateProcurementFormsArea(queryClient, id);
       navigate(`/procurement/purchase-orders/${id}`);
     }
   });
@@ -637,7 +748,8 @@ export function GoodsReceiptFormPage() {
 
 export function ProcurementCostFormPage() {
   const { id } = useParams();
-  const state = { accountingPolicy: useCollection<any>("accountingPolicy"), counterparties: useCollection<any[]>("counterparties") ?? [], documents: useCollection<any[]>("documents") ?? [], goodsReceiptLines: useCollection<any[]>("goodsReceiptLines") ?? [], goodsReceipts: useCollection<any[]>("goodsReceipts") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], paymentAllocations: useCollection<any[]>("paymentAllocations") ?? [], products: useCollection<any[]>("products") ?? [], purchaseOrderLines: useCollection<any[]>("purchaseOrderLines") ?? [], purchaseOrders: useCollection<any[]>("purchaseOrders") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
+  const workspaceQuery = useProcurementFormsWorkspace(id);
+  const state = useMemo(() => procurementFormsState(workspaceQuery.data), [workspaceQuery.data]);
   const purchaseOrders = (state.purchaseOrders ?? []).filter((candidate: any) => candidate.status !== "cancelled");
   const documents = state.documents ?? [];
   const counterparties = state.counterparties ?? [];
@@ -701,7 +813,7 @@ export function ProcurementCostFormPage() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries();
+      invalidateProcurementFormsArea(queryClient, selectedOrderId);
       navigate(id ? `/procurement/purchase-orders/${selectedOrderId}` : "/money?view=outgoing&type=procurement_cost");
     }
   });
@@ -911,7 +1023,8 @@ function round2(value: number) {
 
 export function ShortageResolutionFormPage() {
   const { id } = useParams();
-  const state = { accountingPolicy: useCollection<any>("accountingPolicy"), counterparties: useCollection<any[]>("counterparties") ?? [], documents: useCollection<any[]>("documents") ?? [], goodsReceiptLines: useCollection<any[]>("goodsReceiptLines") ?? [], goodsReceipts: useCollection<any[]>("goodsReceipts") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], paymentAllocations: useCollection<any[]>("paymentAllocations") ?? [], products: useCollection<any[]>("products") ?? [], purchaseOrderLines: useCollection<any[]>("purchaseOrderLines") ?? [], purchaseOrders: useCollection<any[]>("purchaseOrders") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
+  const workspaceQuery = useProcurementFormsWorkspace(id);
+  const state = useMemo(() => procurementFormsState(workspaceQuery.data), [workspaceQuery.data]);
   const order = (state.purchaseOrders ?? []).find((o: any) => o.id === id);
   const products = state.products ?? [];
   const queryClient = useQueryClient();
@@ -945,7 +1058,10 @@ export function ShortageResolutionFormPage() {
         post,
         lines: linesState.map((l) => ({ ...l, qtyShortage: Number(l.qtyShortage) }))
       }),
-    onSuccess: () => { queryClient.invalidateQueries(); navigate(`/procurement/purchase-orders/${id}`); }
+    onSuccess: () => {
+      invalidateProcurementFormsArea(queryClient, id);
+      navigate(`/procurement/purchase-orders/${id}`);
+    }
   });
 
   return (

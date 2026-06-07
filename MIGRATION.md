@@ -138,10 +138,13 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   конкретному заказу: строки, поставщик, склад, документы, платежи, приемки, расходы, партии,
   проводки и решения по недопоставкам. После мутаций карточка инвалидирует свой workspace и
   затронутые соседние workspaces, без глобального `queryClient.invalidateQueries()`.
-- ⚠️ Фактический текущий остаток фронта: `useCollection` ещё есть в channel/procurement/
-  inventory/sales pages:
-  `ChannelDetailPage`, `ChannelsPages`, `inventory/forms`,
-  `procurement/forms`, `SalesPages`.
+- ✅ Формы поставок сняты с generic collections:
+  `procurement/forms` → `/api/procurement/forms/workspace` с контекстом создания/редактирования заказа,
+  оплаты поставщику, приемки, доп. расхода и разбора недопоставки. Endpoint умеет возвращать общий
+  контекст активных заказов или scoped-контекст одного `purchaseOrderId`; формы больше не используют
+  `useCollection` и не делают глобального `queryClient.invalidateQueries()`.
+- ⚠️ Фактический текущий остаток фронта: `useCollection` ещё есть в channel/inventory/sales pages:
+  `ChannelDetailPage`, `ChannelsPages`, `inventory/forms`, `SalesPages`.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,

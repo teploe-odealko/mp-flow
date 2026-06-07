@@ -320,6 +320,73 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       shortageResolutionLines
     };
   };
+  const procurementFormsWorkspaceFor = async (c: Context): Promise<any> => {
+    const readModelApp = await readModelAppFor(c);
+    const requestedPurchaseOrderId = c.req.query("purchaseOrderId");
+    const [
+      counterparties,
+      documents,
+      goodsReceiptLines,
+      goodsReceipts,
+      inventoryLots,
+      paymentAllocations,
+      products,
+      purchaseOrderLines,
+      purchaseOrders,
+      warehouses
+    ] = await Promise.all([
+      readModelApp.repos.counterparties.all(),
+      readModelApp.repos.documents.all(),
+      readModelApp.repos.goodsReceiptLines.all(),
+      readModelApp.repos.goodsReceipts.all(),
+      readModelApp.repos.inventoryLots.all(),
+      readModelApp.repos.paymentAllocations.all(),
+      readModelApp.repos.products.all(),
+      readModelApp.repos.purchaseOrderLines.all(),
+      readModelApp.repos.purchaseOrders.all(),
+      readModelApp.repos.warehouses.all()
+    ]);
+
+    const selectedOrder = requestedPurchaseOrderId
+      ? purchaseOrders.find((order) => order.id === requestedPurchaseOrderId)
+      : undefined;
+    if (requestedPurchaseOrderId && !selectedOrder) {
+      throw new DomainError("purchase_order_not_found", "Заказ поставщику не найден");
+    }
+
+    const formOrders = requestedPurchaseOrderId
+      ? selectedOrder ? [selectedOrder] : []
+      : purchaseOrders.filter((order) => order.status !== "cancelled");
+    const orderIds = new Set(formOrders.map((order) => order.id));
+    const lines = purchaseOrderLines.filter((line) => orderIds.has(line.purchaseOrderId));
+    const receipts = goodsReceipts.filter((receipt) => orderIds.has(receipt.purchaseOrderId));
+    const receiptIds = new Set(receipts.map((receipt) => receipt.id));
+    const receiptLines = goodsReceiptLines.filter((line) => receiptIds.has(line.goodsReceiptId));
+    const receiptLineIds = new Set(receiptLines.map((line) => line.id));
+    const receiptDocumentIds = new Set(receipts.map((receipt) => receipt.documentId));
+    const relatedLots = inventoryLots.filter((lot) =>
+      receiptDocumentIds.has(lot.sourceDocumentId) || (lot.sourceLineId ? receiptLineIds.has(lot.sourceLineId) : false)
+    );
+    const allocations = paymentAllocations.filter((allocation) => allocation.purchaseOrderId ? orderIds.has(allocation.purchaseOrderId) : false);
+    const documentIds = new Set<string>();
+    formOrders.forEach((order) => order.documentId && documentIds.add(order.documentId));
+    receipts.forEach((receipt) => receipt.documentId && documentIds.add(receipt.documentId));
+    const supplierIds = new Set(formOrders.map((order) => order.supplierId));
+
+    return {
+      accountingPolicy: readModelApp.setupMetadata().accountingPolicy,
+      counterparties: counterparties.filter((counterparty) => counterparty.counterpartyType === "supplier" || supplierIds.has(counterparty.id)),
+      documents: documents.filter((document) => documentIds.has(document.id)),
+      goodsReceiptLines: receiptLines,
+      goodsReceipts: receipts,
+      inventoryLots: relatedLots,
+      paymentAllocations: allocations,
+      products,
+      purchaseOrderLines: lines,
+      purchaseOrders: formOrders,
+      warehouses
+    };
+  };
   const purchaseOrderCardWorkspaceFor = async (c: Context, purchaseOrderId: string): Promise<any> => {
     const readModelApp = await readModelAppFor(c);
     const order = await readModelApp.repos.purchaseOrders.getById(purchaseOrderId);
@@ -775,6 +842,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/counterparties", async (c) => c.json({ ok: true, data: await collectionFor(c, "counterparties") }));
   api.get("/api/procurement/purchase-orders", async (c) => c.json({ ok: true, data: { orders: await collectionFor(c, "purchaseOrders"), lines: await collectionFor(c, "purchaseOrderLines") } }));
   api.get("/api/procurement/workspace", async (c) => c.json({ ok: true, data: await procurementWorkspaceFor(c) }));
+  api.get("/api/procurement/forms/workspace", async (c) => c.json({ ok: true, data: await procurementFormsWorkspaceFor(c) }));
   api.get("/api/channels", async (c) => c.json({ ok: true, data: { plugins: await collectionFor(c, "integrationPlugins"), channels: await collectionFor(c, "salesChannels") } }));
   api.get("/api/integrations/channels", async (c) => c.json({ ok: true, data: { plugins: await collectionFor(c, "integrationPlugins"), channels: await collectionFor(c, "salesChannels") } }));
   api.get("/api/integrations/channels/:id", async (c) => {

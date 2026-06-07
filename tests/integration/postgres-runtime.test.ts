@@ -103,6 +103,8 @@ describePostgres("postgres runtime store", () => {
       orderedAt: "2026-01-16",
       lines: [{ productId: product.id, qty: 4, supplierUnitPrice: 250 }]
     });
+    const procurementFormsWorkspace = await request<any>(api, "GET", "/api/procurement/forms/workspace");
+    const purchaseOrderFormsWorkspace = await request<any>(api, "GET", `/api/procurement/forms/workspace?purchaseOrderId=${purchaseOrder.id}`);
     const purchaseOrderCardWorkspace = await request<any>(api, "GET", `/api/procurement/purchase-orders/${purchaseOrder.id}/workspace`);
     const procurementWorkspace = await request<any>(api, "GET", "/api/procurement/workspace");
     const productChannelMapping = await request<any>(api, "GET", "/api/products/channel-mapping");
@@ -158,6 +160,15 @@ describePostgres("postgres runtime store", () => {
       expect(inventoryWorkspace.documents).toEqual(expect.any(Array));
       expect(inventoryWorkspace.stockMovements).toEqual(expect.any(Array));
       expect(ownWarehouse).toEqual(expect.objectContaining({ warehouseType: "own" }));
+      expect(procurementFormsWorkspace.purchaseOrders).toContainEqual(expect.objectContaining({ id: purchaseOrder.id }));
+      expect(procurementFormsWorkspace.purchaseOrderLines).toContainEqual(expect.objectContaining({ purchaseOrderId: purchaseOrder.id, productId: product.id }));
+      expect(procurementFormsWorkspace.products).toContainEqual(expect.objectContaining({ id: product.id, sku: "PG-001" }));
+      expect(procurementFormsWorkspace.warehouses).toContainEqual(expect.objectContaining({ id: ownWarehouse.id }));
+      expect(procurementFormsWorkspace.accountingPolicy).toEqual(expect.objectContaining({ accountingStartDate: expect.any(String) }));
+      expect(purchaseOrderFormsWorkspace.purchaseOrders).toEqual([expect.objectContaining({ id: purchaseOrder.id })]);
+      expect(purchaseOrderFormsWorkspace.purchaseOrderLines).toContainEqual(expect.objectContaining({ purchaseOrderId: purchaseOrder.id, productId: product.id }));
+      expect(purchaseOrderFormsWorkspace.counterparties).toContainEqual(expect.objectContaining({ name: "PG поставщик" }));
+      expect(purchaseOrderFormsWorkspace.documents).toContainEqual(expect.objectContaining({ id: purchaseOrder.documentId }));
       expect(purchaseOrderCardWorkspace.order).toEqual(expect.objectContaining({ id: purchaseOrder.id, supplierCurrency: "RUB" }));
       expect(purchaseOrderCardWorkspace.purchaseOrderLines).toContainEqual(expect.objectContaining({ purchaseOrderId: purchaseOrder.id, productId: product.id }));
       expect(purchaseOrderCardWorkspace.counterparties).toContainEqual(expect.objectContaining({ name: "PG поставщик" }));

@@ -66,7 +66,9 @@ describe("MPFlow api surface", () => {
       get<{ stockStates: unknown[]; products: unknown[]; warehouses: unknown[]; documents: unknown[]; stockMovements: unknown[] }>(api, "/api/inventory/workspace"),
       get<{ orders: unknown[]; lines: unknown[] }>(api, "/api/procurement/purchase-orders"),
       get<{ purchaseOrders: unknown[]; purchaseOrderLines: unknown[]; counterparties: unknown[]; documents: unknown[]; procurementCosts: unknown[]; goodsReceipts: unknown[]; goodsReceiptLines: unknown[]; payments: unknown[]; paymentAllocations: unknown[]; shortageResolutions: unknown[]; shortageResolutionLines: unknown[] }>(api, "/api/procurement/workspace"),
+      get<{ purchaseOrders: unknown[]; purchaseOrderLines: unknown[]; counterparties: unknown[]; documents: unknown[]; goodsReceipts: unknown[]; goodsReceiptLines: unknown[]; paymentAllocations: unknown[]; products: unknown[]; warehouses: unknown[]; accountingPolicy?: unknown }>(api, "/api/procurement/forms/workspace"),
       get<{ order: any; purchaseOrderLines: unknown[]; counterparties: unknown[]; documents: unknown[]; goodsReceipts: unknown[]; goodsReceiptLines: unknown[]; payments: unknown[]; paymentAllocations: unknown[]; procurementCosts: unknown[]; procurementCostLines: unknown[]; shortageResolutions: unknown[]; shortageResolutionLines: unknown[] }>(api, `/api/procurement/purchase-orders/${demoOrder.id}/workspace`),
+      get<{ purchaseOrders: unknown[]; purchaseOrderLines: unknown[]; counterparties: unknown[]; documents: unknown[]; goodsReceipts: unknown[]; goodsReceiptLines: unknown[]; paymentAllocations: unknown[]; products: unknown[]; warehouses: unknown[]; accountingPolicy?: unknown }>(api, `/api/procurement/forms/workspace?purchaseOrderId=${demoOrder.id}`),
       get<{ cashAccounts: unknown[]; payments: unknown[]; allocations: unknown[] }>(api, "/api/money/payments"),
       get<{ cashAccounts: unknown[]; payments: unknown[]; documents: unknown[]; operatingExpenses: unknown[]; payouts: unknown[] }>(api, "/api/finance/workspace"),
       get<{ plugins: unknown[]; channels: unknown[] }>(api, "/api/channels"),
@@ -80,7 +82,7 @@ describe("MPFlow api surface", () => {
       get<unknown[]>(api, "/api/controls/audit-events")
     ]);
 
-    const [dashboard, setup, accounts, journal, ledger, documents, products, inventory, inventoryWorkspace, purchaseOrders, procurementWorkspace, purchaseOrderCard, money, financeWorkspace, channels, mapping, events, sales, returns, payouts, expenses, corrections, auditEvents] = readModels;
+    const [dashboard, setup, accounts, journal, ledger, documents, products, inventory, inventoryWorkspace, purchaseOrders, procurementWorkspace, procurementFormsWorkspace, purchaseOrderCard, purchaseOrderFormsWorkspace, money, financeWorkspace, channels, mapping, events, sales, returns, payouts, expenses, corrections, auditEvents] = readModels;
     expect(dashboard.configured).toBe(true);
     expect(dashboard.counters.products).toBeGreaterThan(0);
     expect(dashboard.counters.documents).toBeGreaterThan(0);
@@ -111,6 +113,16 @@ describe("MPFlow api surface", () => {
     expect(procurementWorkspace.paymentAllocations.length).toBeGreaterThan(0);
     expect(procurementWorkspace.shortageResolutions).toEqual(expect.any(Array));
     expect(procurementWorkspace.shortageResolutionLines).toEqual(expect.any(Array));
+    expect(procurementFormsWorkspace.purchaseOrders.length).toBe(1);
+    expect(procurementFormsWorkspace.purchaseOrderLines.length).toBe(2);
+    expect(procurementFormsWorkspace.counterparties.length).toBeGreaterThan(0);
+    expect(procurementFormsWorkspace.documents.length).toBeGreaterThan(0);
+    expect(procurementFormsWorkspace.goodsReceipts.length).toBeGreaterThan(0);
+    expect(procurementFormsWorkspace.goodsReceiptLines.length).toBeGreaterThan(0);
+    expect(procurementFormsWorkspace.paymentAllocations.length).toBeGreaterThan(0);
+    expect(procurementFormsWorkspace.products.length).toBe(2);
+    expect(procurementFormsWorkspace.warehouses.length).toBeGreaterThan(0);
+    expect(procurementFormsWorkspace.accountingPolicy).toBeTruthy();
     expect(purchaseOrderCard.order.id).toBe(demoOrder.id);
     expect(purchaseOrderCard.purchaseOrderLines.length).toBe(2);
     expect(purchaseOrderCard.counterparties.length).toBeGreaterThan(0);
@@ -123,6 +135,11 @@ describe("MPFlow api surface", () => {
     expect(purchaseOrderCard.procurementCostLines.length).toBeGreaterThan(0);
     expect(purchaseOrderCard.shortageResolutions).toEqual(expect.any(Array));
     expect(purchaseOrderCard.shortageResolutionLines).toEqual(expect.any(Array));
+    expect(purchaseOrderFormsWorkspace.purchaseOrders).toEqual([expect.objectContaining({ id: demoOrder.id })]);
+    expect(purchaseOrderFormsWorkspace.purchaseOrderLines.length).toBe(2);
+    expect(purchaseOrderFormsWorkspace.documents).toContainEqual(expect.objectContaining({ id: demoOrder.documentId }));
+    expect(purchaseOrderFormsWorkspace.products.length).toBe(2);
+    expect(purchaseOrderFormsWorkspace.warehouses.length).toBeGreaterThan(0);
     expect(money.cashAccounts.length).toBeGreaterThan(0);
     expect(money.payments.length).toBeGreaterThan(0);
     expect(financeWorkspace.cashAccounts.length).toBeGreaterThan(0);
