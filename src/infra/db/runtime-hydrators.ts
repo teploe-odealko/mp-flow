@@ -2,8 +2,11 @@ import type {
   AccountingPeriod,
   AccountingPolicy,
   AuditEvent,
+  BackfillItem,
+  BackfillProject,
   CashAccount,
   ChartAccount,
+  CorrectionCase,
   Counterparty,
   Document,
   DocumentLine,
@@ -11,6 +14,7 @@ import type {
   DocumentVersion,
   DocumentTypeRegistry,
   ExternalEvent,
+  ExpenseCategory,
   IntegrationPlugin,
   JournalEntry,
   JournalLine,
@@ -20,6 +24,9 @@ import type {
   ProcurementCostLine,
   PurchaseOrder,
   PurchaseOrderLine,
+  RecalculationJob,
+  ReportSnapshot,
+  Role,
   SettlementEntry,
   GoodsReceipt,
   GoodsReceiptLine,
@@ -1168,6 +1175,239 @@ export function supplierClaimFromRow(row: SupplierClaimDbRow): SupplierClaim {
     supplierId: row.supplier_id,
     amountRub: Number(row.amount_rub),
     status: row.status
+  };
+}
+
+export const EXPENSE_CATEGORY_SELECT = `
+  expense_category.public_id as id,
+  expense_category_organization.public_id as organization_id,
+  expense_category.name,
+  expense_category.account_code
+`;
+
+export const EXPENSE_CATEGORY_JOINS = `
+  left join organization expense_category_organization on expense_category_organization.id = expense_category.organization_id
+`;
+
+export interface ExpenseCategoryDbRow {
+  id: string;
+  organization_id: string;
+  name: string;
+  account_code: ExpenseCategory["accountCode"];
+}
+
+export function expenseCategoryFromRow(row: ExpenseCategoryDbRow): ExpenseCategory {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    name: row.name,
+    accountCode: row.account_code
+  };
+}
+
+export const CORRECTION_CASE_SELECT = `
+  correction_case.public_id as id,
+  correction_case_organization.public_id as organization_id,
+  correction_case_source_document.public_id as source_document_id,
+  correction_case.correction_type,
+  correction_case.reason,
+  correction_case.status,
+  correction_case.impact_summary,
+  correction_case.created_at,
+  correction_case.applied_at
+`;
+
+export const CORRECTION_CASE_JOINS = `
+  left join organization correction_case_organization on correction_case_organization.id = correction_case.organization_id
+  left join document correction_case_source_document on correction_case_source_document.id = correction_case.source_document_id
+`;
+
+export interface CorrectionCaseDbRow {
+  id: string;
+  organization_id: string;
+  source_document_id: string;
+  correction_type: CorrectionCase["correctionType"];
+  reason: string;
+  status: CorrectionCase["status"];
+  impact_summary: Record<string, unknown>;
+  created_at: unknown;
+  applied_at: unknown;
+}
+
+export function correctionCaseFromRow(row: CorrectionCaseDbRow): CorrectionCase {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    sourceDocumentId: row.source_document_id,
+    correctionType: row.correction_type,
+    reason: row.reason,
+    status: row.status,
+    impactSummary: row.impact_summary ?? {},
+    createdAt: dateTimeString(row.created_at),
+    appliedAt: optionalDateTimeString(row.applied_at)
+  });
+}
+
+export const RECALCULATION_JOB_SELECT = `
+  recalculation_job.public_id as id,
+  recalculation_job_organization.public_id as organization_id,
+  recalculation_job.job_type,
+  recalculation_job.scope,
+  recalculation_job.status,
+  recalculation_job.progress,
+  recalculation_job.created_at,
+  recalculation_job.finished_at
+`;
+
+export const RECALCULATION_JOB_JOINS = `
+  left join organization recalculation_job_organization on recalculation_job_organization.id = recalculation_job.organization_id
+`;
+
+export interface RecalculationJobDbRow {
+  id: string;
+  organization_id: string;
+  job_type: RecalculationJob["jobType"];
+  scope: Record<string, unknown>;
+  status: RecalculationJob["status"];
+  progress: string | number;
+  created_at: unknown;
+  finished_at: unknown;
+}
+
+export function recalculationJobFromRow(row: RecalculationJobDbRow): RecalculationJob {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    jobType: row.job_type,
+    scope: row.scope ?? {},
+    status: row.status,
+    progress: Number(row.progress),
+    createdAt: dateTimeString(row.created_at),
+    finishedAt: optionalDateTimeString(row.finished_at)
+  });
+}
+
+export const REPORT_SNAPSHOT_SELECT = `
+  report_snapshot.public_id as id,
+  report_snapshot_organization.public_id as organization_id,
+  report_snapshot_period.public_id as period_id,
+  report_snapshot.report_type,
+  report_snapshot.payload,
+  report_snapshot.created_at
+`;
+
+export const REPORT_SNAPSHOT_JOINS = `
+  left join organization report_snapshot_organization on report_snapshot_organization.id = report_snapshot.organization_id
+  left join accounting_period report_snapshot_period on report_snapshot_period.id = report_snapshot.period_id
+`;
+
+export interface ReportSnapshotDbRow {
+  id: string;
+  organization_id: string;
+  period_id: string | null;
+  report_type: ReportSnapshot["reportType"];
+  payload: unknown;
+  created_at: unknown;
+}
+
+export function reportSnapshotFromRow(row: ReportSnapshotDbRow): ReportSnapshot {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    periodId: optionalText(row.period_id),
+    reportType: row.report_type,
+    payload: row.payload,
+    createdAt: dateTimeString(row.created_at)
+  });
+}
+
+export const BACKFILL_PROJECT_SELECT = `
+  backfill_project.public_id as id,
+  backfill_project_organization.public_id as organization_id,
+  backfill_project.name,
+  backfill_project.status,
+  backfill_project.payload,
+  backfill_project.created_at
+`;
+
+export const BACKFILL_PROJECT_JOINS = `
+  left join organization backfill_project_organization on backfill_project_organization.id = backfill_project.organization_id
+`;
+
+export interface BackfillProjectDbRow {
+  id: string;
+  organization_id: string;
+  name: string;
+  status: BackfillProject["status"];
+  payload: Record<string, unknown>;
+  created_at: unknown;
+}
+
+export function backfillProjectFromRow(row: BackfillProjectDbRow): BackfillProject {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    name: row.name,
+    status: row.status,
+    payload: row.payload ?? {},
+    createdAt: dateTimeString(row.created_at)
+  };
+}
+
+export const BACKFILL_ITEM_SELECT = `
+  backfill_item.public_id as id,
+  backfill_item_project.public_id as backfill_project_id,
+  backfill_item.item_type,
+  backfill_item.payload,
+  backfill_item.status
+`;
+
+export const BACKFILL_ITEM_JOINS = `
+  left join backfill_project backfill_item_project on backfill_item_project.id = backfill_item.backfill_project_id
+`;
+
+export interface BackfillItemDbRow {
+  id: string;
+  backfill_project_id: string;
+  item_type: BackfillItem["itemType"];
+  payload: Record<string, unknown>;
+  status: BackfillItem["status"];
+}
+
+export function backfillItemFromRow(row: BackfillItemDbRow): BackfillItem {
+  return {
+    id: row.id,
+    backfillProjectId: row.backfill_project_id,
+    itemType: row.item_type,
+    payload: row.payload ?? {},
+    status: row.status
+  };
+}
+
+export const ROLE_SELECT = `
+  role.public_id as id,
+  role_organization.public_id as organization_id,
+  role.code,
+  role.name
+`;
+
+export const ROLE_JOINS = `
+  left join organization role_organization on role_organization.id = role.organization_id
+`;
+
+export interface RoleDbRow {
+  id: string;
+  organization_id: string;
+  code: Role["code"];
+  name: string;
+}
+
+export function roleFromRow(row: RoleDbRow): Role {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    code: row.code,
+    name: row.name
   };
 }
 

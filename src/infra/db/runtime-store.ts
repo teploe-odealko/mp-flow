@@ -16,12 +16,18 @@ import {
   ACCOUNTING_PERIOD_SELECT,
   AUDIT_EVENT_JOINS,
   AUDIT_EVENT_SELECT,
+  BACKFILL_ITEM_JOINS,
+  BACKFILL_ITEM_SELECT,
+  BACKFILL_PROJECT_JOINS,
+  BACKFILL_PROJECT_SELECT,
   CASH_ACCOUNT_JOINS,
   CASH_ACCOUNT_SELECT,
   CHART_ACCOUNT_JOINS,
   CHART_ACCOUNT_SELECT,
   COUNTERPARTY_JOINS,
   COUNTERPARTY_SELECT,
+  CORRECTION_CASE_JOINS,
+  CORRECTION_CASE_SELECT,
   DOCUMENT_JOINS,
   DOCUMENT_LINE_JOINS,
   DOCUMENT_LINE_SELECT,
@@ -33,6 +39,8 @@ import {
   DOCUMENT_VERSION_SELECT,
   EXTERNAL_EVENT_JOINS,
   EXTERNAL_EVENT_SELECT,
+  EXPENSE_CATEGORY_JOINS,
+  EXPENSE_CATEGORY_SELECT,
   GOODS_RECEIPT_JOINS,
   GOODS_RECEIPT_LINE_JOINS,
   GOODS_RECEIPT_LINE_SELECT,
@@ -53,6 +61,10 @@ import {
   PROCUREMENT_COST_LINE_JOINS,
   PROCUREMENT_COST_LINE_SELECT,
   PROCUREMENT_COST_SELECT,
+  RECALCULATION_JOB_JOINS,
+  RECALCULATION_JOB_SELECT,
+  REPORT_SNAPSHOT_JOINS,
+  REPORT_SNAPSHOT_SELECT,
   PRODUCT_JOINS,
   PRODUCT_SELECT,
   PURCHASE_ORDER_JOINS,
@@ -67,6 +79,8 @@ import {
   SHORTAGE_RESOLUTION_SELECT,
   SUPPLIER_CLAIM_JOINS,
   SUPPLIER_CLAIM_SELECT,
+  ROLE_JOINS,
+  ROLE_SELECT,
   SYNC_RUN_JOINS,
   SYNC_RUN_SELECT,
   WAREHOUSE_JOINS,
@@ -74,15 +88,19 @@ import {
   accountingPeriodFromRow,
   accountingPolicyFromRow,
   auditEventFromRow,
+  backfillItemFromRow,
+  backfillProjectFromRow,
   cashAccountFromRow,
   chartAccountFromRow,
   counterpartyFromRow,
+  correctionCaseFromRow,
   documentTypeFromRow,
   documentFromRow,
   documentLineFromRow,
   documentLinkFromRow,
   documentVersionFromRow,
   externalEventFromRow,
+  expenseCategoryFromRow,
   goodsReceiptFromRow,
   goodsReceiptLineFromRow,
   integrationPluginFromRow,
@@ -94,6 +112,8 @@ import {
   paymentFromRow,
   procurementCostFromRow,
   procurementCostLineFromRow,
+  recalculationJobFromRow,
+  reportSnapshotFromRow,
   productFromRow,
   purchaseOrderFromRow,
   purchaseOrderLineFromRow,
@@ -101,20 +121,25 @@ import {
   shortageResolutionFromRow,
   shortageResolutionLineFromRow,
   supplierClaimFromRow,
+  roleFromRow,
   syncRunFromRow,
   warehouseFromRow,
   type AccountingPeriodDbRow,
   type AccountingPolicyDbRow,
   type AuditEventDbRow,
+  type BackfillItemDbRow,
+  type BackfillProjectDbRow,
   type CashAccountDbRow,
   type ChartAccountDbRow,
   type CounterpartyDbRow,
+  type CorrectionCaseDbRow,
   type DocumentTypeDbRow,
   type DocumentDbRow,
   type DocumentLineDbRow,
   type DocumentLinkDbRow,
   type DocumentVersionDbRow,
   type ExternalEventDbRow,
+  type ExpenseCategoryDbRow,
   type GoodsReceiptDbRow,
   type GoodsReceiptLineDbRow,
   type IntegrationPluginDbRow,
@@ -125,6 +150,8 @@ import {
   type PaymentDbRow,
   type ProcurementCostDbRow,
   type ProcurementCostLineDbRow,
+  type RecalculationJobDbRow,
+  type ReportSnapshotDbRow,
   type ObservedStockDbRow,
   type ProductDbRow,
   type PurchaseOrderDbRow,
@@ -133,6 +160,7 @@ import {
   type ShortageResolutionDbRow,
   type ShortageResolutionLineDbRow,
   type SupplierClaimDbRow,
+  type RoleDbRow,
   type SyncRunDbRow,
   type WarehouseDbRow
 } from "./runtime-hydrators";
@@ -1120,9 +1148,12 @@ const TABLES: TableSpec[] = [
     id: entityUuid(requiredString(entity.id, "expenseCategories.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "expenseCategories.organizationId")),
     name: requiredString(entity.name, "expenseCategories.name"),
-    account_code: requiredString(entity.accountCode, "expenseCategories.accountCode"),
-    state_json: entity
-  }), "name, id"),
+    account_code: requiredString(entity.accountCode, "expenseCategories.accountCode")
+  }), "expense_category.name, expense_category.id", {
+    select: EXPENSE_CATEGORY_SELECT,
+    joins: EXPENSE_CATEGORY_JOINS,
+    hydrate: (row) => expenseCategoryFromRow(row as unknown as ExpenseCategoryDbRow) as unknown as RuntimeEntity
+  }),
   spec("operatingExpenses", "operating_expense", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "operatingExpenses.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "operatingExpenses.organizationId")),
@@ -1172,9 +1203,12 @@ const TABLES: TableSpec[] = [
     status: requiredString(entity.status, "correctionCases.status"),
     impact_summary: entity.impactSummary ?? {},
     created_at: requiredString(entity.createdAt, "correctionCases.createdAt"),
-    applied_at: optionalString(entity.appliedAt),
-    state_json: entity
-  }), "created_at, id"),
+    applied_at: optionalString(entity.appliedAt)
+  }), "correction_case.created_at, correction_case.id", {
+    select: CORRECTION_CASE_SELECT,
+    joins: CORRECTION_CASE_JOINS,
+    hydrate: (row) => correctionCaseFromRow(row as unknown as CorrectionCaseDbRow) as unknown as RuntimeEntity
+  }),
   spec("recalculationJobs", "recalculation_job", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "recalculationJobs.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "recalculationJobs.organizationId")),
@@ -1185,35 +1219,47 @@ const TABLES: TableSpec[] = [
     started_at: null,
     finished_at: optionalString(entity.finishedAt),
     last_error: null,
-    created_at: requiredString(entity.createdAt, "recalculationJobs.createdAt"),
-    state_json: entity
-  }), "created_at, id"),
+    created_at: requiredString(entity.createdAt, "recalculationJobs.createdAt")
+  }), "recalculation_job.created_at, recalculation_job.id", {
+    select: RECALCULATION_JOB_SELECT,
+    joins: RECALCULATION_JOB_JOINS,
+    hydrate: (row) => recalculationJobFromRow(row as unknown as RecalculationJobDbRow) as unknown as RuntimeEntity
+  }),
   spec("reportSnapshots", "report_snapshot", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "reportSnapshots.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "reportSnapshots.organizationId")),
     period_id: optionalUuid(entity.periodId),
     report_type: requiredString(entity.reportType, "reportSnapshots.reportType"),
     payload: entity.payload ?? {},
-    created_at: requiredString(entity.createdAt, "reportSnapshots.createdAt"),
-    state_json: entity
-  }), "created_at, id"),
+    created_at: requiredString(entity.createdAt, "reportSnapshots.createdAt")
+  }), "report_snapshot.created_at, report_snapshot.id", {
+    select: REPORT_SNAPSHOT_SELECT,
+    joins: REPORT_SNAPSHOT_JOINS,
+    hydrate: (row) => reportSnapshotFromRow(row as unknown as ReportSnapshotDbRow) as unknown as RuntimeEntity
+  }),
   spec("backfillProjects", "backfill_project", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "backfillProjects.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "backfillProjects.organizationId")),
     name: requiredString(entity.name, "backfillProjects.name"),
     status: requiredString(entity.status, "backfillProjects.status"),
     payload: entity.payload ?? {},
-    created_at: requiredString(entity.createdAt, "backfillProjects.createdAt"),
-    state_json: entity
-  }), "created_at, id"),
+    created_at: requiredString(entity.createdAt, "backfillProjects.createdAt")
+  }), "backfill_project.created_at, backfill_project.id", {
+    select: BACKFILL_PROJECT_SELECT,
+    joins: BACKFILL_PROJECT_JOINS,
+    hydrate: (row) => backfillProjectFromRow(row as unknown as BackfillProjectDbRow) as unknown as RuntimeEntity
+  }),
   spec("backfillItems", "backfill_item", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "backfillItems.id")),
     backfill_project_id: entityUuid(requiredString(entity.backfillProjectId, "backfillItems.backfillProjectId")),
     item_type: requiredString(entity.itemType, "backfillItems.itemType"),
     payload: entity.payload ?? {},
-    status: requiredString(entity.status, "backfillItems.status"),
-    state_json: entity
-  }), "backfill_project_id, id"),
+    status: requiredString(entity.status, "backfillItems.status")
+  }), "backfill_item.backfill_project_id, backfill_item.id", {
+    select: BACKFILL_ITEM_SELECT,
+    joins: BACKFILL_ITEM_JOINS,
+    hydrate: (row) => backfillItemFromRow(row as unknown as BackfillItemDbRow) as unknown as RuntimeEntity
+  }),
   spec("users", "user_account", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "users.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "users.organizationId")),
@@ -1226,9 +1272,12 @@ const TABLES: TableSpec[] = [
     id: entityUuid(requiredString(entity.id, "roles.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "roles.organizationId")),
     code: requiredString(entity.code, "roles.code"),
-    name: requiredString(entity.name, "roles.name"),
-    state_json: entity
-  }), "code, id"),
+    name: requiredString(entity.name, "roles.name")
+  }), "role.code, role.id", {
+    select: ROLE_SELECT,
+    joins: ROLE_JOINS,
+    hydrate: (row) => roleFromRow(row as unknown as RoleDbRow) as unknown as RuntimeEntity
+  }),
   spec("agentTokens", "agent_token", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "agentTokens.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "agentTokens.organizationId")),

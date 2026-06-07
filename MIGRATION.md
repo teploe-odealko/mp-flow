@@ -216,6 +216,12 @@ counterparty/channel/order references восстанавливаются чер�
 Добавлена typed колонка `procurement_cost.pending_allocation` с backfill. Текущий остаток `state_json: entity` —
 31 таблица.
 
+### ✅ Typed hydrate для сервисных и админских таблиц
+На typed specs переведены `expenseCategories`, `correctionCases`, `recalculationJobs`, `reportSnapshots`,
+`backfillProjects`, `backfillItems`, `roles`: generic collection repo читает их через typed columns и
+`public_id` joins, запись нового `state_json` остановлена. Текущий остаток `state_json: entity` —
+24 таблицы.
+
 ### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
 Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/
 addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocumentSummary(x))` — хелперы каскадно
