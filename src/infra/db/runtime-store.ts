@@ -2576,6 +2576,9 @@ export async function readRuntimeDashboard(source: Queryable, workspaceId: strin
     documents,
     inventoryLots,
     correctionCases,
+    stockStates,
+    sales,
+    purchaseOrders,
     balances
   ] = await Promise.all([
     readRuntimeSingleton(source, scope, "organization"),
@@ -2585,6 +2588,9 @@ export async function readRuntimeDashboard(source: Queryable, workspaceId: strin
     readCollectionData<RuntimeEntity>(source, scope, "documents"),
     readCollectionData<RuntimeEntity>(source, scope, "inventoryLots"),
     readCollectionData<RuntimeEntity>(source, scope, "correctionCases"),
+    readCollectionData<RuntimeEntity>(source, scope, "stockStates"),
+    readCollectionData<RuntimeEntity>(source, scope, "sales"),
+    readCollectionData<RuntimeEntity>(source, scope, "purchaseOrders"),
     readRuntimeLedgerBalances(source, scope)
   ]);
 
@@ -2598,8 +2604,15 @@ export async function readRuntimeDashboard(source: Queryable, workspaceId: strin
       documents: documents.length,
       postedDocuments: documents.filter((document) => document.status === "posted").length,
       inventoryLots: inventoryLots.filter((lot) => Number(lot.qtyRemaining ?? 0) > 0).length,
+      sales: sales.length,
+      purchaseOrders: purchaseOrders.length,
       openCorrections: correctionCases.filter((correction) => correction.status !== "applied").length
     },
+    inventoryCostRub: round2(stockStates.reduce((sum, stock) => sum + Number(stock.costRub ?? 0), 0)),
+    recentDocuments: documents
+      .slice()
+      .sort((left, right) => String(right.accountingDate).localeCompare(String(left.accountingDate)) || String(right.createdAt ?? "").localeCompare(String(left.createdAt ?? "")))
+      .slice(0, 6),
     balances
   };
 }

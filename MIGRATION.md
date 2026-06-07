@@ -296,6 +296,11 @@ prod-readiness фиксирует, что dashboard больше не откры
 тестового контура. Балансовый drilldown временно снят с клиентского расчёта и должен стать отдельной
 атомарной ручкой, если понадобится вернуть кликабельную расшифровку.
 
+### ✅ HomePage переведён на dashboard DTO
+Главная страница больше не тянет `organization/products/documents/inventoryLots/sales/stockStates/purchaseOrders`
+через `useCollection`. `/api/dashboard` возвращает counters, `inventoryCostRub` и `recentDocuments`; Postgres
+runtime собирает их из typed read-model.
+
 ### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
 Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/
 addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocumentSummary(x))` — хелперы каскадно

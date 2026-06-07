@@ -466,6 +466,9 @@ export class AccountingApp {
   async dashboard() {
     const org = this.organization;
     const documents = await this.repos.documents.all();
+    const stockStates = await this.repos.stockStates.all();
+    const sales = await this.repos.sales.all();
+    const purchaseOrders = await this.repos.purchaseOrders.all();
     return {
       organization: org,
       configured: Boolean(org),
@@ -476,8 +479,15 @@ export class AccountingApp {
         documents: documents.length,
         postedDocuments: documents.filter((document) => document.status === "posted").length,
         inventoryLots: (await this.repos.inventoryLots.all()).filter((lot) => lot.qtyRemaining > 0).length,
+        sales: sales.length,
+        purchaseOrders: purchaseOrders.length,
         openCorrections: (await this.repos.correctionCases.all()).filter((correction) => correction.status !== "applied").length
       },
+      inventoryCostRub: round2(stockStates.reduce((sum, stock) => sum + Number(stock.costRub ?? 0), 0)),
+      recentDocuments: documents
+        .slice()
+        .sort((left, right) => String(right.accountingDate).localeCompare(String(left.accountingDate)) || String(right.createdAt ?? "").localeCompare(String(left.createdAt ?? "")))
+        .slice(0, 6),
       balances: await this.ledgerBalances()
     };
   }

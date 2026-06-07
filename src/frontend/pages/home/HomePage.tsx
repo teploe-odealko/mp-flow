@@ -10,20 +10,24 @@ import {
   Truck,
   Warehouse
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Kpi } from "@/components/ui/kpi";
 import { PageHeader } from "@/components/ui/page-header";
-import { useCollection } from "@/lib/use-collection";
+import { apiGet } from "@/api";
 import { rub } from "@/lib/format";
 
 export function HomePage() {
-  const organization = useCollection<any>("organization");
-  if (!organization) {
+  const dashboardQuery = useQuery({ queryKey: ["dashboard"], queryFn: () => apiGet<any>("/api/dashboard") });
+  if (dashboardQuery.isLoading) {
+    return <div className="text-sm text-[var(--color-muted-foreground)]">Загрузка…</div>;
+  }
+  if (!dashboardQuery.data?.configured) {
     return <HomeBeforeSetup />;
   }
-  return <HomeDashboard />;
+  return <HomeDashboard dashboard={dashboardQuery.data} />;
 }
 
 function HomeBeforeSetup() {
@@ -135,19 +139,14 @@ function HomeBeforeSetup() {
   );
 }
 
-function HomeDashboard() {
-  const products = useCollection<any[]>("products") ?? [];
-  const documents = useCollection<any[]>("documents") ?? [];
-  const inventoryLots = useCollection<any[]>("inventoryLots") ?? [];
-  const sales = useCollection<any[]>("sales") ?? [];
-  const stockStates = useCollection<any[]>("stockStates") ?? [];
-  const purchaseOrders = useCollection<any[]>("purchaseOrders") ?? [];
-  const productsCount = products.length;
-  const documentsCount = documents.length;
-  const openLots = inventoryLots.filter((l: any) => l.qtyRemaining > 0).length;
-  const salesCount = sales.length;
-  const totalCost = stockStates.reduce((s: number, x: any) => s + (x.costRub ?? 0), 0);
-  const recentDocs = documents.slice().reverse().slice(0, 6);
+function HomeDashboard({ dashboard }: { dashboard: any }) {
+  const productsCount = dashboard.counters?.products ?? 0;
+  const documentsCount = dashboard.counters?.documents ?? 0;
+  const openLots = dashboard.counters?.inventoryLots ?? 0;
+  const salesCount = dashboard.counters?.sales ?? 0;
+  const purchaseOrdersCount = dashboard.counters?.purchaseOrders ?? 0;
+  const totalCost = dashboard.inventoryCostRub ?? 0;
+  const recentDocs = dashboard.recentDocuments ?? [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -218,7 +217,7 @@ function HomeDashboard() {
               to="/products/new"
             />
             <NextAction
-              done={purchaseOrders.length > 0}
+              done={purchaseOrdersCount > 0}
               title="Создать поставку"
               text="Зафиксировать заказ и оплату."
               to="/procurement/purchase-orders/new"
