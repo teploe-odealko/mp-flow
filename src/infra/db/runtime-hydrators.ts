@@ -14,6 +14,9 @@ import type {
   IntegrationPlugin,
   JournalEntry,
   JournalLine,
+  Payment,
+  PaymentAllocation,
+  SettlementEntry,
   ObservedStock,
   Product,
   SyncRun,
@@ -619,6 +622,134 @@ export function journalLineFromRow(row: JournalLineDbRow): JournalLine {
     credit: Number(row.credit),
     memo: row.memo
   };
+}
+
+export const PAYMENT_SELECT = `
+  payment.public_id as id,
+  payment_organization.public_id as organization_id,
+  payment_document.public_id as document_id,
+  payment_cash_account.public_id as cash_account_id,
+  payment.payment_direction,
+  payment.payment_type,
+  payment_counterparty.public_id as counterparty_id,
+  payment.paid_at,
+  payment.amount_rub,
+  payment.comment
+`;
+
+export const PAYMENT_JOINS = `
+  left join organization payment_organization on payment_organization.id = payment.organization_id
+  left join document payment_document on payment_document.id = payment.document_id
+  left join cash_account payment_cash_account on payment_cash_account.id = payment.cash_account_id
+  left join counterparty payment_counterparty on payment_counterparty.id = payment.counterparty_id
+`;
+
+export interface PaymentDbRow {
+  id: string;
+  organization_id: string;
+  document_id: string;
+  cash_account_id: string;
+  payment_direction: Payment["paymentDirection"];
+  payment_type: Payment["paymentType"];
+  counterparty_id: string | null;
+  paid_at: unknown;
+  amount_rub: string | number;
+  comment: string | null;
+}
+
+export function paymentFromRow(row: PaymentDbRow): Payment {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    documentId: row.document_id,
+    cashAccountId: row.cash_account_id,
+    paymentDirection: row.payment_direction,
+    paymentType: row.payment_type,
+    counterpartyId: optionalText(row.counterparty_id),
+    paidAt: dateString(row.paid_at),
+    amountRub: Number(row.amount_rub),
+    comment: optionalText(row.comment)
+  });
+}
+
+export const PAYMENT_ALLOCATION_SELECT = `
+  payment_allocation.public_id as id,
+  payment_allocation_payment.public_id as payment_id,
+  payment_allocation.allocation_purpose,
+  payment_allocation_purchase_order.public_id as purchase_order_id,
+  payment_allocation_document.public_id as document_id,
+  payment_allocation.amount_rub
+`;
+
+export const PAYMENT_ALLOCATION_JOINS = `
+  left join payment payment_allocation_payment on payment_allocation_payment.id = payment_allocation.payment_id
+  left join purchase_order payment_allocation_purchase_order on payment_allocation_purchase_order.id = payment_allocation.purchase_order_id
+  left join document payment_allocation_document on payment_allocation_document.id = payment_allocation.document_id
+`;
+
+export interface PaymentAllocationDbRow {
+  id: string;
+  payment_id: string;
+  allocation_purpose: PaymentAllocation["allocationPurpose"];
+  purchase_order_id: string | null;
+  document_id: string | null;
+  amount_rub: string | number;
+}
+
+export function paymentAllocationFromRow(row: PaymentAllocationDbRow): PaymentAllocation {
+  return stripUndefined({
+    id: row.id,
+    paymentId: row.payment_id,
+    allocationPurpose: row.allocation_purpose,
+    purchaseOrderId: optionalText(row.purchase_order_id),
+    documentId: optionalText(row.document_id),
+    amountRub: Number(row.amount_rub)
+  });
+}
+
+export const SETTLEMENT_ENTRY_SELECT = `
+  settlement_entry.public_id as id,
+  settlement_entry_organization.public_id as organization_id,
+  settlement_entry_counterparty.public_id as counterparty_id,
+  settlement_entry_channel.public_id as channel_id,
+  settlement_entry_document.public_id as document_id,
+  settlement_entry.settlement_type,
+  settlement_entry.debit_rub,
+  settlement_entry.credit_rub,
+  settlement_entry.created_at
+`;
+
+export const SETTLEMENT_ENTRY_JOINS = `
+  left join organization settlement_entry_organization on settlement_entry_organization.id = settlement_entry.organization_id
+  left join counterparty settlement_entry_counterparty on settlement_entry_counterparty.id = settlement_entry.counterparty_id
+  left join sales_channel settlement_entry_channel on settlement_entry_channel.id = settlement_entry.channel_id
+  left join document settlement_entry_document on settlement_entry_document.id = settlement_entry.document_id
+`;
+
+export interface SettlementEntryDbRow {
+  id: string;
+  organization_id: string;
+  counterparty_id: string | null;
+  channel_id: string | null;
+  document_id: string;
+  settlement_type: SettlementEntry["settlementType"];
+  debit_rub: string | number;
+  credit_rub: string | number;
+  created_at: unknown;
+}
+
+export function settlementEntryFromRow(row: SettlementEntryDbRow): SettlementEntry {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    counterpartyId: optionalText(row.counterparty_id),
+    channelId: optionalText(row.channel_id),
+    documentId: row.document_id,
+    settlementType: row.settlement_type,
+    debitRub: Number(row.debit_rub),
+    creditRub: Number(row.credit_rub),
+    createdAt: dateTimeString(row.created_at)
+  });
 }
 
 export const EXTERNAL_EVENT_SELECT = `

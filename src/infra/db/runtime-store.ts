@@ -41,8 +41,14 @@ import {
   OBSERVED_STOCK_JOINS,
   OBSERVED_STOCK_SELECT,
   ORGANIZATION_SELECT,
+  PAYMENT_ALLOCATION_JOINS,
+  PAYMENT_ALLOCATION_SELECT,
+  PAYMENT_JOINS,
+  PAYMENT_SELECT,
   PRODUCT_JOINS,
   PRODUCT_SELECT,
+  SETTLEMENT_ENTRY_JOINS,
+  SETTLEMENT_ENTRY_SELECT,
   SYNC_RUN_JOINS,
   SYNC_RUN_SELECT,
   WAREHOUSE_JOINS,
@@ -64,7 +70,10 @@ import {
   journalLineFromRow,
   observedStockFromRow,
   organizationFromRow,
+  paymentAllocationFromRow,
+  paymentFromRow,
   productFromRow,
+  settlementEntryFromRow,
   syncRunFromRow,
   warehouseFromRow,
   type AccountingPeriodDbRow,
@@ -83,8 +92,11 @@ import {
   type JournalEntryDbRow,
   type JournalLineDbRow,
   type OrganizationDbRow,
+  type PaymentAllocationDbRow,
+  type PaymentDbRow,
   type ObservedStockDbRow,
   type ProductDbRow,
+  type SettlementEntryDbRow,
   type SyncRunDbRow,
   type WarehouseDbRow
 } from "./runtime-hydrators";
@@ -721,18 +733,24 @@ const TABLES: TableSpec[] = [
     counterparty_id: optionalUuid(entity.counterpartyId),
     paid_at: requiredString(entity.paidAt, "payments.paidAt"),
     amount_rub: requiredNumber(entity.amountRub, "payments.amountRub"),
-    comment: optionalString(entity.comment),
-    state_json: entity
-  }), "paid_at, id"),
+    comment: optionalString(entity.comment)
+  }), "payment.paid_at, payment.id", {
+    select: PAYMENT_SELECT,
+    joins: PAYMENT_JOINS,
+    hydrate: (row) => paymentFromRow(row as unknown as PaymentDbRow) as unknown as RuntimeEntity
+  }),
   spec("paymentAllocations", "payment_allocation", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "paymentAllocations.id")),
     payment_id: entityUuid(requiredString(entity.paymentId, "paymentAllocations.paymentId")),
     allocation_purpose: requiredString(entity.allocationPurpose, "paymentAllocations.allocationPurpose"),
     purchase_order_id: optionalUuid(entity.purchaseOrderId),
     document_id: optionalUuid(entity.documentId),
-    amount_rub: requiredNumber(entity.amountRub, "paymentAllocations.amountRub"),
-    state_json: entity
-  }), "payment_id, id"),
+    amount_rub: requiredNumber(entity.amountRub, "paymentAllocations.amountRub")
+  }), "payment_allocation.payment_id, payment_allocation.id", {
+    select: PAYMENT_ALLOCATION_SELECT,
+    joins: PAYMENT_ALLOCATION_JOINS,
+    hydrate: (row) => paymentAllocationFromRow(row as unknown as PaymentAllocationDbRow) as unknown as RuntimeEntity
+  }),
   spec("settlementEntries", "settlement_entry", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "settlementEntries.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "settlementEntries.organizationId")),
@@ -742,9 +760,12 @@ const TABLES: TableSpec[] = [
     settlement_type: requiredString(entity.settlementType, "settlementEntries.settlementType"),
     debit_rub: requiredNumber(entity.debitRub, "settlementEntries.debitRub"),
     credit_rub: requiredNumber(entity.creditRub, "settlementEntries.creditRub"),
-    created_at: requiredString(entity.createdAt, "settlementEntries.createdAt"),
-    state_json: entity
-  }), "created_at, id"),
+    created_at: requiredString(entity.createdAt, "settlementEntries.createdAt")
+  }), "settlement_entry.created_at, settlement_entry.id", {
+    select: SETTLEMENT_ENTRY_SELECT,
+    joins: SETTLEMENT_ENTRY_JOINS,
+    hydrate: (row) => settlementEntryFromRow(row as unknown as SettlementEntryDbRow) as unknown as RuntimeEntity
+  }),
   spec("goodsReceipts", "goods_receipt", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "goodsReceipts.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "goodsReceipts.organizationId")),

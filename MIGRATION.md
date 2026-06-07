@@ -205,6 +205,11 @@ typed columns и `public_id` join для `organizationId`. Добавлены/з
 восстанавливаются через `public_id` joins, суммы и даты — из typed columns. Текущий остаток
 `state_json: entity` — 43 таблицы.
 
+### ✅ Typed hydrate для платежей и взаиморасчётов
+На typed specs переведены `payments`, `paymentAllocations`, `settlementEntries`: cash/account/document/
+counterparty/channel/order references восстанавливаются через `public_id` joins. Текущий остаток
+`state_json: entity` — 40 таблиц.
+
 ### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
 Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/
 addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocumentSummary(x))` — хелперы каскадно
