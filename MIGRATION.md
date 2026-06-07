@@ -245,6 +245,15 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   `ExternalEventStore`. Дедуп по identity, классификация статуса по SKU/link, ignore и reprocess
   больше не пишут через request-scoped `AccountingApp`; prod-readiness фиксирует `writeSessions = 0`,
   Postgres runtime проверяет typed row в `external_event`.
+- ✅ External product/link commands сняты с session middleware:
+  `/api/channels/:id/external-products`, `/api/external-products/:id/link`,
+  `/api/products/:productId/external-links`, DELETE `/api/products/:productId/external-links/:linkId`,
+  `/api/external-products/:id/create-internal-product`, `/api/external-products/:id/ignore`,
+  `/api/external-products/:id/reprocess-events` обслуживаются
+  `src/backend/services/external-product-service.ts` через `RuntimeWriteContext`. Создание внутреннего
+  товара переиспользует `product-service`, refresh linked observed/events идет через typed stores;
+  prod-readiness фиксирует `writeSessions = 0`, Postgres runtime проверяет typed rows в
+  `external_product`, `product_external_link`, `product`.
 - ✅ Начат перенос write/control на обычные сервисы без `AccountingApp` session: добавлен
   `RuntimeWriteContext` и `PostgresRuntimeStore.runWriteContext`, который открывает транзакцию,
   отдаёт сервису `repos + typed stores`, сохраняет `next_id` и коммитит без request-scoped app facade.

@@ -674,6 +674,65 @@ describe("prod-ready contracts", () => {
     expect(writeSessions).toBe(0);
   });
 
+  it("serves external product mapping writes before snapshot sessions", async () => {
+    resetIds();
+    const app = new AccountingApp();
+    await app.setupDemo();
+    const channel = app.state.salesChannels[0];
+    const product = app.state.products[0];
+    let writeContexts = 0;
+    let writeSessions = 0;
+    const api = createApi(app, {
+      persistence: {
+        async runWriteContext(_workspaceId, handler) {
+          writeContexts += 1;
+          return await handler({
+            repos: app.repos,
+            externalEvents: app.externalEvents,
+            observedStocks: app.observedStocks,
+            syncRuns: app.syncRuns,
+            setupMetadata: () => app.setupMetadata()
+          });
+        },
+        async openWriteSession() {
+          writeSessions += 1;
+          return { app, nextId: 1, commit: async () => undefined, rollback: async () => undefined, close: async () => undefined };
+        }
+      }
+    });
+
+    const externalProduct = await post<any>(api, `/api/channels/${channel.id}/external-products`, {
+      externalSku: "EXT-SERVICE-1",
+      externalName: "External service product"
+    });
+    const event = await post<any>(api, `/api/channels/${channel.id}/external-events`, {
+      eventType: "sale",
+      externalId: "ext-product-service-event-1",
+      occurredAt: "2026-06-01T10:00:00.000Z",
+      payload: { sku: "EXT-SERVICE-1", amountRub: 1000 }
+    });
+    const link = await post<any>(api, `/api/external-products/${externalProduct.id}/link`, { productId: product.id });
+    const reprocessed = await post<any[]>(api, `/api/external-products/${externalProduct.id}/reprocess-events`);
+    const unlinked = await request<any>(api, "DELETE", `/api/products/${product.id}/external-links/${link.id}`);
+    const ignored = await post<any>(api, `/api/external-products/${externalProduct.id}/ignore`);
+    const createInternalSource = await post<any>(api, `/api/channels/${channel.id}/external-products`, {
+      externalSku: "EXT-INTERNAL-1",
+      externalName: "External internal product"
+    });
+    const createdInternal = await post<any>(api, `/api/external-products/${createInternalSource.id}/create-internal-product`);
+
+    expect(externalProduct).toEqual(expect.objectContaining({ externalSku: "EXT-SERVICE-1", status: "active" }));
+    expect(event.status).toBe("needs_mapping");
+    expect(link).toEqual(expect.objectContaining({ productId: product.id, externalProductId: externalProduct.id, status: "active" }));
+    expect(reprocessed).toEqual(expect.arrayContaining([expect.objectContaining({ id: event.id })]));
+    expect(unlinked).toEqual(expect.objectContaining({ id: link.id, status: "unlinked" }));
+    expect(ignored).toEqual(expect.objectContaining({ id: externalProduct.id, status: "ignored" }));
+    expect(createdInternal.product).toEqual(expect.objectContaining({ sku: "EXT-INTERNAL-1", name: "External internal product" }));
+    expect(createdInternal.link).toEqual(expect.objectContaining({ productId: createdInternal.product.id, externalProductId: createInternalSource.id, status: "active" }));
+    expect(writeContexts).toBe(8);
+    expect(writeSessions).toBe(0);
+  });
+
   it("authenticates MCP keys through persistence without app sessions", async () => {
     resetIds();
     let authenticateCalls = 0;

@@ -30,7 +30,7 @@ async function resetRuntimeTables() {
   }
 }
 
-async function request<T>(api: ReturnType<typeof createApi>, method: "GET" | "POST" | "PATCH", path: string, body?: unknown): Promise<T> {
+async function request<T>(api: ReturnType<typeof createApi>, method: "GET" | "POST" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<T> {
   const response = await api.request(path, {
     method,
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -144,12 +144,32 @@ describePostgres("postgres runtime store", () => {
       externalSku: "PG-OBS-001",
       externalName: "Postgres observed product"
     });
+    const mappedExternalProduct = await request<any>(api, "POST", `/api/channels/${channel.id}/external-products`, {
+      externalSku: "PG-MAP-001",
+      externalName: "Postgres mapped product"
+    });
     const externalEvent = await request<any>(api, "POST", `/api/channels/${channel.id}/external-events`, {
       eventType: "sale",
       externalId: "pg-event-service-1",
       occurredAt: "2026-01-18T09:00:00.000Z",
       payload: { sku: "PG-NOT-MAPPED", amountRub: 999 }
     });
+    const mappedEvent = await request<any>(api, "POST", `/api/channels/${channel.id}/external-events`, {
+      eventType: "sale",
+      externalId: "pg-mapped-event-service-1",
+      occurredAt: "2026-01-18T09:30:00.000Z",
+      payload: { sku: "PG-MAP-001", amountRub: 777 }
+    });
+    const mappedLink = await request<any>(api, "POST", `/api/external-products/${mappedExternalProduct.id}/link`, { productId: product.id });
+    const reprocessedMappedEvents = await request<any[]>(api, "POST", `/api/external-products/${mappedExternalProduct.id}/reprocess-events`);
+    const unlinkedMappedLink = await request<any>(api, "DELETE", `/api/products/${product.id}/external-links/${mappedLink.id}`);
+    const ignoredMappedExternalProduct = await request<any>(api, "POST", `/api/external-products/${mappedExternalProduct.id}/ignore`);
+    const internalExternalProduct = await request<any>(api, "POST", `/api/channels/${channel.id}/external-products`, {
+      externalSku: "PG-INTERNAL-001",
+      externalName: "Postgres internal product",
+      imageUrl: "https://example.test/pg-internal.jpg"
+    });
+    const createdInternalFromExternal = await request<any>(api, "POST", `/api/external-products/${internalExternalProduct.id}/create-internal-product`);
     const ignoredExternalEvent = await request<any>(api, "POST", `/api/integrations/events/${externalEvent.id}/ignore`, { reason: "PG ignore" });
     const reprocessedExternalEvent = await request<any>(api, "POST", `/api/integrations/events/${externalEvent.id}/reprocess`);
     const observedStock = await request<any>(api, "POST", `/api/channels/${channel.id}/observed-stock`, {
@@ -238,6 +258,24 @@ describePostgres("postgres runtime store", () => {
         `,
         [externalEvent.id]
       );
+      const mappedExternalProductRows = await inspectPool.query<{ external_sku: string; external_name: string; status: string }>(
+        "select external_sku, external_name, status from external_product where public_id = $1",
+        [mappedExternalProduct.id]
+      );
+      const mappedLinkRows = await inspectPool.query<{ product_id: string; external_product_id: string; status: string }>(
+        `
+          select product.public_id as product_id, external_product.public_id as external_product_id, product_external_link.status
+          from product_external_link
+          join product on product.id = product_external_link.product_id
+          join external_product on external_product.id = product_external_link.external_product_id
+          where product_external_link.public_id = $1
+        `,
+        [mappedLink.id]
+      );
+      const internalProductRows = await inspectPool.query<{ sku: string; name: string; image_url: string | null }>(
+        "select sku, name, image_url from product where public_id = $1",
+        [createdInternalFromExternal.product.id]
+      );
       const observedStockRows = await inspectPool.query<{ channel_id: string; external_product_id: string; qty_observed: number; location_status: string }>(
         `
           select sales_channel.public_id as channel_id,
@@ -315,6 +353,17 @@ describePostgres("postgres runtime store", () => {
       expect(agentTokenRows.rows[0]?.revoked_at).toBeTruthy();
       expect(channelPermissionRows.rows[0]).toEqual({ agent_token_id: accessToken.id, channel_id: channel.id, permission_code: "sync:write" });
       expect(externalEvent).toEqual(expect.objectContaining({ externalId: "pg-event-service-1", status: "needs_mapping", reason: "Нет сопоставления товара для SKU: PG-NOT-MAPPED" }));
+      expect(mappedExternalProduct).toEqual(expect.objectContaining({ externalSku: "PG-MAP-001", status: "active" }));
+      expect(mappedEvent).toEqual(expect.objectContaining({ externalId: "pg-mapped-event-service-1", status: "needs_mapping" }));
+      expect(mappedLink).toEqual(expect.objectContaining({ productId: product.id, externalProductId: mappedExternalProduct.id, status: "active" }));
+      expect(reprocessedMappedEvents).toEqual(expect.arrayContaining([expect.objectContaining({ id: mappedEvent.id })]));
+      expect(unlinkedMappedLink).toEqual(expect.objectContaining({ id: mappedLink.id, status: "unlinked" }));
+      expect(ignoredMappedExternalProduct).toEqual(expect.objectContaining({ id: mappedExternalProduct.id, status: "ignored" }));
+      expect(createdInternalFromExternal.product).toEqual(expect.objectContaining({ sku: "PG-INTERNAL-001", name: "Postgres internal product" }));
+      expect(createdInternalFromExternal.link).toEqual(expect.objectContaining({ productId: createdInternalFromExternal.product.id, externalProductId: internalExternalProduct.id, status: "active" }));
+      expect(mappedExternalProductRows.rows[0]).toEqual({ external_sku: "PG-MAP-001", external_name: "Postgres mapped product", status: "ignored" });
+      expect(mappedLinkRows.rows[0]).toEqual({ product_id: product.id, external_product_id: mappedExternalProduct.id, status: "unlinked" });
+      expect(internalProductRows.rows[0]).toEqual({ sku: "PG-INTERNAL-001", name: "Postgres internal product", image_url: "https://example.test/pg-internal.jpg" });
       expect(ignoredExternalEvent).toEqual(expect.objectContaining({ id: externalEvent.id, status: "ignored", reason: "PG ignore" }));
       expect(reprocessedExternalEvent).toEqual(expect.objectContaining({ id: externalEvent.id, status: "needs_mapping", reason: "Нет сопоставления товара для SKU: PG-NOT-MAPPED" }));
       expect(externalEventRows.rows[0]).toEqual({ channel_id: channel.id, external_id: "pg-event-service-1", status: "needs_mapping", reason: "Нет сопоставления товара для SKU: PG-NOT-MAPPED" });
@@ -341,7 +390,7 @@ describePostgres("postgres runtime store", () => {
       expect(reportRecalculationJob).toEqual(expect.objectContaining({ jobType: "reports", status: "completed", progress: 100 }));
       expect(reportRecalculationJobRows.rows[0]).toEqual({ job_type: "reports", status: "completed", progress: 100 });
       expect(dashboard.configured).toBe(true);
-      expect(dashboard.counters.products).toBe(1);
+      expect(dashboard.counters.products).toBe(2);
       expect(documentsWorkspace.documents).toContainEqual(expect.objectContaining({
         id: note.id,
         title: "Postgres заметка",

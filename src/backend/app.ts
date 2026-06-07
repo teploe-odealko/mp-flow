@@ -22,6 +22,7 @@ import { ExternalEventRepository } from "./repositories/external-event-repositor
 import { disableUser, inviteUser, resendUserInvite, updateUserRole } from "./services/access-management-service";
 import { hashToken, issueMcpAgentToken, publicAgentToken, revokeAgentToken, setChannelAgentPermission } from "./services/agent-token-service";
 import { ignoreExternalEvent, ingestExternalEvent, reprocessExternalEvent } from "./services/external-event-service";
+import { createExternalProduct, createInternalProductFromExternal, ignoreExternalProduct, linkExternalProduct, reprocessEventsForExternalProduct, unlinkExternalProduct } from "./services/external-product-service";
 import { ignoreObservedStock, recordObservedStock } from "./services/observed-stock-service";
 import { onboardingProjectDetailsFor } from "./services/onboarding-project-service";
 import { updateOrganization } from "./services/organization-service";
@@ -1625,6 +1626,30 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/plugins", (c) => c.json({ ok: true, data: pluginRegistry.all().map(serializePluginMeta) }));
   api.get("/api/integrations/plugins", (c) => c.json({ ok: true, data: pluginRegistry.all().map(serializePluginMeta) }));
   api.get("/api/channels/:id/external-products", async (c) => c.json({ ok: true, data: (await (await readContextFor(c)).repos.externalProducts.all()).filter((product) => product.channelId === c.req.param("id")) }));
+  api.post("/api/channels/:id/external-products", async (c) => {
+    const body = externalProductSchema.parse(await c.req.json());
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => createExternalProduct(writeContext, { ...body, channelId: c.req.param("id") })) });
+  });
+  api.post("/api/external-products/:id/link", async (c) => {
+    const body = externalProductLinkSchema.parse(await c.req.json());
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => linkExternalProduct(writeContext, { externalProductId: c.req.param("id"), productId: body.productId })) });
+  });
+  api.post("/api/products/:productId/external-links", async (c) => {
+    const body = productExternalLinkSchema.parse(await c.req.json());
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => linkExternalProduct(writeContext, { externalProductId: body.externalProductId, productId: c.req.param("productId") })) });
+  });
+  api.delete("/api/products/:productId/external-links/:linkId", async (c) => {
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => unlinkExternalProduct(writeContext, c.req.param("productId"), c.req.param("linkId"))) });
+  });
+  api.post("/api/external-products/:id/create-internal-product", async (c) => {
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => createInternalProductFromExternal(writeContext, c.req.param("id"))) });
+  });
+  api.post("/api/external-products/:id/ignore", async (c) => {
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => ignoreExternalProduct(writeContext, c.req.param("id"))) });
+  });
+  api.post("/api/external-products/:id/reprocess-events", async (c) => {
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => reprocessEventsForExternalProduct(writeContext, c.req.param("id"))) });
+  });
   api.get("/api/sales/workspace", async (c) => c.json({ ok: true, data: await salesWorkspaceFor(c) }));
   api.get("/api/sales", async (c) => {
     const readContext = await readContextFor(c);
@@ -2485,50 +2510,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     };
     await scopedApp.syncRuns.upsert(run);
     return c.json({ ok: true, data: run });
-  });
-  api.post("/api/channels/:id/external-products", async (c) => {
-    const body = externalProductSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: await scopedApp.createExternalProduct({ ...body, channelId: c.req.param("id") }) });
-  });
-  api.post("/api/external-products/:id/link", async (c) => {
-    const body = z.object({ productId: z.string() }).parse(await c.req.json());
-    return c.json({ ok: true, data: await scopedApp.linkExternalProduct({ externalProductId: c.req.param("id"), productId: body.productId }) });
-  });
-  api.post("/api/products/:productId/external-links", async (c) => {
-    const body = z.object({ externalProductId: z.string() }).parse(await c.req.json());
-    return c.json({ ok: true, data: await scopedApp.linkExternalProduct({ externalProductId: body.externalProductId, productId: c.req.param("productId") }) });
-  });
-  api.delete("/api/products/:productId/external-links/:linkId", async (c) => {
-    const link = await scopedApp.repos.productExternalLinks.getById(c.req.param("linkId"));
-    if (link?.productId !== c.req.param("productId")) {
-      throw new DomainError("external_link_not_found", "Связь товара не найдена");
-    }
-    if (!link) throw new DomainError("external_link_not_found", "Связь товара не найдена");
-    link.status = "unlinked";
-    await scopedApp.repos.productExternalLinks.upsert(link);
-    return c.json({ ok: true, data: link });
-  });
-  api.post("/api/external-products/:id/create-internal-product", async (c) => {
-    const externalProduct = await scopedApp.repos.externalProducts.getById(c.req.param("id"));
-    if (!externalProduct) throw new DomainError("external_product_not_found", "Внешний товар не найден");
-    const product = await scopedApp.createProduct({ sku: externalProduct.externalSku, name: externalProduct.externalName, imageUrl: externalProduct.imageUrl, unit: "шт" });
-    const link = await scopedApp.linkExternalProduct({ externalProductId: externalProduct.id, productId: product.id });
-    return c.json({ ok: true, data: { product, link } });
-  });
-  api.post("/api/external-products/:id/ignore", async (c) => {
-    const externalProduct = await scopedApp.repos.externalProducts.getById(c.req.param("id"));
-    if (!externalProduct) throw new DomainError("external_product_not_found", "Внешний товар не найден");
-    externalProduct.status = "ignored";
-    await scopedApp.repos.externalProducts.upsert(externalProduct);
-    return c.json({ ok: true, data: externalProduct });
-  });
-  api.post("/api/external-products/:id/reprocess-events", async (c) => {
-    const externalProduct = await scopedApp.repos.externalProducts.getById(c.req.param("id"));
-    if (!externalProduct) throw new DomainError("external_product_not_found", "Внешний товар не найден");
-    const events = (await scopedApp.externalEvents.list({ channelId: externalProduct.channelId }))
-      .filter((event) => JSON.stringify(event.rawPayload).includes(externalProduct.externalSku));
-    for (const event of events) await scopedApp.reprocessExternalEvent(event.id);
-    return c.json({ ok: true, data: events });
   });
   api.post("/api/sales", async (c) => {
     const body = saleSchema.parse(await c.req.json());
@@ -3977,6 +3958,8 @@ const pluginSyncSchema = z.object({
   }).optional()
 });
 const externalProductSchema = z.object({ externalSku: z.string(), externalName: z.string(), imageUrl: z.string().optional() });
+const externalProductLinkSchema = z.object({ productId: z.string() });
+const productExternalLinkSchema = z.object({ externalProductId: z.string() });
 const externalEventSchema = z.object({ eventType: z.enum(["sale", "sale_accrual", "return", "fee", "payout", "stock", "product"]), externalId: z.string(), occurredAt: z.string(), payload: z.record(z.string(), z.unknown()) });
 const externalEventIgnoreSchema = z.object({ reason: z.string().min(3) });
 const observedStockSchema = z.object({ externalProductId: z.string(), observedAt: z.string(), qtyObserved: z.number() });

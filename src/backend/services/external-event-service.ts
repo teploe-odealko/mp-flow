@@ -79,7 +79,7 @@ export async function ignoreExternalEvent(writeContext: RuntimeWriteContext, eve
   return event;
 }
 
-async function applyExternalEventState(writeContext: RuntimeWriteContext, event: ExternalEvent) {
+export async function applyExternalEventState(writeContext: RuntimeWriteContext, event: ExternalEvent) {
   const payload = event.normalizedPayload as Record<string, unknown>;
   event.updatedAt = nowIso();
   if (event.status === "processed" || event.status === "ignored") return event;
