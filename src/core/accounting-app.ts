@@ -1,4 +1,5 @@
 import type {
+  AccountingPolicy,
   AccountingPeriod,
   AccountingState,
   AgentToken,
@@ -176,6 +177,8 @@ const MARKETPLACE_SALE_RECOGNITION_DOCUMENT_TYPE = "sale_accrual";
 
 export class AccountingApp {
   readonly state: AccountingState;
+  private organization?: Organization;
+  private accountingPolicy?: AccountingPolicy;
   private readonly channelCredentials = new Map<ID, Record<string, string | undefined>>();
   private readonly pluginSecrets = new Map<string, { revision: number; payload: Record<string, string | undefined> }>();
   private externalProductByChannelSku?: Map<string, ExternalProduct>;
@@ -196,11 +199,12 @@ export class AccountingApp {
 
   constructor(state: AccountingState = createEmptyState()) {
     this.state = state;
+    this.organization = state.organization;
+    this.accountingPolicy = state.accountingPolicy;
     this.externalEvents = new InMemoryExternalEventStore(this.state.externalEvents);
     this.observedStocks = new InMemoryObservedStockStore(this.state.observedStocks);
     this.syncRuns = new InMemorySyncRunStore(this.state.syncRuns);
     this.repos = buildInMemoryRepositories(this.state);
-    this.ensureRequiredSystemMetadata();
   }
 
   private externalProductKey(channelId: ID, externalSku: string) {
@@ -288,7 +292,7 @@ export class AccountingApp {
   }
 
   async bootstrap(input: BootstrapInput) {
-    if (this.state.organization) {
+    if (this.organization) {
       return await this.dashboard();
     }
 
@@ -305,8 +309,7 @@ export class AccountingApp {
       updatedAt: nowIso()
     };
 
-    this.state.organization = organization;
-    this.state.accountingPolicy = {
+    const accountingPolicy: AccountingPolicy = {
       id: id("policy"),
       organizationId: organization.id,
       accountingStartDate: input.accountingStartDate,
@@ -315,13 +318,17 @@ export class AccountingApp {
       allowOpenPeriodEdits: input.allowOpenPeriodEdits ?? true,
       comment: input.comment
     };
+    this.organization = organization;
+    this.accountingPolicy = accountingPolicy;
+    this.state.organization = organization;
+    this.state.accountingPolicy = accountingPolicy;
     for (const period of monthPeriods(organization.id, input.accountingStartDate, 24)) {
       await this.repos.periods.add(period);
     }
     for (const account of seedChartAccounts(organization.id)) {
       await this.repos.chartAccounts.add(account);
     }
-    this.ensureRequiredSystemMetadata();
+    await this.ensureRequiredSystemMetadata();
 
     await this.repos.cashAccounts.add({
       id: id("cash"),
@@ -402,25 +409,25 @@ export class AccountingApp {
       await this.repos.roles.add(role);
     }
 
-    this.audit("organization", organization.id, "bootstrap", undefined, organization, "Первичная настройка");
+    await this.audit("organization", organization.id, "bootstrap", undefined, organization, "Первичная настройка");
     return await this.dashboard();
   }
 
   ensureBootstrapped() {
-    if (!this.state.organization || !this.state.accountingPolicy) {
+    if (!this.organization || !this.accountingPolicy) {
       throw new DomainError("not_configured", "Сначала настройте организацию");
     }
-    return { organization: this.state.organization, policy: this.state.accountingPolicy };
+    return { organization: this.organization, policy: this.accountingPolicy };
   }
 
   currentOrgId(): ID {
     return this.ensureBootstrapped().organization.id;
   }
 
-  private ensureRequiredSystemMetadata() {
-    const organizationId = this.state.organization?.id;
+  async ensureRequiredSystemMetadata() {
+    const organizationId = this.organization?.id;
     if (!organizationId) return;
-    const accountsByCode = new Map(this.state.chartAccounts.map((account) => [account.code, account]));
+    const accountsByCode = new Map((await this.repos.chartAccounts.all()).map((account) => [account.code, account]));
     for (const seed of seedChartAccounts(organizationId)) {
       const account = accountsByCode.get(seed.code);
       if (account) {
@@ -428,11 +435,12 @@ export class AccountingApp {
         account.kind = seed.kind;
         account.normalSide = seed.normalSide;
         account.isActive = seed.isActive;
+        await this.repos.chartAccounts.upsert(account);
       } else {
-        this.state.chartAccounts.push(seed);
+        await this.repos.chartAccounts.add(seed);
       }
     }
-    const documentTypesByCode = new Map(this.state.documentTypes.map((documentType) => [documentType.code, documentType]));
+    const documentTypesByCode = new Map((await this.repos.documentTypes.all()).map((documentType) => [documentType.code, documentType]));
     for (const seed of seedDocumentTypes()) {
       const documentType = documentTypesByCode.get(seed.code);
       if (documentType) {
@@ -443,8 +451,9 @@ export class AccountingApp {
         documentType.allowsDraft = seed.allowsDraft;
         documentType.allowsReversal = seed.allowsReversal;
         documentType.allowsCorrection = seed.allowsCorrection;
+        await this.repos.documentTypes.upsert(documentType);
       } else {
-        this.state.documentTypes.push(seed);
+        await this.repos.documentTypes.add(seed);
       }
     }
   }
@@ -454,12 +463,12 @@ export class AccountingApp {
   }
 
   async dashboard() {
-    const org = this.state.organization;
+    const org = this.organization;
     const documents = await this.repos.documents.all();
     return {
       organization: org,
       configured: Boolean(org),
-      policy: this.state.accountingPolicy,
+      policy: this.accountingPolicy,
       currentPeriod: (await this.repos.periods.all()).find((period) => period.status === "open"),
       counters: {
         products: (await this.repos.products.all()).length,
@@ -594,7 +603,7 @@ export class AccountingApp {
       isActive: true
     };
     await this.repos.counterparties.add(counterparty);
-    this.audit("counterparty", counterparty.id, "create", undefined, counterparty);
+    await this.audit("counterparty", counterparty.id, "create", undefined, counterparty);
     return counterparty;
   }
 
@@ -639,7 +648,7 @@ export class AccountingApp {
       createdAt: nowIso()
     };
     await this.repos.products.add(product);
-    this.audit("product", product.id, "create", undefined, product);
+    await this.audit("product", product.id, "create", undefined, product);
     return product;
   }
 
@@ -683,7 +692,7 @@ export class AccountingApp {
     if (input.comment !== undefined) product.comment = input.comment || undefined;
     if (input.imageUrl !== undefined) product.imageUrl = input.imageUrl || undefined;
     await this.repos.products.upsert(product);
-    this.audit("product", product.id, "update", before, product);
+    await this.audit("product", product.id, "update", before, product);
     return product;
   }
 
@@ -692,7 +701,7 @@ export class AccountingApp {
     const before = { ...product };
     product.status = "archived";
     await this.repos.products.upsert(product);
-    this.audit("product", product.id, "archive", before, product);
+    await this.audit("product", product.id, "archive", before, product);
     return product;
   }
 
@@ -701,7 +710,7 @@ export class AccountingApp {
     const before = { ...product };
     product.status = "active";
     await this.repos.products.upsert(product);
-    this.audit("product", product.id, "restore", before, product);
+    await this.audit("product", product.id, "restore", before, product);
     return product;
   }
 
@@ -716,7 +725,7 @@ export class AccountingApp {
       isActive: true
     };
     await this.repos.warehouses.add(warehouse);
-    this.audit("warehouse", warehouse.id, "create", undefined, warehouse);
+    await this.audit("warehouse", warehouse.id, "create", undefined, warehouse);
     return warehouse;
   }
 
@@ -731,7 +740,7 @@ export class AccountingApp {
     if (input.date !== policy.accountingStartDate) {
       throw new DomainError("opening_balance_date_must_match_start", "Дата стартового остатка должна совпадать с датой начала учета");
     }
-    this.assertAccountingDateAllowed(input.date);
+    await this.assertAccountingDateAllowed(input.date);
     const warehouse = this.mustFind(await this.repos.warehouses.all(), input.warehouseId, "warehouse_not_found");
     if (!warehouse.isActive) {
       throw new DomainError("warehouse_inactive", "Склад недоступен для стартового остатка");
@@ -831,7 +840,7 @@ export class AccountingApp {
       { accountCode: accountForWarehouse(warehouse), debit: amountRub, memo: "Стартовый остаток товаров" },
       { accountCode: "80.01", credit: amountRub, memo: "Ввод начального капитала товарами" }
     ]);
-    this.audit("inventory", document.id, "post_opening_balance", undefined, { documentId: document.id, entryId: entry?.id });
+    await this.audit("inventory", document.id, "post_opening_balance", undefined, { documentId: document.id, entryId: entry?.id });
     return document;
   }
 
@@ -900,7 +909,7 @@ export class AccountingApp {
     if (input.post) {
       document.status = "posted";
       document.postedAt = nowIso();
-      this.audit("document", document.id, "post", undefined, document, "Заказ не создает проводок");
+      await this.audit("document", document.id, "post", undefined, document, "Заказ не создает проводок");
     }
     return purchaseOrder;
   }
@@ -1426,7 +1435,7 @@ export class AccountingApp {
       await this.repos.warehouses.upsert(linkedWarehouse);
     }
     await this.repos.salesChannels.add(channel);
-    this.audit("sales_channel", channel.id, "create", undefined, channel);
+    await this.audit("sales_channel", channel.id, "create", undefined, channel);
     return channel;
   }
 
@@ -1455,7 +1464,7 @@ export class AccountingApp {
       channel.pluginId = plugin?.id;
     }
     await this.repos.salesChannels.upsert(channel);
-    this.audit("sales_channel", channel.id, "update", undefined, channel);
+    await this.audit("sales_channel", channel.id, "update", undefined, channel);
     return channel;
   }
 
@@ -2240,7 +2249,7 @@ export class AccountingApp {
     if (sale.status === "reversed" || document.status === "cancelled") {
       throw new DomainError("sale_not_postable", "Сторнированную или отмененную продажу нельзя провести повторно");
     }
-    this.assertAccountingDateAllowed(sale.saleDate);
+    await this.assertAccountingDateAllowed(sale.saleDate);
     const warehouse = this.mustFind(await this.repos.warehouses.all(), sale.warehouseId, "warehouse_not_found");
     const saleLines = (await this.repos.saleLines.all()).filter((line) => line.saleId === sale.id);
     const plannedQty = new Map<ID, number>();
@@ -2355,7 +2364,7 @@ export class AccountingApp {
         return sale;
       }
     }
-    this.assertAccountingDateAllowed(input.recognitionDate);
+    await this.assertAccountingDateAllowed(input.recognitionDate);
     const recognizedGrossAmountRub = round2(
       input.recognizedGrossAmountRub && input.recognizedGrossAmountRub > 0
         ? input.recognizedGrossAmountRub
@@ -2655,7 +2664,7 @@ export class AccountingApp {
     await this.repos.documentLinks.replaceAll((await this.repos.documentLinks.all()).filter((link) => link.fromDocumentId !== document.id && link.toDocumentId !== document.id));
     await this.repos.documents.replaceAll((await this.repos.documents.all()).filter((candidate) => candidate.id !== document.id));
     this.compactZeroStockStates();
-    this.audit("stock_transfer", transfer.id, "delete", transfer, undefined, "Удаление перемещения");
+    await this.audit("stock_transfer", transfer.id, "delete", transfer, undefined, "Удаление перемещения");
     return {
       transferId: transfer.id,
       deleted: {
@@ -2780,7 +2789,7 @@ export class AccountingApp {
     await this.repos.ownerTransactions.replaceAll((await this.repos.ownerTransactions.all()).filter((transaction) => transaction.paymentId !== payment.id));
     await this.rollbackPaymentsForDocument(documentId); // касса + аллокации + сам платёж
     await this.removeDocumentGraph(documentId);
-    this.audit("payment", payment.id, "delete", before, undefined, "Удаление оплаты");
+    await this.audit("payment", payment.id, "delete", before, undefined, "Удаление оплаты");
     return { paymentId: payment.id, deleted: { payments: 1, documents: 1 } };
   }
 
@@ -2867,7 +2876,7 @@ export class AccountingApp {
     await this.repos.goodsReceipts.replaceAll((await this.repos.goodsReceipts.all()).filter((candidate) => candidate.id !== receipt.id));
     await this.removeDocumentGraph(document.id);
     this.compactZeroStockStates();
-    this.audit("goods_receipt", receipt.id, "delete", before, undefined, "Удаление приёмки");
+    await this.audit("goods_receipt", receipt.id, "delete", before, undefined, "Удаление приёмки");
     return { receiptId: receipt.id, deleted: { goodsReceipts: 1, documents: 1, inventoryLots: lots.length } };
   }
 
@@ -2937,7 +2946,7 @@ export class AccountingApp {
     await this.repos.procurementCosts.replaceAll((await this.repos.procurementCosts.all()).filter((candidate) => candidate.id !== cost.id));
     await this.removeDocumentGraph(document.id);
     this.compactZeroStockStates();
-    this.audit("procurement_cost", cost.id, "delete", before, undefined, "Удаление расхода закупки");
+    await this.audit("procurement_cost", cost.id, "delete", before, undefined, "Удаление расхода закупки");
     return { costId: cost.id, deleted: { procurementCosts: 1, documents: 1 } };
   }
 
@@ -3117,7 +3126,7 @@ export class AccountingApp {
     if (sale.status !== "posted") {
       throw new DomainError("sale_not_posted", "Возврат можно оформить только по проведенной продаже");
     }
-    this.assertAccountingDateAllowed(salesReturn.returnDate);
+    await this.assertAccountingDateAllowed(salesReturn.returnDate);
     if (salesReturn.returnDate < sale.saleDate) {
       throw new DomainError("return_before_sale", "Дата возврата не может быть раньше даты продажи");
     }
@@ -3882,7 +3891,7 @@ export class AccountingApp {
         "Расход уже частично исправлен. Сначала примените текущую сумму повторно, чтобы синхронизировать строки документа."
       );
     }
-    const correction = this.createCorrectionCase(sourceDocument.id, "open_period_edit", input.reason, {
+    const correction = await this.createCorrectionCase(sourceDocument.id, "open_period_edit", input.reason, {
       beforeAmountRub: cost.amountRub,
       afterAmountRub: nextAmountRub,
       delta: accountingDelta
@@ -3965,9 +3974,9 @@ export class AccountingApp {
     correction.status = "applied";
     correction.appliedAt = nowIso();
     await this.repos.correctionCases.upsert(correction);
-    this.audit("procurement_cost", cost.id, "correct", beforeCost, cost, input.reason);
-    this.audit("document", sourceDocument.id, "correct", beforeDocument, sourceDocument, input.reason);
-    this.queueRecalculation("inventory_cost", { procurementCostId: cost.id });
+    await this.audit("procurement_cost", cost.id, "correct", beforeCost, cost, input.reason);
+    await this.audit("document", sourceDocument.id, "correct", beforeDocument, sourceDocument, input.reason);
+    await this.queueRecalculation("inventory_cost", { procurementCostId: cost.id });
     return correction;
   }
 
@@ -4129,7 +4138,7 @@ export class AccountingApp {
       await this.repos.cashAccounts.upsert(cashAccount);
     }
     await this.repos.payments.upsert(payment);
-    this.audit("payment", payment.id, "correct", beforePayment, payment, "Исправление расхода закупки");
+    await this.audit("payment", payment.id, "correct", beforePayment, payment, "Исправление расхода закупки");
   }
 
   async applyReceiptQuantityCorrection(input: {
@@ -4147,7 +4156,7 @@ export class AccountingApp {
     const sourceDocument = this.mustFind(await this.repos.documents.all(), receipt.documentId, "document_not_found");
     const qtyDelta = round4(receiptLine.qtyReceived - input.newQtyReceived);
     const amountDelta = round2(receiptLine.unitCostRub * qtyDelta);
-    const correction = this.createCorrectionCase(sourceDocument.id, "open_period_edit", input.reason, {
+    const correction = await this.createCorrectionCase(sourceDocument.id, "open_period_edit", input.reason, {
       productId: receiptLine.productId,
       oldQty: receiptLine.qtyReceived,
       newQty: input.newQtyReceived,
@@ -4156,6 +4165,7 @@ export class AccountingApp {
     const state = await this.stockState(receiptLine.productId, receipt.warehouseId);
     if (state.qty + 0.0001 < qtyDelta) {
       correction.status = "failed";
+      await this.repos.correctionCases.upsert(correction);
       throw new DomainError("negative_stock_after_correction", "Исправление создаст отрицательный остаток", { state, qtyDelta });
     }
     const document = await this.createDocument({
@@ -4188,7 +4198,7 @@ export class AccountingApp {
     correction.status = "applied";
     correction.appliedAt = nowIso();
     await this.repos.correctionCases.upsert(correction);
-    this.queueRecalculation("inventory_cost", { goodsReceiptId: receipt.id });
+    await this.queueRecalculation("inventory_cost", { goodsReceiptId: receipt.id });
     return correction;
   }
 
@@ -4213,16 +4223,16 @@ export class AccountingApp {
 
   async setupSnapshot() {
     return {
-      organization: this.state.organization,
-      accountingPolicy: this.state.accountingPolicy,
+      organization: this.organization,
+      accountingPolicy: this.accountingPolicy,
       periods: await this.repos.periods.all(),
       cashAccounts: await this.repos.cashAccounts.all(),
       warehouses: await this.repos.warehouses.all(),
-      configured: Boolean(this.state.organization)
+      configured: Boolean(this.organization)
     };
   }
 
-  updateOrganization(input: Partial<Pick<Organization, "displayName" | "legalForm" | "taxMode" | "timezone" | "inn">>) {
+  async updateOrganization(input: Partial<Pick<Organization, "displayName" | "legalForm" | "taxMode" | "timezone" | "inn">>) {
     const { organization } = this.ensureBootstrapped();
     const before = { ...organization };
     if (input.displayName !== undefined) organization.displayName = input.displayName;
@@ -4231,7 +4241,7 @@ export class AccountingApp {
     if (input.taxMode !== undefined) organization.taxMode = input.taxMode;
     if (input.timezone !== undefined) organization.timezone = input.timezone;
     organization.updatedAt = nowIso();
-    this.audit("organization", organization.id, "update", before, organization);
+    await this.audit("organization", organization.id, "update", before, organization);
     return organization;
   }
 
@@ -4258,8 +4268,8 @@ export class AccountingApp {
       await this.repos.periods.replaceAll(monthPeriods(organization.id, input.accountingStartDate, 24));
     }
 
-    this.audit("organization", organization.id, "update", organizationBefore, organization, "Обновление первичной настройки");
-    this.audit("accounting_policy", policy.id, "update", policyBefore, policy, "Обновление первичной настройки");
+    await this.audit("organization", organization.id, "update", organizationBefore, organization, "Обновление первичной настройки");
+    await this.audit("accounting_policy", policy.id, "update", policyBefore, policy, "Обновление первичной настройки");
     return await this.setupSnapshot();
   }
 
@@ -4291,7 +4301,7 @@ export class AccountingApp {
         : period;
     }));
 
-    this.audit("accounting_policy", policy.id, "update", before, policy, reason);
+    await this.audit("accounting_policy", policy.id, "update", before, policy, reason);
     return policy;
   }
 
@@ -4359,7 +4369,7 @@ export class AccountingApp {
       throw new DomainError("document_not_editable", "Проведенный документ меняется только через исправление");
     }
     await this.assertDocumentHasNoDescendants(document.id, "Нельзя изменить документ, пока от него зависят другие документы");
-    if (patch.accountingDate) this.assertAccountingDateAllowed(patch.accountingDate);
+    if (patch.accountingDate) await this.assertAccountingDateAllowed(patch.accountingDate);
     const before = {
       document: { ...document },
       lines: (await this.repos.documentLines.all()).filter((line) => line.documentId === document.id).map((line) => ({ ...line }))
@@ -4391,7 +4401,7 @@ export class AccountingApp {
       createdAt: nowIso()
     });
     await this.repos.documents.upsert(document);
-    this.audit("document", document.id, "update", before.document, document, patch.changeReason);
+    await this.audit("document", document.id, "update", before.document, document, patch.changeReason);
     return document;
   }
 
@@ -4405,12 +4415,12 @@ export class AccountingApp {
     }
     const registry = (await this.repos.documentTypes.all()).find((type) => type.code === document.documentType);
     if (!registry) throw new DomainError("unknown_document_type", `Неизвестный тип документа: ${document.documentType}`);
-    this.assertAccountingDateAllowed(document.accountingDate);
+    await this.assertAccountingDateAllowed(document.accountingDate);
     if (!registry.isPosting) {
       document.status = "posted";
       document.postedAt = nowIso();
       await this.repos.documents.upsert(document);
-      this.audit("document", document.id, "post", undefined, document, "Документ без проводок");
+      await this.audit("document", document.id, "post", undefined, document, "Документ без проводок");
       return { document };
     }
     if (!journalLines || journalLines.length === 0) {
@@ -4554,7 +4564,7 @@ export class AccountingApp {
     await this.repos.documentLines.replaceAll((await this.repos.documentLines.all()).filter((line) => line.documentId !== document.id));
     await this.repos.documentVersions.replaceAll((await this.repos.documentVersions.all()).filter((version) => version.documentId !== document.id));
     await this.repos.documents.replaceAll((await this.repos.documents.all()).filter((candidate) => candidate.id !== document.id));
-    this.audit("document", document.id, "delete", document, undefined, "Удаление черновика");
+    await this.audit("document", document.id, "delete", document, undefined, "Удаление черновика");
     return document;
   }
 
@@ -4562,7 +4572,7 @@ export class AccountingApp {
     const document = this.mustFind(await this.repos.documents.all(), documentId, "document_not_found");
     await this.assertDocumentHasNoDescendants(document.id, "Нельзя изменить документ, пока от него зависят другие документы");
     const before = { ...document };
-    const correction = this.createCorrectionCase(document.id, "open_period_edit", reason, { patch });
+    const correction = await this.createCorrectionCase(document.id, "open_period_edit", reason, { patch });
     await this.repos.documentVersions.add({
       id: id("doc_version"),
       documentId: document.id,
@@ -4589,13 +4599,14 @@ export class AccountingApp {
     await this.repos.documents.upsert(document);
     correction.status = "applied";
     correction.appliedAt = nowIso();
-    this.audit("document", document.id, "correct", before, document, reason);
-    this.queueRecalculation("reports", { documentId });
+    await this.repos.correctionCases.upsert(correction);
+    await this.audit("document", document.id, "correct", before, document, reason);
+    await this.queueRecalculation("reports", { documentId });
     return { correction, document };
   }
 
-  createRecalculationJob(input: { jobType: "inventory_cost" | "sales_profit" | "settlements" | "reports" | "external_event_reprocess"; scope?: Record<string, unknown> }) {
-    return this.queueRecalculation(input.jobType, input.scope ?? {});
+  async createRecalculationJob(input: { jobType: "inventory_cost" | "sales_profit" | "settlements" | "reports" | "external_event_reprocess"; scope?: Record<string, unknown> }) {
+    return await this.queueRecalculation(input.jobType, input.scope ?? {});
   }
 
   async retryRecalculationJob(jobId: ID) {
@@ -4639,7 +4650,7 @@ export class AccountingApp {
     const before = { ...product };
     product.imageUrl = imageUrl;
     await this.repos.products.upsert(product);
-    this.audit("product", product.id, "image_update", before, product);
+    await this.audit("product", product.id, "image_update", before, product);
     return { id: `${product.id}:main`, productId: product.id, url: imageUrl, sortOrder: 0 };
   }
 
@@ -4648,7 +4659,7 @@ export class AccountingApp {
     const before = { ...product };
     product.imageUrl = undefined;
     await this.repos.products.upsert(product);
-    this.audit("product", product.id, "image_delete", before, product);
+    await this.audit("product", product.id, "image_delete", before, product);
     return product;
   }
 
@@ -4692,7 +4703,7 @@ export class AccountingApp {
       meta: input.meta
     };
     await this.repos.productAssets.add(asset);
-    this.audit("product_asset", asset.id, "create", undefined, asset);
+    await this.audit("product_asset", asset.id, "create", undefined, asset);
     return asset;
   }
 
@@ -4708,7 +4719,7 @@ export class AccountingApp {
     if (patch.mimeType) asset.mimeType = patch.mimeType;
     asset.updatedAt = nowIso();
     await this.repos.productAssets.upsert(asset);
-    this.audit("product_asset", asset.id, "confirm", before, asset);
+    await this.audit("product_asset", asset.id, "confirm", before, asset);
     return asset;
   }
 
@@ -4725,14 +4736,14 @@ export class AccountingApp {
     if (patch.meta) asset.meta = { ...(asset.meta ?? {}), ...patch.meta };
     asset.updatedAt = nowIso();
     await this.repos.productAssets.upsert(asset);
-    this.audit("product_asset", asset.id, "update", before, asset);
+    await this.audit("product_asset", asset.id, "update", before, asset);
     return asset;
   }
 
   async deleteProductAsset(assetId: ID): Promise<{ id: ID; deleted: true }> {
     const asset = this.mustFind(await this.repos.productAssets.all(), assetId, "product_asset_not_found");
     await this.repos.productAssets.replaceAll((await this.repos.productAssets.all()).filter((candidate) => candidate.id !== asset.id));
-    this.audit("product_asset", asset.id, "delete", asset, undefined);
+    await this.audit("product_asset", asset.id, "delete", asset, undefined);
     return { id: asset.id, deleted: true };
   }
 
@@ -4747,7 +4758,7 @@ export class AccountingApp {
       isActive: true
     };
     await this.repos.cashAccounts.add(account);
-    this.audit("cash_account", account.id, "create", undefined, account);
+    await this.audit("cash_account", account.id, "create", undefined, account);
     return account;
   }
 
@@ -4757,7 +4768,7 @@ export class AccountingApp {
     if (patch.name !== undefined) account.name = patch.name;
     if (patch.isActive !== undefined) account.isActive = patch.isActive;
     await this.repos.cashAccounts.upsert(account);
-    this.audit("cash_account", account.id, "update", before, account);
+    await this.audit("cash_account", account.id, "update", before, account);
     return account;
   }
 
@@ -4854,7 +4865,7 @@ export class AccountingApp {
     if (input.destinationWarehouseId !== undefined) order.destinationWarehouseId = input.destinationWarehouseId;
     if (input.supplierCurrency !== undefined) order.supplierCurrency = input.supplierCurrency;
     if (input.orderedAt !== undefined) {
-      this.assertAccountingDateAllowed(input.orderedAt);
+      await this.assertAccountingDateAllowed(input.orderedAt);
       order.orderedAt = input.orderedAt;
       document.accountingDate = input.orderedAt;
     }
@@ -4929,20 +4940,20 @@ export class AccountingApp {
     });
     await this.repos.purchaseOrders.upsert(order);
     await this.repos.documents.upsert(document);
-    this.audit("purchase_order", order.id, "update", before.order, order);
+    await this.audit("purchase_order", order.id, "update", before.order, order);
     return order;
   }
 
   async postPurchaseOrder(purchaseOrderId: ID): Promise<PurchaseOrder> {
     const order = this.mustFind(await this.repos.purchaseOrders.all(), purchaseOrderId, "purchase_order_not_found");
     const document = this.mustFind(await this.repos.documents.all(), order.documentId, "document_not_found");
-    this.assertAccountingDateAllowed(order.orderedAt);
+    await this.assertAccountingDateAllowed(order.orderedAt);
     order.status = "ordered";
     document.status = "posted";
     document.postedAt = document.postedAt ?? nowIso();
     await this.repos.purchaseOrders.upsert(order);
     await this.repos.documents.upsert(document);
-    this.audit("document", document.id, "post", undefined, document, "Заказ не создает проводок");
+    await this.audit("document", document.id, "post", undefined, document, "Заказ не создает проводок");
     return order;
   }
 
@@ -5378,7 +5389,7 @@ export class AccountingApp {
       document.status = "posted";
       document.postedAt = nowIso();
       await this.repos.documents.upsert(document);
-      this.audit("document", document.id, "post", undefined, document, "Решение по недопоставке без проводок");
+      await this.audit("document", document.id, "post", undefined, document, "Решение по недопоставке без проводок");
     }
     await this.ensureDocumentLink(order.documentId, document.id, "shortage");
     shortage.status = "posted";
@@ -5450,7 +5461,7 @@ export class AccountingApp {
       document.status = "posted";
       document.postedAt = nowIso();
       await this.repos.documents.upsert(document);
-      this.audit("document", document.id, "post", undefined, document, "Перемещение внутри одного субсчета");
+      await this.audit("document", document.id, "post", undefined, document, "Перемещение внутри одного субсчета");
     } else {
       await this.postDocument(document.id, [
         { accountCode: toAccount, debit: totalCost, memo: "Перемещение товара: приход" },
@@ -5572,12 +5583,12 @@ export class AccountingApp {
     if (!registry) {
       throw new DomainError("unknown_document_type", `Неизвестный тип документа: ${input.documentType}`);
     }
-    this.assertAccountingDateAllowed(input.accountingDate);
+    await this.assertAccountingDateAllowed(input.accountingDate);
     const document: Document = {
       id: id("doc"),
       organizationId: this.currentOrgId(),
       documentType: input.documentType,
-      number: this.nextDocumentNumber(input.documentType),
+      number: await this.nextDocumentNumber(input.documentType),
       status: "draft",
       accountingDate: input.accountingDate,
       source: input.source ?? "manual",
@@ -5587,7 +5598,7 @@ export class AccountingApp {
       createdAt: nowIso()
     };
     await this.repos.documents.add(document);
-    this.audit("document", document.id, "create", undefined, document);
+    await this.audit("document", document.id, "create", undefined, document);
     return document;
   }
 
@@ -5668,7 +5679,7 @@ export class AccountingApp {
     document.status = "posted";
     document.postedAt = nowIso();
     await this.repos.documents.upsert(document);
-    this.audit("document", document.id, "post", undefined, document);
+    await this.audit("document", document.id, "post", undefined, document);
     return entry;
   }
 
@@ -5919,8 +5930,8 @@ export class AccountingApp {
     ));
   }
 
-  private audit(entityType: string, entityId: ID, eventType: string, before?: unknown, after?: unknown, reason?: string): AuditEvent {
-    const organizationId = this.state.organization?.id ?? "unconfigured";
+  private async audit(entityType: string, entityId: ID, eventType: string, before?: unknown, after?: unknown, reason?: string): Promise<AuditEvent> {
+    const organizationId = this.organization?.id ?? "unconfigured";
     const event: AuditEvent = {
       id: id("audit"),
       organizationId,
@@ -5933,11 +5944,11 @@ export class AccountingApp {
       reason,
       createdAt: nowIso()
     };
-    this.state.auditEvents.push(event);
+    await this.repos.auditEvents.add(event);
     return event;
   }
 
-  private createCorrectionCase(sourceDocumentId: ID, correctionType: "open_period_edit" | "reversal" | "current_period_adjustment" | "reprocess_external_event", reason: string, impactSummary: Record<string, unknown>): CorrectionCase {
+  private async createCorrectionCase(sourceDocumentId: ID, correctionType: "open_period_edit" | "reversal" | "current_period_adjustment" | "reprocess_external_event", reason: string, impactSummary: Record<string, unknown>): Promise<CorrectionCase> {
     const correction: CorrectionCase = {
       id: id("correction"),
       organizationId: this.currentOrgId(),
@@ -5948,11 +5959,11 @@ export class AccountingApp {
       impactSummary,
       createdAt: nowIso()
     };
-    this.state.correctionCases.push(correction);
+    await this.repos.correctionCases.add(correction);
     return correction;
   }
 
-  private queueRecalculation(jobType: "inventory_cost" | "sales_profit" | "settlements" | "reports" | "external_event_reprocess", scope: Record<string, unknown>) {
+  private async queueRecalculation(jobType: "inventory_cost" | "sales_profit" | "settlements" | "reports" | "external_event_reprocess", scope: Record<string, unknown>) {
     const job = {
       id: id("recalc"),
       organizationId: this.currentOrgId(),
@@ -5963,7 +5974,7 @@ export class AccountingApp {
       createdAt: nowIso(),
       finishedAt: nowIso()
     };
-    this.state.recalculationJobs.push(job);
+    await this.repos.recalculationJobs.add(job);
     return job;
   }
 
@@ -6202,7 +6213,7 @@ export class AccountingApp {
     });
   }
 
-  private nextDocumentNumber(type: string): string {
+  private async nextDocumentNumber(type: string): Promise<string> {
     const prefixByType: Record<string, string> = {
       accounting_note: "ЗАМ",
       opening_balance: "СТ",
@@ -6222,7 +6233,7 @@ export class AccountingApp {
       correction: "КОР"
     };
     const prefix = prefixByType[type] ?? "ДОК";
-    const maxSequence = this.state.documents
+    const maxSequence = (await this.repos.documents.all())
       .filter((document) => document.documentType === type)
       .reduce((current, document) => {
         const value = String(document.number ?? "");
@@ -6233,8 +6244,8 @@ export class AccountingApp {
     return `${prefix}-${String(maxSequence + 1).padStart(5, "0")}`;
   }
 
-  private periodForDate(date: string): AccountingPeriod | undefined {
-    return this.state.periods.find((period) => period.startsOn <= date && period.endsOn >= date);
+  private async periodForDate(date: string): Promise<AccountingPeriod | undefined> {
+    return (await this.repos.periods.all()).find((period) => period.startsOn <= date && period.endsOn >= date);
   }
 
   private monthsBetweenInclusive(from: string, to: string) {
@@ -6266,17 +6277,17 @@ export class AccountingApp {
     if (startDate < startOfCurrentMonth && input.confirmHistoricalStart === false) {
       throw new DomainError("historical_start_requires_confirmation", "Подтвердите историческую дату старта учета");
     }
-    if (documentsExist && this.state.accountingPolicy && input.accountingStartDate !== this.state.accountingPolicy.accountingStartDate) {
+    if (documentsExist && this.accountingPolicy && input.accountingStartDate !== this.accountingPolicy.accountingStartDate) {
       throw new DomainError("accounting_start_locked", "Нельзя менять дату старта после появления учетных документов");
     }
   }
 
-  private assertAccountingDateAllowed(date: string) {
+  private async assertAccountingDateAllowed(date: string) {
     const { policy } = this.ensureBootstrapped();
     if (date < policy.accountingStartDate) {
       throw new DomainError("before_accounting_start", "Дата раньше начала учета");
     }
-    const period = this.periodForDate(date);
+    const period = await this.periodForDate(date);
     if (!period) {
       throw new DomainError("period_not_found", "Для даты нет учетного периода");
     }

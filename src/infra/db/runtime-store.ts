@@ -1162,6 +1162,7 @@ export class PostgresRuntimeStore implements RuntimePersistence {
 
     const baseline = prepareStateSnapshot(state, workspaceId);
     const app = new AccountingApp(state);
+    await app.ensureRequiredSystemMetadata();
     app.importChannelCredentials(await this.loadChannelCredentials(source, workspaceId));
     app.importPluginSecrets(await this.loadPluginSecrets(source, workspaceId));
     return { app, nextId, baseline };
@@ -1842,6 +1843,7 @@ export async function openPostgresReadModelApp(source: Queryable, workspaceId: s
   app.externalEvents = new PostgresExternalEventStore(source, scope);
   app.observedStocks = new PostgresObservedStockStore(source, scope);
   app.syncRuns = new PostgresSyncRunStore(source, scope);
+  await app.ensureRequiredSystemMetadata();
   return app;
 }
 

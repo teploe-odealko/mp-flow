@@ -136,7 +136,7 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
 → `repos.X.replaceAll` (мутация на месте, ссылка цела) + delete-for-resync. app.ts-хендлеры (55 floating-
 promise в `c.json` починены) + пайплайн (`materializeSale/Payout/Return`) + тесты на `await`; sync test-
 коллбэки → async; async-throw → `rejects.toThrow`. **Двойная запись/AVCO/удаления корректны (тесты зелёные).**
-Остаток `this.state.` в домене: **26** (было 565; факт после среза `app.ts`/plugins/finance/backfill/corrections);
+Остаток `this.state.` в домене: **6** (было 565; факт после среза `app.ts`/plugins/finance/backfill/corrections);
 из них часть — синглтоны/metadata (`organization`, `accountingPolicy`, `documentTypes`) и временные in-memory
 stores (`externalEvents`/`observedStocks`/`syncRuns`) в конструкторе. Переведены reporting
 (`reports`/`ledgerBalances`), `dashboard`, backend helper-layer в `app.ts` (прямого `app.state` больше нет),
@@ -144,12 +144,12 @@ backfill/materialization/sync helpers, marketplace plugins, `saveChannelCredenti
 `previewGoodsReceipt`, `postPurchaseOrder`, payment posting lookup'и, rollback/delete helpers,
 procurement/receipt correction paths, procurement posting (`updatePurchaseOrderDraft`/`postGoodsReceipt`/
 `postProcurementCost`/`postShortage`/`postStockTransfer`), document links, stock/receipt/shortage helpers,
-async `previewProcurementCost` и `documentDescendants`/`previewCorrection`.
-Оставшиеся sync/state-точки на конверсию: bootstrap/setup metadata (`organization`/`accountingPolicy`/
-`documentTypes`), `audit`/`createCorrectionCase`/`queueRecalculation`, `nextDocumentNumber`,
-`periodForDate`/`assertAccountingDateAllowed`, `bufferExternalEventUpdate` и in-memory store wiring в конструкторе.
-Синглтоны `organization`/`accountingPolicy` (~16 рефов) — НЕ массивы, не «тяжёлый снэпшот»; добираются в самом конце
-(или отдельным singleton-аксессором), уже после выноса всех коллекций.
+async `previewProcurementCost`, setup metadata fields, `audit`/`createCorrectionCase`/`queueRecalculation`,
+`nextDocumentNumber`, `periodForDate`/`assertAccountingDateAllowed` и `documentDescendants`/`previewCorrection`.
+Оставшиеся state-точки на конверсию: compatibility write в bootstrap (`app.state.organization`/
+`app.state.accountingPolicy`), `bufferExternalEventUpdate` и in-memory store wiring в конструкторе.
+Синглтоны `organization`/`accountingPolicy` уже изолированы как поля приложения; `app.state` пока остаётся
+только для совместимости runtime-store/tests до финального удаления snapshot.
 
 ### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
 Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/

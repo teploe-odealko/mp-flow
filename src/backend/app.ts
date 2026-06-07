@@ -673,7 +673,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.get("/api/meta/navigation", (c) => c.json({ ok: true, data: navigationMeta }));
 
-  api.post("/api/reports/recalculate", (c) => c.json({ ok: true, data: scopedApp.createRecalculationJob({ jobType: "reports", scope: { requestedAt: nowIso() } }) }));
+  api.post("/api/reports/recalculate", async (c) => c.json({ ok: true, data: await scopedApp.createRecalculationJob({ jobType: "reports", scope: { requestedAt: nowIso() } }) }));
   api.post("/api/setup", async (c) => {
     const body = bootstrapSchema.parse(await c.req.json());
     const data = await scopedApp.bootstrap(body);
@@ -691,7 +691,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.patch("/api/organization", async (c) => {
     const body = organizationPatchSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.updateOrganization(body) });
+    return c.json({ ok: true, data: await scopedApp.updateOrganization(body) });
   });
 
   api.post("/api/documents", async (c) => {
@@ -1940,7 +1940,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.post("/api/recalculation-jobs", async (c) => {
     const body = recalculationJobSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: scopedApp.createRecalculationJob(body) });
+    return c.json({ ok: true, data: await scopedApp.createRecalculationJob(body) });
   });
   api.post("/api/recalculation-jobs/:id/retry", async (c) => c.json({ ok: true, data: await scopedApp.retryRecalculationJob(c.req.param("id")) }));
   api.post("/api/procurement-costs/:id/correct", async (c) => {
