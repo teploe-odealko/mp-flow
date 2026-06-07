@@ -66,6 +66,7 @@ describe("MPFlow api surface", () => {
       get<unknown[]>(api, "/api/products"),
       get<{ stock: unknown[]; lots: unknown[]; movements: unknown[] }>(api, "/api/inventory"),
       get<{ stockStates: unknown[]; products: unknown[]; warehouses: unknown[]; documents: unknown[]; stockMovements: unknown[] }>(api, "/api/inventory/workspace"),
+      get<{ accountingPolicy?: unknown; products: unknown[]; warehouses: unknown[]; stockStates: unknown[]; inventoryLots: unknown[]; stockMovements: unknown[]; stockTransfers: unknown[]; stockTransferLines: unknown[]; observedStocks: unknown[] }>(api, "/api/inventory/forms/workspace"),
       get<{ orders: unknown[]; lines: unknown[] }>(api, "/api/procurement/purchase-orders"),
       get<{ purchaseOrders: unknown[]; purchaseOrderLines: unknown[]; counterparties: unknown[]; documents: unknown[]; procurementCosts: unknown[]; goodsReceipts: unknown[]; goodsReceiptLines: unknown[]; payments: unknown[]; paymentAllocations: unknown[]; shortageResolutions: unknown[]; shortageResolutionLines: unknown[] }>(api, "/api/procurement/workspace"),
       get<{ purchaseOrders: unknown[]; purchaseOrderLines: unknown[]; counterparties: unknown[]; documents: unknown[]; goodsReceipts: unknown[]; goodsReceiptLines: unknown[]; paymentAllocations: unknown[]; products: unknown[]; warehouses: unknown[]; accountingPolicy?: unknown }>(api, "/api/procurement/forms/workspace"),
@@ -81,6 +82,7 @@ describe("MPFlow api surface", () => {
       get<{ event: any; channel: any; sales: unknown[]; salesReturns: unknown[]; payouts: unknown[]; documents: unknown[]; externalEvent: unknown | null }>(api, `/api/integrations/finance-events/${demoFinanceEvent.id}/workspace`),
       get<{ externalProducts: unknown[]; links: unknown[]; products: unknown[]; channels: unknown[] }>(api, "/api/products/channel-mapping"),
       get<unknown[]>(api, "/api/integrations/events"),
+      get<{ sales: unknown[]; saleLines: unknown[]; salesChannels: unknown[]; products: unknown[]; documents: unknown[]; externalEvents: unknown[] }>(api, "/api/sales/workspace"),
       get<{ sales: unknown[]; lines: unknown[] }>(api, "/api/sales"),
       get<unknown[]>(api, "/api/returns"),
       get<unknown[]>(api, "/api/finance/payouts"),
@@ -89,7 +91,7 @@ describe("MPFlow api surface", () => {
       get<unknown[]>(api, "/api/controls/audit-events")
     ]);
 
-    const [dashboard, setup, accounts, journal, ledger, documents, products, inventory, inventoryWorkspace, purchaseOrders, procurementWorkspace, procurementFormsWorkspace, purchaseOrderCard, purchaseOrderFormsWorkspace, money, financeWorkspace, channels, channelsWorkspace, channelDetail, inboxWorkspace, channelFinanceWorkspace, financeEventWorkspace, mapping, events, sales, returns, payouts, expenses, corrections, auditEvents] = readModels;
+    const [dashboard, setup, accounts, journal, ledger, documents, products, inventory, inventoryWorkspace, inventoryFormsWorkspace, purchaseOrders, procurementWorkspace, procurementFormsWorkspace, purchaseOrderCard, purchaseOrderFormsWorkspace, money, financeWorkspace, channels, channelsWorkspace, channelDetail, inboxWorkspace, channelFinanceWorkspace, financeEventWorkspace, mapping, events, salesWorkspace, sales, returns, payouts, expenses, corrections, auditEvents] = readModels;
     expect(dashboard.configured).toBe(true);
     expect(dashboard.counters.products).toBeGreaterThan(0);
     expect(dashboard.counters.documents).toBeGreaterThan(0);
@@ -107,6 +109,15 @@ describe("MPFlow api surface", () => {
     expect(inventoryWorkspace.warehouses.length).toBeGreaterThan(0);
     expect(inventoryWorkspace.documents.length).toBeGreaterThan(0);
     expect(inventoryWorkspace.stockMovements.length).toBeGreaterThan(0);
+    expect(inventoryFormsWorkspace.accountingPolicy).toBeTruthy();
+    expect(inventoryFormsWorkspace.products.length).toBe(2);
+    expect(inventoryFormsWorkspace.warehouses.length).toBeGreaterThan(0);
+    expect(inventoryFormsWorkspace.stockStates.length).toBeGreaterThan(0);
+    expect(inventoryFormsWorkspace.inventoryLots.length).toBeGreaterThan(0);
+    expect(inventoryFormsWorkspace.stockMovements.length).toBeGreaterThan(0);
+    expect(inventoryFormsWorkspace.stockTransfers).toEqual(expect.any(Array));
+    expect(inventoryFormsWorkspace.stockTransferLines).toEqual(expect.any(Array));
+    expect(inventoryFormsWorkspace.observedStocks).toEqual(expect.any(Array));
     expect(purchaseOrders.orders.length).toBe(1);
     expect(purchaseOrders.lines.length).toBe(2);
     expect(procurementWorkspace.purchaseOrders.length).toBe(1);
@@ -178,6 +189,12 @@ describe("MPFlow api surface", () => {
     expect(mapping.products.length).toBe(2);
     expect(mapping.channels.length).toBe(1);
     expect(events).toEqual([]);
+    expect(salesWorkspace.sales.length).toBe(1);
+    expect(salesWorkspace.saleLines.length).toBeGreaterThan(0);
+    expect(salesWorkspace.salesChannels.length).toBe(1);
+    expect(salesWorkspace.products.length).toBe(2);
+    expect(salesWorkspace.documents.length).toBeGreaterThan(0);
+    expect(salesWorkspace.externalEvents).toEqual(expect.any(Array));
     expect(sales.sales.length).toBe(1);
     expect(returns).toEqual([]);
     expect(payouts.length).toBe(1);

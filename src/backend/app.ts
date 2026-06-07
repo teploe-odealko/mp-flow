@@ -279,6 +279,63 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     ]);
     return { stockStates, products, warehouses, documents, stockMovements };
   };
+  const inventoryFormsWorkspaceFor = async (c: Context): Promise<any> => {
+    const readModelApp = await readModelAppFor(c);
+    const [
+      costApplications,
+      documents,
+      externalProducts,
+      inventoryLots,
+      journalEntries,
+      productExternalLinks,
+      products,
+      salesChannels,
+      stockMovements,
+      stockStates,
+      stockTransferLines,
+      stockTransfers,
+      stocktakeLines,
+      stocktakes,
+      warehouses,
+      observedStocks
+    ] = await Promise.all([
+      readModelApp.repos.costApplications.all(),
+      readModelApp.repos.documents.all(),
+      readModelApp.repos.externalProducts.all(),
+      readModelApp.repos.inventoryLots.all(),
+      readModelApp.repos.journalEntries.all(),
+      readModelApp.repos.productExternalLinks.all(),
+      readModelApp.repos.products.all(),
+      readModelApp.repos.salesChannels.all(),
+      readModelApp.repos.stockMovements.all(),
+      readModelApp.repos.stockStates.all(),
+      readModelApp.repos.stockTransferLines.all(),
+      readModelApp.repos.stockTransfers.all(),
+      readModelApp.repos.stocktakeLines.all(),
+      readModelApp.repos.stocktakes.all(),
+      readModelApp.repos.warehouses.all(),
+      readModelApp.observedStocks.list()
+    ]);
+    return {
+      accountingPolicy: readModelApp.setupMetadata().accountingPolicy,
+      costApplications,
+      documents,
+      externalProducts,
+      inventoryLots,
+      journalEntries,
+      observedStocks,
+      productExternalLinks,
+      products,
+      salesChannels,
+      stockMovements,
+      stockStates,
+      stockTransferLines,
+      stockTransfers,
+      stocktakeLines,
+      stocktakes,
+      warehouses
+    };
+  };
   const procurementWorkspaceFor = async (c: Context): Promise<any> => {
     const readModelApp = await readModelAppFor(c);
     const [
@@ -610,6 +667,53 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       payouts,
       documents: allDocuments.filter((document) => documentIds.has(document.id)),
       externalEvent: externalEvent ?? null
+    };
+  };
+  const salesWorkspaceFor = async (c: Context): Promise<any> => {
+    const readModelApp = await readModelAppFor(c);
+    const [
+      channelFinanceEvents,
+      costApplications,
+      documentLines,
+      documents,
+      externalEvents,
+      inventoryLots,
+      journalEntries,
+      products,
+      saleLines,
+      sales,
+      salesChannels,
+      salesReturns,
+      warehouses
+    ] = await Promise.all([
+      readModelApp.repos.channelFinanceEvents.all(),
+      readModelApp.repos.costApplications.all(),
+      readModelApp.repos.documentLines.all(),
+      readModelApp.repos.documents.all(),
+      readModelApp.externalEvents.list(),
+      readModelApp.repos.inventoryLots.all(),
+      readModelApp.repos.journalEntries.all(),
+      readModelApp.repos.products.all(),
+      readModelApp.repos.saleLines.all(),
+      readModelApp.repos.sales.all(),
+      readModelApp.repos.salesChannels.all(),
+      readModelApp.repos.salesReturns.all(),
+      readModelApp.repos.warehouses.all()
+    ]);
+    return {
+      channelFinanceEvents,
+      costApplications,
+      documentLines,
+      documents,
+      externalEvents,
+      inventoryLots,
+      journalEntries,
+      products,
+      saleLines,
+      sales,
+      salesChannels,
+      salesReturns,
+      warehouses
     };
   };
   const chartAccountsWorkspaceFor = async (c: Context): Promise<any> => {
@@ -951,6 +1055,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: { stock: await readModelApp.stockByProduct(), lots: await readModelApp.repos.inventoryLots.all(), movements: await readModelApp.repos.stockMovements.all() } });
   });
   api.get("/api/inventory/workspace", async (c) => c.json({ ok: true, data: await inventoryWorkspaceFor(c) }));
+  api.get("/api/inventory/forms/workspace", async (c) => c.json({ ok: true, data: await inventoryFormsWorkspaceFor(c) }));
   api.get("/api/stock-states", async (c) => c.json({ ok: true, data: await collectionFor(c, "stockStates") }));
   api.get("/api/inventory/balances", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).stockByProduct() }));
   api.get("/api/inventory/lots", async (c) => c.json({ ok: true, data: await collectionFor(c, "inventoryLots") }));
@@ -1029,6 +1134,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/plugins", (c) => c.json({ ok: true, data: pluginRegistry.all().map(serializePluginMeta) }));
   api.get("/api/integrations/plugins", (c) => c.json({ ok: true, data: pluginRegistry.all().map(serializePluginMeta) }));
   api.get("/api/channels/:id/external-products", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).repos.externalProducts.all()).filter((product) => product.channelId === c.req.param("id")) }));
+  api.get("/api/sales/workspace", async (c) => c.json({ ok: true, data: await salesWorkspaceFor(c) }));
   api.get("/api/sales", async (c) => {
     const readModelApp = await readModelAppFor(c);
     return c.json({ ok: true, data: { sales: await readModelApp.repos.sales.all(), lines: await readModelApp.repos.saleLines.all() } });

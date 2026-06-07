@@ -26,7 +26,6 @@ import { Pagination } from "@/components/ui/pagination";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProductCell, ProductThumb } from "@/components/product-thumb";
 import { EntityDeleteDialog, type EntityRollbackPreview } from "@/components/entity-delete-dialog";
-import { useCollection } from "@/lib/use-collection";
 import { rub, qty, date, dateTime } from "@/lib/format";
 import { apiDelete, apiGet, apiPost } from "@/api";
 import { stockStateLabel, documentStatusLabel } from "@/lib/i18n";
@@ -41,11 +40,12 @@ import {
   isChannelOperatingTreatment,
   isVariableMarketplaceTreatment
 } from "../../../shared/channel-finance";
+import { invalidateSalesArea, useSalesWorkspace } from "./sales-queries";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
 export function SalesWorkspace() {
-  const state = { channelFinanceEvents: useCollection<any[]>("channelFinanceEvents") ?? [], costApplications: useCollection<any[]>("costApplications") ?? [], documentLines: useCollection<any[]>("documentLines") ?? [], documents: useCollection<any[]>("documents") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], products: useCollection<any[]>("products") ?? [], saleLines: useCollection<any[]>("saleLines") ?? [], sales: useCollection<any[]>("sales") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], salesReturns: useCollection<any[]>("salesReturns") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
+  const state = useSalesWorkspace();
   const sales = state.sales ?? [];
   const saleLines = state.saleLines ?? [];
   const channels = state.salesChannels ?? [];
@@ -67,7 +67,7 @@ export function SalesWorkspace() {
 
   const recalculate = useMutation({
     mutationFn: () => apiPost("/api/recalculation-jobs", { jobType: "sales_profit", scope: { channelId, productId } }),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => invalidateSalesArea(queryClient)
   });
 
   const rows = useMemo(() => {
@@ -250,7 +250,7 @@ export function SalesWorkspace() {
 }
 
 export function ManualSaleFormPage() {
-  const state = { channelFinanceEvents: useCollection<any[]>("channelFinanceEvents") ?? [], costApplications: useCollection<any[]>("costApplications") ?? [], documentLines: useCollection<any[]>("documentLines") ?? [], documents: useCollection<any[]>("documents") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], products: useCollection<any[]>("products") ?? [], saleLines: useCollection<any[]>("saleLines") ?? [], sales: useCollection<any[]>("sales") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], salesReturns: useCollection<any[]>("salesReturns") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
+  const state = useSalesWorkspace();
   const channels = state.salesChannels ?? [];
   const products = state.products ?? [];
   const queryClient = useQueryClient();
@@ -273,7 +273,7 @@ export function ManualSaleFormPage() {
         .map((line) => ({ productId: line.productId, qty: Number(line.qty), priceRub: Number(line.priceRub) }))
     }),
     onSuccess: (sale) => {
-      queryClient.invalidateQueries();
+      invalidateSalesArea(queryClient);
       navigate(`/sales/${sale.id}`);
     }
   });
@@ -351,9 +351,31 @@ export function ManualSaleFormPage() {
 export function SaleCardPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const state = { channelFinanceEvents: useCollection<any[]>("channelFinanceEvents") ?? [], costApplications: useCollection<any[]>("costApplications") ?? [], documentLines: useCollection<any[]>("documentLines") ?? [], documents: useCollection<any[]>("documents") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], products: useCollection<any[]>("products") ?? [], saleLines: useCollection<any[]>("saleLines") ?? [], sales: useCollection<any[]>("sales") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], salesReturns: useCollection<any[]>("salesReturns") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
+  const state = useSalesWorkspace();
   const queryClient = useQueryClient();
   const sale = (state.sales ?? []).find((candidate: any) => candidate.id === id);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const requireSale = () => {
+    if (!sale) throw new Error("sale_missing");
+    return sale;
+  };
+  const saleDeletePreview = useQuery({
+    queryKey: ["sale-delete-preview", sale?.id ?? id],
+    queryFn: () => apiGet<EntityRollbackPreview>(`/api/sales/${requireSale().id}/delete-preview`),
+    enabled: deleteOpen && Boolean(sale)
+  });
+
+  const post = useMutation({
+    mutationFn: () => apiPost(`/api/sales/${requireSale().id}/post`),
+    onSuccess: () => invalidateSalesArea(queryClient)
+  });
+  const removeSale = useMutation({
+    mutationFn: () => apiDelete(`/api/sales/${requireSale().id}`),
+    onSuccess: () => {
+      invalidateSalesArea(queryClient);
+      navigate("/sales");
+    }
+  });
   if (!sale) return null;
   const lines = (state.saleLines ?? []).filter((line: any) => line.saleId === sale.id);
   const products = state.products ?? [];
@@ -362,8 +384,7 @@ export function SaleCardPage() {
   const journalEntry = (state.journalEntries ?? []).find((candidate: any) => candidate.documentId === sale.documentId);
   const financialDocument = sale.financialDocumentId ? (state.documents ?? []).find((candidate: any) => candidate.id === sale.financialDocumentId) : undefined;
   const financialJournalEntry = sale.financialDocumentId ? (state.journalEntries ?? []).find((candidate: any) => candidate.documentId === sale.financialDocumentId) : undefined;
-  const eventsQuery = useQuery({ queryKey: ["events"], queryFn: () => apiGet<any[]>("/api/integrations/events") });
-  const externalEvents = eventsQuery.data ?? [];
+  const externalEvents = state.externalEvents ?? [];
   const externalEvent = externalEvents.find((candidate: any) => candidate.id === sale.externalEventId);
   const financeEvents = (state.channelFinanceEvents ?? [])
     .filter((candidate: any) => channelFinanceAllocatedAmountForSale(candidate, sale.id) > 0)
@@ -399,24 +420,6 @@ export function SaleCardPage() {
       lineProfitRub,
       lineRoiPercent
     };
-  });
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const saleDeletePreview = useQuery({
-    queryKey: ["sale-delete-preview", sale.id],
-    queryFn: () => apiGet<EntityRollbackPreview>(`/api/sales/${sale.id}/delete-preview`),
-    enabled: deleteOpen
-  });
-
-  const post = useMutation({
-    mutationFn: () => apiPost(`/api/sales/${sale.id}/post`),
-    onSuccess: () => queryClient.invalidateQueries()
-  });
-  const removeSale = useMutation({
-    mutationFn: () => apiDelete(`/api/sales/${sale.id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries();
-      navigate("/sales");
-    }
   });
 
   return (
@@ -666,7 +669,7 @@ export function SaleCardPage() {
 }
 
 export function ReturnsListPage() {
-  const state = { channelFinanceEvents: useCollection<any[]>("channelFinanceEvents") ?? [], costApplications: useCollection<any[]>("costApplications") ?? [], documentLines: useCollection<any[]>("documentLines") ?? [], documents: useCollection<any[]>("documents") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], products: useCollection<any[]>("products") ?? [], saleLines: useCollection<any[]>("saleLines") ?? [], sales: useCollection<any[]>("sales") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], salesReturns: useCollection<any[]>("salesReturns") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
+  const state = useSalesWorkspace();
   const returns = state.salesReturns ?? [];
   const sales = state.sales ?? [];
   const channels = state.salesChannels ?? [];
@@ -796,23 +799,27 @@ export function ReturnsListPage() {
 export function ReturnCardPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const state = { channelFinanceEvents: useCollection<any[]>("channelFinanceEvents") ?? [], costApplications: useCollection<any[]>("costApplications") ?? [], documentLines: useCollection<any[]>("documentLines") ?? [], documents: useCollection<any[]>("documents") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], products: useCollection<any[]>("products") ?? [], saleLines: useCollection<any[]>("saleLines") ?? [], sales: useCollection<any[]>("sales") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], salesReturns: useCollection<any[]>("salesReturns") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
+  const state = useSalesWorkspace();
   const queryClient = useQueryClient();
   const salesReturn = (state.salesReturns ?? []).find((candidate: any) => candidate.id === id);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const requireSalesReturn = () => {
+    if (!salesReturn) throw new Error("sales_return_missing");
+    return salesReturn;
+  };
+  const removeReturn = useMutation({
+    mutationFn: () => apiDelete(`/api/returns/${requireSalesReturn().id}`),
+    onSuccess: () => {
+      invalidateSalesArea(queryClient);
+      navigate("/returns");
+    }
+  });
   if (!salesReturn) return null;
   const sale = (state.sales ?? []).find((candidate: any) => candidate.id === salesReturn.saleId);
   const channel = (state.salesChannels ?? []).find((candidate: any) => candidate.id === salesReturn.channelId);
   const document = (state.documents ?? []).find((candidate: any) => candidate.id === salesReturn.documentId);
   const products = state.products ?? [];
   const lines = (state.documentLines ?? []).filter((line: any) => line.documentId === salesReturn.documentId && line.lineType === "sales_return_line");
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const removeReturn = useMutation({
-    mutationFn: () => apiDelete(`/api/returns/${salesReturn.id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries();
-      navigate("/returns");
-    }
-  });
 
   return (
     <div className="flex flex-col gap-5">
@@ -893,7 +900,7 @@ export function ReturnCardPage() {
 export function ReturnFormPage() {
   const { saleId, id } = useParams<{ saleId?: string; id?: string }>();
   const targetSaleId = saleId ?? id;
-  const state = { channelFinanceEvents: useCollection<any[]>("channelFinanceEvents") ?? [], costApplications: useCollection<any[]>("costApplications") ?? [], documentLines: useCollection<any[]>("documentLines") ?? [], documents: useCollection<any[]>("documents") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], products: useCollection<any[]>("products") ?? [], saleLines: useCollection<any[]>("saleLines") ?? [], sales: useCollection<any[]>("sales") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], salesReturns: useCollection<any[]>("salesReturns") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
+  const state = useSalesWorkspace();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const sale = (state.sales ?? []).find((candidate: any) => candidate.id === targetSaleId);
@@ -939,7 +946,7 @@ export function ReturnFormPage() {
         .map((row) => ({ saleLineId: row.saleLineId, qty: Number(row.returnQty) }))
     }),
     onSuccess: (salesReturn) => {
-      queryClient.invalidateQueries();
+      invalidateSalesArea(queryClient);
       navigate(`/returns/${salesReturn.id}`);
     }
   });

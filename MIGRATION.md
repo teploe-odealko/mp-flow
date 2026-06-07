@@ -73,18 +73,18 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
 
 ## Фронт: уход от всесущего `state` (`/api/state` → пер-ресурсные запросы)
 Цель «ни на фронте всесущего snapshot» — самостоятельная и не трогает синхронность домена.
-- ✅ Инфра: бэк `GET /api/collections/:name` (классический пер-ресурс, тот же public-шейпинг, что `/api/state`,
-  404 на неизвестную) + хук `useCollection(name)` ([use-collection.ts](src/frontend/lib/use-collection.ts)),
-  React Query кэширует по `["collection", name]`. Замена механическая: `state.X` → `useCollection("X")`.
+- ✅ Старый переходный слой: бэк `GET /api/collections/:name` (классический пер-ресурс, тот же public-шейпинг,
+  что `/api/state`, 404 на неизвестную) + хук `useCollection(name)` дали механический срез
+  `state.X` → `useCollection("X")`. После финального фронтового среза hook удалён; generic collections
+  остаются только как backend/test compatibility до конверсии ядра.
 - ✅ Уже на запросах (dedicated): события (`/api/integrations/events`+`/:id`), остатки (`/api/integrations/observed-stock`),
   аудит (`/api/controls/audit-events`), sync-runs (`/api/integrations/channels/:id/sync-runs`).
 - ✅ Старый промежуточный этап: все страницы были сняты с `/api/state` и переведены на `useCollection(...)`.
   Это уже убрало всесущий публичный snapshot, но **не является финальным REST-критерием**: `useCollection`
   остаётся generic collection API, а не понятным ресурсным контрактом.
-- ✅ **God-объект убран целиком:** `AppShell` больше НЕ дёргает `/api/state`; `workingPeriodId` берётся из
-  `useCollection("periods")`; `Topbar`/`App` берут organization через `useCollection`; `AppCtx` без `state`.
-  Ни одна строка фронта не держит всесущий снимок. Дымовой тест (live): Home/Products/Reports/Procurement/
-  Sales/Inventory/Inbox рендерятся, консоль чистая.
+- ✅ **God-объект убран целиком:** `AppShell` больше НЕ дёргает `/api/state`; `workingPeriodId`,
+  organization и остальной shell-контекст берутся из dedicated DTO. `AppCtx` без `state`.
+  Ни одна строка фронта не держит всесущий снимок и не вызывает `/api/collections/*`.
 - ✅ Бэкенд `/api/state` удалён. Тесты переведены на чтение через `/api/collections/:name`, поэтому полного
   публичного снимка состояния больше нет ни во фронте, ни в API-контракте.
 - ✅ Часть GET-ручек уже обслуживается read-model путём до snapshot-сессии: collections, dashboard, reports,
@@ -149,10 +149,16 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   `ChannelFinancePage` → `/api/integrations/channels/:id/finance/workspace`,
   `FinanceEventCardPage` → `/api/integrations/finance-events/:id/workspace`.
   В `src/frontend/pages/channels` больше нет `useCollection` и глобального `queryClient.invalidateQueries()`;
-  мутации инвалидируют scoped channel/workspace keys и временно старые collection-ключи для ещё не мигрированных
-  смежных sales/inventory страниц.
-- ⚠️ Фактический текущий остаток фронта: `useCollection` ещё есть в inventory/sales pages:
-  `inventory/forms`, `SalesPages`.
+  мутации инвалидируют scoped channel/workspace keys и временно старые collection-ключи для совместимости.
+- ✅ Sales pages сняты с generic collections:
+  `SalesWorkspace`, карточка продажи, возвраты и ручная продажа читают `/api/sales/workspace`.
+  В `src/frontend/pages/sales` больше нет `useCollection` и глобального `queryClient.invalidateQueries()`.
+- ✅ Inventory forms сняты с generic collections:
+  формы ввода начальных остатков, движения, перемещения, сверки и корректировки читают
+  `/api/inventory/forms/workspace`. В `src/frontend/pages/inventory/forms.tsx` больше нет `useCollection`
+  и глобального `queryClient.invalidateQueries()`.
+- ✅ Фронтовый transitional hook `useCollection` удалён. `src/frontend` больше не вызывает `/api/collections/*`;
+  оставшийся `/api/collections/:name` — backend/test compatibility до полного выноса ядра из snapshot-модели.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,

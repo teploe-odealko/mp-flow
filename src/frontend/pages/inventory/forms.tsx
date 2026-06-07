@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { Pagination } from "@/components/ui/pagination";
 import { EntityDeleteDialog, type EntityRollbackPreview } from "@/components/entity-delete-dialog";
-import { useCollection } from "@/lib/use-collection";
 import { apiDelete, apiGet, apiPost } from "@/api";
 import { date, rub, qty } from "@/lib/format";
 import { movementTypeLabel, stockStateLabel, warehouseTypeLabel } from "@/lib/i18n";
@@ -18,11 +17,12 @@ import { ProductCell } from "@/components/product-thumb";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { paginateRows } from "@/lib/pagination";
+import { invalidateInventoryFormsArea, useInventoryFormsWorkspace } from "./inventory-form-queries";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
 export function OpeningBalanceFormPage() {
-  const state = { accountingPolicy: useCollection<any>("accountingPolicy"), costApplications: useCollection<any[]>("costApplications") ?? [], documents: useCollection<any[]>("documents") ?? [], externalProducts: useCollection<any[]>("externalProducts") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], productExternalLinks: useCollection<any[]>("productExternalLinks") ?? [], products: useCollection<any[]>("products") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], stockMovements: useCollection<any[]>("stockMovements") ?? [], stockStates: useCollection<any[]>("stockStates") ?? [], stockTransferLines: useCollection<any[]>("stockTransferLines") ?? [], stockTransfers: useCollection<any[]>("stockTransfers") ?? [], stocktakeLines: useCollection<any[]>("stocktakeLines") ?? [], stocktakes: useCollection<any[]>("stocktakes") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
+  const state = useInventoryFormsWorkspace();
   const products = state.products ?? [];
   const warehouses = (state.warehouses ?? []).filter((w: any) => w.isActive !== false);
   const defaultWarehouseId = warehouses.find((warehouse: any) => warehouse.warehouseType === "own")?.id ?? warehouses[0]?.id ?? "";
@@ -90,7 +90,7 @@ export function OpeningBalanceFormPage() {
       return payload;
     },
     onSuccess: (data: any, post) => {
-      queryClient.invalidateQueries();
+      invalidateInventoryFormsArea(queryClient);
       navigate(post ? "/inventory" : `/documents/${data.id}`);
     }
   });
@@ -315,7 +315,7 @@ export function OpeningBalanceFormPage() {
 }
 
 export function StockMovementsPage() {
-  const state = { accountingPolicy: useCollection<any>("accountingPolicy"), costApplications: useCollection<any[]>("costApplications") ?? [], documents: useCollection<any[]>("documents") ?? [], externalProducts: useCollection<any[]>("externalProducts") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], productExternalLinks: useCollection<any[]>("productExternalLinks") ?? [], products: useCollection<any[]>("products") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], stockMovements: useCollection<any[]>("stockMovements") ?? [], stockStates: useCollection<any[]>("stockStates") ?? [], stockTransferLines: useCollection<any[]>("stockTransferLines") ?? [], stockTransfers: useCollection<any[]>("stockTransfers") ?? [], stocktakeLines: useCollection<any[]>("stocktakeLines") ?? [], stocktakes: useCollection<any[]>("stocktakes") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
+  const state = useInventoryFormsWorkspace();
   const movements = state.stockMovements ?? [];
   const products = state.products ?? [];
   const warehouses = state.warehouses ?? [];
@@ -450,7 +450,7 @@ export function StockMovementsPage() {
 }
 
 export function TransferFormPage() {
-  const state = { accountingPolicy: useCollection<any>("accountingPolicy"), costApplications: useCollection<any[]>("costApplications") ?? [], documents: useCollection<any[]>("documents") ?? [], externalProducts: useCollection<any[]>("externalProducts") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], productExternalLinks: useCollection<any[]>("productExternalLinks") ?? [], products: useCollection<any[]>("products") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], stockMovements: useCollection<any[]>("stockMovements") ?? [], stockStates: useCollection<any[]>("stockStates") ?? [], stockTransferLines: useCollection<any[]>("stockTransferLines") ?? [], stockTransfers: useCollection<any[]>("stockTransfers") ?? [], stocktakeLines: useCollection<any[]>("stocktakeLines") ?? [], stocktakes: useCollection<any[]>("stocktakes") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
+  const state = useInventoryFormsWorkspace();
   const products = state.products ?? [];
   const warehouses = state.warehouses ?? [];
   const stockStates = state.stockStates ?? [];
@@ -510,9 +510,9 @@ export function TransferFormPage() {
         comment: comment || undefined,
         post,
         lines: [{ productId, qty: Number(qtyValue) }]
-      }),
+    }),
     onSuccess: (data: any, post) => {
-      queryClient.invalidateQueries();
+      invalidateInventoryFormsArea(queryClient);
       if (!post) {
         navigate(`/inventory/transfers/${data.id}`);
         return;
@@ -668,7 +668,7 @@ export function TransferFormPage() {
 
 export function TransferCardPage() {
   const { id } = useParams();
-  const state = { accountingPolicy: useCollection<any>("accountingPolicy"), costApplications: useCollection<any[]>("costApplications") ?? [], documents: useCollection<any[]>("documents") ?? [], externalProducts: useCollection<any[]>("externalProducts") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], productExternalLinks: useCollection<any[]>("productExternalLinks") ?? [], products: useCollection<any[]>("products") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], stockMovements: useCollection<any[]>("stockMovements") ?? [], stockStates: useCollection<any[]>("stockStates") ?? [], stockTransferLines: useCollection<any[]>("stockTransferLines") ?? [], stockTransfers: useCollection<any[]>("stockTransfers") ?? [], stocktakeLines: useCollection<any[]>("stocktakeLines") ?? [], stocktakes: useCollection<any[]>("stocktakes") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
+  const state = useInventoryFormsWorkspace();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -683,14 +683,14 @@ export function TransferCardPage() {
   const removeTransfer = useMutation({
     mutationFn: () => apiDelete(`/api/inventory/transfers/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries();
+      invalidateInventoryFormsArea(queryClient);
       navigate("/inventory");
     }
   });
 
   const postTransfer = useMutation({
     mutationFn: () => apiPost(`/api/inventory/transfers/${id}/post`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => invalidateInventoryFormsArea(queryClient)
   });
 
   if (!transfer) {
@@ -825,7 +825,7 @@ export function TransferCardPage() {
 
 export function SalesPointStockPage() {
   const { id } = useParams();
-  const state = { accountingPolicy: useCollection<any>("accountingPolicy"), costApplications: useCollection<any[]>("costApplications") ?? [], documents: useCollection<any[]>("documents") ?? [], externalProducts: useCollection<any[]>("externalProducts") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], productExternalLinks: useCollection<any[]>("productExternalLinks") ?? [], products: useCollection<any[]>("products") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], stockMovements: useCollection<any[]>("stockMovements") ?? [], stockStates: useCollection<any[]>("stockStates") ?? [], stockTransferLines: useCollection<any[]>("stockTransferLines") ?? [], stockTransfers: useCollection<any[]>("stockTransfers") ?? [], stocktakeLines: useCollection<any[]>("stocktakeLines") ?? [], stocktakes: useCollection<any[]>("stocktakes") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
+  const state = useInventoryFormsWorkspace();
   const wh = (state.warehouses ?? []).find((w: any) => w.id === id);
   const stocks = (state.stockStates ?? []).filter((s: any) => s.warehouseId === id);
   const products = state.products ?? [];
@@ -929,7 +929,7 @@ function mutationMessage(error: unknown) {
 }
 
 export function InventoryReconciliationPage() {
-  const state = { accountingPolicy: useCollection<any>("accountingPolicy"), costApplications: useCollection<any[]>("costApplications") ?? [], documents: useCollection<any[]>("documents") ?? [], externalProducts: useCollection<any[]>("externalProducts") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], productExternalLinks: useCollection<any[]>("productExternalLinks") ?? [], products: useCollection<any[]>("products") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], stockMovements: useCollection<any[]>("stockMovements") ?? [], stockStates: useCollection<any[]>("stockStates") ?? [], stockTransferLines: useCollection<any[]>("stockTransferLines") ?? [], stockTransfers: useCollection<any[]>("stockTransfers") ?? [], stocktakeLines: useCollection<any[]>("stocktakeLines") ?? [], stocktakes: useCollection<any[]>("stocktakes") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
+  const state = useInventoryFormsWorkspace();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [warehouseId, setWarehouseId] = useState("");
@@ -940,8 +940,7 @@ export function InventoryReconciliationPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
-  const observedStocksQuery = useQuery({ queryKey: ["observed-stock"], queryFn: () => apiGet<any[]>("/api/integrations/observed-stock") });
-  const rows = useMemo(() => buildReconciliationRows({ ...state, observedStocks: observedStocksQuery.data ?? [] }), [state, observedStocksQuery.data]);
+  const rows = useMemo(() => buildReconciliationRows(state), [state]);
   const warehouses = state.warehouses ?? [];
   const filtered = rows.filter((row) => {
     if (warehouseId && row.warehouseId !== warehouseId) return false;
@@ -966,11 +965,11 @@ export function InventoryReconciliationPage() {
       if (!row.channelId) throw new Error("У строки нет канала наблюдения");
       return apiPost(`/api/integrations/channels/${row.channelId}/sync-runs`, { streams: ["stocks"], mode: "incremental", since: row.observedAt?.slice(0, 10) });
     },
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => invalidateInventoryFormsArea(queryClient)
   });
   const ignore = useMutation({
     mutationFn: (row: ReconciliationRow) => apiPost(`/api/inventory/reconciliation/${row.id}/ignore`, {}),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => invalidateInventoryFormsArea(queryClient)
   });
 
   const totals = {
@@ -1114,11 +1113,10 @@ export function InventoryReconciliationPage() {
 
 export function StockAdjustmentPage() {
   const { id } = useParams();
-  const state = { accountingPolicy: useCollection<any>("accountingPolicy"), costApplications: useCollection<any[]>("costApplications") ?? [], documents: useCollection<any[]>("documents") ?? [], externalProducts: useCollection<any[]>("externalProducts") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], productExternalLinks: useCollection<any[]>("productExternalLinks") ?? [], products: useCollection<any[]>("products") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], stockMovements: useCollection<any[]>("stockMovements") ?? [], stockStates: useCollection<any[]>("stockStates") ?? [], stockTransferLines: useCollection<any[]>("stockTransferLines") ?? [], stockTransfers: useCollection<any[]>("stockTransfers") ?? [], stocktakeLines: useCollection<any[]>("stocktakeLines") ?? [], stocktakes: useCollection<any[]>("stocktakes") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
+  const state = useInventoryFormsWorkspace();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const observedStocksQuery = useQuery({ queryKey: ["observed-stock"], queryFn: () => apiGet<any[]>("/api/integrations/observed-stock") });
-  const rows = useMemo(() => buildReconciliationRows({ ...state, observedStocks: observedStocksQuery.data ?? [] }), [state, observedStocksQuery.data]);
+  const rows = useMemo(() => buildReconciliationRows(state), [state]);
   const row = rows.find((candidate) => candidate.id === id);
   const [accountingDate, setAccountingDate] = useState(row?.observedAt?.slice(0, 10) ?? today());
   const [action, setAction] = useState<"writeoff" | "receipt" | "ignore">(row && row.diffQty > 0 ? "receipt" : "writeoff");
@@ -1142,7 +1140,7 @@ export function StockAdjustmentPage() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries();
+      invalidateInventoryFormsArea(queryClient);
       navigate("/inventory/reconciliation");
     }
   });
@@ -1160,7 +1158,7 @@ export function StockAdjustmentPage() {
       return apiPost(`/api/inventory/adjustments/${created.id}/post`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries();
+      invalidateInventoryFormsArea(queryClient);
       navigate("/inventory/reconciliation");
     }
   });

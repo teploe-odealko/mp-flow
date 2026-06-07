@@ -606,6 +606,25 @@ describePostgres("postgres runtime store", () => {
       expect(channelFinanceWorkspace.events).toContainEqual(expect.objectContaining({ id: financeEvent.id }));
       expect(channelFinanceWorkspace.externalEvents).toContainEqual(expect.objectContaining({ id: feeEvent.id }));
 
+      const salesWorkspace = await request<{ sales: any[]; salesChannels: any[]; externalEvents: any[] }>(
+        api,
+        "GET",
+        "/api/sales/workspace"
+      );
+      expect(salesWorkspace.sales).toEqual(expect.any(Array));
+      expect(salesWorkspace.salesChannels).toContainEqual(expect.objectContaining({ id: channel.id }));
+      expect(salesWorkspace.externalEvents).toContainEqual(expect.objectContaining({ id: event.id }));
+      expect(salesWorkspace.externalEvents).toContainEqual(expect.objectContaining({ id: feeEvent.id }));
+
+      const inventoryFormsWorkspace = await request<{ products: any[]; warehouses: any[]; observedStocks: any[] }>(
+        api,
+        "GET",
+        "/api/inventory/forms/workspace"
+      );
+      expect(inventoryFormsWorkspace.products).toEqual(expect.any(Array));
+      expect(inventoryFormsWorkspace.warehouses.length).toBeGreaterThan(0);
+      expect(inventoryFormsWorkspace.observedStocks).toEqual(expect.any(Array));
+
       const financeEventWorkspace = await request<{ event: any; channel: any; externalEvent: any | null }>(
         api,
         "GET",
