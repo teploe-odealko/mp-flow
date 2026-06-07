@@ -9,6 +9,7 @@ import type {
   ChartAccount,
   ChannelAgentPermission,
   ChannelFinanceEvent,
+  CostApplication,
   CorrectionCase,
   Counterparty,
   Document,
@@ -20,6 +21,7 @@ import type {
   ExternalProduct,
   ExpenseCategory,
   IntegrationPlugin,
+  InventoryLot,
   JournalEntry,
   JournalLine,
   OperatingExpense,
@@ -48,6 +50,10 @@ import type {
   ShortageResolutionLine,
   Stocktake,
   StocktakeLine,
+  StockMovement,
+  StockState,
+  StockTransfer,
+  StockTransferLine,
   SupplierClaim,
   ObservedStock,
   Product,
@@ -433,6 +439,312 @@ export function warehouseFromRow(row: WarehouseDbRow): Warehouse {
     warehouseType: row.warehouse_type,
     channelId: optionalText(row.channel_id),
     isActive: row.is_active
+  });
+}
+
+export const STOCK_STATE_SELECT = `
+  stock_state_product.public_id as product_id,
+  stock_state_warehouse.public_id as warehouse_id,
+  stock_state.state_code,
+  stock_state.qty,
+  stock_state.cost_rub
+`;
+
+export const STOCK_STATE_JOINS = `
+  left join product stock_state_product on stock_state_product.id = stock_state.product_id
+  left join warehouse stock_state_warehouse on stock_state_warehouse.id = stock_state.warehouse_id
+`;
+
+export interface StockStateDbRow {
+  product_id: string;
+  warehouse_id: string;
+  state_code: string;
+  qty: string | number;
+  cost_rub: string | number;
+}
+
+export function stockStateFromRow(row: StockStateDbRow): StockState {
+  return stripUndefined({
+    productId: row.product_id,
+    warehouseId: row.warehouse_id,
+    stateCode: row.state_code === "sellable" ? undefined : row.state_code,
+    qty: Number(row.qty),
+    costRub: Number(row.cost_rub)
+  });
+}
+
+export const INVENTORY_LOT_SELECT = `
+  inventory_lot.public_id as id,
+  inventory_lot_organization.public_id as organization_id,
+  inventory_lot_product.public_id as product_id,
+  inventory_lot_warehouse.public_id as warehouse_id,
+  inventory_lot.stock_state_code,
+  inventory_lot_source_document.public_id as source_document_id,
+  inventory_lot.source_line_public_id,
+  inventory_lot.received_at,
+  inventory_lot.qty_initial,
+  inventory_lot.qty_remaining,
+  inventory_lot.cost_initial_rub,
+  inventory_lot.cost_remaining_rub,
+  inventory_lot.unit_cost_rub,
+  inventory_lot.status
+`;
+
+export const INVENTORY_LOT_JOINS = `
+  left join organization inventory_lot_organization on inventory_lot_organization.id = inventory_lot.organization_id
+  left join product inventory_lot_product on inventory_lot_product.id = inventory_lot.product_id
+  left join warehouse inventory_lot_warehouse on inventory_lot_warehouse.id = inventory_lot.warehouse_id
+  left join document inventory_lot_source_document on inventory_lot_source_document.id = inventory_lot.source_document_id
+`;
+
+export interface InventoryLotDbRow {
+  id: string;
+  organization_id: string;
+  product_id: string;
+  warehouse_id: string;
+  stock_state_code: string | null;
+  source_document_id: string;
+  source_line_public_id: string | null;
+  received_at: unknown;
+  qty_initial: string | number;
+  qty_remaining: string | number;
+  cost_initial_rub: string | number;
+  cost_remaining_rub: string | number;
+  unit_cost_rub: string | number;
+  status: InventoryLot["status"];
+}
+
+export function inventoryLotFromRow(row: InventoryLotDbRow): InventoryLot {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    productId: row.product_id,
+    warehouseId: row.warehouse_id,
+    stockStateCode: optionalText(row.stock_state_code),
+    sourceDocumentId: row.source_document_id,
+    sourceLineId: optionalText(row.source_line_public_id),
+    receivedAt: dateString(row.received_at),
+    qtyInitial: Number(row.qty_initial),
+    qtyRemaining: Number(row.qty_remaining),
+    costInitialRub: Number(row.cost_initial_rub),
+    costRemainingRub: Number(row.cost_remaining_rub),
+    unitCostRub: Number(row.unit_cost_rub),
+    status: row.status
+  });
+}
+
+export const STOCK_MOVEMENT_SELECT = `
+  stock_movement.public_id as id,
+  stock_movement_organization.public_id as organization_id,
+  stock_movement_product.public_id as product_id,
+  stock_movement_warehouse.public_id as warehouse_id,
+  stock_movement.stock_state_code,
+  stock_movement_document.public_id as document_id,
+  stock_movement.movement_type,
+  stock_movement.qty,
+  stock_movement.cost_rub,
+  stock_movement.occurred_at,
+  stock_movement_lot.public_id as lot_id
+`;
+
+export const STOCK_MOVEMENT_JOINS = `
+  left join organization stock_movement_organization on stock_movement_organization.id = stock_movement.organization_id
+  left join product stock_movement_product on stock_movement_product.id = stock_movement.product_id
+  left join warehouse stock_movement_warehouse on stock_movement_warehouse.id = stock_movement.warehouse_id
+  left join document stock_movement_document on stock_movement_document.id = stock_movement.document_id
+  left join inventory_lot stock_movement_lot on stock_movement_lot.id = stock_movement.lot_id
+`;
+
+export interface StockMovementDbRow {
+  id: string;
+  organization_id: string;
+  product_id: string;
+  warehouse_id: string;
+  stock_state_code: string | null;
+  document_id: string;
+  movement_type: StockMovement["movementType"];
+  qty: string | number;
+  cost_rub: string | number;
+  occurred_at: unknown;
+  lot_id: string | null;
+}
+
+export function stockMovementFromRow(row: StockMovementDbRow): StockMovement {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    productId: row.product_id,
+    warehouseId: row.warehouse_id,
+    stockStateCode: optionalText(row.stock_state_code),
+    documentId: row.document_id,
+    movementType: row.movement_type,
+    qty: Number(row.qty),
+    costRub: Number(row.cost_rub),
+    occurredAt: dateString(row.occurred_at),
+    lotId: optionalText(row.lot_id)
+  });
+}
+
+export const COST_APPLICATION_SELECT = `
+  cost_application.public_id as id,
+  cost_application_organization.public_id as organization_id,
+  cost_application_source_document.public_id as source_document_id,
+  cost_application_outbound_document.public_id as outbound_document_id,
+  cost_application.target_line_id,
+  cost_application.target_line_type,
+  cost_application_product.public_id as product_id,
+  cost_application_from_lot.public_id as from_lot_id,
+  cost_application.qty,
+  cost_application.cost_rub,
+  cost_application.application_type,
+  cost_application.created_at
+`;
+
+export const COST_APPLICATION_JOINS = `
+  left join organization cost_application_organization on cost_application_organization.id = cost_application.organization_id
+  left join document cost_application_source_document on cost_application_source_document.id = cost_application.source_document_id
+  left join document cost_application_outbound_document on cost_application_outbound_document.id = cost_application.outbound_document_id
+  left join product cost_application_product on cost_application_product.id = cost_application.product_id
+  left join inventory_lot cost_application_from_lot on cost_application_from_lot.id = cost_application.from_lot_id
+`;
+
+export interface CostApplicationDbRow {
+  id: string;
+  organization_id: string;
+  source_document_id: string;
+  outbound_document_id: string;
+  target_line_id: string | null;
+  target_line_type: string | null;
+  product_id: string;
+  from_lot_id: string;
+  qty: string | number;
+  cost_rub: string | number;
+  application_type: CostApplication["applicationType"];
+  created_at: unknown;
+}
+
+export function costApplicationFromRow(row: CostApplicationDbRow): CostApplication {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    sourceDocumentId: row.source_document_id,
+    outboundDocumentId: row.outbound_document_id,
+    targetLineId: optionalText(row.target_line_id),
+    targetLineType: optionalText(row.target_line_type),
+    productId: row.product_id,
+    fromLotId: row.from_lot_id,
+    qty: Number(row.qty),
+    costRub: Number(row.cost_rub),
+    applicationType: row.application_type,
+    createdAt: dateTimeString(row.created_at)
+  });
+}
+
+export const STOCK_TRANSFER_SELECT = `
+  stock_transfer.public_id as id,
+  stock_transfer_organization.public_id as organization_id,
+  stock_transfer_document.public_id as document_id,
+  stock_transfer_from_warehouse.public_id as from_warehouse_id,
+  stock_transfer_to_warehouse.public_id as to_warehouse_id,
+  stock_transfer.from_stock_state_code,
+  stock_transfer.to_stock_state_code,
+  stock_transfer.transfer_type,
+  stock_transfer_channel.public_id as channel_id,
+  stock_transfer_source_goods_receipt.public_id as source_goods_receipt_id,
+  stock_transfer_source_document.public_id as source_document_id,
+  stock_transfer.provider_metadata,
+  stock_transfer.status,
+  stock_transfer.transfer_date,
+  stock_transfer.comment
+`;
+
+export const STOCK_TRANSFER_JOINS = `
+  left join organization stock_transfer_organization on stock_transfer_organization.id = stock_transfer.organization_id
+  left join document stock_transfer_document on stock_transfer_document.id = stock_transfer.document_id
+  left join warehouse stock_transfer_from_warehouse on stock_transfer_from_warehouse.id = stock_transfer.from_warehouse_id
+  left join warehouse stock_transfer_to_warehouse on stock_transfer_to_warehouse.id = stock_transfer.to_warehouse_id
+  left join sales_channel stock_transfer_channel on stock_transfer_channel.id = stock_transfer.channel_id
+  left join goods_receipt stock_transfer_source_goods_receipt on stock_transfer_source_goods_receipt.id = stock_transfer.source_goods_receipt_id
+  left join document stock_transfer_source_document on stock_transfer_source_document.id = stock_transfer.source_document_id
+`;
+
+export interface StockTransferDbRow {
+  id: string;
+  organization_id: string;
+  document_id: string;
+  from_warehouse_id: string;
+  to_warehouse_id: string;
+  from_stock_state_code: string | null;
+  to_stock_state_code: string | null;
+  transfer_type: StockTransfer["transferType"] | null;
+  channel_id: string | null;
+  source_goods_receipt_id: string | null;
+  source_document_id: string | null;
+  provider_metadata: Record<string, unknown> | null;
+  status: StockTransfer["status"];
+  transfer_date: unknown;
+  comment: string | null;
+}
+
+export function stockTransferFromRow(row: StockTransferDbRow): StockTransfer {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    documentId: row.document_id,
+    fromWarehouseId: row.from_warehouse_id,
+    toWarehouseId: row.to_warehouse_id,
+    fromStockStateCode: optionalText(row.from_stock_state_code),
+    toStockStateCode: optionalText(row.to_stock_state_code),
+    transferType: row.transfer_type ?? undefined,
+    channelId: optionalText(row.channel_id),
+    sourceGoodsReceiptId: optionalText(row.source_goods_receipt_id),
+    sourceDocumentId: optionalText(row.source_document_id),
+    providerMetadata: row.provider_metadata ?? undefined,
+    status: row.status,
+    transferDate: dateString(row.transfer_date),
+    comment: optionalText(row.comment)
+  });
+}
+
+export const STOCK_TRANSFER_LINE_SELECT = `
+  stock_transfer_line.public_id as id,
+  stock_transfer_line_transfer.public_id as stock_transfer_id,
+  stock_transfer_line_product.public_id as product_id,
+  stock_transfer_line.qty,
+  stock_transfer_line.cost_rub,
+  stock_transfer_line_source_goods_receipt_line.public_id as source_goods_receipt_line_id,
+  stock_transfer_line_source_purchase_order_line.public_id as source_purchase_order_line_id,
+  stock_transfer_line.provider_metadata
+`;
+
+export const STOCK_TRANSFER_LINE_JOINS = `
+  left join stock_transfer stock_transfer_line_transfer on stock_transfer_line_transfer.id = stock_transfer_line.stock_transfer_id
+  left join product stock_transfer_line_product on stock_transfer_line_product.id = stock_transfer_line.product_id
+  left join goods_receipt_line stock_transfer_line_source_goods_receipt_line on stock_transfer_line_source_goods_receipt_line.id = stock_transfer_line.source_goods_receipt_line_id
+  left join purchase_order_line stock_transfer_line_source_purchase_order_line on stock_transfer_line_source_purchase_order_line.id = stock_transfer_line.source_purchase_order_line_id
+`;
+
+export interface StockTransferLineDbRow {
+  id: string;
+  stock_transfer_id: string;
+  product_id: string;
+  qty: string | number;
+  cost_rub: string | number;
+  source_goods_receipt_line_id: string | null;
+  source_purchase_order_line_id: string | null;
+  provider_metadata: Record<string, unknown> | null;
+}
+
+export function stockTransferLineFromRow(row: StockTransferLineDbRow): StockTransferLine {
+  return stripUndefined({
+    id: row.id,
+    stockTransferId: row.stock_transfer_id,
+    productId: row.product_id,
+    qty: Number(row.qty),
+    costRub: Number(row.cost_rub),
+    sourceGoodsReceiptLineId: optionalText(row.source_goods_receipt_line_id),
+    sourcePurchaseOrderLineId: optionalText(row.source_purchase_order_line_id),
+    providerMetadata: row.provider_metadata ?? undefined
   });
 }
 

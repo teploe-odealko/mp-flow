@@ -253,6 +253,13 @@ legacy `state_json`. Текущий остаток `state_json: entity` — 16 �
 composition и polymorphic payout line source. `payout.payment_id` стал nullable, как в доменной модели.
 FK backfill выполняется после `public_id` backfill. Текущий остаток `state_json: entity` — 6 таблиц.
 
+### ✅ Typed hydrate для stock/cost core
+На typed specs переведены `stockStates`, `inventoryLots`, `stockMovements`, `costApplications`,
+`stockTransfers`, `stockTransferLines`. `stock_state` расширен до ключа `(product_id, warehouse_id,
+state_code)`, а `public_id` теперь `productId:warehouseId:stateCode`. Для polymorphic line ids добавлены
+text public-id колонки. Текущий остаток `state_json: entity` — 0 таблиц; `state_json` остался только в
+legacy/backfill SQL до финальной зачистки колонок.
+
 ### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
 Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/
 addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocumentSummary(x))` — хелперы каскадно

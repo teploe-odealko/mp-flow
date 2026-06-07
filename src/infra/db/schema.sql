@@ -558,6 +558,23 @@ alter table payout add column if not exists difference_accepted boolean;
 alter table payout_line add column if not exists source_type text;
 alter table payout_line add column if not exists source_id text;
 alter table payout_line add column if not exists line_group text;
+alter table stock_state add column if not exists state_code text not null default 'sellable';
+alter table inventory_lot add column if not exists stock_state_code text;
+alter table inventory_lot add column if not exists source_line_public_id text;
+alter table stock_movement add column if not exists stock_state_code text;
+alter table cost_application add column if not exists target_line_id text;
+alter table cost_application add column if not exists target_line_type text;
+alter table stock_transfer add column if not exists from_stock_state_code text;
+alter table stock_transfer add column if not exists to_stock_state_code text;
+alter table stock_transfer add column if not exists transfer_type text;
+alter table stock_transfer add column if not exists channel_id uuid references sales_channel(id);
+alter table stock_transfer add column if not exists source_goods_receipt_id uuid references goods_receipt(id);
+alter table stock_transfer add column if not exists source_document_id uuid references document(id);
+alter table stock_transfer add column if not exists provider_metadata jsonb;
+alter table stock_transfer add column if not exists comment text;
+alter table stock_transfer_line add column if not exists source_goods_receipt_line_id uuid references goods_receipt_line(id);
+alter table stock_transfer_line add column if not exists source_purchase_order_line_id uuid references purchase_order_line(id);
+alter table stock_transfer_line add column if not exists provider_metadata jsonb;
 alter table backfill_project add column if not exists created_at timestamptz not null default now();
 alter table organization add column if not exists state_json jsonb not null default '{}'::jsonb;
 alter table accounting_policy add column if not exists state_json jsonb not null default '{}'::jsonb;
@@ -747,6 +764,39 @@ update payout_line
       source_id = coalesce(nullif(state_json->>'sourceId', ''), source_id),
       line_group = coalesce(nullif(state_json->>'lineGroup', ''), line_group)
   where state_json <> '{}'::jsonb;
+update stock_state
+  set state_code = coalesce(nullif(state_json->>'stateCode', ''), state_code, 'sellable')
+  where state_json <> '{}'::jsonb or state_code is null;
+do $$
+begin
+  if exists (select 1 from pg_constraint where conname = 'stock_state_pkey') then
+    alter table stock_state drop constraint stock_state_pkey;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'stock_state_pkey') then
+    alter table stock_state add constraint stock_state_pkey primary key (product_id, warehouse_id, state_code);
+  end if;
+end $$;
+update inventory_lot
+  set stock_state_code = coalesce(nullif(state_json->>'stockStateCode', ''), stock_state_code),
+      source_line_public_id = coalesce(nullif(state_json->>'sourceLineId', ''), source_line_public_id)
+  where state_json <> '{}'::jsonb;
+update stock_movement
+  set stock_state_code = coalesce(nullif(state_json->>'stockStateCode', ''), stock_state_code)
+  where state_json <> '{}'::jsonb;
+update cost_application
+  set target_line_id = coalesce(nullif(state_json->>'targetLineId', ''), target_line_id),
+      target_line_type = coalesce(nullif(state_json->>'targetLineType', ''), target_line_type)
+  where state_json <> '{}'::jsonb;
+update stock_transfer
+  set from_stock_state_code = coalesce(nullif(state_json->>'fromStockStateCode', ''), from_stock_state_code),
+      to_stock_state_code = coalesce(nullif(state_json->>'toStockStateCode', ''), to_stock_state_code),
+      transfer_type = coalesce(nullif(state_json->>'transferType', ''), transfer_type),
+      provider_metadata = case when state_json ? 'providerMetadata' then state_json->'providerMetadata' else provider_metadata end,
+      comment = coalesce(nullif(state_json->>'comment', ''), comment)
+  where state_json <> '{}'::jsonb;
+update stock_transfer_line
+  set provider_metadata = case when state_json ? 'providerMetadata' then state_json->'providerMetadata' else provider_metadata end
+  where state_json <> '{}'::jsonb;
 
 do $$
 declare
@@ -774,7 +824,7 @@ begin
     if target_table = 'stock_state' then
       execute format($fmt$
         update %I
-          set public_id = concat(state_json->>'productId', ':', state_json->>'warehouseId')
+          set public_id = concat(state_json->>'productId', ':', state_json->>'warehouseId', ':', coalesce(nullif(state_json->>'stateCode', ''), 'sellable'))
           where public_id is null
             and nullif(state_json->>'productId', '') is not null
             and nullif(state_json->>'warehouseId', '') is not null

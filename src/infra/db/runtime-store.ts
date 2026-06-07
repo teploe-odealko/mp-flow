@@ -30,6 +30,8 @@ import {
   CHANNEL_FINANCE_EVENT_SELECT,
   CHART_ACCOUNT_JOINS,
   CHART_ACCOUNT_SELECT,
+  COST_APPLICATION_JOINS,
+  COST_APPLICATION_SELECT,
   COUNTERPARTY_JOINS,
   COUNTERPARTY_SELECT,
   CORRECTION_CASE_JOINS,
@@ -54,6 +56,8 @@ import {
   GOODS_RECEIPT_LINE_SELECT,
   GOODS_RECEIPT_SELECT,
   INTEGRATION_PLUGIN_SELECT,
+  INVENTORY_LOT_JOINS,
+  INVENTORY_LOT_SELECT,
   JOURNAL_ENTRY_JOINS,
   JOURNAL_ENTRY_SELECT,
   JOURNAL_LINE_JOINS,
@@ -103,6 +107,14 @@ import {
   STOCKTAKE_LINE_JOINS,
   STOCKTAKE_LINE_SELECT,
   STOCKTAKE_SELECT,
+  STOCK_MOVEMENT_JOINS,
+  STOCK_MOVEMENT_SELECT,
+  STOCK_STATE_JOINS,
+  STOCK_STATE_SELECT,
+  STOCK_TRANSFER_JOINS,
+  STOCK_TRANSFER_LINE_JOINS,
+  STOCK_TRANSFER_LINE_SELECT,
+  STOCK_TRANSFER_SELECT,
   SUPPLIER_CLAIM_JOINS,
   SUPPLIER_CLAIM_SELECT,
   ROLE_JOINS,
@@ -131,6 +143,7 @@ import {
   channelAgentPermissionFromRow,
   channelFinanceEventFromRow,
   chartAccountFromRow,
+  costApplicationFromRow,
   counterpartyFromRow,
   correctionCaseFromRow,
   documentTypeFromRow,
@@ -144,6 +157,7 @@ import {
   goodsReceiptFromRow,
   goodsReceiptLineFromRow,
   integrationPluginFromRow,
+  inventoryLotFromRow,
   journalEntryFromRow,
   journalLineFromRow,
   observedStockFromRow,
@@ -175,7 +189,11 @@ import {
   saleLineFromRow,
   salesChannelFromRow,
   salesReturnFromRow,
+  stockMovementFromRow,
+  stockStateFromRow,
   syncRunFromRow,
+  stockTransferFromRow,
+  stockTransferLineFromRow,
   userAccountFromRow,
   warehouseFromRow,
   type AccountingPeriodDbRow,
@@ -188,6 +206,7 @@ import {
   type ChannelAgentPermissionDbRow,
   type ChannelFinanceEventDbRow,
   type ChartAccountDbRow,
+  type CostApplicationDbRow,
   type CounterpartyDbRow,
   type CorrectionCaseDbRow,
   type DocumentTypeDbRow,
@@ -201,6 +220,7 @@ import {
   type GoodsReceiptDbRow,
   type GoodsReceiptLineDbRow,
   type IntegrationPluginDbRow,
+  type InventoryLotDbRow,
   type JournalEntryDbRow,
   type JournalLineDbRow,
   type OperatingExpenseDbRow,
@@ -224,8 +244,12 @@ import {
   type SettlementEntryDbRow,
   type ShortageResolutionDbRow,
   type ShortageResolutionLineDbRow,
+  type StockMovementDbRow,
+  type StockStateDbRow,
   type StocktakeDbRow,
   type StocktakeLineDbRow,
+  type StockTransferDbRow,
+  type StockTransferLineDbRow,
   type SupplierClaimDbRow,
   type RoleDbRow,
   type SaleDbRow,
@@ -666,6 +690,56 @@ const SCHEMA_ALTERS = `
         source_id = coalesce(nullif(state_json->>'sourceId', ''), source_id),
         line_group = coalesce(nullif(state_json->>'lineGroup', ''), line_group)
     where state_json <> '{}'::jsonb;
+  alter table stock_state add column if not exists state_code text not null default 'sellable';
+  update stock_state
+    set state_code = coalesce(nullif(state_json->>'stateCode', ''), state_code, 'sellable')
+    where state_json <> '{}'::jsonb or state_code is null;
+  do $$
+  begin
+    if exists (select 1 from pg_constraint where conname = 'stock_state_pkey') then
+      alter table stock_state drop constraint stock_state_pkey;
+    end if;
+    if not exists (select 1 from pg_constraint where conname = 'stock_state_pkey') then
+      alter table stock_state add constraint stock_state_pkey primary key (product_id, warehouse_id, state_code);
+    end if;
+  end $$;
+  alter table inventory_lot add column if not exists stock_state_code text;
+  alter table inventory_lot add column if not exists source_line_public_id text;
+  update inventory_lot
+    set stock_state_code = coalesce(nullif(state_json->>'stockStateCode', ''), stock_state_code),
+        source_line_public_id = coalesce(nullif(state_json->>'sourceLineId', ''), source_line_public_id)
+    where state_json <> '{}'::jsonb;
+  alter table stock_movement add column if not exists stock_state_code text;
+  update stock_movement
+    set stock_state_code = coalesce(nullif(state_json->>'stockStateCode', ''), stock_state_code)
+    where state_json <> '{}'::jsonb;
+  alter table cost_application add column if not exists target_line_id text;
+  alter table cost_application add column if not exists target_line_type text;
+  update cost_application
+    set target_line_id = coalesce(nullif(state_json->>'targetLineId', ''), target_line_id),
+        target_line_type = coalesce(nullif(state_json->>'targetLineType', ''), target_line_type)
+    where state_json <> '{}'::jsonb;
+  alter table stock_transfer add column if not exists from_stock_state_code text;
+  alter table stock_transfer add column if not exists to_stock_state_code text;
+  alter table stock_transfer add column if not exists transfer_type text;
+  alter table stock_transfer add column if not exists channel_id uuid references sales_channel(id);
+  alter table stock_transfer add column if not exists source_goods_receipt_id uuid references goods_receipt(id);
+  alter table stock_transfer add column if not exists source_document_id uuid references document(id);
+  alter table stock_transfer add column if not exists provider_metadata jsonb;
+  alter table stock_transfer add column if not exists comment text;
+  update stock_transfer
+    set from_stock_state_code = coalesce(nullif(state_json->>'fromStockStateCode', ''), from_stock_state_code),
+        to_stock_state_code = coalesce(nullif(state_json->>'toStockStateCode', ''), to_stock_state_code),
+        transfer_type = coalesce(nullif(state_json->>'transferType', ''), transfer_type),
+        provider_metadata = case when state_json ? 'providerMetadata' then state_json->'providerMetadata' else provider_metadata end,
+        comment = coalesce(nullif(state_json->>'comment', ''), comment)
+    where state_json <> '{}'::jsonb;
+  alter table stock_transfer_line add column if not exists source_goods_receipt_line_id uuid references goods_receipt_line(id);
+  alter table stock_transfer_line add column if not exists source_purchase_order_line_id uuid references purchase_order_line(id);
+  alter table stock_transfer_line add column if not exists provider_metadata jsonb;
+  update stock_transfer_line
+    set provider_metadata = case when state_json ? 'providerMetadata' then state_json->'providerMetadata' else provider_metadata end
+    where state_json <> '{}'::jsonb;
   alter table backfill_project add column if not exists created_at timestamptz not null default now();
 `;
 
@@ -789,6 +863,49 @@ const POST_PUBLIC_ID_BACKFILLS = `
       and nullif(payout_line.state_json->>'saleId', '') is not null
       and sale.workspace_id = payout_line.workspace_id
       and sale.public_id = nullif(payout_line.state_json->>'saleId', '');
+  update stock_state
+    set public_id = concat(product.public_id, ':', warehouse.public_id, ':', stock_state.state_code)
+    from product, warehouse
+    where product.id = stock_state.product_id
+      and warehouse.id = stock_state.warehouse_id
+      and product.workspace_id = stock_state.workspace_id
+      and warehouse.workspace_id = stock_state.workspace_id
+      and (stock_state.public_id is null or stock_state.public_id = concat(product.public_id, ':', warehouse.public_id));
+  update stock_transfer
+    set channel_id = sales_channel.id
+    from sales_channel
+    where stock_transfer.channel_id is null
+      and nullif(stock_transfer.state_json->>'channelId', '') is not null
+      and sales_channel.workspace_id = stock_transfer.workspace_id
+      and sales_channel.public_id = nullif(stock_transfer.state_json->>'channelId', '');
+  update stock_transfer
+    set source_goods_receipt_id = goods_receipt.id
+    from goods_receipt
+    where stock_transfer.source_goods_receipt_id is null
+      and nullif(stock_transfer.state_json->>'sourceGoodsReceiptId', '') is not null
+      and goods_receipt.workspace_id = stock_transfer.workspace_id
+      and goods_receipt.public_id = nullif(stock_transfer.state_json->>'sourceGoodsReceiptId', '');
+  update stock_transfer
+    set source_document_id = document.id
+    from document
+    where stock_transfer.source_document_id is null
+      and nullif(stock_transfer.state_json->>'sourceDocumentId', '') is not null
+      and document.workspace_id = stock_transfer.workspace_id
+      and document.public_id = nullif(stock_transfer.state_json->>'sourceDocumentId', '');
+  update stock_transfer_line
+    set source_goods_receipt_line_id = goods_receipt_line.id
+    from goods_receipt_line
+    where stock_transfer_line.source_goods_receipt_line_id is null
+      and nullif(stock_transfer_line.state_json->>'sourceGoodsReceiptLineId', '') is not null
+      and goods_receipt_line.workspace_id = stock_transfer_line.workspace_id
+      and goods_receipt_line.public_id = nullif(stock_transfer_line.state_json->>'sourceGoodsReceiptLineId', '');
+  update stock_transfer_line
+    set source_purchase_order_line_id = purchase_order_line.id
+    from purchase_order_line
+    where stock_transfer_line.source_purchase_order_line_id is null
+      and nullif(stock_transfer_line.state_json->>'sourcePurchaseOrderLineId', '') is not null
+      and purchase_order_line.workspace_id = stock_transfer_line.workspace_id
+      and purchase_order_line.public_id = nullif(stock_transfer_line.state_json->>'sourcePurchaseOrderLineId', '');
 `;
 
 function publicIdBackfillExpression(table: typeof STATE_JSON_TABLES[number]) {
@@ -796,7 +913,7 @@ function publicIdBackfillExpression(table: typeof STATE_JSON_TABLES[number]) {
     return `
         case
           when nullif(state_json->>'productId', '') is not null and nullif(state_json->>'warehouseId', '') is not null
-          then concat(state_json->>'productId', ':', state_json->>'warehouseId')
+          then concat(state_json->>'productId', ':', state_json->>'warehouseId', ':', coalesce(nullif(state_json->>'stateCode', ''), 'sellable'))
         end
       `;
   }
@@ -1036,55 +1153,73 @@ const TABLES: TableSpec[] = [
     joins: WAREHOUSE_JOINS,
     hydrate: (row) => warehouseFromRow(row as unknown as WarehouseDbRow) as unknown as RuntimeEntity
   }),
-  spec("stockStates", "stock_state", ["product_id", "warehouse_id"], (entity) => ({
+  spec("stockStates", "stock_state", ["product_id", "warehouse_id", "state_code"], (entity) => ({
     product_id: entityUuid(requiredString(entity.productId, "stockStates.productId")),
     warehouse_id: entityUuid(requiredString(entity.warehouseId, "stockStates.warehouseId")),
+    state_code: optionalString(entity.stateCode) ?? "sellable",
     qty: requiredNumber(entity.qty, "stockStates.qty"),
-    cost_rub: requiredNumber(entity.costRub, "stockStates.costRub"),
-    state_json: entity
-  }), "product_id, warehouse_id"),
+    cost_rub: requiredNumber(entity.costRub, "stockStates.costRub")
+  }), "stock_state.product_id, stock_state.warehouse_id, stock_state.state_code", {
+    select: STOCK_STATE_SELECT,
+    joins: STOCK_STATE_JOINS,
+    hydrate: (row) => stockStateFromRow(row as unknown as StockStateDbRow) as unknown as RuntimeEntity
+  }),
   spec("inventoryLots", "inventory_lot", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "inventoryLots.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "inventoryLots.organizationId")),
     product_id: entityUuid(requiredString(entity.productId, "inventoryLots.productId")),
     warehouse_id: entityUuid(requiredString(entity.warehouseId, "inventoryLots.warehouseId")),
+    stock_state_code: optionalString(entity.stockStateCode),
     source_document_id: entityUuid(requiredString(entity.sourceDocumentId, "inventoryLots.sourceDocumentId")),
     source_line_id: optionalUuid(entity.sourceLineId),
+    source_line_public_id: optionalString(entity.sourceLineId),
     received_at: requiredString(entity.receivedAt, "inventoryLots.receivedAt"),
     qty_initial: requiredNumber(entity.qtyInitial, "inventoryLots.qtyInitial"),
     qty_remaining: requiredNumber(entity.qtyRemaining, "inventoryLots.qtyRemaining"),
     cost_initial_rub: requiredNumber(entity.costInitialRub, "inventoryLots.costInitialRub"),
     cost_remaining_rub: requiredNumber(entity.costRemainingRub, "inventoryLots.costRemainingRub"),
     unit_cost_rub: requiredNumber(entity.unitCostRub, "inventoryLots.unitCostRub"),
-    status: requiredString(entity.status, "inventoryLots.status"),
-    state_json: entity
-  }), "received_at, id"),
+    status: requiredString(entity.status, "inventoryLots.status")
+  }), "inventory_lot.received_at, inventory_lot.id", {
+    select: INVENTORY_LOT_SELECT,
+    joins: INVENTORY_LOT_JOINS,
+    hydrate: (row) => inventoryLotFromRow(row as unknown as InventoryLotDbRow) as unknown as RuntimeEntity
+  }),
   spec("stockMovements", "stock_movement", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "stockMovements.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "stockMovements.organizationId")),
     product_id: entityUuid(requiredString(entity.productId, "stockMovements.productId")),
     warehouse_id: entityUuid(requiredString(entity.warehouseId, "stockMovements.warehouseId")),
+    stock_state_code: optionalString(entity.stockStateCode),
     document_id: entityUuid(requiredString(entity.documentId, "stockMovements.documentId")),
     movement_type: requiredString(entity.movementType, "stockMovements.movementType"),
     qty: requiredNumber(entity.qty, "stockMovements.qty"),
     cost_rub: requiredNumber(entity.costRub, "stockMovements.costRub"),
     occurred_at: requiredString(entity.occurredAt, "stockMovements.occurredAt"),
-    lot_id: optionalUuid(entity.lotId),
-    state_json: entity
-  }), "occurred_at, id"),
+    lot_id: optionalUuid(entity.lotId)
+  }), "stock_movement.occurred_at, stock_movement.id", {
+    select: STOCK_MOVEMENT_SELECT,
+    joins: STOCK_MOVEMENT_JOINS,
+    hydrate: (row) => stockMovementFromRow(row as unknown as StockMovementDbRow) as unknown as RuntimeEntity
+  }),
   spec("costApplications", "cost_application", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "costApplications.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "costApplications.organizationId")),
     source_document_id: entityUuid(requiredString(entity.sourceDocumentId, "costApplications.sourceDocumentId")),
     outbound_document_id: entityUuid(requiredString(entity.outboundDocumentId, "costApplications.outboundDocumentId")),
+    target_line_id: optionalString(entity.targetLineId),
+    target_line_type: optionalString(entity.targetLineType),
     product_id: entityUuid(requiredString(entity.productId, "costApplications.productId")),
     from_lot_id: entityUuid(requiredString(entity.fromLotId, "costApplications.fromLotId")),
     qty: requiredNumber(entity.qty, "costApplications.qty"),
     cost_rub: requiredNumber(entity.costRub, "costApplications.costRub"),
     application_type: requiredString(entity.applicationType, "costApplications.applicationType"),
-    created_at: requiredString(entity.createdAt, "costApplications.createdAt"),
-    state_json: entity
-  }), "created_at, id"),
+    created_at: requiredString(entity.createdAt, "costApplications.createdAt")
+  }), "cost_application.created_at, cost_application.id", {
+    select: COST_APPLICATION_SELECT,
+    joins: COST_APPLICATION_JOINS,
+    hydrate: (row) => costApplicationFromRow(row as unknown as CostApplicationDbRow) as unknown as RuntimeEntity
+  }),
   spec("purchaseOrders", "purchase_order", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "purchaseOrders.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "purchaseOrders.organizationId")),
@@ -1285,18 +1420,35 @@ const TABLES: TableSpec[] = [
     document_id: entityUuid(requiredString(entity.documentId, "stockTransfers.documentId")),
     from_warehouse_id: entityUuid(requiredString(entity.fromWarehouseId, "stockTransfers.fromWarehouseId")),
     to_warehouse_id: entityUuid(requiredString(entity.toWarehouseId, "stockTransfers.toWarehouseId")),
+    from_stock_state_code: optionalString(entity.fromStockStateCode),
+    to_stock_state_code: optionalString(entity.toStockStateCode),
+    transfer_type: optionalString(entity.transferType),
+    channel_id: optionalUuid(entity.channelId),
+    source_goods_receipt_id: optionalUuid(entity.sourceGoodsReceiptId),
+    source_document_id: optionalUuid(entity.sourceDocumentId),
+    provider_metadata: entity.providerMetadata ?? null,
     status: requiredString(entity.status, "stockTransfers.status"),
     transfer_date: requiredString(entity.transferDate, "stockTransfers.transferDate"),
-    state_json: entity
-  }), "transfer_date, id"),
+    comment: optionalString(entity.comment)
+  }), "stock_transfer.transfer_date, stock_transfer.id", {
+    select: STOCK_TRANSFER_SELECT,
+    joins: STOCK_TRANSFER_JOINS,
+    hydrate: (row) => stockTransferFromRow(row as unknown as StockTransferDbRow) as unknown as RuntimeEntity
+  }),
   spec("stockTransferLines", "stock_transfer_line", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "stockTransferLines.id")),
     stock_transfer_id: entityUuid(requiredString(entity.stockTransferId, "stockTransferLines.stockTransferId")),
     product_id: entityUuid(requiredString(entity.productId, "stockTransferLines.productId")),
     qty: requiredNumber(entity.qty, "stockTransferLines.qty"),
     cost_rub: requiredNumber(entity.costRub, "stockTransferLines.costRub"),
-    state_json: entity
-  }), "stock_transfer_id, id"),
+    source_goods_receipt_line_id: optionalUuid(entity.sourceGoodsReceiptLineId),
+    source_purchase_order_line_id: optionalUuid(entity.sourcePurchaseOrderLineId),
+    provider_metadata: entity.providerMetadata ?? null
+  }), "stock_transfer_line.stock_transfer_id, stock_transfer_line.id", {
+    select: STOCK_TRANSFER_LINE_SELECT,
+    joins: STOCK_TRANSFER_LINE_JOINS,
+    hydrate: (row) => stockTransferLineFromRow(row as unknown as StockTransferLineDbRow) as unknown as RuntimeEntity
+  }),
   spec("pluginStateRecords", "plugin_state_record", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "pluginStateRecords.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "pluginStateRecords.organizationId")),
@@ -2753,7 +2905,7 @@ function entityId(collection: RuntimeCollectionName, entity: RuntimeEntity): str
   if (typeof entity.id === "string" && entity.id.length > 0) return entity.id;
   if (typeof entity.code === "string" && entity.code.length > 0) return entity.code;
   if (collection === "stockStates" && typeof entity.productId === "string" && typeof entity.warehouseId === "string") {
-    return `${entity.productId}:${entity.warehouseId}`;
+    return `${entity.productId}:${entity.warehouseId}:${typeof entity.stateCode === "string" && entity.stateCode.length > 0 ? entity.stateCode : "sellable"}`;
   }
   throw new Error(`Нельзя сохранить ${collection}: нет id/code/composite key`);
 }

@@ -288,7 +288,7 @@ describe("prod-ready contracts", () => {
     const rows = exportRuntimeEntities(app.state);
 
     expect(rows.some((row) => row.collection === "products" && row.entityId === product.id)).toBe(true);
-    expect(rows.some((row) => row.collection === "stockStates" && row.entityId === `${product.id}:${warehouse?.id}`)).toBe(true);
+    expect(rows.some((row) => row.collection === "stockStates" && row.entityId === `${product.id}:${warehouse?.id}:sellable`)).toBe(true);
     expect(rows.some((row) => row.collection === "salesChannels" && row.entityId === channel.id)).toBe(true);
     expect(rows.map((row) => row.collection)).not.toContain("organization");
     expect(JSON.stringify(rows)).not.toContain("api-secret");
