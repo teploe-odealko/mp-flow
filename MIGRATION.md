@@ -78,14 +78,9 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   React Query кэширует по `["collection", name]`. Замена механическая: `state.X` → `useCollection("X")`.
 - ✅ Уже на запросах (dedicated): события (`/api/integrations/events`+`/:id`), остатки (`/api/integrations/observed-stock`),
   аудит (`/api/controls/audit-events`), sync-runs (`/api/integrations/channels/:id/sync-runs`).
-- ✅ **ВСЕ страницы переведены** (28 файлов): Products, ProductForm, ChartAccounts, Audit, Accounting/
-  Inventory/Procurement-Workspaces, Ledger, Journal, Documents, Settings, ChannelDetail, ChannelsPages (5 комп.),
-  FinanceWorkspace, ChannelMapping, ProductCard, Setup, DocumentCard, Money, Expenses, Onboarding, Controls,
-  Home, PurchaseOrderCard, Reports, procurement/forms, inventory/forms, Sales. Приём для многокомпонентных
-  файлов: `replace_all` `const { state } = useAppState()` → локальный `const state = { X: useCollection("X") }`
-  (полный набор файла; React Query дедупит по ключу) — все `state.X` ниже работают без правок. Хелперы,
-  берущие весь `state` (getPurchaseOrderMetrics, buildFinanceOperations, buildReconciliationRows, report-билдеры),
-  получают собранный partial-state.
+- ✅ Старый промежуточный этап: все страницы были сняты с `/api/state` и переведены на `useCollection(...)`.
+  Это уже убрало всесущий публичный snapshot, но **не является финальным REST-критерием**: `useCollection`
+  остаётся generic collection API, а не понятным ресурсным контрактом.
 - ✅ **God-объект убран целиком:** `AppShell` больше НЕ дёргает `/api/state`; `workingPeriodId` берётся из
   `useCollection("periods")`; `Topbar`/`App` берут organization через `useCollection`; `AppCtx` без `state`.
   Ни одна строка фронта не держит всесущий снимок. Дымовой тест (live): Home/Products/Reports/Procurement/
@@ -104,9 +99,16 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   `AccountingWorkspace`/`LedgerPage`/`JournalPage`/`JournalEntryPage` →
   `/api/accounting/journal/workspace`, `ChartAccountsPage` → `/api/accounting/accounts/workspace`.
   Весь `src/frontend/pages/accounting` больше не использует `useCollection`.
-- ⚠️ Фактический текущий остаток фронта: `useCollection` ещё есть в channel/finance/procurement/inventory/
-  setup/controls/sales/expenses/money/onboarding pages. Поэтому заявка «ВСЕ страницы переведены»
-  выше относится к старому промежуточному состоянию и не является финальным критерием завершения.
+- ✅ Setup/settings/access/controls сняты с generic collections:
+  `SetupPage`/`SettingsOverviewPage` → `/api/setup`, `AuditPage` → `/api/controls/audit-events`
+  без чтения `users`, `ControlsWorkspace` → `/api/controls/workspace`.
+  В `src/frontend/pages/setup`, `src/frontend/pages/access`, `src/frontend/pages/controls` больше нет
+  `useCollection` и глобального `queryClient.invalidateQueries()`.
+- ⚠️ Фактический текущий остаток фронта: `useCollection` ещё есть в channel/documents/finance/
+  procurement/inventory/sales/expenses/money/onboarding pages:
+  `ChannelDetailPage`, `ChannelsPages`, `DocumentCardPage`, `DocumentsPage`, `ExpensesPages`,
+  `FinanceWorkspace`, `InventoryWorkspace`, `inventory/forms`, `MoneyPages`, `OnboardingPages`,
+  `ProcurementWorkspace`, `PurchaseOrderCardPage`, `procurement/forms`, `SalesPages`.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,

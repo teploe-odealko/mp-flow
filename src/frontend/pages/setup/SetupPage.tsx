@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Building2,
@@ -12,8 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Field, Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { PageHeader } from "@/components/ui/page-header";
-import { apiPut } from "@/api";
-import { useCollection } from "@/lib/use-collection";
+import { apiGet, apiPut } from "@/api";
 
 const TIMEZONES = [
   { value: "Europe/Moscow", label: "Москва (UTC+3)" },
@@ -30,8 +29,9 @@ const TIMEZONES = [
 ];
 
 export function SetupPage() {
-  const organization = useCollection<any>("organization");
-  const accountingPolicy = useCollection<any>("accountingPolicy");
+  const setupQuery = useQuery({ queryKey: ["setup"], queryFn: () => apiGet<any>("/api/setup") });
+  const organization = setupQuery.data?.organization;
+  const accountingPolicy = setupQuery.data?.accountingPolicy;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -45,6 +45,9 @@ export function SetupPage() {
   useEffect(() => {
     if (organization?.displayName) setDisplayName(organization.displayName);
   }, [organization?.displayName]);
+  useEffect(() => {
+    if (organization?.timezone) setTimezone(organization.timezone);
+  }, [organization?.timezone]);
   useEffect(() => {
     if (accountingPolicy?.accountingStartDate) {
       setAccountingStartDate(accountingPolicy.accountingStartDate);
@@ -62,20 +65,21 @@ export function SetupPage() {
         timezone,
         accountingStartDate
       }),
-	    onSuccess: () => {
-	      queryClient.invalidateQueries();
-	      if (isEditing) {
-	        navigate("/settings");
-	        return;
-	      }
-	      const params = new URLSearchParams({
-	        from: "setup",
-	        mode: "historical_backfill",
-	        start: accountingStartDate
-	      });
-	      navigate(`/setup/existing-store?${params.toString()}`);
-	    }
-	  });
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["setup"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      if (isEditing) {
+        navigate("/settings");
+        return;
+      }
+      const params = new URLSearchParams({
+        from: "setup",
+        mode: "historical_backfill",
+        start: accountingStartDate
+      });
+      navigate(`/setup/existing-store?${params.toString()}`);
+    }
+  });
 
   return (
     <div className="max-w-3xl mx-auto flex flex-col gap-5">

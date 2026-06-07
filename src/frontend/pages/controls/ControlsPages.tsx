@@ -13,20 +13,32 @@ import { Kpi } from "@/components/ui/kpi";
 import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useCollection } from "@/lib/use-collection";
 import { apiGet, apiPost } from "@/api";
-import { date, dateTime } from "@/lib/format";
+import { dateTime } from "@/lib/format";
+
+interface ControlsWorkspacePayload {
+  corrections: any[];
+  jobs: any[];
+  periods: any[];
+  documents: any[];
+  products: any[];
+  lines: any[];
+  auditEvents: any[];
+}
 
 export function ControlsWorkspace() {
   const queryClient = useQueryClient();
-  const auditQuery = useQuery({ queryKey: ["audit-events"], queryFn: () => apiGet<any[]>("/api/controls/audit-events") });
-  const auditEvents = auditQuery.data ?? [];
-  const corrections = useCollection<any[]>("correctionCases") ?? [];
-  const jobs = useCollection<any[]>("recalculationJobs") ?? [];
-  const periods = useCollection<any[]>("periods") ?? [];
-  const documents = useCollection<any[]>("documents") ?? [];
-  const products = useCollection<any[]>("products") ?? [];
-  const lines = useCollection<any[]>("documentLines") ?? [];
+  const workspaceQuery = useQuery({
+    queryKey: ["controls-workspace"],
+    queryFn: () => apiGet<ControlsWorkspacePayload>("/api/controls/workspace")
+  });
+  const auditEvents = workspaceQuery.data?.auditEvents ?? [];
+  const corrections = workspaceQuery.data?.corrections ?? [];
+  const jobs = workspaceQuery.data?.jobs ?? [];
+  const periods = workspaceQuery.data?.periods ?? [];
+  const documents = workspaceQuery.data?.documents ?? [];
+  const products = workspaceQuery.data?.products ?? [];
+  const lines = workspaceQuery.data?.lines ?? [];
   const [periodFilter, setPeriodFilter] = useState("");
   const [documentTypeFilter, setDocumentTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -37,11 +49,11 @@ export function ControlsWorkspace() {
 
   const retry = useMutation({
     mutationFn: (jobId: string) => apiPost(`/api/recalculation-jobs/${jobId}/retry`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["controls-workspace"] })
   });
   const queueRecalc = useMutation({
     mutationFn: (scope: Record<string, unknown>) => apiPost("/api/recalculation-jobs", { jobType: "reports", scope }),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["controls-workspace"] })
   });
 
   const correctionRows = useMemo(() => {
@@ -377,4 +389,3 @@ function impactLabel(impact: Record<string, unknown>) {
   if (keys.some((key) => ["sales", "returns", "reports"].includes(key))) return "Высокое";
   return "Среднее";
 }
-

@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import {
   Building2,
   CalendarDays,
@@ -9,12 +10,26 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { DataList } from "@/components/ui/data-list";
 import { PageHeader } from "@/components/ui/page-header";
-import { useCollection } from "@/lib/use-collection";
+import { apiGet } from "@/api";
 import { date } from "@/lib/format";
 
 export function SettingsOverviewPage() {
-  const organization = useCollection<any>("organization");
-  const policy = useCollection<any>("accountingPolicy");
+  const setupQuery = useQuery({ queryKey: ["setup"], queryFn: () => apiGet<any>("/api/setup") });
+  const organization = setupQuery.data?.organization;
+  const policy = setupQuery.data?.accountingPolicy;
+  if (setupQuery.isLoading) {
+    return (
+      <div className="max-w-3xl mx-auto">
+        <PageHeader title="Настройки" subtitle="Загружаем параметры кабинета" />
+        <Card>
+          <CardContent className="py-10 text-sm text-[var(--color-muted-foreground)]">
+            Загружаем настройки...
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (!organization) {
     return (
       <div className="max-w-3xl mx-auto">

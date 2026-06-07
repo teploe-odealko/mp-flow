@@ -87,6 +87,7 @@ describePostgres("postgres runtime store", () => {
     const productWorkspace = await request<any>(api, "GET", `/api/products/${product.id}/workspace`);
     const accountsWorkspace = await request<any>(api, "GET", "/api/accounting/accounts/workspace");
     const journalWorkspace = await request<any>(api, "GET", "/api/accounting/journal/workspace");
+    const controlsWorkspace = await request<any>(api, "GET", "/api/controls/workspace");
     const ledger = await request<Record<string, { debit: number; credit: number }>>(api, "GET", "/api/ledger");
 
     const inspectPool = new Pool({ connectionString: connectionString! });
@@ -118,6 +119,11 @@ describePostgres("postgres runtime store", () => {
       expect(accountsWorkspace.journalLines).toEqual(expect.any(Array));
       expect(journalWorkspace.entries).toEqual(expect.any(Array));
       expect(journalWorkspace.accounts.length).toBeGreaterThan(0);
+      expect(controlsWorkspace.products).toContainEqual(expect.objectContaining({ id: product.id, sku: "PG-001" }));
+      expect(controlsWorkspace.documents).toEqual(expect.any(Array));
+      expect(controlsWorkspace.corrections).toEqual(expect.any(Array));
+      expect(controlsWorkspace.jobs).toEqual(expect.any(Array));
+      expect(controlsWorkspace.auditEvents).toEqual(expect.any(Array));
       expect(credentials.rows[0]?.fields.sort()).toEqual(["apiKey", "clientId"]);
       expect(JSON.stringify(credentials.rows[0]?.encrypted_credentials)).not.toContain("pg-key");
       expect(reports.trialBalance).toEqual(expect.any(Array));

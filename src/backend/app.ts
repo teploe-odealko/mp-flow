@@ -298,6 +298,19 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     ]);
     return { entries, lines, periods, accounts, documents };
   };
+  const controlsWorkspaceFor = async (c: Context): Promise<any> => {
+    const readModelApp = await readModelAppFor(c);
+    const [corrections, jobs, periods, documents, products, lines, auditEvents] = await Promise.all([
+      readModelApp.repos.correctionCases.all(),
+      readModelApp.repos.recalculationJobs.all(),
+      readModelApp.repos.periods.all(),
+      readModelApp.repos.documents.all(),
+      readModelApp.repos.products.all(),
+      readModelApp.repos.documentLines.all(),
+      readModelApp.repos.auditEvents.all()
+    ]);
+    return { corrections, jobs, periods, documents, products, lines, auditEvents };
+  };
   const ledgerBalancesFor = async (c: Context): Promise<Record<string, { debit: number; credit: number }>> => {
     const workspaceId = eventsWorkspaceId(c);
     if (options.persistence?.readLedgerBalances) return await options.persistence.readLedgerBalances(workspaceId);
@@ -683,6 +696,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const readModelApp = await readModelAppFor(c);
     return c.json({ ok: true, data: { corrections: await readModelApp.repos.correctionCases.all(), jobs: await readModelApp.repos.recalculationJobs.all() } });
   });
+  api.get("/api/controls/workspace", async (c) => c.json({ ok: true, data: await controlsWorkspaceFor(c) }));
   api.get("/api/recalculation-jobs", async (c) => c.json({ ok: true, data: await collectionFor(c, "recalculationJobs") }));
   api.get("/api/mcp/config", async (c) => c.json({ ok: true, data: await mcpSettingsPayload(await readModelAppFor(c), publicMcpEndpoint(c)) }));
   api.get("/api/mcp/keys", async (c) => c.json({ ok: true, data: await mcpSettingsPayload(await readModelAppFor(c), publicMcpEndpoint(c)) }));

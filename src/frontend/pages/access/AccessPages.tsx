@@ -9,18 +9,19 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { useCollection } from "@/lib/use-collection";
 import { dateTime } from "@/lib/format";
 
 export function AuditPage() {
   const auditQuery = useQuery({ queryKey: ["audit-events"], queryFn: () => apiGet<any[]>("/api/controls/audit-events") });
   const auditEvents = auditQuery.data ?? [];
-  const users = useCollection<any[]>("users") ?? [];
   const [periodFilter, setPeriodFilter] = useState("");
   const [userFilter, setUserFilter] = useState("");
   const [actionFilter, setActionFilter] = useState("");
   const [objectFilter, setObjectFilter] = useState("");
   const [severityFilter, setSeverityFilter] = useState("");
+  const actors = useMemo(() => {
+    return Array.from(new Set(auditEvents.map((event: any) => String(event.actorLabel ?? "system")))).sort();
+  }, [auditEvents]);
 
   const filteredEvents = useMemo(() => {
     return auditEvents
@@ -49,7 +50,7 @@ export function AuditPage() {
           <Input type="month" value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)} className="w-44" />
           <Select value={userFilter} onChange={(event) => setUserFilter(event.target.value)} className="w-44">
             <option value="">Все пользователи</option>
-            {users.map((user: any) => <option key={user.id} value={user.name}>{user.name}</option>)}
+            {actors.map((actor) => <option key={actor} value={actor}>{actor}</option>)}
           </Select>
           <Select value={actionFilter} onChange={(event) => setActionFilter(event.target.value)} className="w-44">
             <option value="">Все действия</option>
