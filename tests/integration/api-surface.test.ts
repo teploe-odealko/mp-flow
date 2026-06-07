@@ -62,6 +62,7 @@ describe("MPFlow api surface", () => {
       get<unknown[]>(api, "/api/documents"),
       get<unknown[]>(api, "/api/products"),
       get<{ stock: unknown[]; lots: unknown[]; movements: unknown[] }>(api, "/api/inventory"),
+      get<{ stockStates: unknown[]; products: unknown[]; warehouses: unknown[]; documents: unknown[]; stockMovements: unknown[] }>(api, "/api/inventory/workspace"),
       get<{ orders: unknown[]; lines: unknown[] }>(api, "/api/procurement/purchase-orders"),
       get<{ cashAccounts: unknown[]; payments: unknown[]; allocations: unknown[] }>(api, "/api/money/payments"),
       get<{ cashAccounts: unknown[]; payments: unknown[]; documents: unknown[]; operatingExpenses: unknown[]; payouts: unknown[] }>(api, "/api/finance/workspace"),
@@ -76,7 +77,7 @@ describe("MPFlow api surface", () => {
       get<unknown[]>(api, "/api/controls/audit-events")
     ]);
 
-    const [dashboard, setup, accounts, journal, ledger, documents, products, inventory, purchaseOrders, money, financeWorkspace, channels, mapping, events, sales, returns, payouts, expenses, corrections, auditEvents] = readModels;
+    const [dashboard, setup, accounts, journal, ledger, documents, products, inventory, inventoryWorkspace, purchaseOrders, money, financeWorkspace, channels, mapping, events, sales, returns, payouts, expenses, corrections, auditEvents] = readModels;
     expect(dashboard.configured).toBe(true);
     expect(dashboard.counters.products).toBeGreaterThan(0);
     expect(dashboard.counters.documents).toBeGreaterThan(0);
@@ -89,6 +90,11 @@ describe("MPFlow api surface", () => {
     expect(products.length).toBe(2);
     expect(inventory.lots.length).toBeGreaterThan(0);
     expect(inventory.movements.length).toBeGreaterThan(0);
+    expect(inventoryWorkspace.products.length).toBe(2);
+    expect(inventoryWorkspace.stockStates.length).toBeGreaterThan(0);
+    expect(inventoryWorkspace.warehouses.length).toBeGreaterThan(0);
+    expect(inventoryWorkspace.documents.length).toBeGreaterThan(0);
+    expect(inventoryWorkspace.stockMovements.length).toBeGreaterThan(0);
     expect(purchaseOrders.orders.length).toBe(1);
     expect(purchaseOrders.lines.length).toBe(2);
     expect(money.cashAccounts.length).toBeGreaterThan(0);

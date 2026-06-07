@@ -125,9 +125,13 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   `/api/finance/payouts/workspace`, `PayoutReconciliationPage` →
   `/api/finance/payouts/:id/workspace`.
   В `src/frontend/pages/money` больше нет `useCollection` и глобального `queryClient.invalidateQueries()`.
+- ✅ Inventory workspace снят с generic collections:
+  `InventoryWorkspace` → `/api/inventory/workspace` с явным складским payload
+  (`stockStates`, `products`, `warehouses`, `documents`, `stockMovements`).
+  Главный экран склада больше не собирает состояние из пяти `useCollection(...)`.
 - ⚠️ Фактический текущий остаток фронта: `useCollection` ещё есть в channel/procurement/
   inventory/sales pages:
-  `ChannelDetailPage`, `ChannelsPages`, `InventoryWorkspace`, `inventory/forms`, `ProcurementWorkspace`,
+  `ChannelDetailPage`, `ChannelsPages`, `inventory/forms`, `ProcurementWorkspace`,
   `PurchaseOrderCardPage`, `procurement/forms`, `SalesPages`.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое

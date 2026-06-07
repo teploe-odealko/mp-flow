@@ -94,6 +94,7 @@ describePostgres("postgres runtime store", () => {
     const documentDetail = await request<any>(api, "GET", `/api/documents/${note.id}`);
     const onboardingWorkspace = await request<any>(api, "GET", "/api/onboarding/existing-store/workspace");
     const productListWorkspace = await request<any>(api, "GET", "/api/products/workspace");
+    const inventoryWorkspace = await request<any>(api, "GET", "/api/inventory/workspace");
     const productChannelMapping = await request<any>(api, "GET", "/api/products/channel-mapping");
     const productWorkspace = await request<any>(api, "GET", `/api/products/${product.id}/workspace`);
     const accountsWorkspace = await request<any>(api, "GET", "/api/accounting/accounts/workspace");
@@ -141,6 +142,11 @@ describePostgres("postgres runtime store", () => {
       expect(reportWorkspace.productOptions).toContainEqual(expect.objectContaining({ id: product.id, sku: "PG-001" }));
       expect(productListWorkspace.products).toContainEqual(expect.objectContaining({ id: product.id, sku: "PG-001" }));
       expect(productListWorkspace.stockStates).toEqual(expect.any(Array));
+      expect(inventoryWorkspace.products).toContainEqual(expect.objectContaining({ id: product.id, sku: "PG-001" }));
+      expect(inventoryWorkspace.stockStates).toEqual(expect.any(Array));
+      expect(inventoryWorkspace.warehouses).toEqual(expect.any(Array));
+      expect(inventoryWorkspace.documents).toEqual(expect.any(Array));
+      expect(inventoryWorkspace.stockMovements).toEqual(expect.any(Array));
       expect(productChannelMapping.products).toContainEqual(expect.objectContaining({ id: product.id, sku: "PG-001" }));
       expect(productChannelMapping.channels).toContainEqual(expect.objectContaining({ id: channel.id }));
       expect(productWorkspace.product).toEqual(expect.objectContaining({ id: product.id, sku: "PG-001" }));

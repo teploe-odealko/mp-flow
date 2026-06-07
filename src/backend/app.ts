@@ -268,6 +268,17 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       stockStates: await readModelApp.repos.stockStates.all()
     };
   };
+  const inventoryWorkspaceFor = async (c: Context): Promise<any> => {
+    const readModelApp = await readModelAppFor(c);
+    const [stockStates, products, warehouses, documents, stockMovements] = await Promise.all([
+      readModelApp.repos.stockStates.all(),
+      readModelApp.repos.products.all(),
+      readModelApp.repos.warehouses.all(),
+      readModelApp.repos.documents.all(),
+      readModelApp.repos.stockMovements.all()
+    ]);
+    return { stockStates, products, warehouses, documents, stockMovements };
+  };
   const productChannelMappingFor = async (c: Context): Promise<any> => {
     const readModelApp = await readModelAppFor(c);
     const [externalProducts, links, products, channels, externalEvents] = await Promise.all([
@@ -616,6 +627,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const readModelApp = await readModelAppFor(c);
     return c.json({ ok: true, data: { stock: await readModelApp.stockByProduct(), lots: await readModelApp.repos.inventoryLots.all(), movements: await readModelApp.repos.stockMovements.all() } });
   });
+  api.get("/api/inventory/workspace", async (c) => c.json({ ok: true, data: await inventoryWorkspaceFor(c) }));
   api.get("/api/stock-states", async (c) => c.json({ ok: true, data: await collectionFor(c, "stockStates") }));
   api.get("/api/inventory/balances", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).stockByProduct() }));
   api.get("/api/inventory/lots", async (c) => c.json({ ok: true, data: await collectionFor(c, "inventoryLots") }));

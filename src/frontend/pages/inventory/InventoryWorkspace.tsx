@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Database, HelpCircle, Package, Plus, Search, Store, Truck, Warehouse } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,19 +13,32 @@ import { Badge } from "@/components/ui/badge";
 import { Pagination } from "@/components/ui/pagination";
 import { ProductCell } from "@/components/product-thumb";
 import { EmptyState } from "@/components/ui/empty-state";
-import { useCollection } from "@/lib/use-collection";
+import { apiGet } from "@/api";
 import { date, qty, rub } from "@/lib/format";
 import { stockStateLabel, warehouseTypeLabel } from "@/lib/i18n";
 import { paginateRows } from "@/lib/pagination";
 
 const STOCK_STATE_OPTIONS = ["sellable", "damaged", "lost_pending", "reserved"] as const;
+const INVENTORY_WORKSPACE_QUERY_KEY = ["inventory-workspace"] as const;
+
+interface InventoryWorkspacePayload {
+  stockStates: any[];
+  products: any[];
+  warehouses: any[];
+  documents: any[];
+  stockMovements: any[];
+}
 
 export function InventoryWorkspace() {
-  const stocks = useCollection<any[]>("stockStates") ?? [];
-  const products = useCollection<any[]>("products") ?? [];
-  const warehouses = useCollection<any[]>("warehouses") ?? [];
-  const documents = useCollection<any[]>("documents") ?? [];
-  const movements = useCollection<any[]>("stockMovements") ?? [];
+  const workspaceQuery = useQuery({
+    queryKey: INVENTORY_WORKSPACE_QUERY_KEY,
+    queryFn: () => apiGet<InventoryWorkspacePayload>("/api/inventory/workspace")
+  });
+  const stocks = workspaceQuery.data?.stockStates ?? [];
+  const products = workspaceQuery.data?.products ?? [];
+  const warehouses = workspaceQuery.data?.warehouses ?? [];
+  const documents = workspaceQuery.data?.documents ?? [];
+  const movements = workspaceQuery.data?.stockMovements ?? [];
 
   const [search, setSearch] = useState("");
   const [warehouseFilter, setWarehouseFilter] = useState("");
