@@ -1,16 +1,21 @@
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, BookOpen, FileText, Landmark, Sigma } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Kpi } from "@/components/ui/kpi";
 import { Button } from "@/components/ui/button";
-import { useCollection } from "@/lib/use-collection";
+import { apiGet } from "@/api";
 import { rub } from "@/lib/format";
 
 export function AccountingWorkspace() {
-  const journalEntries = useCollection<any[]>("journalEntries") ?? [];
-  const journalLines = useCollection<any[]>("journalLines") ?? [];
-  const accounts = useCollection<any[]>("chartAccounts") ?? [];
+  const workspaceQuery = useQuery({
+    queryKey: ["accounting-journal-workspace"],
+    queryFn: () => apiGet<{ entries: any[]; lines: any[]; accounts: any[] }>("/api/accounting/journal/workspace")
+  });
+  const journalEntries = workspaceQuery.data?.entries ?? [];
+  const journalLines = workspaceQuery.data?.lines ?? [];
+  const accounts = workspaceQuery.data?.accounts ?? [];
   const totalDebit = journalLines.reduce((s: number, l: any) => s + l.debit, 0);
   const totalCredit = journalLines.reduce((s: number, l: any) => s + l.credit, 0);
   const balanced = Math.abs(totalDebit - totalCredit) < 0.01;

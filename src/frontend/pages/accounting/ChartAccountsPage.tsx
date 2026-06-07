@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Search, ArrowUpRight } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,12 +10,17 @@ import { CheckLabel } from "@/components/ui/checkbox";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useCollection } from "@/lib/use-collection";
+import { apiGet } from "@/api";
 import { accountKindLabel } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 export function ChartAccountsPage() {
-  const accounts = useCollection<any[]>("chartAccounts") ?? [];
+  const workspaceQuery = useQuery({
+    queryKey: ["accounting-accounts-workspace"],
+    queryFn: () => apiGet<{ accounts: any[]; journalLines: any[] }>("/api/accounting/accounts/workspace")
+  });
+  const accounts = workspaceQuery.data?.accounts ?? [];
+  const lines = workspaceQuery.data?.journalLines ?? [];
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState("");
   const [activeOnly, setActiveOnly] = useState(true);
@@ -31,7 +37,6 @@ export function ChartAccountsPage() {
     });
   }, [accounts, search, kind, activeOnly]);
 
-  const lines = useCollection<any[]>("journalLines") ?? [];
   const selected = filtered.find((a: any) => a.code === selectedCode) ?? filtered[0];
   const accountStats = useMemo(() => {
     if (!selected) return null;

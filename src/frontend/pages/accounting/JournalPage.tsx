@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Search, ChevronRight, ChevronDown, CheckCircle2, AlertTriangle } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Pagination } from "@/components/ui/pagination";
 import { useAppState } from "@/lib/use-app-state";
-import { useCollection } from "@/lib/use-collection";
+import { apiGet } from "@/api";
 import { date } from "@/lib/format";
 import { rub } from "@/lib/format";
 import { cn } from "@/lib/cn";
@@ -18,11 +19,12 @@ import { paginateRows } from "@/lib/pagination";
 
 export function JournalPage() {
   const { workingPeriodId } = useAppState();
-  const entries = useCollection<any[]>("journalEntries") ?? [];
-  const lines = useCollection<any[]>("journalLines") ?? [];
-  const periods = useCollection<any[]>("periods") ?? [];
-  const accounts = useCollection<any[]>("chartAccounts") ?? [];
-  const docs = useCollection<any[]>("documents") ?? [];
+  const workspaceQuery = useJournalWorkspace();
+  const entries = workspaceQuery.data?.entries ?? [];
+  const lines = workspaceQuery.data?.lines ?? [];
+  const periods = workspaceQuery.data?.periods ?? [];
+  const accounts = workspaceQuery.data?.accounts ?? [];
+  const docs = workspaceQuery.data?.documents ?? [];
 
   const [search, setSearch] = useState("");
   const [periodId, setPeriodId] = useState(workingPeriodId);
@@ -276,12 +278,21 @@ export function JournalPage() {
 export function JournalEntryPage() {
   const { entryId } = useParams();
   const navigate = useNavigate();
-  const entries = useCollection<any[]>("journalEntries") ?? [];
-  const documents = useCollection<any[]>("documents") ?? [];
-  const journalLines = useCollection<any[]>("journalLines") ?? [];
+  const workspaceQuery = useJournalWorkspace();
+  const entries = workspaceQuery.data?.entries ?? [];
+  const documents = workspaceQuery.data?.documents ?? [];
+  const journalLines = workspaceQuery.data?.lines ?? [];
   const entry = entries.find((candidate: any) => candidate.id === entryId);
   const doc = documents.find((candidate: any) => candidate.id === entry?.documentId);
   const lines = journalLines.filter((line: any) => line.journalEntryId === entryId);
+
+  if (workspaceQuery.isLoading) {
+    return (
+      <div>
+        <PageHeader title="Загружаем запись журнала" breadcrumbs={[{ label: "Журнал", to: "/reports/journal" }]} />
+      </div>
+    );
+  }
 
   if (!entry) {
     return (
@@ -345,6 +356,13 @@ export function JournalEntryPage() {
       </Card>
     </div>
   );
+}
+
+function useJournalWorkspace() {
+  return useQuery({
+    queryKey: ["accounting-journal-workspace"],
+    queryFn: () => apiGet<{ entries: any[]; lines: any[]; periods: any[]; accounts: any[]; documents: any[] }>("/api/accounting/journal/workspace")
+  });
 }
 
 function sourceLabel(source: string) {

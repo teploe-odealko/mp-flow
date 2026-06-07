@@ -220,6 +220,8 @@ describe("prod-ready contracts", () => {
     const productListWorkspace = await get<any>(api, "/api/products/workspace");
     const productChannelMapping = await get<any>(api, "/api/products/channel-mapping");
     const productWorkspace = await get<any>(api, `/api/products/${product.id}/workspace`);
+    const accountsWorkspace = await get<any>(api, "/api/accounting/accounts/workspace");
+    const journalWorkspace = await get<any>(api, "/api/accounting/journal/workspace");
     const card = await get<any>(api, `/api/products/${product.id}/card`);
     const cardBrief = await get<any>(api, `/api/products/${product.id}/card/brief`);
     const usersResponse = await api.request("/api/users");
@@ -264,6 +266,8 @@ describe("prod-ready contracts", () => {
     expect(productChannelMapping.products).toEqual(expect.any(Array));
     expect(productWorkspace.product.id).toBe(product.id);
     expect(productWorkspace.lots).toEqual(expect.any(Array));
+    expect(accountsWorkspace.accounts).toEqual(expect.any(Array));
+    expect(journalWorkspace.entries).toEqual(expect.any(Array));
     expect(card.product.id).toBe(product.id);
     expect(cardBrief.product.id).toBe(product.id);
     expect(cardBrief.generationRequirements).toBeTruthy();

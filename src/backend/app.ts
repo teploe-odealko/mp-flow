@@ -279,6 +279,25 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     ]);
     return { externalProducts, links, products, channels, externalEvents };
   };
+  const chartAccountsWorkspaceFor = async (c: Context): Promise<any> => {
+    const readModelApp = await readModelAppFor(c);
+    const [accounts, journalLines] = await Promise.all([
+      readModelApp.repos.chartAccounts.all(),
+      readModelApp.repos.journalLines.all()
+    ]);
+    return { accounts, journalLines };
+  };
+  const journalWorkspaceFor = async (c: Context): Promise<any> => {
+    const readModelApp = await readModelAppFor(c);
+    const [entries, lines, periods, accounts, documents] = await Promise.all([
+      readModelApp.repos.journalEntries.all(),
+      readModelApp.repos.journalLines.all(),
+      readModelApp.repos.periods.all(),
+      readModelApp.repos.chartAccounts.all(),
+      readModelApp.repos.documents.all()
+    ]);
+    return { entries, lines, periods, accounts, documents };
+  };
   const ledgerBalancesFor = async (c: Context): Promise<Record<string, { debit: number; credit: number }>> => {
     const workspaceId = eventsWorkspaceId(c);
     if (options.persistence?.readLedgerBalances) return await options.persistence.readLedgerBalances(workspaceId);
@@ -475,9 +494,11 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/periods", async (c) => c.json({ ok: true, data: await collectionFor(c, "periods") }));
   api.get("/api/accounts", async (c) => c.json({ ok: true, data: await collectionFor(c, "chartAccounts") }));
   api.get("/api/accounting/accounts", async (c) => c.json({ ok: true, data: await collectionFor(c, "chartAccounts") }));
+  api.get("/api/accounting/accounts/workspace", async (c) => c.json({ ok: true, data: await chartAccountsWorkspaceFor(c) }));
   api.get("/api/accounting/accounts/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).accountByIdOrCode(c.req.param("id")) }));
   api.get("/api/journal", async (c) => c.json({ ok: true, data: { entries: await collectionFor(c, "journalEntries"), lines: await collectionFor(c, "journalLines") } }));
   api.get("/api/accounting/journal", async (c) => c.json({ ok: true, data: { entries: await collectionFor(c, "journalEntries"), lines: await collectionFor(c, "journalLines") } }));
+  api.get("/api/accounting/journal/workspace", async (c) => c.json({ ok: true, data: await journalWorkspaceFor(c) }));
   api.get("/api/accounting/journal/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).journalEntryDetails(c.req.param("id")) }));
   api.get("/api/ledger", async (c) => c.json({ ok: true, data: await ledgerBalancesFor(c) }));
   api.get("/api/accounting/ledger", async (c) => c.json({ ok: true, data: await ledgerBalancesFor(c) }));

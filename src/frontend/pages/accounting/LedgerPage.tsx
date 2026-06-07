@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowDownLeft, ArrowUpRight, BookOpen } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,22 +11,26 @@ import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useAppState } from "@/lib/use-app-state";
-import { useCollection } from "@/lib/use-collection";
+import { apiGet } from "@/api";
 import { date, rub } from "@/lib/format";
 import { accountKindLabel } from "@/lib/i18n";
 
 export function LedgerPage() {
   const { workingPeriodId } = useAppState();
-  const accounts = useCollection<any[]>("chartAccounts") ?? [];
-  const periods = useCollection<any[]>("periods") ?? [];
-  const entries = useCollection<any[]>("journalEntries") ?? [];
-  const lines = useCollection<any[]>("journalLines") ?? [];
+  const workspaceQuery = useQuery({
+    queryKey: ["accounting-journal-workspace"],
+    queryFn: () => apiGet<{ entries: any[]; lines: any[]; periods: any[]; accounts: any[] }>("/api/accounting/journal/workspace")
+  });
+  const accounts = workspaceQuery.data?.accounts ?? [];
+  const periods = workspaceQuery.data?.periods ?? [];
+  const entries = workspaceQuery.data?.entries ?? [];
+  const lines = workspaceQuery.data?.lines ?? [];
 
   const [searchParams, setSearchParams] = useSearchParams();
   const initialAccount = searchParams.get("account") ?? "";
 
   const [accountCode, setAccountCode] = useState<string>(initialAccount);
-  const [periodId, setPeriodId] = useState<string>(workingPeriodId || periods.find((p: any) => p.status === "open")?.id || "");
+  const [periodId, setPeriodId] = useState<string>(workingPeriodId || "");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [onlyWithMovements, setOnlyWithMovements] = useState(false);
@@ -37,10 +42,11 @@ export function LedgerPage() {
   }, [initialAccount]);
 
   useEffect(() => {
-    if (!periodId && workingPeriodId) {
-      applyPeriod(workingPeriodId);
+    if (!periodId) {
+      const nextPeriodId = workingPeriodId || periods.find((p: any) => p.status === "open")?.id || "";
+      if (nextPeriodId) applyPeriod(nextPeriodId);
     }
-  }, [periodId, workingPeriodId]);
+  }, [periodId, workingPeriodId, periods]);
 
   function applyAccount(code: string) {
     setAccountCode(code);

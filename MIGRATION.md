@@ -100,8 +100,12 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   `ProductCardPage` → `/api/products/:id/workspace`, `ProductsPage` → `/api/products/workspace`,
   `ProductFormPage` → `/api/products/:id`, `ChannelMappingPage` → `/api/products/channel-mapping`.
   Эти страницы больше не используют `useCollection` и не вызывают `/api/collections/*` на фронте.
+- ✅ Accounting pages двигаются от generic collections к dedicated DTO:
+  `AccountingWorkspace`/`LedgerPage`/`JournalPage`/`JournalEntryPage` →
+  `/api/accounting/journal/workspace`, `ChartAccountsPage` → `/api/accounting/accounts/workspace`.
+  Весь `src/frontend/pages/accounting` больше не использует `useCollection`.
 - ⚠️ Фактический текущий остаток фронта: `useCollection` ещё есть в channel/finance/procurement/inventory/
-  accounting/setup/controls/sales/expenses/money/onboarding pages. Поэтому заявка «ВСЕ страницы переведены»
+  setup/controls/sales/expenses/money/onboarding pages. Поэтому заявка «ВСЕ страницы переведены»
   выше относится к старому промежуточному состоянию и не является финальным критерием завершения.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
