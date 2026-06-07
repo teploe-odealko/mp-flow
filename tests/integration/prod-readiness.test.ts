@@ -582,6 +582,56 @@ describe("prod-ready contracts", () => {
     }
   });
 
+  it("serves observed stock writes before snapshot sessions", async () => {
+    resetIds();
+    const app = new AccountingApp();
+    await app.setupDemo();
+    const channel = app.state.salesChannels[0];
+    const externalProduct = await app.createExternalProduct({
+      channelId: channel.id,
+      externalSku: "OBS-SERVICE",
+      externalName: "Observed service product"
+    });
+    let writeContexts = 0;
+    let writeSessions = 0;
+    const api = createApi(app, {
+      persistence: {
+        async runWriteContext(_workspaceId, handler) {
+          writeContexts += 1;
+          return await handler({
+            repos: app.repos,
+            externalEvents: app.externalEvents,
+            observedStocks: app.observedStocks,
+            syncRuns: app.syncRuns,
+            setupMetadata: () => app.setupMetadata()
+          });
+        },
+        async openWriteSession() {
+          writeSessions += 1;
+          return { app, nextId: 1, commit: async () => undefined, rollback: async () => undefined, close: async () => undefined };
+        }
+      }
+    });
+
+    const observed = await post<any>(api, `/api/channels/${channel.id}/observed-stock`, {
+      externalProductId: externalProduct.id,
+      observedAt: "2026-06-01T10:00:00.000Z",
+      qtyObserved: 10
+    });
+    const updated = await post<any>(api, `/api/channels/${channel.id}/observed-stock`, {
+      externalProductId: externalProduct.id,
+      observedAt: "2026-06-01T10:00:00.000Z",
+      qtyObserved: 8
+    });
+    const ignored = await post<any>(api, `/api/inventory/reconciliation/${observed.id}/ignore`);
+
+    expect(updated.id).toBe(observed.id);
+    expect(updated.qtyObserved).toBe(8);
+    expect(ignored).toEqual(expect.objectContaining({ id: observed.id, qtyObserved: 8, locationStatus: "needs_location" }));
+    expect(writeContexts).toBe(3);
+    expect(writeSessions).toBe(0);
+  });
+
   it("authenticates MCP keys through persistence without app sessions", async () => {
     resetIds();
     let authenticateCalls = 0;

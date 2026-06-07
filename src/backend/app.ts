@@ -21,6 +21,7 @@ import { getPool } from "./db/pool";
 import { ExternalEventRepository } from "./repositories/external-event-repository";
 import { disableUser, inviteUser, resendUserInvite, updateUserRole } from "./services/access-management-service";
 import { hashToken, issueMcpAgentToken, publicAgentToken, revokeAgentToken, setChannelAgentPermission } from "./services/agent-token-service";
+import { ignoreObservedStock, recordObservedStock } from "./services/observed-stock-service";
 import { onboardingProjectDetailsFor } from "./services/onboarding-project-service";
 import { updateOrganization } from "./services/organization-service";
 import { confirmProductAsset, createProductAsset, deleteProductAsset, updateProductAsset } from "./services/product-asset-service";
@@ -1360,6 +1361,13 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: run });
   });
   api.get("/api/integrations/observed-stock", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).observedStocks.list() }));
+  api.post("/api/channels/:id/observed-stock", async (c) => {
+    const body = observedStockSchema.parse(await c.req.json());
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => recordObservedStock(writeContext, { ...body, channelId: c.req.param("id") })) });
+  });
+  api.post("/api/inventory/reconciliation/:id/ignore", async (c) => {
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => ignoreObservedStock(writeContext, c.req.param("id"))) });
+  });
   api.get("/api/integrations/inbox/workspace", async (c) => c.json({ ok: true, data: await syncInboxWorkspaceFor(c) }));
   api.get("/api/controls/audit-events", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.auditEvents.all() }));
   api.get("/api/setup", async (c) => {
@@ -2207,15 +2215,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/inventory/adjustments/:id/post", async (c) => {
     return c.json({ ok: true, data: await scopedApp.postStocktake(c.req.param("id")) });
   });
-  api.post("/api/inventory/reconciliation/:id/ignore", async (c) => {
-    const observed = await scopedApp.observedStocks.getById(c.req.param("id"));
-    if (observed) {
-      observed.locationStatus = "needs_location";
-      await scopedApp.observedStocks.upsert(observed);
-    }
-    return c.json({ ok: true, data: observed ?? { id: c.req.param("id"), status: "ignored" } });
-  });
-
   api.post("/api/integrations/channels/validate", async (c) => {
     const body = channelValidationSchema.parse(await c.req.json());
     const plugin = body.pluginCode ? pluginRegistry.get(body.pluginCode) : undefined;
@@ -2522,10 +2521,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/channels/:id/external-events", async (c) => {
     const body = externalEventSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.ingestExternalEvent({ ...body, channelId: c.req.param("id") }) });
-  });
-  api.post("/api/channels/:id/observed-stock", async (c) => {
-    const body = observedStockSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: await scopedApp.recordObservedStock({ ...body, channelId: c.req.param("id") }) });
   });
   api.post("/api/integrations/events/:id/reprocess", async (c) => {
     return c.json({ ok: true, data: await scopedApp.reprocessExternalEvent(c.req.param("id")) });

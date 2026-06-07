@@ -140,6 +140,21 @@ describePostgres("postgres runtime store", () => {
         process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED = previousAccessForToken;
       }
     }
+    const observedExternalProduct = await request<any>(api, "POST", `/api/channels/${channel.id}/external-products`, {
+      externalSku: "PG-OBS-001",
+      externalName: "Postgres observed product"
+    });
+    const observedStock = await request<any>(api, "POST", `/api/channels/${channel.id}/observed-stock`, {
+      externalProductId: observedExternalProduct.id,
+      observedAt: "2026-01-18T10:00:00.000Z",
+      qtyObserved: 5
+    });
+    const updatedObservedStock = await request<any>(api, "POST", `/api/channels/${channel.id}/observed-stock`, {
+      externalProductId: observedExternalProduct.id,
+      observedAt: "2026-01-18T10:00:00.000Z",
+      qtyObserved: 7
+    });
+    const ignoredObservedStock = await request<any>(api, "POST", `/api/inventory/reconciliation/${observedStock.id}/ignore`);
     await request(api, "POST", `/api/integrations/channels/${channel.id}/sync-runs`, {
       since: "2026-01-01",
       credentials: { clientId: "pg-client", apiKey: "pg-key" }
@@ -206,6 +221,19 @@ describePostgres("postgres runtime store", () => {
         `,
         [channelPermission.id]
       );
+      const observedStockRows = await inspectPool.query<{ channel_id: string; external_product_id: string; qty_observed: number; location_status: string }>(
+        `
+          select sales_channel.public_id as channel_id,
+                 external_product.public_id as external_product_id,
+                 observed_stock.qty_observed::float8 as qty_observed,
+                 observed_stock.location_status
+          from observed_stock
+          join sales_channel on sales_channel.id = observed_stock.channel_id
+          join external_product on external_product.id = observed_stock.external_product_id
+          where observed_stock.public_id = $1
+        `,
+        [observedStock.id]
+      );
       const productRows = await inspectPool.query<{ image_url: string | null }>(
         "select image_url from product where public_id = $1",
         [product.id]
@@ -269,6 +297,10 @@ describePostgres("postgres runtime store", () => {
       expect(agentTokenRows.rows[0]).toEqual(expect.objectContaining({ name: "PG access agent", mode: "read_write", status: "revoked", scopes: ["channels:sync"] }));
       expect(agentTokenRows.rows[0]?.revoked_at).toBeTruthy();
       expect(channelPermissionRows.rows[0]).toEqual({ agent_token_id: accessToken.id, channel_id: channel.id, permission_code: "sync:write" });
+      expect(observedStock).toEqual(expect.objectContaining({ externalProductId: observedExternalProduct.id, qtyObserved: 5, locationStatus: "mapped" }));
+      expect(updatedObservedStock).toEqual(expect.objectContaining({ id: observedStock.id, qtyObserved: 7, locationStatus: "mapped" }));
+      expect(ignoredObservedStock).toEqual(expect.objectContaining({ id: observedStock.id, qtyObserved: 7, locationStatus: "needs_location" }));
+      expect(observedStockRows.rows[0]).toEqual({ channel_id: channel.id, external_product_id: observedExternalProduct.id, qty_observed: 7, location_status: "needs_location" });
       expect(productImage).toEqual({ id: `${product.id}:main`, productId: product.id, url: "https://example.test/pg-product.jpg", sortOrder: 0 });
       expect(productRows.rows[0]?.image_url).toBe("https://example.test/pg-product.jpg");
       expect(productImageAudit.rows).toContainEqual({ entity_public_id: product.id, event_type: "image_update" });
