@@ -168,6 +168,12 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   и похожие простые read-list ручки читают репозитории/typed stores без создания доменного app facade.
   In-memory fallback остаётся только для тестового контура. Следующий backend-долг — detail/workspace read paths
   и write use-cases, где всё ещё нужен `AccountingApp`.
+- ✅ Большой helper-layer DTO-readers переведён на `RuntimeReadContext`: product/inventory/procurement/sales/channel/
+  accounting/controls/onboarding workspace payloads, document drilldown/history/links/descendants, sales/return/payout/
+  finance-event details, finance/expense/payout workspaces, MCP settings и простые filtered endpoints больше
+  не открывают `openReadModelApp` в Postgres path.
+  Оставшиеся `readModelAppFor` в HTTP-слое — доменные detail/card methods (`productDetails`, receipt/transfer/cost details,
+  card studio), channel credentials и write use-cases.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,

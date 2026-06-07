@@ -269,25 +269,25 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     }, productId);
   };
   const productListWorkspaceFor = async (c: Context): Promise<any> => {
-    const readModelApp = await readModelAppFor(c);
+    const readContext = await readContextFor(c);
     return {
-      products: await readModelApp.repos.products.all(),
-      stockStates: await readModelApp.repos.stockStates.all()
+      products: await readContext.repos.products.all(),
+      stockStates: await readContext.repos.stockStates.all()
     };
   };
   const inventoryWorkspaceFor = async (c: Context): Promise<any> => {
-    const readModelApp = await readModelAppFor(c);
+    const readContext = await readContextFor(c);
     const [stockStates, products, warehouses, documents, stockMovements] = await Promise.all([
-      readModelApp.repos.stockStates.all(),
-      readModelApp.repos.products.all(),
-      readModelApp.repos.warehouses.all(),
-      readModelApp.repos.documents.all(),
-      readModelApp.repos.stockMovements.all()
+      readContext.repos.stockStates.all(),
+      readContext.repos.products.all(),
+      readContext.repos.warehouses.all(),
+      readContext.repos.documents.all(),
+      readContext.repos.stockMovements.all()
     ]);
     return { stockStates, products, warehouses, documents, stockMovements };
   };
   const inventoryFormsWorkspaceFor = async (c: Context): Promise<any> => {
-    const readModelApp = await readModelAppFor(c);
+    const readContext = await readContextFor(c);
     const [
       costApplications,
       documents,
@@ -306,25 +306,25 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       warehouses,
       observedStocks
     ] = await Promise.all([
-      readModelApp.repos.costApplications.all(),
-      readModelApp.repos.documents.all(),
-      readModelApp.repos.externalProducts.all(),
-      readModelApp.repos.inventoryLots.all(),
-      readModelApp.repos.journalEntries.all(),
-      readModelApp.repos.productExternalLinks.all(),
-      readModelApp.repos.products.all(),
-      readModelApp.repos.salesChannels.all(),
-      readModelApp.repos.stockMovements.all(),
-      readModelApp.repos.stockStates.all(),
-      readModelApp.repos.stockTransferLines.all(),
-      readModelApp.repos.stockTransfers.all(),
-      readModelApp.repos.stocktakeLines.all(),
-      readModelApp.repos.stocktakes.all(),
-      readModelApp.repos.warehouses.all(),
-      readModelApp.observedStocks.list()
+      readContext.repos.costApplications.all(),
+      readContext.repos.documents.all(),
+      readContext.repos.externalProducts.all(),
+      readContext.repos.inventoryLots.all(),
+      readContext.repos.journalEntries.all(),
+      readContext.repos.productExternalLinks.all(),
+      readContext.repos.products.all(),
+      readContext.repos.salesChannels.all(),
+      readContext.repos.stockMovements.all(),
+      readContext.repos.stockStates.all(),
+      readContext.repos.stockTransferLines.all(),
+      readContext.repos.stockTransfers.all(),
+      readContext.repos.stocktakeLines.all(),
+      readContext.repos.stocktakes.all(),
+      readContext.repos.warehouses.all(),
+      readContext.observedStocks.list()
     ]);
     return {
-      accountingPolicy: readModelApp.setupMetadata().accountingPolicy,
+      accountingPolicy: readContext.setupMetadata().accountingPolicy,
       costApplications,
       documents,
       externalProducts,
@@ -344,7 +344,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     };
   };
   const procurementWorkspaceFor = async (c: Context): Promise<any> => {
-    const readModelApp = await readModelAppFor(c);
+    const readContext = await readContextFor(c);
     const [
       purchaseOrders,
       purchaseOrderLines,
@@ -358,17 +358,17 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       shortageResolutions,
       shortageResolutionLines
     ] = await Promise.all([
-      readModelApp.repos.purchaseOrders.all(),
-      readModelApp.repos.purchaseOrderLines.all(),
-      readModelApp.repos.counterparties.all(),
-      readModelApp.repos.documents.all(),
-      readModelApp.repos.procurementCosts.all(),
-      readModelApp.repos.goodsReceipts.all(),
-      readModelApp.repos.goodsReceiptLines.all(),
-      readModelApp.repos.payments.all(),
-      readModelApp.repos.paymentAllocations.all(),
-      readModelApp.repos.shortageResolutions.all(),
-      readModelApp.repos.shortageResolutionLines.all()
+      readContext.repos.purchaseOrders.all(),
+      readContext.repos.purchaseOrderLines.all(),
+      readContext.repos.counterparties.all(),
+      readContext.repos.documents.all(),
+      readContext.repos.procurementCosts.all(),
+      readContext.repos.goodsReceipts.all(),
+      readContext.repos.goodsReceiptLines.all(),
+      readContext.repos.payments.all(),
+      readContext.repos.paymentAllocations.all(),
+      readContext.repos.shortageResolutions.all(),
+      readContext.repos.shortageResolutionLines.all()
     ]);
     return {
       purchaseOrders,
@@ -385,7 +385,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     };
   };
   const procurementFormsWorkspaceFor = async (c: Context): Promise<any> => {
-    const readModelApp = await readModelAppFor(c);
+    const readContext = await readContextFor(c);
     const requestedPurchaseOrderId = c.req.query("purchaseOrderId");
     const [
       counterparties,
@@ -399,16 +399,16 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       purchaseOrders,
       warehouses
     ] = await Promise.all([
-      readModelApp.repos.counterparties.all(),
-      readModelApp.repos.documents.all(),
-      readModelApp.repos.goodsReceiptLines.all(),
-      readModelApp.repos.goodsReceipts.all(),
-      readModelApp.repos.inventoryLots.all(),
-      readModelApp.repos.paymentAllocations.all(),
-      readModelApp.repos.products.all(),
-      readModelApp.repos.purchaseOrderLines.all(),
-      readModelApp.repos.purchaseOrders.all(),
-      readModelApp.repos.warehouses.all()
+      readContext.repos.counterparties.all(),
+      readContext.repos.documents.all(),
+      readContext.repos.goodsReceiptLines.all(),
+      readContext.repos.goodsReceipts.all(),
+      readContext.repos.inventoryLots.all(),
+      readContext.repos.paymentAllocations.all(),
+      readContext.repos.products.all(),
+      readContext.repos.purchaseOrderLines.all(),
+      readContext.repos.purchaseOrders.all(),
+      readContext.repos.warehouses.all()
     ]);
 
     const selectedOrder = requestedPurchaseOrderId
@@ -438,7 +438,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const supplierIds = new Set(formOrders.map((order) => order.supplierId));
 
     return {
-      accountingPolicy: readModelApp.setupMetadata().accountingPolicy,
+      accountingPolicy: readContext.setupMetadata().accountingPolicy,
       counterparties: counterparties.filter((counterparty) => counterparty.counterpartyType === "supplier" || supplierIds.has(counterparty.id)),
       documents: documents.filter((document) => documentIds.has(document.id)),
       goodsReceiptLines: receiptLines,
@@ -452,8 +452,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     };
   };
   const purchaseOrderCardWorkspaceFor = async (c: Context, purchaseOrderId: string): Promise<any> => {
-    const readModelApp = await readModelAppFor(c);
-    const order = await readModelApp.repos.purchaseOrders.getById(purchaseOrderId);
+    const readContext = await readContextFor(c);
+    const order = await readContext.repos.purchaseOrders.getById(purchaseOrderId);
     if (!order) throw new DomainError("purchase_order_not_found", "Заказ поставщику не найден");
 
     const [
@@ -474,22 +474,22 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       shortageResolutionLines,
       warehouses
     ] = await Promise.all([
-      readModelApp.repos.purchaseOrderLines.all(),
-      readModelApp.repos.counterparties.all(),
-      readModelApp.repos.documentVersions.all(),
-      readModelApp.repos.documents.all(),
-      readModelApp.repos.goodsReceipts.all(),
-      readModelApp.repos.goodsReceiptLines.all(),
-      readModelApp.repos.inventoryLots.all(),
-      readModelApp.repos.journalEntries.all(),
-      readModelApp.repos.paymentAllocations.all(),
-      readModelApp.repos.payments.all(),
-      readModelApp.repos.procurementCosts.all(),
-      readModelApp.repos.procurementCostLines.all(),
-      readModelApp.repos.products.all(),
-      readModelApp.repos.shortageResolutions.all(),
-      readModelApp.repos.shortageResolutionLines.all(),
-      readModelApp.repos.warehouses.all()
+      readContext.repos.purchaseOrderLines.all(),
+      readContext.repos.counterparties.all(),
+      readContext.repos.documentVersions.all(),
+      readContext.repos.documents.all(),
+      readContext.repos.goodsReceipts.all(),
+      readContext.repos.goodsReceiptLines.all(),
+      readContext.repos.inventoryLots.all(),
+      readContext.repos.journalEntries.all(),
+      readContext.repos.paymentAllocations.all(),
+      readContext.repos.payments.all(),
+      readContext.repos.procurementCosts.all(),
+      readContext.repos.procurementCostLines.all(),
+      readContext.repos.products.all(),
+      readContext.repos.shortageResolutions.all(),
+      readContext.repos.shortageResolutionLines.all(),
+      readContext.repos.warehouses.all()
     ]);
 
     const lines = purchaseOrderLines.filter((line) => line.purchaseOrderId === order.id);
@@ -527,7 +527,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     receipts.forEach((receipt) => warehouseIds.add(receipt.warehouseId));
 
     return {
-      accountingPolicy: readModelApp.setupMetadata().accountingPolicy,
+      accountingPolicy: readContext.setupMetadata().accountingPolicy,
       order,
       counterparties: counterparties.filter((counterparty) => counterparty.id === order.supplierId),
       documentVersions: documentVersions.filter((version) => version.documentId === order.documentId),
@@ -548,22 +548,22 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     };
   };
   const productChannelMappingFor = async (c: Context): Promise<any> => {
-    const readModelApp = await readModelAppFor(c);
+    const readContext = await readContextFor(c);
     const [externalProducts, links, products, channels, externalEvents] = await Promise.all([
-      readModelApp.repos.externalProducts.all(),
-      readModelApp.repos.productExternalLinks.all(),
-      readModelApp.repos.products.all(),
-      readModelApp.repos.salesChannels.all(),
-      readModelApp.externalEvents.list()
+      readContext.repos.externalProducts.all(),
+      readContext.repos.productExternalLinks.all(),
+      readContext.repos.products.all(),
+      readContext.repos.salesChannels.all(),
+      readContext.externalEvents.list()
     ]);
     return { externalProducts, links, products, channels, externalEvents };
   };
   const channelsWorkspaceFor = async (c: Context): Promise<any> => {
-    const readModelApp = await readModelAppFor(c);
+    const readContext = await readContextFor(c);
     const [channels, plugins, warehouses] = await Promise.all([
-      readModelApp.repos.salesChannels.all(),
-      readModelApp.repos.integrationPlugins.all(),
-      readModelApp.repos.warehouses.all()
+      readContext.repos.salesChannels.all(),
+      readContext.repos.integrationPlugins.all(),
+      readContext.repos.warehouses.all()
     ]);
     return { channels, plugins, warehouses };
   };
@@ -598,27 +598,28 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     };
   };
   const syncInboxWorkspaceFor = async (c: Context): Promise<any> => {
-    const readModelApp = await readModelAppFor(c);
+    const readContext = await readContextFor(c);
     const [channels, externalProducts, products, documents, events, observedStocks] = await Promise.all([
-      readModelApp.repos.salesChannels.all(),
-      readModelApp.repos.externalProducts.all(),
-      readModelApp.repos.products.all(),
-      readModelApp.repos.documents.all(),
-      readModelApp.externalEvents.list(),
-      readModelApp.observedStocks.list()
+      readContext.repos.salesChannels.all(),
+      readContext.repos.externalProducts.all(),
+      readContext.repos.products.all(),
+      readContext.repos.documents.all(),
+      readContext.externalEvents.list(),
+      readContext.observedStocks.list()
     ]);
     return { channels, externalProducts, products, documents, events, observedStocks };
   };
   const channelFinanceWorkspaceFor = async (c: Context, channelId: string): Promise<any> => {
-    const readModelApp = await readModelAppFor(c);
-    const channel = await mustFindChannel(readModelApp, channelId);
+    const readContext = await readContextFor(c);
+    const channel = await readContext.repos.salesChannels.getById(channelId);
+    if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
     const [allEvents, allSales, allReturns, allPayouts, allDocuments, externalEvents] = await Promise.all([
-      readModelApp.repos.channelFinanceEvents.all(),
-      readModelApp.repos.sales.all(),
-      readModelApp.repos.salesReturns.all(),
-      readModelApp.repos.payouts.all(),
-      readModelApp.repos.documents.all(),
-      readModelApp.externalEvents.list({ channelId })
+      readContext.repos.channelFinanceEvents.all(),
+      readContext.repos.sales.all(),
+      readContext.repos.salesReturns.all(),
+      readContext.repos.payouts.all(),
+      readContext.repos.documents.all(),
+      readContext.externalEvents.list({ channelId })
     ]);
     const events = allEvents.filter((event) => event.channelId === channel.id);
     const sales = allSales.filter((sale) => sale.channelId === channel.id);
@@ -643,16 +644,16 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     };
   };
   const financeEventWorkspaceFor = async (c: Context, financeEventId: string): Promise<any> => {
-    const readModelApp = await readModelAppFor(c);
-    const event = await readModelApp.repos.channelFinanceEvents.getById(financeEventId);
+    const readContext = await readContextFor(c);
+    const event = await readContext.repos.channelFinanceEvents.getById(financeEventId);
     if (!event) throw new DomainError("finance_event_not_found", "Финансовое событие не найдено");
     const [channel, allSales, allReturns, allPayouts, allDocuments, externalEvent] = await Promise.all([
-      readModelApp.repos.salesChannels.getById(event.channelId),
-      readModelApp.repos.sales.all(),
-      readModelApp.repos.salesReturns.all(),
-      readModelApp.repos.payouts.all(),
-      readModelApp.repos.documents.all(),
-      event.externalEventId ? readModelApp.externalEvents.getById(event.externalEventId) : Promise.resolve(undefined)
+      readContext.repos.salesChannels.getById(event.channelId),
+      readContext.repos.sales.all(),
+      readContext.repos.salesReturns.all(),
+      readContext.repos.payouts.all(),
+      readContext.repos.documents.all(),
+      event.externalEventId ? readContext.externalEvents.getById(event.externalEventId) : Promise.resolve(undefined)
     ]);
     const sales = allSales.filter((sale) => sale.channelId === event.channelId);
     const salesReturns = allReturns.filter((salesReturn) =>
@@ -677,7 +678,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     };
   };
   const salesWorkspaceFor = async (c: Context): Promise<any> => {
-    const readModelApp = await readModelAppFor(c);
+    const readContext = await readContextFor(c);
     const [
       channelFinanceEvents,
       costApplications,
@@ -693,19 +694,19 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       salesReturns,
       warehouses
     ] = await Promise.all([
-      readModelApp.repos.channelFinanceEvents.all(),
-      readModelApp.repos.costApplications.all(),
-      readModelApp.repos.documentLines.all(),
-      readModelApp.repos.documents.all(),
-      readModelApp.externalEvents.list(),
-      readModelApp.repos.inventoryLots.all(),
-      readModelApp.repos.journalEntries.all(),
-      readModelApp.repos.products.all(),
-      readModelApp.repos.saleLines.all(),
-      readModelApp.repos.sales.all(),
-      readModelApp.repos.salesChannels.all(),
-      readModelApp.repos.salesReturns.all(),
-      readModelApp.repos.warehouses.all()
+      readContext.repos.channelFinanceEvents.all(),
+      readContext.repos.costApplications.all(),
+      readContext.repos.documentLines.all(),
+      readContext.repos.documents.all(),
+      readContext.externalEvents.list(),
+      readContext.repos.inventoryLots.all(),
+      readContext.repos.journalEntries.all(),
+      readContext.repos.products.all(),
+      readContext.repos.saleLines.all(),
+      readContext.repos.sales.all(),
+      readContext.repos.salesChannels.all(),
+      readContext.repos.salesReturns.all(),
+      readContext.repos.warehouses.all()
     ]);
     return {
       channelFinanceEvents,
@@ -724,51 +725,51 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     };
   };
   const chartAccountsWorkspaceFor = async (c: Context): Promise<any> => {
-    const readModelApp = await readModelAppFor(c);
+    const readContext = await readContextFor(c);
     const [accounts, journalLines] = await Promise.all([
-      readModelApp.repos.chartAccounts.all(),
-      readModelApp.repos.journalLines.all()
+      readContext.repos.chartAccounts.all(),
+      readContext.repos.journalLines.all()
     ]);
     return { accounts, journalLines };
   };
   const journalWorkspaceFor = async (c: Context): Promise<any> => {
-    const readModelApp = await readModelAppFor(c);
+    const readContext = await readContextFor(c);
     const [entries, lines, periods, accounts, documents] = await Promise.all([
-      readModelApp.repos.journalEntries.all(),
-      readModelApp.repos.journalLines.all(),
-      readModelApp.repos.periods.all(),
-      readModelApp.repos.chartAccounts.all(),
-      readModelApp.repos.documents.all()
+      readContext.repos.journalEntries.all(),
+      readContext.repos.journalLines.all(),
+      readContext.repos.periods.all(),
+      readContext.repos.chartAccounts.all(),
+      readContext.repos.documents.all()
     ]);
     return { entries, lines, periods, accounts, documents };
   };
   const controlsWorkspaceFor = async (c: Context): Promise<any> => {
-    const readModelApp = await readModelAppFor(c);
+    const readContext = await readContextFor(c);
     const [corrections, jobs, periods, documents, products, lines, auditEvents] = await Promise.all([
-      readModelApp.repos.correctionCases.all(),
-      readModelApp.repos.recalculationJobs.all(),
-      readModelApp.repos.periods.all(),
-      readModelApp.repos.documents.all(),
-      readModelApp.repos.products.all(),
-      readModelApp.repos.documentLines.all(),
-      readModelApp.repos.auditEvents.all()
+      readContext.repos.correctionCases.all(),
+      readContext.repos.recalculationJobs.all(),
+      readContext.repos.periods.all(),
+      readContext.repos.documents.all(),
+      readContext.repos.products.all(),
+      readContext.repos.documentLines.all(),
+      readContext.repos.auditEvents.all()
     ]);
     return { corrections, jobs, periods, documents, products, lines, auditEvents };
   };
   const onboardingWorkspaceFor = async (c: Context): Promise<any> => {
-    const readModelApp = await readModelAppFor(c);
+    const readContext = await readContextFor(c);
     const [salesChannels, products, warehouses, backfillProjects] = await Promise.all([
-      readModelApp.repos.salesChannels.all(),
-      readModelApp.repos.products.all(),
-      readModelApp.repos.warehouses.all(),
-      readModelApp.repos.backfillProjects.all()
+      readContext.repos.salesChannels.all(),
+      readContext.repos.products.all(),
+      readContext.repos.warehouses.all(),
+      readContext.repos.backfillProjects.all()
     ]);
     return {
       salesChannels,
       products,
       warehouses,
       backfillProjects,
-      ...readModelApp.setupMetadata()
+      ...readContext.setupMetadata()
     };
   };
   const ledgerBalancesFor = async (c: Context): Promise<Record<string, { debit: number; credit: number }>> => {
@@ -776,6 +777,18 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (options.persistence?.readLedgerBalances) return await options.persistence.readLedgerBalances(workspaceId);
     if (postgresBacked()) return await readRuntimeLedgerBalances(getPool(), workspaceId);
     return await (await readModelAppFor(c)).ledgerBalances();
+  };
+  const stockByProductFor = async (readContext: RuntimeReadContext) => {
+    const [products, warehouses, stockStates] = await Promise.all([
+      readContext.repos.products.all(),
+      readContext.repos.warehouses.all(),
+      readContext.repos.stockStates.all()
+    ]);
+    return stockStates.map((state) => ({
+      ...state,
+      product: products.find((product) => product.id === state.productId),
+      warehouse: warehouses.find((warehouse) => warehouse.id === state.warehouseId)
+    }));
   };
   const documentDescendantIdForLink = (link: { linkType: string; fromDocumentId: string; toDocumentId: string }, currentDocumentId: string) => {
     switch (link.linkType) {
@@ -786,11 +799,11 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
         return link.fromDocumentId === currentDocumentId ? link.toDocumentId : undefined;
     }
   };
-  const documentDescendantsFor = async (readModelApp: AccountingApp, documentId: string) => {
-    const documents = await readModelApp.repos.documents.all();
+  const documentDescendantsFor = async (readContext: RuntimeReadContext, documentId: string) => {
+    const documents = await readContext.repos.documents.all();
     if (!documents.some((document) => document.id === documentId)) throw new DomainError("document_not_found", "Документ не найден");
-    const documentTypesByCode = new Map((await readModelApp.repos.documentTypes.all()).map((documentType) => [documentType.code, documentType.displayName]));
-    const documentLinks = await readModelApp.repos.documentLinks.all();
+    const documentTypesByCode = new Map((await readContext.repos.documentTypes.all()).map((documentType) => [documentType.code, documentType.displayName]));
+    const documentLinks = await readContext.repos.documentLinks.all();
     const queue: Array<{ documentId: string; depth: number }> = [{ documentId, depth: 0 }];
     const visited = new Set<string>([documentId]);
     const descendants: Array<{
@@ -837,20 +850,20 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     );
   };
   const documentPayloadFor = async (c: Context, id: string) => {
-    const readModelApp = await readModelAppFor(c);
+    const readContext = await readContextFor(c);
     const [document, lines, links, entries, journalLines, accounts, periods, sales, salesReturns, stockTransfers, channelFinanceEvents, auditEvents] = await Promise.all([
-      readModelApp.repos.documents.getById(id),
-      readModelApp.repos.documentLines.all(),
-      readModelApp.repos.documentLinks.all(),
-      readModelApp.repos.journalEntries.all(),
-      readModelApp.repos.journalLines.all(),
-      readModelApp.repos.chartAccounts.all(),
-      readModelApp.repos.periods.all(),
-      readModelApp.repos.sales.all(),
-      readModelApp.repos.salesReturns.all(),
-      readModelApp.repos.stockTransfers.all(),
-      readModelApp.repos.channelFinanceEvents.all(),
-      readModelApp.repos.auditEvents.all()
+      readContext.repos.documents.getById(id),
+      readContext.repos.documentLines.all(),
+      readContext.repos.documentLinks.all(),
+      readContext.repos.journalEntries.all(),
+      readContext.repos.journalLines.all(),
+      readContext.repos.chartAccounts.all(),
+      readContext.repos.periods.all(),
+      readContext.repos.sales.all(),
+      readContext.repos.salesReturns.all(),
+      readContext.repos.stockTransfers.all(),
+      readContext.repos.channelFinanceEvents.all(),
+      readContext.repos.auditEvents.all()
     ]);
     const sourceEntity = (() => {
       const sale = sales.find((candidate) => candidate.documentId === id || candidate.financialDocumentId === id);
@@ -880,13 +893,13 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     };
   };
   const documentsWorkspaceFor = async (c: Context) => {
-    const readModelApp = await readModelAppFor(c);
+    const readContext = await readContextFor(c);
     const [documents, journalLines, journalEntries, documentLinks, periods] = await Promise.all([
-      readModelApp.repos.documents.all(),
-      readModelApp.repos.journalLines.all(),
-      readModelApp.repos.journalEntries.all(),
-      readModelApp.repos.documentLinks.all(),
-      readModelApp.repos.periods.all()
+      readContext.repos.documents.all(),
+      readContext.repos.journalLines.all(),
+      readContext.repos.journalEntries.all(),
+      readContext.repos.documentLinks.all(),
+      readContext.repos.periods.all()
     ]);
     const entryDocumentById = new Map(journalEntries.map((entry) => [entry.id, entry.documentId]));
     const entryCountByDocument = new Map<string, number>();
@@ -1060,17 +1073,17 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/products/:id/card/brief", async (c) => c.json({ ok: true, data: await studioBriefFor(await readModelAppFor(c), c.req.param("id")) }));
   api.get("/api/warehouses", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.warehouses.all() }));
   api.get("/api/inventory", async (c) => {
-    const readModelApp = await readModelAppFor(c);
-    return c.json({ ok: true, data: { stock: await readModelApp.stockByProduct(), lots: await readModelApp.repos.inventoryLots.all(), movements: await readModelApp.repos.stockMovements.all() } });
+    const readContext = await readContextFor(c);
+    return c.json({ ok: true, data: { stock: await stockByProductFor(readContext), lots: await readContext.repos.inventoryLots.all(), movements: await readContext.repos.stockMovements.all() } });
   });
   api.get("/api/inventory/workspace", async (c) => c.json({ ok: true, data: await inventoryWorkspaceFor(c) }));
   api.get("/api/inventory/forms/workspace", async (c) => c.json({ ok: true, data: await inventoryFormsWorkspaceFor(c) }));
   api.get("/api/stock-states", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.stockStates.all() }));
-  api.get("/api/inventory/balances", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).stockByProduct() }));
+  api.get("/api/inventory/balances", async (c) => c.json({ ok: true, data: await stockByProductFor(await readContextFor(c)) }));
   api.get("/api/inventory/lots", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.inventoryLots.all() }));
   api.get("/api/inventory/reconciliation", async (c) => {
-    const readModelApp = await readModelAppFor(c);
-    return c.json({ ok: true, data: { stocktakes: await readModelApp.repos.stocktakes.all(), lines: await readModelApp.repos.stocktakeLines.all(), observedStocks: await readModelApp.observedStocks.list() } });
+    const readContext = await readContextFor(c);
+    return c.json({ ok: true, data: { stocktakes: await readContext.repos.stocktakes.all(), lines: await readContext.repos.stocktakeLines.all(), observedStocks: await readContext.observedStocks.list() } });
   });
   api.get("/api/counterparties", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.counterparties.all() }));
   api.get("/api/procurement/purchase-orders", async (c) => {
@@ -1096,171 +1109,171 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/reports/drilldown", async (c) => {
     const documentId = c.req.query("documentId");
     if (!documentId) return c.json({ ok: true, data: { document: undefined, journalEntries: [], stockMovements: [] } });
-    const readModelApp = await readModelAppFor(c);
+    const readContext = await readContextFor(c);
     return c.json({
       ok: true,
       data: {
-        document: await readModelApp.repos.documents.getById(documentId),
-        journalEntries: (await readModelApp.repos.journalEntries.all()).filter((entry) => entry.documentId === documentId),
-        stockMovements: (await readModelApp.repos.stockMovements.all()).filter((movement) => movement.documentId === documentId)
+        document: await readContext.repos.documents.getById(documentId),
+        journalEntries: (await readContext.repos.journalEntries.all()).filter((entry) => entry.documentId === documentId),
+        stockMovements: (await readContext.repos.stockMovements.all()).filter((movement) => movement.documentId === documentId)
       }
     });
   });
   api.get("/api/documents/:id", async (c) => c.json({ ok: true, data: await documentPayloadFor(c, c.req.param("id")) }));
   api.get("/api/documents/:id/history", async (c) => {
     const id = c.req.param("id");
-    return c.json({ ok: true, data: (await (await readModelAppFor(c)).repos.documentVersions.all()).filter((version) => version.documentId === id) });
+    return c.json({ ok: true, data: (await (await readContextFor(c)).repos.documentVersions.all()).filter((version) => version.documentId === id) });
   });
   api.get("/api/documents/:id/links", async (c) => {
     const id = c.req.param("id");
-    return c.json({ ok: true, data: (await (await readModelAppFor(c)).repos.documentLinks.all()).filter((link) => link.fromDocumentId === id || link.toDocumentId === id) });
+    return c.json({ ok: true, data: (await (await readContextFor(c)).repos.documentLinks.all()).filter((link) => link.fromDocumentId === id || link.toDocumentId === id) });
   });
   api.get("/api/documents/:id/descendants", async (c) => {
-    const readModelApp = await readModelAppFor(c);
-    return c.json({ ok: true, data: await documentDescendantsFor(readModelApp, c.req.param("id")) });
+    const readContext = await readContextFor(c);
+    return c.json({ ok: true, data: await documentDescendantsFor(readContext, c.req.param("id")) });
   });
   api.get("/api/inventory/opening-balances/:id", async (c) => {
     const id = c.req.param("id");
-    const readModelApp = await readModelAppFor(c);
-    const document = (await readModelApp.repos.documents.all()).find((item) => item.id === id && item.documentType === "opening_balance");
-    return c.json({ ok: true, data: { document, lines: (await readModelApp.repos.documentLines.all()).filter((line) => line.documentId === document?.id) } });
+    const readContext = await readContextFor(c);
+    const document = (await readContext.repos.documents.all()).find((item) => item.id === id && item.documentType === "opening_balance");
+    return c.json({ ok: true, data: { document, lines: (await readContext.repos.documentLines.all()).filter((line) => line.documentId === document?.id) } });
   });
   api.get("/api/procurement/purchase-orders/:id/workspace", async (c) => c.json({ ok: true, data: await purchaseOrderCardWorkspaceFor(c, c.req.param("id")) }));
   api.get("/api/procurement/purchase-orders/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).purchaseOrderDetails(c.req.param("id")) }));
   api.get("/api/procurement/purchase-orders/:id/payments", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).paymentsForPurchaseOrder(c.req.param("id")) }));
-  api.get("/api/settlements/suppliers/:id", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).repos.settlementEntries.all()).filter((entry) => entry.counterpartyId === c.req.param("id")) }));
-  api.get("/api/procurement/purchase-orders/:id/receipts", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).repos.goodsReceipts.all()).filter((receipt) => receipt.purchaseOrderId === c.req.param("id")) }));
+  api.get("/api/settlements/suppliers/:id", async (c) => c.json({ ok: true, data: (await (await readContextFor(c)).repos.settlementEntries.all()).filter((entry) => entry.counterpartyId === c.req.param("id")) }));
+  api.get("/api/procurement/purchase-orders/:id/receipts", async (c) => c.json({ ok: true, data: (await (await readContextFor(c)).repos.goodsReceipts.all()).filter((receipt) => receipt.purchaseOrderId === c.req.param("id")) }));
   api.get("/api/procurement/receipts/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).receiptDetails(c.req.param("id")) }));
-  api.get("/api/procurement/purchase-orders/:id/costs", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).repos.procurementCosts.all()).filter((cost) => cost.purchaseOrderId === c.req.param("id")) }));
+  api.get("/api/procurement/purchase-orders/:id/costs", async (c) => c.json({ ok: true, data: (await (await readContextFor(c)).repos.procurementCosts.all()).filter((cost) => cost.purchaseOrderId === c.req.param("id")) }));
   api.get("/api/procurement/costs/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).procurementCostDetails(c.req.param("id")) }));
   api.get("/api/procurement/shortages/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).shortageDetails(c.req.param("id")) }));
   api.get("/api/money/cash-accounts", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.cashAccounts.all() }));
   api.get("/api/money/payments", async (c) => {
-    const readModelApp = await readModelAppFor(c);
-    return c.json({ ok: true, data: { cashAccounts: await readModelApp.repos.cashAccounts.all(), payments: await readModelApp.repos.payments.all(), allocations: await readModelApp.repos.paymentAllocations.all() } });
+    const readContext = await readContextFor(c);
+    return c.json({ ok: true, data: { cashAccounts: await readContext.repos.cashAccounts.all(), payments: await readContext.repos.payments.all(), allocations: await readContext.repos.paymentAllocations.all() } });
   });
-  api.get("/api/finance/workspace", async (c) => c.json({ ok: true, data: await financeWorkspaceFor(await readModelAppFor(c)) }));
+  api.get("/api/finance/workspace", async (c) => c.json({ ok: true, data: await financeWorkspaceFor(await readContextFor(c)) }));
   api.get("/api/inventory/transfer-preview", async (c) => {
-    const readModelApp = await readModelAppFor(c);
-    return c.json({ ok: true, data: { stock: await readModelApp.stockByProduct(), lots: await readModelApp.repos.inventoryLots.all() } });
+    const readContext = await readContextFor(c);
+    return c.json({ ok: true, data: { stock: await stockByProductFor(readContext), lots: await readContext.repos.inventoryLots.all() } });
   });
   api.get("/api/inventory/transfers/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).transferDetails(c.req.param("id")) }));
   api.get("/api/inventory/sales-points/:id/stock", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).stockForSalesPoint(c.req.param("id")) }));
   api.get("/api/inventory/stocktakes/:id", async (c) => {
-    const readModelApp = await readModelAppFor(c);
-    const stocktake = await readModelApp.repos.stocktakes.getById(c.req.param("id"));
+    const readContext = await readContextFor(c);
+    const stocktake = await readContext.repos.stocktakes.getById(c.req.param("id"));
     if (!stocktake) throw new DomainError("stocktake_not_found", "Инвентаризация не найдена");
-    return c.json({ ok: true, data: { stocktake, lines: (await readModelApp.repos.stocktakeLines.all()).filter((line) => line.stocktakeId === stocktake.id) } });
+    return c.json({ ok: true, data: { stocktake, lines: (await readContext.repos.stocktakeLines.all()).filter((line) => line.stocktakeId === stocktake.id) } });
   });
   api.get("/api/plugins", (c) => c.json({ ok: true, data: pluginRegistry.all().map(serializePluginMeta) }));
   api.get("/api/integrations/plugins", (c) => c.json({ ok: true, data: pluginRegistry.all().map(serializePluginMeta) }));
-  api.get("/api/channels/:id/external-products", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).repos.externalProducts.all()).filter((product) => product.channelId === c.req.param("id")) }));
+  api.get("/api/channels/:id/external-products", async (c) => c.json({ ok: true, data: (await (await readContextFor(c)).repos.externalProducts.all()).filter((product) => product.channelId === c.req.param("id")) }));
   api.get("/api/sales/workspace", async (c) => c.json({ ok: true, data: await salesWorkspaceFor(c) }));
   api.get("/api/sales", async (c) => {
-    const readModelApp = await readModelAppFor(c);
-    return c.json({ ok: true, data: { sales: await readModelApp.repos.sales.all(), lines: await readModelApp.repos.saleLines.all() } });
+    const readContext = await readContextFor(c);
+    return c.json({ ok: true, data: { sales: await readContext.repos.sales.all(), lines: await readContext.repos.saleLines.all() } });
   });
   api.get("/api/sales/:id", async (c) => {
     const saleId = c.req.param("id");
-    const readModelApp = await readModelAppFor(c);
-    const sale = await readModelApp.repos.sales.getById(saleId);
+    const readContext = await readContextFor(c);
+    const sale = await readContext.repos.sales.getById(saleId);
     if (!sale) throw new DomainError("sale_not_found", "Продажа не найдена");
-    const documents = await readModelApp.repos.documents.all();
+    const documents = await readContext.repos.documents.all();
     return c.json({ ok: true, data: {
       sale,
-      lines: (await readModelApp.repos.saleLines.all()).filter((line) => line.saleId === sale.id),
+      lines: (await readContext.repos.saleLines.all()).filter((line) => line.saleId === sale.id),
       document: documents.find((document) => document.id === sale.documentId),
       financialDocument: sale.financialDocumentId ? documents.find((document) => document.id === sale.financialDocumentId) : undefined,
-      costApplications: (await readModelApp.repos.costApplications.all()).filter((application) => application.outboundDocumentId === sale.documentId),
-      financeEvents: (await readModelApp.repos.channelFinanceEvents.all()).filter((event) =>
+      costApplications: (await readContext.repos.costApplications.all()).filter((application) => application.outboundDocumentId === sale.documentId),
+      financeEvents: (await readContext.repos.channelFinanceEvents.all()).filter((event) =>
         event.linkedSaleId === sale.id || Boolean(event.saleAllocations?.some((allocation) => allocation.saleId === sale.id))
       )
     } });
   });
   api.get("/api/sales/:id/cost-applications", async (c) => {
-    const readModelApp = await readModelAppFor(c);
-    const sale = await readModelApp.repos.sales.getById(c.req.param("id"));
+    const readContext = await readContextFor(c);
+    const sale = await readContext.repos.sales.getById(c.req.param("id"));
     if (!sale) throw new DomainError("sale_not_found", "Продажа не найдена");
-    return c.json({ ok: true, data: (await readModelApp.repos.costApplications.all()).filter((application) => application.outboundDocumentId === sale.documentId) });
+    return c.json({ ok: true, data: (await readContext.repos.costApplications.all()).filter((application) => application.outboundDocumentId === sale.documentId) });
   });
   api.get("/api/returns", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.salesReturns.all() }));
   api.get("/api/returns/:id", async (c) => {
-    const readModelApp = await readModelAppFor(c);
-    const salesReturn = await readModelApp.repos.salesReturns.getById(c.req.param("id"));
+    const readContext = await readContextFor(c);
+    const salesReturn = await readContext.repos.salesReturns.getById(c.req.param("id"));
     if (!salesReturn) throw new DomainError("return_not_found", "Возврат не найден");
     return c.json({ ok: true, data: {
       return: salesReturn,
-      document: await readModelApp.repos.documents.getById(salesReturn.documentId),
-      lines: (await readModelApp.repos.documentLines.all()).filter((line) => line.documentId === salesReturn.documentId && line.lineType === "sales_return_line")
+      document: await readContext.repos.documents.getById(salesReturn.documentId),
+      lines: (await readContext.repos.documentLines.all()).filter((line) => line.documentId === salesReturn.documentId && line.lineType === "sales_return_line")
     } });
   });
   api.get("/api/integrations/channels/:id/finance/workspace", async (c) => c.json({ ok: true, data: await channelFinanceWorkspaceFor(c, c.req.param("id")) }));
-  api.get("/api/integrations/channels/:id/finance-events", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).repos.channelFinanceEvents.all()).filter((event) => event.channelId === c.req.param("id")) }));
+  api.get("/api/integrations/channels/:id/finance-events", async (c) => c.json({ ok: true, data: (await (await readContextFor(c)).repos.channelFinanceEvents.all()).filter((event) => event.channelId === c.req.param("id")) }));
   api.get("/api/integrations/finance-events/:id/workspace", async (c) => c.json({ ok: true, data: await financeEventWorkspaceFor(c, c.req.param("id")) }));
   api.get("/api/integrations/finance-events/:id", async (c) => {
-    const event = await (await readModelAppFor(c)).repos.channelFinanceEvents.getById(c.req.param("id"));
+    const event = await (await readContextFor(c)).repos.channelFinanceEvents.getById(c.req.param("id"));
     if (!event) throw new DomainError("finance_event_not_found", "Финансовое событие не найдено");
     return c.json({ ok: true, data: event });
   });
   api.get("/api/finance/payouts", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.payouts.all() }));
-  api.get("/api/finance/payouts/workspace", async (c) => c.json({ ok: true, data: await payoutsWorkspaceFor(await readModelAppFor(c)) }));
-  api.get("/api/finance/payouts/form-workspace", async (c) => c.json({ ok: true, data: await payoutFormWorkspaceFor(await readModelAppFor(c)) }));
-  api.get("/api/finance/payouts/:id/workspace", async (c) => c.json({ ok: true, data: await payoutReconciliationWorkspaceFor(await readModelAppFor(c), c.req.param("id")) }));
+  api.get("/api/finance/payouts/workspace", async (c) => c.json({ ok: true, data: await payoutsWorkspaceFor(await readContextFor(c)) }));
+  api.get("/api/finance/payouts/form-workspace", async (c) => c.json({ ok: true, data: await payoutFormWorkspaceFor(await readContextFor(c)) }));
+  api.get("/api/finance/payouts/:id/workspace", async (c) => c.json({ ok: true, data: await payoutReconciliationWorkspaceFor(await readContextFor(c), c.req.param("id")) }));
   api.get("/api/finance/payouts/:id", async (c) => {
-    const readModelApp = await readModelAppFor(c);
-    const payout = await readModelApp.repos.payouts.getById(c.req.param("id"));
+    const readContext = await readContextFor(c);
+    const payout = await readContext.repos.payouts.getById(c.req.param("id"));
     if (!payout) throw new DomainError("payout_not_found", "Выплата не найдена");
-    return c.json({ ok: true, data: { payout, lines: (await readModelApp.repos.payoutLines.all()).filter((line) => line.payoutId === payout.id), payment: payout.paymentId ? await readModelApp.repos.payments.getById(payout.paymentId) : undefined } });
+    return c.json({ ok: true, data: { payout, lines: (await readContext.repos.payoutLines.all()).filter((line) => line.payoutId === payout.id), payment: payout.paymentId ? await readContext.repos.payments.getById(payout.paymentId) : undefined } });
   });
   api.get("/api/finance/expenses", async (c) => {
-    const readModelApp = await readModelAppFor(c);
-    return c.json({ ok: true, data: { expenses: await readModelApp.repos.operatingExpenses.all(), categories: await readModelApp.repos.expenseCategories.all() } });
+    const readContext = await readContextFor(c);
+    return c.json({ ok: true, data: { expenses: await readContext.repos.operatingExpenses.all(), categories: await readContext.repos.expenseCategories.all() } });
   });
-  api.get("/api/finance/expenses/workspace", async (c) => c.json({ ok: true, data: await expensesWorkspaceFor(await readModelAppFor(c)) }));
-  api.get("/api/finance/expenses/form-workspace", async (c) => c.json({ ok: true, data: await expenseFormWorkspaceFor(await readModelAppFor(c)) }));
+  api.get("/api/finance/expenses/workspace", async (c) => c.json({ ok: true, data: await expensesWorkspaceFor(await readContextFor(c)) }));
+  api.get("/api/finance/expenses/form-workspace", async (c) => c.json({ ok: true, data: await expenseFormWorkspaceFor(await readContextFor(c)) }));
   api.get("/api/finance/expenses/:id", async (c) => {
-    const readModelApp = await readModelAppFor(c);
-    return c.json({ ok: true, data: await expenseDetailFor(readModelApp, c.req.param("id")) });
+    const readContext = await readContextFor(c);
+    return c.json({ ok: true, data: await expenseDetailFor(readContext, c.req.param("id")) });
   });
-  api.get("/api/money/owner-form-workspace", async (c) => c.json({ ok: true, data: ownerMoneyFormWorkspaceFor(await readModelAppFor(c)) }));
+  api.get("/api/money/owner-form-workspace", async (c) => c.json({ ok: true, data: ownerMoneyFormWorkspaceFor(await readContextFor(c)) }));
   api.get("/api/controls/corrections", async (c) => {
-    const readModelApp = await readModelAppFor(c);
-    return c.json({ ok: true, data: { corrections: await readModelApp.repos.correctionCases.all(), jobs: await readModelApp.repos.recalculationJobs.all() } });
+    const readContext = await readContextFor(c);
+    return c.json({ ok: true, data: { corrections: await readContext.repos.correctionCases.all(), jobs: await readContext.repos.recalculationJobs.all() } });
   });
   api.get("/api/controls/workspace", async (c) => c.json({ ok: true, data: await controlsWorkspaceFor(c) }));
   api.get("/api/onboarding/existing-store/workspace", async (c) => c.json({ ok: true, data: await onboardingWorkspaceFor(c) }));
   api.get("/api/recalculation-jobs", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.recalculationJobs.all() }));
-  api.get("/api/mcp/config", async (c) => c.json({ ok: true, data: await mcpSettingsPayload(await readModelAppFor(c), publicMcpEndpoint(c)) }));
-  api.get("/api/mcp/keys", async (c) => c.json({ ok: true, data: await mcpSettingsPayload(await readModelAppFor(c), publicMcpEndpoint(c)) }));
+  api.get("/api/mcp/config", async (c) => c.json({ ok: true, data: await mcpSettingsPayload(await readContextFor(c), publicMcpEndpoint(c)) }));
+  api.get("/api/mcp/keys", async (c) => c.json({ ok: true, data: await mcpSettingsPayload(await readContextFor(c), publicMcpEndpoint(c)) }));
   api.get("/api/users", async (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
-    const readModelApp = await readModelAppFor(c);
+    const readContext = await readContextFor(c);
     return c.json({
       ok: true,
       data: {
-        users: await readModelApp.repos.users.all(),
-        roles: await readModelApp.repos.roles.all(),
-        agentTokens: (await readModelApp.repos.agentTokens.all()).map(publicAgentToken),
-        auditEvents: await readModelApp.repos.auditEvents.all()
+        users: await readContext.repos.users.all(),
+        roles: await readContext.repos.roles.all(),
+        agentTokens: (await readContext.repos.agentTokens.all()).map(publicAgentToken),
+        auditEvents: await readContext.repos.auditEvents.all()
       }
     });
   });
   api.get("/api/settings/users", async (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
-    const readModelApp = await readModelAppFor(c);
+    const readContext = await readContextFor(c);
     return c.json({
       ok: true,
       data: {
-        users: await readModelApp.repos.users.all(),
-        roles: await readModelApp.repos.roles.all(),
-        agentTokens: (await readModelApp.repos.agentTokens.all()).map(publicAgentToken),
-        channelAgentPermissions: await readModelApp.repos.channelAgentPermissions.all()
+        users: await readContext.repos.users.all(),
+        roles: await readContext.repos.roles.all(),
+        agentTokens: (await readContext.repos.agentTokens.all()).map(publicAgentToken),
+        channelAgentPermissions: await readContext.repos.channelAgentPermissions.all()
       }
     });
   });
   api.get("/api/agent-tokens", async (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
-    return c.json({ ok: true, data: (await (await readModelAppFor(c)).repos.agentTokens.all()).map(publicAgentToken) });
+    return c.json({ ok: true, data: (await (await readContextFor(c)).repos.agentTokens.all()).map(publicAgentToken) });
   });
 
   api.use("/api/*", async (c, next) => {
@@ -3023,7 +3036,7 @@ async function reportsWorkspaceInputFor(app: AccountingApp): Promise<ReportsWork
   };
 }
 
-async function financeWorkspaceFor(app: AccountingApp) {
+async function financeWorkspaceFor(readContext: RuntimeReadContext) {
   const [
     documents,
     cashAccounts,
@@ -3038,24 +3051,24 @@ async function financeWorkspaceFor(app: AccountingApp) {
     purchaseOrders,
     salesChannels
   ] = await Promise.all([
-    app.repos.documents.all(),
-    app.repos.cashAccounts.all(),
-    app.repos.payments.all(),
-    app.repos.counterparties.all(),
-    app.repos.expenseCategories.all(),
-    app.repos.operatingExpenses.all(),
-    app.repos.ownerTransactions.all(),
-    app.repos.paymentAllocations.all(),
-    app.repos.payouts.all(),
-    app.repos.procurementCosts.all(),
-    app.repos.purchaseOrders.all(),
-    app.repos.salesChannels.all()
+    readContext.repos.documents.all(),
+    readContext.repos.cashAccounts.all(),
+    readContext.repos.payments.all(),
+    readContext.repos.counterparties.all(),
+    readContext.repos.expenseCategories.all(),
+    readContext.repos.operatingExpenses.all(),
+    readContext.repos.ownerTransactions.all(),
+    readContext.repos.paymentAllocations.all(),
+    readContext.repos.payouts.all(),
+    readContext.repos.procurementCosts.all(),
+    readContext.repos.purchaseOrders.all(),
+    readContext.repos.salesChannels.all()
   ]);
   return {
     documents,
     cashAccounts,
     payments,
-    accountingPolicy: app.setupMetadata().accountingPolicy,
+    accountingPolicy: readContext.setupMetadata().accountingPolicy,
     counterparties,
     expenseCategories,
     operatingExpenses,
@@ -3068,39 +3081,39 @@ async function financeWorkspaceFor(app: AccountingApp) {
   };
 }
 
-function ownerMoneyFormWorkspaceFor(app: AccountingApp) {
+function ownerMoneyFormWorkspaceFor(readContext: RuntimeReadContext) {
   return {
-    accountingPolicy: app.setupMetadata().accountingPolicy
+    accountingPolicy: readContext.setupMetadata().accountingPolicy
   };
 }
 
-async function payoutFormWorkspaceFor(app: AccountingApp) {
+async function payoutFormWorkspaceFor(readContext: RuntimeReadContext) {
   return {
-    salesChannels: await app.repos.salesChannels.all()
+    salesChannels: await readContext.repos.salesChannels.all()
   };
 }
 
-async function payoutsWorkspaceFor(app: AccountingApp) {
+async function payoutsWorkspaceFor(readContext: RuntimeReadContext) {
   const [payouts, payoutLines, salesChannels] = await Promise.all([
-    app.repos.payouts.all(),
-    app.repos.payoutLines.all(),
-    app.repos.salesChannels.all()
+    readContext.repos.payouts.all(),
+    readContext.repos.payoutLines.all(),
+    readContext.repos.salesChannels.all()
   ]);
   return { payouts, payoutLines, salesChannels };
 }
 
-async function payoutReconciliationWorkspaceFor(app: AccountingApp, payoutId: string) {
-  const payout = await app.repos.payouts.getById(payoutId);
+async function payoutReconciliationWorkspaceFor(readContext: RuntimeReadContext, payoutId: string) {
+  const payout = await readContext.repos.payouts.getById(payoutId);
   if (!payout) throw new DomainError("payout_not_found", "Выплата не найдена");
 
   const [allLines, salesChannels, sales, salesReturns, channelFinanceEvents, payments, documents] = await Promise.all([
-    app.repos.payoutLines.all(),
-    app.repos.salesChannels.all(),
-    app.repos.sales.all(),
-    app.repos.salesReturns.all(),
-    app.repos.channelFinanceEvents.all(),
-    app.repos.payments.all(),
-    app.repos.documents.all()
+    readContext.repos.payoutLines.all(),
+    readContext.repos.salesChannels.all(),
+    readContext.repos.sales.all(),
+    readContext.repos.salesReturns.all(),
+    readContext.repos.channelFinanceEvents.all(),
+    readContext.repos.payments.all(),
+    readContext.repos.documents.all()
   ]);
   const payoutLines = allLines.filter((line) => line.payoutId === payout.id);
   const saleIds = new Set(payoutLines.filter((line) => line.sourceType === "sale" && line.sourceId).map((line) => line.sourceId));
@@ -3119,7 +3132,7 @@ async function payoutReconciliationWorkspaceFor(app: AccountingApp, payoutId: st
   };
 }
 
-async function expensesWorkspaceFor(app: AccountingApp) {
+async function expensesWorkspaceFor(readContext: RuntimeReadContext) {
   const [
     expenses,
     categories,
@@ -3128,12 +3141,12 @@ async function expensesWorkspaceFor(app: AccountingApp) {
     payments,
     documents
   ] = await Promise.all([
-    app.repos.operatingExpenses.all(),
-    app.repos.expenseCategories.all(),
-    app.repos.counterparties.all(),
-    app.repos.ownerTransactions.all(),
-    app.repos.payments.all(),
-    app.repos.documents.all()
+    readContext.repos.operatingExpenses.all(),
+    readContext.repos.expenseCategories.all(),
+    readContext.repos.counterparties.all(),
+    readContext.repos.ownerTransactions.all(),
+    readContext.repos.payments.all(),
+    readContext.repos.documents.all()
   ]);
   return {
     expenses,
@@ -3142,32 +3155,32 @@ async function expensesWorkspaceFor(app: AccountingApp) {
     ownerTransactions,
     payments,
     documents,
-    accountingPolicy: app.setupMetadata().accountingPolicy
+    accountingPolicy: readContext.setupMetadata().accountingPolicy
   };
 }
 
-async function expenseFormWorkspaceFor(app: AccountingApp) {
+async function expenseFormWorkspaceFor(readContext: RuntimeReadContext) {
   const [categories, counterparties, cashAccounts] = await Promise.all([
-    app.repos.expenseCategories.all(),
-    app.repos.counterparties.all(),
-    app.repos.cashAccounts.all()
+    readContext.repos.expenseCategories.all(),
+    readContext.repos.counterparties.all(),
+    readContext.repos.cashAccounts.all()
   ]);
   return {
     categories,
     counterparties,
     cashAccounts,
-    accountingPolicy: app.setupMetadata().accountingPolicy
+    accountingPolicy: readContext.setupMetadata().accountingPolicy
   };
 }
 
-async function expenseDetailFor(app: AccountingApp, expenseId: string) {
-  const expense = await app.repos.operatingExpenses.getById(expenseId);
+async function expenseDetailFor(readContext: RuntimeReadContext, expenseId: string) {
+  const expense = await readContext.repos.operatingExpenses.getById(expenseId);
   if (!expense) throw new DomainError("expense_not_found", "Расход не найден");
   const [document, payment, counterparty, category] = await Promise.all([
-    app.repos.documents.getById(expense.documentId),
-    app.repos.payments.getById(expense.paymentId),
-    expense.counterpartyId ? app.repos.counterparties.getById(expense.counterpartyId) : Promise.resolve(undefined),
-    app.repos.expenseCategories.getById(expense.categoryId)
+    readContext.repos.documents.getById(expense.documentId),
+    readContext.repos.payments.getById(expense.paymentId),
+    expense.counterpartyId ? readContext.repos.counterparties.getById(expense.counterpartyId) : Promise.resolve(undefined),
+    readContext.repos.expenseCategories.getById(expense.categoryId)
   ]);
   return { expense, document, payment, counterparty, category };
 }
@@ -3179,10 +3192,10 @@ function formatLocalDate(value: Date) {
   return `${year}-${month}-${day}`;
 }
 
-async function mcpSettingsPayload(app: AccountingApp, endpoint: string) {
+async function mcpSettingsPayload(readContext: RuntimeReadContext, endpoint: string) {
   return {
     endpoint,
-    keys: (await app.repos.agentTokens.all()).map(publicAgentToken),
+    keys: (await readContext.repos.agentTokens.all()).map(publicAgentToken),
     tools: MCP_TOOL_DEFINITIONS.map(({ name, description }) => ({ name, description })),
     instructions: mcpConnectionInstructions(endpoint)
   };
