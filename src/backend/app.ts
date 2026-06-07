@@ -1107,6 +1107,21 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
         .slice(0, 12)
     };
   };
+  const channelDispatchStateFor = async (readContext: RuntimeReadContext, receiptId: string, channelId: string) => {
+    const channel = await readContext.repos.salesChannels.getById(channelId);
+    if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
+    const installedPlugin = channel.pluginId ? await readContext.repos.integrationPlugins.getById(channel.pluginId) : undefined;
+    const plugin = installedPlugin ? pluginRegistry.get(installedPlugin.code) : undefined;
+    if (!plugin) return null;
+    const record = (await readContext.repos.pluginStateRecords.all()).find((candidate) =>
+      candidate.pluginCode === plugin.code &&
+      candidate.namespace === "dispatch_flow" &&
+      candidate.scopeType === "goods_receipt" &&
+      candidate.scopeId === receiptId &&
+      candidate.stateKey === pluginStateKey(channelId, "dispatch")
+    );
+    return record ? { ...record, payload: structuredClone(record.payload) } : null;
+  };
   const studioViewFor = async (readContext: RuntimeReadContext, productId: string) => {
     const product = await readContext.repos.products.getById(productId);
     if (!product) throw new DomainError("product_not_found", "Товар не найден");
@@ -1454,6 +1469,12 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
     return c.json({ ok: true, data: (await (await readContextFor(c)).repos.agentTokens.all()).map(publicAgentToken) });
   });
+  api.get("/api/meta/navigation", (c) => c.json({ ok: true, data: navigationMeta }));
+  api.get("/api/procurement/receipts/:id/channel-dispatch/state", async (c) => {
+    const channelId = c.req.query("channelId");
+    if (!channelId) throw new DomainError("channel_required", "Выберите канал продаж");
+    return c.json({ ok: true, data: await channelDispatchStateFor(await readContextFor(c), c.req.param("id"), channelId) });
+  });
 
   api.use("/api/*", async (c, next) => {
     const authUser = c.get("authUser") as PublicAuthUser | undefined;
@@ -1503,8 +1524,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       await session.close?.();
     }
   });
-  api.get("/api/meta/navigation", (c) => c.json({ ok: true, data: navigationMeta }));
-
   api.post("/api/reports/recalculate", async (c) => c.json({ ok: true, data: await scopedApp.createRecalculationJob({ jobType: "reports", scope: { requestedAt: nowIso() } }) }));
   api.post("/api/setup", async (c) => {
     const body = bootstrapSchema.parse(await c.req.json());
@@ -1719,24 +1738,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const context = await scopedApp.receiptDispatchContext(c.req.param("id"), channelId);
     const plugin = context.channel ? await resolveChannelPlugin(scopedApp, context.channel) : undefined;
     return c.json({ ok: true, data: { ...context, plugin: plugin ? serializePluginMeta(plugin) : null } });
-  });
-  api.get("/api/procurement/receipts/:id/channel-dispatch/state", async (c) => {
-    const receiptId = c.req.param("id");
-    const channelId = c.req.query("channelId");
-    if (!channelId) throw new DomainError("channel_required", "Выберите канал продаж");
-    const channel = await mustFindChannel(scopedApp, channelId);
-    const plugin = await resolveChannelPlugin(scopedApp, channel);
-    if (!plugin) return c.json({ ok: true, data: null });
-    const pluginState = createPluginStateApi(scopedApp, plugin);
-    return c.json({
-      ok: true,
-      data: await pluginState.get({
-        namespace: "dispatch_flow",
-        scopeType: "goods_receipt",
-        scopeId: receiptId,
-        stateKey: pluginStateKey(channelId, "dispatch")
-      })
-    });
   });
   api.post("/api/procurement/receipts/:id/channel-dispatch/basic", async (c) => {
     const receiptId = c.req.param("id");

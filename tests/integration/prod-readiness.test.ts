@@ -224,6 +224,8 @@ describe("prod-ready contracts", () => {
     const expenses = await get<any>(api, "/api/finance/expenses");
     const corrections = await get<any>(api, "/api/controls/corrections");
     const recalculationJobs = await get<any[]>(api, "/api/recalculation-jobs");
+    const navigation = await get<any[]>(api, "/api/meta/navigation");
+    const dispatchState = await get<any>(api, `/api/procurement/receipts/${receipt.id}/channel-dispatch/state?channelId=${channel?.id}`);
     const mcpConfig = await get<any>(api, "/api/mcp/config");
     const productListWorkspace = await get<any>(api, "/api/products/workspace");
     const productChannelMapping = await get<any>(api, "/api/products/channel-mapping");
@@ -286,6 +288,8 @@ describe("prod-ready contracts", () => {
     expect(expenses.expenses).toEqual(expect.any(Array));
     expect(corrections.corrections).toEqual(expect.any(Array));
     expect(recalculationJobs).toEqual(expect.any(Array));
+    expect(navigation.length).toBeGreaterThan(0);
+    expect(dispatchState).toBeNull();
     expect(mcpConfig.tools.length).toBeGreaterThan(0);
     expect(productListWorkspace.products).toEqual(expect.any(Array));
     expect(productChannelMapping.products).toEqual(expect.any(Array));

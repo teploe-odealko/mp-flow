@@ -195,6 +195,10 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
 - ✅ MCP key authentication снят с `AccountingApp` sessions: `RuntimePersistence.authenticateAgentToken`
   проверяет `agent_token` и обновляет `last_used_at` прямым Postgres-путём. `/mcp` больше не открывает
   `openReadSession/openWriteSession` только ради проверки ключа; prod-readiness покрывает это регрессом.
+- ✅ Ещё два GET сняты с request session: `/api/meta/navigation` зарегистрирован до session middleware,
+  а `/api/procurement/receipts/:id/channel-dispatch/state` читает `plugin_state_record` через
+  `RuntimeReadContext`, без `AccountingApp` и `createPluginStateApi`. Prod-readiness держит `readSessions = 0`
+  на этих read paths.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,
