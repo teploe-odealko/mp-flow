@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   ArrowDown,
   ArrowUp,
@@ -27,29 +27,22 @@ import { Select } from "@/components/ui/select";
 import { CheckLabel } from "@/components/ui/checkbox";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Pagination } from "@/components/ui/pagination";
-import { useCollection } from "@/lib/use-collection";
-import { apiPost } from "@/api";
+import { apiGet, apiPost } from "@/api";
 import { rub, date } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { paginateRows } from "@/lib/pagination";
 import { ProductCell } from "@/components/product-thumb";
 import {
-  channelFinanceCategoryLabel,
-  channelFinanceSaleAllocations,
-  linkedExpenseSaleIds,
-  isChannelOperatingTreatment,
-  isVariableMarketplaceTreatment
+  channelFinanceCategoryLabel
 } from "../../../shared/channel-finance";
 
 export function ReportsWorkspace() {
   const { pathname } = useLocation();
-  const state = { channelFinanceEvents: useCollection<any[]>("channelFinanceEvents") ?? [], chartAccounts: useCollection<any[]>("chartAccounts") ?? [], documents: useCollection<any[]>("documents") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], journalLines: useCollection<any[]>("journalLines") ?? [], operatingExpenses: useCollection<any[]>("operatingExpenses") ?? [], ownerTransactions: useCollection<any[]>("ownerTransactions") ?? [], products: useCollection<any[]>("products") ?? [], saleLines: useCollection<any[]>("saleLines") ?? [], sales: useCollection<any[]>("sales") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [] };
   const [dateFrom, setDateFrom] = useState(firstDayOfMonth(new Date()));
   const [dateTo, setDateTo] = useState(lastDayOfMonth(new Date()));
   const [balanceDate, setBalanceDate] = useState(lastDayOfMonth(new Date()));
   const [compareBalance, setCompareBalance] = useState(false);
   const [compareBalanceDate, setCompareBalanceDate] = useState(endOfPreviousMonth(new Date()));
-  const [selectedBalanceMetric, setSelectedBalanceMetric] = useState<BalanceMetricKey | null>(null);
   const [selectedUnitKey, setSelectedUnitKey] = useState("");
   const [selectedPnlNodeId, setSelectedPnlNodeId] = useState("net-profit");
   const [pnlDetailOpen, setPnlDetailOpen] = useState(false);
@@ -60,6 +53,19 @@ export function ReportsWorkspace() {
   const [profitability, setProfitability] = useState("");
   const [linkedExpenseStatus, setLinkedExpenseStatus] = useState("");
   const recalc = useMutation({ mutationFn: () => apiPost("/api/reports/recalculate") });
+  const reportsQuery = useQuery({
+    queryKey: ["reports-workspace", dateFrom, dateTo, balanceDate, compareBalance ? compareBalanceDate : "", pnlGranularity],
+    queryFn: () =>
+      apiGet<any>(
+        reportWorkspacePath({
+          dateFrom,
+          dateTo,
+          balanceDate,
+          compareBalanceDate: compareBalance ? compareBalanceDate : undefined,
+          pnlGranularity
+        })
+      )
+  });
 
   const routeTab = pathname.includes("profit-and-loss")
     ? "pnl"
@@ -85,22 +91,16 @@ export function ReportsWorkspace() {
       ? "Отчет показывает результат за выбранный промежуток: сколько выручили, где сели расходы и что осталось в чистой прибыли."
       : "Отчет считается по продажам и начислениям канала. Для последних продаж часть расходов маркетплейса может быть предварительной.";
 
-  const current = useMemo(() => buildReportData(state, dateFrom, dateTo), [dateFrom, dateTo, state]);
-  const balanceCurrent = useMemo(() => buildBalanceSnapshot(state, balanceDate), [balanceDate, state]);
-  const balanceCompare = useMemo(() => (compareBalance ? buildBalanceSnapshot(state, compareBalanceDate) : undefined), [compareBalance, compareBalanceDate, state]);
-  const selectedBalanceDrilldown = useMemo(
-    () =>
-      selectedBalanceMetric
-        ? buildBalanceDrilldown(state, selectedBalanceMetric, balanceDate, compareBalance ? compareBalanceDate : undefined)
-        : null,
-    [balanceDate, compareBalance, compareBalanceDate, selectedBalanceMetric, state]
-  );
-  const pnlTree = useMemo(() => buildPnlTree(state, current), [current, state]);
+  const reports = reportsQuery.data ?? emptyReportsWorkspacePayload({ balanceDate, compareBalanceDate: compareBalance ? compareBalanceDate : undefined });
+  const current = reports.current;
+  const balanceCurrent = reports.balanceCurrent;
+  const balanceCompare = compareBalance ? reports.balanceCompare : undefined;
+  const pnlTree = reports.pnlTree ?? [];
   const selectedPnlNode = useMemo(
     () => findPnlNode(pnlTree, selectedPnlNodeId) ?? pnlTree.find((node) => node.id === "net-profit") ?? pnlTree[0] ?? null,
     [pnlTree, selectedPnlNodeId]
   );
-  const pnlTrend = useMemo(() => buildPnlTrendSeries(state, dateFrom, dateTo, pnlGranularity), [dateFrom, dateTo, pnlGranularity, state]);
+  const pnlTrend = reports.pnlTrend ?? [];
   const togglePnlNode = (nodeId: string) => {
     setExpandedPnlNodeIds((currentExpanded) =>
       currentExpanded.includes(nodeId)
@@ -133,28 +133,19 @@ export function ReportsWorkspace() {
     setDateFrom(nextFrom);
     setDateTo(nextTo);
   };
-  const salesWithLinkedExpenses = useMemo(
-    () => linkedExpenseSaleIds((state.channelFinanceEvents ?? []).filter((event: any) => event.occurredAt <= dateTo)),
-    [dateTo, state.channelFinanceEvents]
-  );
-  const unitSales = useMemo(() => {
-    return current.sales.filter((sale: any) => {
-      if (linkedExpenseStatus === "with_expenses" && !salesWithLinkedExpenses.has(sale.id)) return false;
-      if (linkedExpenseStatus === "without_expenses" && salesWithLinkedExpenses.has(sale.id)) return false;
-      return true;
-    });
-  }, [current.sales, linkedExpenseStatus, salesWithLinkedExpenses]);
-  const unitBaseRows = useMemo(() => buildUnitRows(state, unitSales, dateTo), [dateTo, state, unitSales]);
+  const unitBaseRows = reports.unitRows ?? [];
   const unitRows = useMemo(() => {
     return unitBaseRows.filter((row) => {
       if (productId && row.product?.id !== productId) return false;
       if (channelId && row.channel?.id !== channelId) return false;
       if (profitability === "profit" && row.profitRub <= 0) return false;
       if (profitability === "loss" && row.profitRub >= 0) return false;
+      if (linkedExpenseStatus === "with_expenses" && row.isProvisional) return false;
+      if (linkedExpenseStatus === "without_expenses" && !row.isProvisional) return false;
       return true;
     });
-  }, [channelId, unitBaseRows, productId, profitability]);
-  const unitFinanceLag = useMemo(() => buildFinanceLag(state, unitSales, dateTo), [dateTo, state, unitSales]);
+  }, [channelId, linkedExpenseStatus, unitBaseRows, productId, profitability]);
+  const unitFinanceLag = reports.unitFinanceLag ?? emptyFinanceLag();
   const selectedUnitRow = useMemo(
     () => unitRows.find((row) => unitRowKey(row) === selectedUnitKey) ?? unitRows[0],
     [selectedUnitKey, unitRows]
@@ -210,11 +201,11 @@ export function ReportsWorkspace() {
             <>
               <Select value={channelId} onChange={(event) => setChannelId(event.target.value)} className="w-44">
                 <option value="">Все каналы</option>
-                {(state.salesChannels ?? []).map((channel: any) => <option key={channel.id} value={channel.id}>{channel.name}</option>)}
+                {(reports.channelOptions ?? []).map((channel: any) => <option key={channel.id} value={channel.id}>{channel.name}</option>)}
               </Select>
               <Select value={productId} onChange={(event) => setProductId(event.target.value)} className="w-44">
                 <option value="">Все товары</option>
-                {(state.products ?? []).map((product: any) => <option key={product.id} value={product.id}>{product.sku}</option>)}
+                {(reports.productOptions ?? []).map((product: any) => <option key={product.id} value={product.id}>{product.sku}</option>)}
               </Select>
               <Select value={profitability} onChange={(event) => setProfitability(event.target.value)} className="w-44">
                 <option value="">Все состояния</option>
@@ -438,7 +429,6 @@ export function ReportsWorkspace() {
                   <BalanceTable
                     currentDate={balanceDate}
                     compareDate={compareBalance ? compareBalanceDate : undefined}
-                    onSelect={setSelectedBalanceMetric}
                     rows={[
                       { key: "cash", label: "Денежные средства", current: balanceCurrent.cash, compare: balanceCompare?.cash, emphasis: true },
                       { key: "inventory", label: "Товары в наличии", current: balanceCurrent.inventory, compare: balanceCompare?.inventory },
@@ -463,7 +453,6 @@ export function ReportsWorkspace() {
                   <BalanceTable
                     currentDate={balanceDate}
                     compareDate={compareBalance ? compareBalanceDate : undefined}
-                    onSelect={setSelectedBalanceMetric}
                     rows={[
                       { key: "supplierPayables", label: "Кредиторка поставщикам", current: balanceCurrent.supplierPayables, compare: balanceCompare?.supplierPayables },
                       { key: "unpaidExpenses", label: "Неоплаченные расходы", current: balanceCurrent.unpaidExpenses, compare: balanceCompare?.unpaidExpenses },
@@ -611,382 +600,103 @@ export function ReportsWorkspace() {
         </TabsContent>
       </Tabs>
 
-      <BalanceDrilldownDialog
-        open={Boolean(selectedBalanceDrilldown)}
-        onOpenChange={(open) => !open && setSelectedBalanceMetric(null)}
-        drilldown={selectedBalanceDrilldown}
-      />
     </div>
   );
 }
 
-function buildReportData(state: any, from: string, to: string) {
-  const documents = (state.documents ?? []).filter((document: any) => document.accountingDate >= from && document.accountingDate <= to);
-  const journalEntries = (state.journalEntries ?? []).filter((entry: any) => entry.accountingDate >= from && entry.accountingDate <= to);
-  const journalEntryIds = new Set(journalEntries.map((entry: any) => entry.id));
-  const journalLines = (state.journalLines ?? []).filter((line: any) => journalEntryIds.has(line.journalEntryId));
-  const financeEvents = (state.channelFinanceEvents ?? []).filter((event: any) => event.occurredAt >= from && event.occurredAt <= to && event.status === "posted");
-  const operatingExpenses = (state.operatingExpenses ?? []).filter((expense: any) => expense.expenseDate >= from && expense.expenseDate <= to && expense.paymentStatus !== "draft");
-  const sales = (state.sales ?? []).filter((sale: any) => sale.saleDate >= from && sale.saleDate <= to && sale.status === "posted");
+function reportWorkspacePath(options: {
+  dateFrom: string;
+  dateTo: string;
+  balanceDate: string;
+  compareBalanceDate?: string;
+  pnlGranularity: "week" | "month";
+}) {
+  const params = new URLSearchParams({
+    dateFrom: options.dateFrom,
+    dateTo: options.dateTo,
+    balanceDate: options.balanceDate,
+    pnlGranularity: options.pnlGranularity
+  });
+  if (options.compareBalanceDate) params.set("compareBalanceDate", options.compareBalanceDate);
+  return `/api/reports/workspace?${params.toString()}`;
+}
 
-  const revenue = netCreditJournal(journalLines, "90.01");
-  const costOfSales = netDebitJournal(journalLines, "90.02");
-  const commissionExpense = financeEvents
-    .filter((event: any) => isVariableMarketplaceTreatment(event.treatment) && event.category === "commission")
-    .reduce((sum: number, event: any) => sum + event.amountRub, 0);
-  const acquiringExpense = financeEvents
-    .filter((event: any) => isVariableMarketplaceTreatment(event.treatment) && event.category === "acquiring")
-    .reduce((sum: number, event: any) => sum + event.amountRub, 0);
-  const lastMileExpense = financeEvents
-    .filter((event: any) => isVariableMarketplaceTreatment(event.treatment) && event.category === "last_mile_logistics")
-    .reduce((sum: number, event: any) => sum + event.amountRub, 0);
-  const returnLogisticsExpense = financeEvents
-    .filter((event: any) => isVariableMarketplaceTreatment(event.treatment) && event.category === "return_logistics")
-    .reduce((sum: number, event: any) => sum + event.amountRub, 0);
-  const otherVariableMarketplaceExpense = financeEvents
-    .filter(
-      (event: any) =>
-        isVariableMarketplaceTreatment(event.treatment) &&
-        !["commission", "acquiring", "last_mile_logistics", "return_logistics"].includes(String(event.category ?? ""))
-    )
-    .reduce((sum: number, event: any) => sum + event.amountRub, 0);
-  const variableMarketplaceExpenses = round2(
-    commissionExpense + acquiringExpense + lastMileExpense + returnLogisticsExpense + otherVariableMarketplaceExpense
-  );
-  const adsExpense = financeEvents.filter((event: any) => event.category === "ads").reduce((sum: number, event: any) => sum + event.amountRub, 0);
-  const storageExpense = financeEvents
-    .filter((event: any) => isChannelOperatingTreatment(event.treatment) && event.category === "storage")
-    .reduce((sum: number, event: any) => sum + event.amountRub, 0);
-  const crossDockingExpense = financeEvents
-    .filter((event: any) => isChannelOperatingTreatment(event.treatment) && event.category === "cross_docking")
-    .reduce((sum: number, event: any) => sum + event.amountRub, 0);
-  const inboundHandlingExpense = financeEvents
-    .filter((event: any) => isChannelOperatingTreatment(event.treatment) && event.category === "inbound_handling")
-    .reduce((sum: number, event: any) => sum + event.amountRub, 0);
-  const subscriptionExpense = financeEvents
-    .filter((event: any) => isChannelOperatingTreatment(event.treatment) && event.category === "subscription")
-    .reduce((sum: number, event: any) => sum + event.amountRub, 0);
-  const storageHandlingExpense = round2(storageExpense + crossDockingExpense + inboundHandlingExpense);
-  const otherChannelExpense = financeEvents
-    .filter(
-      (event: any) =>
-        isChannelOperatingTreatment(event.treatment) &&
-        !["ads", "storage", "cross_docking", "inbound_handling", "subscription"].includes(String(event.category ?? ""))
-    )
-    .reduce((sum: number, event: any) => sum + event.amountRub, 0);
-  const channelOperatingExpenses = round2(
-    adsExpense + storageExpense + crossDockingExpense + inboundHandlingExpense + subscriptionExpense + otherChannelExpense
-  );
-  const operatingExpenseRub = operatingExpenses.reduce((sum: number, expense: any) => sum + expense.amountRub, 0);
-  const otherIncome = netCreditJournal(journalLines, "91.01");
-  const otherExpense = netDebitJournal(journalLines, "91.02");
-  const grossProfit = round2(revenue - costOfSales);
-  const contributionProfit = round2(grossProfit - variableMarketplaceExpenses);
-  const totalExpenses = round2(costOfSales + variableMarketplaceExpenses + channelOperatingExpenses + operatingExpenseRub + otherExpense);
-  const netProfit = round2(contributionProfit - channelOperatingExpenses - operatingExpenseRub + otherIncome - otherExpense);
-  const netMarginPercent = revenue > 0 ? round2((netProfit / revenue) * 100) : 0;
-
-  const balancesToDate = accumulateBalances(state.journalEntries ?? [], state.journalLines ?? [], to);
-  const ownerTransactions = state.ownerTransactions ?? [];
-  const ownerContributions = ownerTransactions.filter((row: any) => row.transactionType === "contribution").reduce((sum: number, row: any) => sum + row.amountRub, 0);
-  const ownerWithdrawals = ownerTransactions.filter((row: any) => row.transactionType === "withdrawal").reduce((sum: number, row: any) => sum + row.amountRub, 0);
-
-  const unitRows = buildUnitRows(state, sales, to);
-  const financeLag = buildFinanceLag(state, sales, to);
-
-  return {
+function emptyReportsWorkspacePayload(options: { balanceDate: string; compareBalanceDate?: string }) {
+  const current = {
     pnl: {
-      revenue,
-      costOfSales,
-      grossProfit,
-      afterCostOfSales: grossProfit,
-      variableMarketplaceExpenses,
-      commissionExpense,
-      acquiringExpense,
-      lastMileExpense,
-      returnLogisticsExpense,
-      otherVariableMarketplaceExpense,
-      contributionProfit,
-      afterMarketplaceExpenses: contributionProfit,
-      adsExpense,
-      storageExpense,
-      crossDockingExpense,
-      inboundHandlingExpense,
-      subscriptionExpense,
-      storageHandlingExpense,
-      otherChannelExpense,
-      channelOperatingExpenses,
-      operatingExpenses: operatingExpenseRub,
-      otherIncome,
-      otherExpense,
-      totalExpenses,
-      netProfit,
-      netMarginPercent
+      revenue: 0,
+      costOfSales: 0,
+      grossProfit: 0,
+      afterCostOfSales: 0,
+      variableMarketplaceExpenses: 0,
+      commissionExpense: 0,
+      acquiringExpense: 0,
+      lastMileExpense: 0,
+      returnLogisticsExpense: 0,
+      otherVariableMarketplaceExpense: 0,
+      contributionProfit: 0,
+      afterMarketplaceExpenses: 0,
+      adsExpense: 0,
+      storageExpense: 0,
+      crossDockingExpense: 0,
+      inboundHandlingExpense: 0,
+      subscriptionExpense: 0,
+      storageHandlingExpense: 0,
+      otherChannelExpense: 0,
+      channelOperatingExpenses: 0,
+      operatingExpenses: 0,
+      otherIncome: 0,
+      otherExpense: 0,
+      totalExpenses: 0,
+      netProfit: 0,
+      netMarginPercent: 0
     },
-    documents,
-    journalEntries,
-    journalLines,
-    financeEvents,
-    operatingExpenses,
-    financeLag,
-    balance: {
-      cash: debitBalance(balancesToDate["50"]) + debitBalance(balancesToDate["51"]),
-      inventory: debitBalance(balancesToDate["41.01"]) + debitBalance(balancesToDate["41.02"]) + debitBalance(balancesToDate["41.03"]),
-      marketplaceAwaitingAccrual: debitBalance(balancesToDate["45.03"]),
-      supplierAdvances: debitBalance(balancesToDate["60.02"]),
-      marketplaceReceivable: debitBalance(balancesToDate["76.ТП"]),
-      supplierPayables: creditBalance(balancesToDate["60.01"]),
-      unpaidExpenses: (state.operatingExpenses ?? []).filter((expense: any) => expense.paymentStatus === "unpaid").reduce((sum: number, expense: any) => sum + expense.amountRub, 0),
-      channelObligations: Math.max(0, creditBalance(balancesToDate["76.ТП"]) - debitBalance(balancesToDate["76.ТП"])),
-      ownerContributions,
-      ownerWithdrawals,
-      retainedEarnings: netProfit,
-      assets: debitBalance(balancesToDate["50"]) + debitBalance(balancesToDate["51"]) + debitBalance(balancesToDate["41.01"]) + debitBalance(balancesToDate["41.02"]) + debitBalance(balancesToDate["41.03"]) + debitBalance(balancesToDate["45.03"]) + debitBalance(balancesToDate["60.02"]) + debitBalance(balancesToDate["76.ТП"]),
-      liabilities: creditBalance(balancesToDate["60.01"]) + Math.max(0, creditBalance(balancesToDate["76.ТП"]) - debitBalance(balancesToDate["76.ТП"])) + (state.operatingExpenses ?? []).filter((expense: any) => expense.paymentStatus === "unpaid").reduce((sum: number, expense: any) => sum + expense.amountRub, 0),
-      equity: ownerContributions - ownerWithdrawals + netProfit
-    },
-    sales,
-    unitRows
+    sales: [],
+    financeLag: emptyFinanceLag(),
+    unitRows: []
+  };
+  return {
+    current,
+    balanceCurrent: emptyBalanceSnapshot(options.balanceDate),
+    balanceCompare: options.compareBalanceDate ? emptyBalanceSnapshot(options.compareBalanceDate) : undefined,
+    pnlTree: [],
+    pnlTrend: [],
+    unitRows: [],
+    unitFinanceLag: emptyFinanceLag(),
+    productOptions: [],
+    channelOptions: []
   };
 }
 
-function buildBalanceSnapshot(state: any, asOf: string) {
-  const balancesToDate = accumulateBalances(state.journalEntries ?? [], state.journalLines ?? [], asOf);
-  const chartAccounts = state.chartAccounts ?? [];
-  const ownerContributions = creditBalance(balancesToDate["80.01"]);
-  const ownerWithdrawals = debitBalance(balancesToDate["80.02"]);
-  const retainedEarnings = buildAccumulatedResult(chartAccounts, balancesToDate);
-  const cash = debitBalance(balancesToDate["50"]) + debitBalance(balancesToDate["51"]);
-  const inventory = debitBalance(balancesToDate["41.01"]) + debitBalance(balancesToDate["41.02"]) + debitBalance(balancesToDate["41.03"]);
-  const marketplaceAwaitingAccrual = debitBalance(balancesToDate["45.03"]);
-  const supplierAdvances = debitBalance(balancesToDate["60.02"]);
-  const supplierClaims = debitBalance(balancesToDate["76.02"]);
-  const marketplaceReceivable = debitBalance(balancesToDate["76.ТП"]);
-  const supplierPayables = creditBalance(balancesToDate["60.01"]);
-  const unpaidExpenses = (state.operatingExpenses ?? [])
-    .filter((expense: any) => expense.paymentStatus === "unpaid" && expense.expenseDate <= asOf)
-    .reduce((sum: number, expense: any) => sum + Number(expense.amountRub ?? 0), 0);
-  const channelObligations = creditBalance(balancesToDate["76.ТП"]);
-  const assets = round2(cash + inventory + marketplaceAwaitingAccrual + supplierAdvances + supplierClaims + marketplaceReceivable);
-  const liabilities = round2(supplierPayables + unpaidExpenses + channelObligations);
-  const equity = round2(ownerContributions - ownerWithdrawals + retainedEarnings);
-  const difference = round2(assets - liabilities - equity);
+function emptyBalanceSnapshot(asOf: string) {
   return {
     asOf,
-    cash,
-    inventory,
-    marketplaceAwaitingAccrual,
-    supplierAdvances,
-    supplierClaims,
-    marketplaceReceivable,
-    supplierPayables,
-    unpaidExpenses,
-    channelObligations,
-    ownerContributions,
-    ownerWithdrawals,
-    retainedEarnings,
-    assets,
-    liabilities,
-    equity,
-    difference
+    cash: 0,
+    inventory: 0,
+    marketplaceAwaitingAccrual: 0,
+    supplierAdvances: 0,
+    supplierClaims: 0,
+    marketplaceReceivable: 0,
+    supplierPayables: 0,
+    unpaidExpenses: 0,
+    channelObligations: 0,
+    ownerContributions: 0,
+    ownerWithdrawals: 0,
+    retainedEarnings: 0,
+    assets: 0,
+    liabilities: 0,
+    equity: 0,
+    difference: 0
   };
 }
 
-function buildUnitRows(state: any, sales: any[], to: string) {
-  const saleIds = new Set(sales.map((sale: any) => sale.id));
-  const lines = (state.saleLines ?? []).filter((line: any) => saleIds.has(line.saleId));
-  const channels = state.salesChannels ?? [];
-  const products = state.products ?? [];
-  const financeEvents = (state.channelFinanceEvents ?? []).filter((event: any) => event.occurredAt <= to && event.status === "posted");
-  const salesById = new Map(sales.map((sale: any) => [sale.id, sale]));
-  type VariableFinanceBreakdown = {
-    commissionRub: number;
-    acquiringRub: number;
-    lastMileRub: number;
-    returnLogisticsRub: number;
-    otherVariableRub: number;
-    categoryBreakdown: Map<string, number>;
-  };
-  const financeBySale = new Map<string, VariableFinanceBreakdown>();
-  const settledThroughByChannel = buildVariableFinanceSettledThrough(financeEvents);
-
-  financeEvents.forEach((event: any) => {
-    if (!isVariableMarketplaceTreatment(event.treatment)) return;
-    for (const allocation of channelFinanceSaleAllocations(event)) {
-      const current: VariableFinanceBreakdown = financeBySale.get(allocation.saleId) ?? {
-        commissionRub: 0,
-        acquiringRub: 0,
-        lastMileRub: 0,
-        returnLogisticsRub: 0,
-        otherVariableRub: 0,
-        categoryBreakdown: new Map<string, number>()
-      };
-      if (event.category === "commission") current.commissionRub += allocation.amountRub;
-      else if (event.category === "acquiring") current.acquiringRub += allocation.amountRub;
-      else if (event.category === "last_mile_logistics") current.lastMileRub += allocation.amountRub;
-      else if (event.category === "return_logistics") current.returnLogisticsRub += allocation.amountRub;
-      else current.otherVariableRub += allocation.amountRub;
-      current.categoryBreakdown.set(
-        String(event.category ?? "other"),
-        round2(Number(current.categoryBreakdown.get(String(event.category ?? "other")) ?? 0) + Number(allocation.amountRub ?? 0))
-      );
-      financeBySale.set(allocation.saleId, current);
-    }
-  });
-
-  const grouped = new Map<string, any>();
-  lines.forEach((line: any) => {
-    const sale = salesById.get(line.saleId);
-    if (!sale) return;
-    const product = products.find((candidate: any) => candidate.id === line.productId);
-    const channel = channels.find((candidate: any) => candidate.id === sale.channelId);
-    const saleFees: VariableFinanceBreakdown = financeBySale.get(sale.id) ?? {
-      commissionRub: 0,
-      acquiringRub: 0,
-      lastMileRub: 0,
-      returnLogisticsRub: 0,
-      otherVariableRub: 0,
-      categoryBreakdown: new Map<string, number>()
-    };
-    const saleRevenue = saleRevenueRub(sale);
-    const share = saleRevenue > 0 ? line.revenueRub / saleRevenue : 0;
-    const settledThrough = settledThroughByChannel.get(sale.channelId);
-    const isProvisionalSale = !settledThrough || sale.saleDate > settledThrough;
-    const key = `${line.productId}:${sale.channelId}`;
-    const current = grouped.get(key) ?? {
-      product,
-      channel,
-      isProvisional: false,
-      qtySold: 0,
-      unsettledQty: 0,
-      revenueRub: 0,
-      unsettledRevenueRub: 0,
-      costRub: 0,
-      commissionRub: 0,
-      acquiringRub: 0,
-      lastMileRub: 0,
-      returnLogisticsRub: 0,
-      logisticsRub: 0,
-      otherVariableRub: 0,
-      otherFeesRub: 0,
-      variableFeesRub: 0,
-      profitRub: 0,
-      marginPercent: 0,
-      roiPercent: 0,
-      settledThrough,
-      categoryBreakdown: [] as Array<{ category: string; amountRub: number }>
-    };
-    current.isProvisional = current.isProvisional || isProvisionalSale;
-    current.qtySold += line.qty;
-    current.unsettledQty += isProvisionalSale ? line.qty : 0;
-    current.revenueRub += line.revenueRub;
-    current.unsettledRevenueRub += isProvisionalSale ? line.revenueRub : 0;
-    current.costRub += line.costRub;
-    current.commissionRub += round2(saleFees.commissionRub * share);
-    current.acquiringRub += round2(saleFees.acquiringRub * share);
-    current.lastMileRub += round2(saleFees.lastMileRub * share);
-    current.returnLogisticsRub += round2(saleFees.returnLogisticsRub * share);
-    current.logisticsRub = round2(current.lastMileRub + current.returnLogisticsRub);
-    current.otherVariableRub += round2(saleFees.otherVariableRub * share);
-    current.otherFeesRub = round2(current.otherVariableRub);
-    for (const [category, amountRub] of saleFees.categoryBreakdown.entries()) {
-      const currentCategory = current.categoryBreakdown.find((item: any) => item.category === category);
-      const allocatedRub = round2(amountRub * share);
-      if (currentCategory) currentCategory.amountRub = round2(currentCategory.amountRub + allocatedRub);
-      else current.categoryBreakdown.push({ category, amountRub: allocatedRub });
-    }
-    current.variableFeesRub = round2(current.commissionRub + current.acquiringRub + current.logisticsRub + current.otherFeesRub);
-    current.profitRub = round2(current.revenueRub - current.costRub - current.commissionRub - current.acquiringRub - current.logisticsRub - current.otherFeesRub);
-    current.marginPercent = current.revenueRub > 0 ? round2((current.profitRub / current.revenueRub) * 100) : 0;
-    current.roiPercent = current.costRub > 0 ? round2((current.profitRub / current.costRub) * 100) : 0;
-    grouped.set(key, current);
-  });
-
-  return [...grouped.values()].sort((left, right) => right.revenueRub - left.revenueRub);
-}
-
-function buildFinanceLag(state: any, sales: any[], to: string) {
-  const variableFinanceEvents = (state.channelFinanceEvents ?? []).filter((event: any) => event.occurredAt <= to && event.status === "posted" && isVariableMarketplaceTreatment(event.treatment));
-  const settledThroughByChannel = buildVariableFinanceSettledThrough(variableFinanceEvents);
-  const saleIds = new Set(sales.map((sale: any) => sale.id));
-  const saleLines = (state.saleLines ?? []).filter((line: any) => saleIds.has(line.saleId));
-  const saleLinesBySale = saleLines.reduce((acc: Map<string, any[]>, line: any) => {
-    const bucket = acc.get(line.saleId) ?? [];
-    bucket.push(line);
-    acc.set(line.saleId, bucket);
-    return acc;
-  }, new Map<string, any[]>());
-  const unsettledSales = sales.filter((sale: any) => {
-    const settledThrough = settledThroughByChannel.get(sale.channelId);
-    return !settledThrough || sale.saleDate > settledThrough;
-  });
-  const unsettledQty = round2(unsettledSales.reduce((sum: number, sale: any) => {
-    const linesForSale = saleLinesBySale.get(sale.id) ?? [];
-    return sum + linesForSale.reduce((lineSum: number, line: any) => lineSum + Number(line.qty ?? 0), 0);
-  }, 0));
-  const unsettledSalesRevenueRub = round2(unsettledSales.reduce((sum: number, sale: any) => sum + saleRevenueRub(sale), 0));
+function emptyFinanceLag() {
   return {
-    unsettledSalesCount: unsettledSales.length,
-    unsettledSalesRevenueRub,
-    unsettledQty,
-    settledThroughByChannel
+    unsettledSalesCount: 0,
+    unsettledSalesRevenueRub: 0,
+    unsettledQty: 0,
+    settledThroughByChannel: {}
   };
-}
-
-function buildVariableFinanceSettledThrough(financeEvents: any[]) {
-  return financeEvents.reduce<Map<string, string>>((acc, event) => {
-    if (!isVariableMarketplaceTreatment(event.treatment)) return acc;
-    const current = acc.get(event.channelId);
-    if (!current || String(event.occurredAt) > current) acc.set(event.channelId, String(event.occurredAt));
-    return acc;
-  }, new Map());
-}
-
-function accumulateBalances(entries: any[], lines: any[], to: string) {
-  const entryIds = new Set(entries.filter((entry: any) => entry.accountingDate <= to).map((entry: any) => entry.id));
-  return lines
-    .filter((line: any) => entryIds.has(line.journalEntryId))
-    .reduce<Record<string, { debit: number; credit: number }>>((acc, line) => {
-      const current = acc[line.accountCode] ?? { debit: 0, credit: 0 };
-      current.debit = round2(current.debit + Number(line.debit ?? 0));
-      current.credit = round2(current.credit + Number(line.credit ?? 0));
-      acc[line.accountCode] = current;
-      return acc;
-    }, {});
-}
-
-function buildAccumulatedResult(chartAccounts: any[], balances: Record<string, { debit: number; credit: number }>) {
-  return round2(
-    chartAccounts.reduce((sum: number, account: any) => {
-      if (account.kind !== "revenue" && account.kind !== "expense") return sum;
-      const balance = balances[account.code] ?? { debit: 0, credit: 0 };
-      return sum + Number(balance.credit ?? 0) - Number(balance.debit ?? 0);
-    }, 0)
-  );
-}
-
-function saleRevenueRub(sale: any) {
-  return Number(sale?.recognizedGrossAmountRub ?? sale?.grossAmountRub ?? 0);
-}
-
-function sumJournal(lines: any[], accountCode: string, side: "debit" | "credit") {
-  return round2(lines.filter((line: any) => line.accountCode === accountCode).reduce((sum: number, line: any) => sum + Number(line[side] ?? 0), 0));
-}
-
-function netDebitJournal(lines: any[], accountCode: string) {
-  return round2(sumJournal(lines, accountCode, "debit") - sumJournal(lines, accountCode, "credit"));
-}
-
-function netCreditJournal(lines: any[], accountCode: string) {
-  return round2(sumJournal(lines, accountCode, "credit") - sumJournal(lines, accountCode, "debit"));
-}
-
-function debitBalance(balance?: { debit: number; credit: number }) {
-  return Math.max(0, round2((balance?.debit ?? 0) - (balance?.credit ?? 0)));
-}
-
-function creditBalance(balance?: { debit: number; credit: number }) {
-  return Math.max(0, round2((balance?.credit ?? 0) - (balance?.debit ?? 0)));
 }
 
 function firstDayOfMonth(dateValue: Date) {
@@ -1054,62 +764,14 @@ type BalanceMetricKey =
   | "retainedEarnings"
   | "equity";
 
-type BalanceDrilldownComponent = {
-  id: string;
-  label: string;
-  source: string;
-  accountCode?: string;
-  accountMode?: "debit" | "credit" | "signed";
-  sign?: number;
-  current: number;
-  compare?: number;
-};
-
-type BalanceDrilldownDocument = {
-  documentId: string;
-  number: string;
-  title: string;
-  accountingDate: string;
-  effectRub: number;
-  sources: string[];
-};
-
-type BalanceDrilldownJournalRow = {
-  journalEntryId: string;
-  documentId?: string;
-  documentNumber?: string;
-  accountingDate: string;
-  accountCode: string;
-  memo: string;
-  debit: number;
-  credit: number;
-  effectRub: number;
-};
-
-type BalanceDrilldown = {
-  key: BalanceMetricKey;
-  label: string;
-  description: string;
-  currentDate: string;
-  compareDate?: string;
-  current: number;
-  compare?: number;
-  delta?: number;
-  components: BalanceDrilldownComponent[];
-  documents: BalanceDrilldownDocument[];
-  journalRows: BalanceDrilldownJournalRow[];
-};
-
 function BalanceTable({
   currentDate,
   compareDate,
-  rows,
-  onSelect
+  rows
 }: {
   currentDate: string;
   compareDate?: string;
   rows: BalanceTableRow[];
-  onSelect?: (key: BalanceMetricKey) => void;
 }) {
   return (
     <Table>
@@ -1125,20 +787,9 @@ function BalanceTable({
         {rows.map((row) => {
           const delta = compareDate ? round2(row.current - Number(row.compare ?? 0)) : 0;
           const deltaClassName = delta === 0 ? "text-[var(--color-muted-foreground)]" : "font-medium";
-          const interactive = Boolean(onSelect);
           return (
-            <TR
-              key={row.key}
-              interactive={interactive}
-              onClick={interactive ? () => onSelect?.(row.key) : undefined}
-              className={row.emphasis ? "bg-[var(--color-muted)]/30" : undefined}
-            >
-              <TD className={row.emphasis ? "font-semibold" : undefined}>
-                <div className="flex items-center gap-2">
-                  <span>{row.label}</span>
-                  {interactive ? <ArrowUpRight size={13} className="text-[var(--color-muted-foreground)]" /> : null}
-                </div>
-              </TD>
+            <TR key={row.key} className={row.emphasis ? "bg-[var(--color-muted)]/30" : undefined}>
+              <TD className={row.emphasis ? "font-semibold" : undefined}>{row.label}</TD>
               <TD numeric className={row.emphasis ? "font-semibold" : undefined}>{rub(row.current, { precise: true })}</TD>
               {compareDate ? <TD numeric>{rub(row.compare ?? 0, { precise: true })}</TD> : null}
               {compareDate ? (
@@ -1153,529 +804,6 @@ function BalanceTable({
       </TBody>
     </Table>
   );
-}
-
-function BalanceDrilldownDialog({
-  open,
-  onOpenChange,
-  drilldown
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  drilldown: BalanceDrilldown | null;
-}) {
-  if (!drilldown) return null;
-  const [documentPage, setDocumentPage] = useState(1);
-  const [documentPageSize, setDocumentPageSize] = useState(25);
-  const [journalPage, setJournalPage] = useState(1);
-  const [journalPageSize, setJournalPageSize] = useState(25);
-
-  useEffect(() => {
-    setDocumentPage(1);
-    setJournalPage(1);
-  }, [drilldown.key, drilldown.currentDate, drilldown.compareDate]);
-
-  const pagedDocuments = useMemo(
-    () => paginateRows(drilldown.documents, documentPage, documentPageSize),
-    [documentPage, documentPageSize, drilldown.documents]
-  );
-  const pagedJournalRows = useMemo(
-    () => paginateRows(drilldown.journalRows, journalPage, journalPageSize),
-    [drilldown.journalRows, journalPage, journalPageSize]
-  );
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="lg">
-        <DialogHeader>
-          <DialogTitle>{drilldown.label}</DialogTitle>
-          <DialogDescription>{drilldown.description}</DialogDescription>
-        </DialogHeader>
-        <DialogBody className="flex max-h-[80vh] flex-col gap-4 overflow-hidden">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <Info label={`На ${date(drilldown.currentDate)}`} value={rub(drilldown.current, { precise: true })} />
-            {drilldown.compareDate ? <Info label={`На ${date(drilldown.compareDate)}`} value={rub(drilldown.compare ?? 0, { precise: true })} /> : null}
-            {drilldown.compareDate ? (
-              <Info
-                label="Изменение"
-                value={
-                  <>
-                    {Number(drilldown.delta ?? 0) > 0 ? "+" : ""}
-                    {rub(drilldown.delta ?? 0, { precise: true })}
-                  </>
-                }
-              />
-            ) : null}
-          </div>
-
-          <Tabs defaultValue="components" className="min-h-0 flex-1">
-            <TabsList>
-              <TabsTrigger value="components">Формула</TabsTrigger>
-              <TabsTrigger value="documents">Документы</TabsTrigger>
-              <TabsTrigger value="journal">Проводки</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="components" className="min-h-0">
-              <Card>
-                <CardContent className="max-h-[54vh] overflow-auto p-0">
-                  <Table>
-                    <THead>
-                      <TR>
-                        <TH>Компонент</TH>
-                        <TH>Источник</TH>
-                        <TH numeric>{date(drilldown.currentDate)}</TH>
-                        {drilldown.compareDate ? <TH numeric>{date(drilldown.compareDate)}</TH> : null}
-                        {drilldown.compareDate ? <TH numeric>Изменение</TH> : null}
-                      </TR>
-                    </THead>
-                    <TBody>
-                      {drilldown.components.map((row) => {
-                        const delta = drilldown.compareDate ? round2(row.current - Number(row.compare ?? 0)) : 0;
-                        return (
-                          <TR key={row.id}>
-                            <TD className="font-medium">{row.label}</TD>
-                            <TD className="text-[var(--color-muted-foreground)]">{row.source}</TD>
-                            <TD numeric>{rub(row.current, { precise: true })}</TD>
-                            {drilldown.compareDate ? <TD numeric>{rub(row.compare ?? 0, { precise: true })}</TD> : null}
-                            {drilldown.compareDate ? (
-                              <TD numeric className={delta === 0 ? "text-[var(--color-muted-foreground)]" : "font-medium"}>
-                                {delta > 0 ? "+" : ""}
-                                {rub(delta, { precise: true })}
-                              </TD>
-                            ) : null}
-                          </TR>
-                        );
-                      })}
-                    </TBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="documents" className="min-h-0">
-              <Card>
-                <CardContent className="max-h-[54vh] overflow-auto p-0">
-                  <Table>
-                    <THead>
-                      <TR>
-                        <TH>Документ</TH>
-                        <TH>Дата</TH>
-                        <TH>Откуда вошёл</TH>
-                        <TH numeric>Влияние</TH>
-                      </TR>
-                    </THead>
-                    <TBody>
-                      {drilldown.documents.length === 0 ? (
-                        <TR><TD colSpan={4} className="py-10 text-center text-[var(--color-muted-foreground)]">Подходящих документов нет.</TD></TR>
-                      ) : (
-                        pagedDocuments.map((row) => (
-                          <TR key={row.documentId}>
-                            <TD>
-                              <div className="flex flex-col gap-1">
-                                <Link to={`/documents/${row.documentId}`} className="font-mono text-sm font-semibold text-[var(--color-primary)] hover:underline">
-                                  {row.number}
-                                </Link>
-                                <span className="text-sm">{row.title}</span>
-                              </div>
-                            </TD>
-                            <TD>{date(row.accountingDate)}</TD>
-                            <TD className="text-[var(--color-muted-foreground)]">{row.sources.join(", ")}</TD>
-                            <TD numeric className={row.effectRub === 0 ? "text-[var(--color-muted-foreground)]" : "font-medium"}>
-                              {row.effectRub > 0 ? "+" : ""}
-                              {rub(row.effectRub, { precise: true })}
-                            </TD>
-                          </TR>
-                        ))
-                      )}
-                    </TBody>
-                  </Table>
-                </CardContent>
-                {drilldown.documents.length > 0 ? (
-                  <Pagination
-                    page={documentPage}
-                    pageSize={documentPageSize}
-                    total={drilldown.documents.length}
-                    onPageChange={setDocumentPage}
-                    onPageSizeChange={(size) => {
-                      setDocumentPageSize(size);
-                      setDocumentPage(1);
-                    }}
-                  />
-                ) : null}
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="journal" className="min-h-0">
-              <Card>
-                <CardContent className="max-h-[54vh] overflow-auto p-0">
-                  <Table>
-                    <THead>
-                      <TR>
-                        <TH>Дата</TH>
-                        <TH>Счёт</TH>
-                        <TH>Документ</TH>
-                        <TH>Смысл</TH>
-                        <TH numeric>Дт</TH>
-                        <TH numeric>Кт</TH>
-                        <TH numeric>Влияние</TH>
-                      </TR>
-                    </THead>
-                    <TBody>
-                      {drilldown.journalRows.length === 0 ? (
-                        <TR><TD colSpan={7} className="py-10 text-center text-[var(--color-muted-foreground)]">По этой статье нет отдельных проводок. Значение собрано из статусов и карточек документов.</TD></TR>
-                      ) : (
-                        pagedJournalRows.map((row) => (
-                          <TR key={`${row.journalEntryId}:${row.accountCode}:${row.memo}:${row.debit}:${row.credit}`}>
-                            <TD>{date(row.accountingDate)}</TD>
-                            <TD className="font-mono text-sm">{row.accountCode}</TD>
-                            <TD>
-                              {row.documentId && row.documentNumber ? (
-                                <Link to={`/documents/${row.documentId}`} className="font-mono text-sm font-semibold text-[var(--color-primary)] hover:underline">
-                                  {row.documentNumber}
-                                </Link>
-                              ) : (
-                                "—"
-                              )}
-                            </TD>
-                            <TD className="text-[var(--color-muted-foreground)]">{row.memo}</TD>
-                            <TD numeric>{rub(row.debit, { precise: true })}</TD>
-                            <TD numeric>{rub(row.credit, { precise: true })}</TD>
-                            <TD numeric className={row.effectRub === 0 ? "text-[var(--color-muted-foreground)]" : "font-medium"}>
-                              {row.effectRub > 0 ? "+" : ""}
-                              {rub(row.effectRub, { precise: true })}
-                            </TD>
-                          </TR>
-                        ))
-                      )}
-                    </TBody>
-                  </Table>
-                </CardContent>
-                {drilldown.journalRows.length > 0 ? (
-                  <Pagination
-                    page={journalPage}
-                    pageSize={journalPageSize}
-                    total={drilldown.journalRows.length}
-                    onPageChange={setJournalPage}
-                    onPageSizeChange={(size) => {
-                      setJournalPageSize(size);
-                      setJournalPage(1);
-                    }}
-                  />
-                ) : null}
-              </Card>
-            </TabsContent>
-          </Tabs>
-        </DialogBody>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function buildBalanceDrilldown(state: any, key: BalanceMetricKey, asOf: string, compareAsOf?: string): BalanceDrilldown {
-  const entries = state.journalEntries ?? [];
-  const lines = state.journalLines ?? [];
-  const documents = state.documents ?? [];
-  const chartAccounts = state.chartAccounts ?? [];
-  const balances = accumulateBalances(entries, lines, asOf);
-  const compareBalances = compareAsOf ? accumulateBalances(entries, lines, compareAsOf) : undefined;
-  const documentById = new Map<string, any>(documents.map((document: any) => [document.id, document]));
-  const entryById = new Map<string, any>(
-    entries
-      .filter((entry: any) => entry.accountingDate <= asOf)
-      .map((entry: any) => [entry.id, entry])
-  );
-  const metricRows = buildBalanceMetricRows(state, chartAccounts, balances, compareBalances, asOf, compareAsOf);
-  const metricRow = metricRows.get(key);
-  if (!metricRow) {
-    return {
-      key,
-      label: "Статья баланса",
-      description: "Расшифровка недоступна.",
-      currentDate: asOf,
-      compareDate: compareAsOf,
-      current: 0,
-      compare: compareAsOf ? 0 : undefined,
-      delta: compareAsOf ? 0 : undefined,
-      components: [],
-      documents: [],
-      journalRows: []
-    };
-  }
-
-  const journalRows = metricRow.components
-    .flatMap((component) => buildJournalRowsForComponent(component, lines, entryById, documentById))
-    .sort((left, right) => {
-      if (left.accountingDate === right.accountingDate) return Math.abs(right.effectRub) - Math.abs(left.effectRub);
-      return String(right.accountingDate).localeCompare(String(left.accountingDate));
-    });
-
-  const documentsFromJournal = aggregateDocumentsFromJournal(journalRows, documentById);
-  const documentsFromRegistry = metricRow.components
-    .flatMap((component) => buildRegistryDocumentsForComponent(component, state, asOf))
-    .reduce<Map<string, BalanceDrilldownDocument>>((acc, row) => {
-      const current = acc.get(row.documentId);
-      if (current) {
-        current.effectRub = round2(current.effectRub + row.effectRub);
-        current.sources = [...new Set([...current.sources, ...row.sources])];
-      } else {
-        acc.set(row.documentId, { ...row, sources: [...row.sources] });
-      }
-      return acc;
-    }, new Map());
-
-  for (const row of documentsFromJournal) {
-    const current = documentsFromRegistry.get(row.documentId);
-    if (current) {
-      current.effectRub = round2(current.effectRub + row.effectRub);
-      current.sources = [...new Set([...current.sources, ...row.sources])];
-    } else {
-      documentsFromRegistry.set(row.documentId, row);
-    }
-  }
-
-  const documentsSorted = [...documentsFromRegistry.values()]
-    .sort((left, right) => Math.abs(right.effectRub) - Math.abs(left.effectRub) || String(right.accountingDate).localeCompare(String(left.accountingDate)));
-
-  return {
-    key,
-    label: metricRow.label,
-    description: metricRow.description,
-    currentDate: asOf,
-    compareDate: compareAsOf,
-    current: metricRow.current,
-    compare: metricRow.compare,
-    delta: compareAsOf ? round2(metricRow.current - Number(metricRow.compare ?? 0)) : undefined,
-    components: metricRow.components,
-    documents: documentsSorted,
-    journalRows
-  };
-}
-
-function buildBalanceMetricRows(
-  state: any,
-  chartAccounts: any[],
-  balances: Record<string, { debit: number; credit: number }>,
-  compareBalances: Record<string, { debit: number; credit: number }> | undefined,
-  asOf: string,
-  compareAsOf?: string
-) {
-  const rows = new Map<
-    BalanceMetricKey,
-    {
-      label: string;
-      description: string;
-      current: number;
-      compare?: number;
-      components: BalanceDrilldownComponent[];
-    }
-  >();
-
-  const pushMetric = (
-    key: BalanceMetricKey,
-    label: string,
-    description: string,
-    components: BalanceDrilldownComponent[]
-  ) => {
-    rows.set(key, {
-      label,
-      description,
-      current: round2(components.reduce((sum, component) => sum + component.current, 0)),
-      compare: compareAsOf ? round2(components.reduce((sum, component) => sum + Number(component.compare ?? 0), 0)) : undefined,
-      components
-    });
-  };
-
-  const accountComponent = (
-    id: string,
-    label: string,
-    accountCode: string,
-    mode: "debit" | "credit" | "signed",
-    source?: string,
-    sign = 1
-  ): BalanceDrilldownComponent => {
-    const currentRaw = mode === "debit" ? debitBalance(balances[accountCode]) : mode === "credit" ? creditBalance(balances[accountCode]) : round2(Number(balances[accountCode]?.credit ?? 0) - Number(balances[accountCode]?.debit ?? 0));
-    const compareRaw = compareBalances
-      ? mode === "debit"
-        ? debitBalance(compareBalances[accountCode])
-        : mode === "credit"
-          ? creditBalance(compareBalances[accountCode])
-          : round2(Number(compareBalances[accountCode]?.credit ?? 0) - Number(compareBalances[accountCode]?.debit ?? 0))
-      : undefined;
-    return {
-      id,
-      label,
-      source: source ?? sourceLabelForAccount(accountCode, mode, chartAccounts),
-      accountCode,
-      accountMode: mode,
-      sign,
-      current: round2(currentRaw * sign),
-      compare: compareRaw !== undefined ? round2(compareRaw * sign) : undefined
-    };
-  };
-
-  const unpaidExpenseComponent = (): BalanceDrilldownComponent => ({
-    id: "unpaid-operating-expenses",
-    label: "Неоплаченные операционные расходы",
-    source: "Карточки операционных расходов со статусом unpaid",
-    current: unpaidExpensesAsOf(state, asOf),
-    compare: compareAsOf ? unpaidExpensesAsOf(state, compareAsOf) : undefined
-  });
-
-  const retainedComponents = chartAccounts
-    .filter((account: any) => account.kind === "revenue" || account.kind === "expense")
-    .map((account: any) => accountComponent(`retained-${account.code}`, account.name, account.code, "signed", `${account.kind === "revenue" ? "Доходный" : "Расходный"} счет ${account.code}`))
-    .filter((component) => Math.abs(component.current) > 0.0001 || Math.abs(Number(component.compare ?? 0)) > 0.0001);
-
-  pushMetric("cash", "Денежные средства", "Сумма остатков на денежных счетах компании на выбранную дату.", [
-    accountComponent("cash-50", "Касса", "50", "debit"),
-    accountComponent("cash-51", "Расчетный счет", "51", "debit")
-  ]);
-  pushMetric("inventory", "Товары в наличии", "Себестоимость товаров, которые ещё лежат на складе, в пути или на точках продаж.", [
-    accountComponent("inventory-41.01", "Товары на своем складе", "41.01", "debit"),
-    accountComponent("inventory-41.02", "Товары в пути", "41.02", "debit"),
-    accountComponent("inventory-41.03", "Товары на точках продаж", "41.03", "debit")
-  ]);
-  pushMetric("marketplaceAwaitingAccrual", "Продажи ждут начисления", "Себестоимость товаров, которые уже списаны по заказам маркетплейса, но ещё не попали в его начисления.", [
-    accountComponent(
-      "marketplace-awaiting-accrual-45.03",
-      "Продажи ждут начисления",
-      "45.03",
-      "debit",
-      "Заказы уже списали товар, начисление маркетплейса ещё не пришло"
-    )
-  ]);
-  pushMetric("supplierAdvances", "Авансы поставщикам", "Дебетовое сальдо по авансам, выданным поставщикам.", [
-    accountComponent("advances-60.02", "Авансы поставщикам", "60.02", "debit")
-  ]);
-  pushMetric("supplierClaims", "Претензии поставщикам", "Дебетовое сальдо по претензиям и требованиям к поставщикам.", [
-    accountComponent("claims-76.02", "Претензии поставщикам", "76.02", "debit")
-  ]);
-  pushMetric("marketplaceReceivable", "Дебиторка маркетплейсов", "Сколько маркетплейсы ещё должны компании: продажи увеличивают показатель, комиссии и выплаты уменьшают.", [
-    accountComponent("marketplace-76tp-debit", "Расчеты с точками продаж", "76.ТП", "debit")
-  ]);
-  pushMetric("assets", "Активы", "Все активы, которые формируют левую сторону баланса на выбранную дату.", [
-    ...rows.get("cash")!.components,
-    ...rows.get("inventory")!.components,
-    ...rows.get("marketplaceAwaitingAccrual")!.components,
-    ...rows.get("supplierAdvances")!.components,
-    ...rows.get("supplierClaims")!.components,
-    ...rows.get("marketplaceReceivable")!.components
-  ]);
-  pushMetric("supplierPayables", "Кредиторка поставщикам", "Сколько компания должна поставщикам по проведённым закупочным и операционным документам.", [
-    accountComponent("payables-60.01", "Задолженность поставщикам", "60.01", "credit")
-  ]);
-  pushMetric("unpaidExpenses", "Неоплаченные расходы", "Операционные расходы, которые заведены без немедленной оплаты и ещё не закрыты.", [
-    unpaidExpenseComponent()
-  ]);
-  pushMetric("channelObligations", "Обязательства по каналам", "Кредитовое сальдо по расчетам с каналами, если площадка стала кредитором.", [
-    accountComponent("channel-76tp-credit", "Расчеты с точками продаж", "76.ТП", "credit")
-  ]);
-  pushMetric("liabilities", "Обязательства", "Все обязательства компании на выбранную дату.", [
-    ...rows.get("supplierPayables")!.components,
-    ...rows.get("unpaidExpenses")!.components,
-    ...rows.get("channelObligations")!.components
-  ]);
-  pushMetric("ownerContributions", "Вложения владельца", "Деньги и имущество, которые владелец внес в бизнес.", [
-    accountComponent("equity-80.01", "Вклады владельца", "80.01", "credit")
-  ]);
-  pushMetric("ownerWithdrawals", "Изъятия владельца", "Средства, которые владелец вывел из бизнеса.", [
-    accountComponent("equity-80.02", "Изъятия владельца", "80.02", "debit")
-  ]);
-  pushMetric("retainedEarnings", "Накопленный результат", "Накопленная прибыль или убыток по всем доходным и расходным счетам на выбранную дату.", retainedComponents);
-  pushMetric("equity", "Капитал", "Источники собственного финансирования: вложения владельца, изъятия и накопленный результат.", [
-    ...rows.get("ownerContributions")!.components,
-    accountComponent("equity-withdrawals-negative", "Изъятия владельца", "80.02", "debit", "Контрсчет капитала 80.02", -1),
-    ...rows.get("retainedEarnings")!.components
-  ]);
-  return rows;
-}
-
-function buildJournalRowsForComponent(
-  component: BalanceDrilldownComponent,
-  lines: any[],
-  entryById: Map<string, any>,
-  documentById: Map<string, any>
-): BalanceDrilldownJournalRow[] {
-  if (!component.accountCode || !component.accountMode) return [];
-  return lines
-    .filter((line: any) => line.accountCode === component.accountCode && entryById.has(line.journalEntryId))
-    .map((line: any) => {
-      const entry = entryById.get(line.journalEntryId);
-      const document = documentById.get(entry?.documentId);
-      const effectRub =
-        (component.accountMode === "debit"
-          ? round2(Number(line.debit ?? 0) - Number(line.credit ?? 0))
-          : component.accountMode === "credit"
-            ? round2(Number(line.credit ?? 0) - Number(line.debit ?? 0))
-            : round2(Number(line.credit ?? 0) - Number(line.debit ?? 0))) * Number(component.sign ?? 1);
-      return {
-        journalEntryId: line.journalEntryId,
-        documentId: entry?.documentId,
-        documentNumber: document?.number,
-        accountingDate: entry?.accountingDate ?? "",
-        accountCode: line.accountCode,
-        memo: line.memo,
-        debit: Number(line.debit ?? 0),
-        credit: Number(line.credit ?? 0),
-        effectRub
-      };
-    })
-    .filter((row) => Math.abs(row.effectRub) > 0.0001);
-}
-
-function aggregateDocumentsFromJournal(rows: BalanceDrilldownJournalRow[], documentById: Map<string, any>): BalanceDrilldownDocument[] {
-  const documents = new Map<string, BalanceDrilldownDocument>();
-  for (const row of rows) {
-    if (!row.documentId || !row.documentNumber) continue;
-    const document = documentById.get(row.documentId);
-    const current = documents.get(row.documentId);
-    if (current) {
-      current.effectRub = round2(current.effectRub + row.effectRub);
-      current.sources = [...new Set([...current.sources, row.accountCode])];
-    } else {
-      documents.set(row.documentId, {
-        documentId: row.documentId,
-        number: row.documentNumber,
-        title: document?.title ?? "",
-        accountingDate: row.accountingDate,
-        effectRub: row.effectRub,
-        sources: [row.accountCode]
-      });
-    }
-  }
-  return [...documents.values()];
-}
-
-function buildRegistryDocumentsForComponent(component: BalanceDrilldownComponent, state: any, asOf: string): BalanceDrilldownDocument[] {
-  if (component.id !== "unpaid-operating-expenses") return [];
-  const documentsById = new Map<string, any>((state.documents ?? []).map((document: any) => [document.id, document]));
-  return (state.operatingExpenses ?? [])
-    .filter((expense: any) => expense.paymentStatus === "unpaid" && expense.expenseDate <= asOf)
-    .map((expense: any) => {
-      const document = documentsById.get(expense.documentId);
-      return {
-        documentId: expense.documentId,
-        number: document?.number ?? expense.documentId,
-        title: document?.title ?? "Операционный расход",
-        accountingDate: expense.expenseDate,
-        effectRub: Number(expense.amountRub ?? 0),
-        sources: ["Неоплаченные расходы"]
-      };
-    });
-}
-
-function unpaidExpensesAsOf(state: any, asOf: string) {
-  return round2(
-    (state.operatingExpenses ?? [])
-      .filter((expense: any) => expense.paymentStatus === "unpaid" && expense.expenseDate <= asOf)
-      .reduce((sum: number, expense: any) => sum + Number(expense.amountRub ?? 0), 0)
-  );
-}
-
-function sourceLabelForAccount(accountCode: string, mode: "debit" | "credit" | "signed", chartAccounts: any[]) {
-  const account = chartAccounts.find((item: any) => item.code === accountCode);
-  const sideLabel = mode === "debit" ? "дебетовое сальдо" : mode === "credit" ? "кредитовое сальдо" : "чистый вклад счета";
-  return `${account?.name ?? accountCode} · ${accountCode} · ${sideLabel}`;
 }
 
 type PnlDocumentRef = {
@@ -1696,285 +824,6 @@ type PnlTreeNode = {
   tone?: "neutral" | "primary" | "success" | "warning" | "danger" | "info";
 };
 
-function buildPnlTree(state: any, current: ReturnType<typeof buildReportData>): PnlTreeNode[] {
-  const documentsById = new Map<string, any>((state.documents ?? []).map((document: any) => [document.id, document]));
-  const journalEntriesById = new Map<string, any>((current.journalEntries ?? []).map((entry: any) => [entry.id, entry]));
-  const revenueDocs = buildJournalDocumentRefs(current.journalLines, journalEntriesById, documentsById, { accountCode: "90.01", mode: "credit" });
-  const costOfSalesDocs = buildJournalDocumentRefs(current.journalLines, journalEntriesById, documentsById, { accountCode: "90.02", mode: "debit" });
-  const otherIncomeDocs = buildJournalDocumentRefs(current.journalLines, journalEntriesById, documentsById, { accountCode: "91.01", mode: "credit" });
-  const otherExpenseDocs = buildJournalDocumentRefs(current.journalLines, journalEntriesById, documentsById, { accountCode: "91.02", mode: "debit" });
-  const financeDocs = (predicate: (event: any) => boolean) => buildFinanceEventDocumentRefs(current.financeEvents, documentsById, predicate);
-
-  const commissionNode = createPnlLeaf(
-    "marketplace-commission",
-    "Комиссия маркетплейса",
-    current.pnl.commissionExpense,
-    "Базовая комиссия за продажу товаров на площадке.",
-    financeDocs((event) => isVariableMarketplaceTreatment(event.treatment) && event.category === "commission")
-  );
-  const acquiringNode = createPnlLeaf(
-    "marketplace-acquiring",
-    "Эквайринг",
-    current.pnl.acquiringExpense,
-    "Удержания за обработку оплаты покупателя.",
-    financeDocs((event) => isVariableMarketplaceTreatment(event.treatment) && event.category === "acquiring")
-  );
-  const lastMileNode = createPnlLeaf(
-    "marketplace-last-mile",
-    "Доставка до покупателя",
-    current.pnl.lastMileExpense,
-    "Логистика последней мили по фактическим продажам.",
-    financeDocs((event) => isVariableMarketplaceTreatment(event.treatment) && event.category === "last_mile_logistics")
-  );
-  const returnLogisticsNode = createPnlLeaf(
-    "marketplace-return-logistics",
-    "Логистика возвратов",
-    current.pnl.returnLogisticsExpense,
-    "Расходы маркетплейса на обратную логистику.",
-    financeDocs((event) => isVariableMarketplaceTreatment(event.treatment) && event.category === "return_logistics")
-  );
-  const otherVariableNode = createPnlLeaf(
-    "marketplace-other-variable",
-    "Прочие удержания по продажам",
-    current.pnl.otherVariableMarketplaceExpense,
-    "Редкие удержания, которые площадка привязывает к конкретным продажам.",
-    financeDocs(
-      (event) =>
-        isVariableMarketplaceTreatment(event.treatment) &&
-        !["commission", "acquiring", "last_mile_logistics", "return_logistics"].includes(String(event.category ?? ""))
-    )
-  );
-  const variableMarketplaceNode = createPnlBranch(
-    "marketplace-variable",
-    "Расходы маркетплейса по продажам",
-    current.pnl.variableMarketplaceExpenses,
-    "Все расходы маркетплейса, которые относятся прямо к проданным заказам.",
-    [commissionNode, acquiringNode, lastMileNode, returnLogisticsNode, otherVariableNode]
-  );
-  const adsNode = createPnlLeaf(
-    "channel-ads",
-    "Реклама и продвижение",
-    current.pnl.adsExpense,
-    "Промо, трафареты и другие рекламные списания канала.",
-    financeDocs((event) => isChannelOperatingTreatment(event.treatment) && event.category === "ads")
-  );
-  const storageNode = createPnlLeaf(
-    "channel-storage",
-    "Хранение",
-    current.pnl.storageExpense,
-    "Плата за хранение товаров на складе площадки.",
-    financeDocs((event) => isChannelOperatingTreatment(event.treatment) && event.category === "storage")
-  );
-  const crossDockingNode = createPnlLeaf(
-    "channel-cross-docking",
-    "Кросс-докинг",
-    current.pnl.crossDockingExpense,
-    "Расходы на перегрузку и внутренние перемещения площадки.",
-    financeDocs((event) => isChannelOperatingTreatment(event.treatment) && event.category === "cross_docking")
-  );
-  const inboundNode = createPnlLeaf(
-    "channel-inbound",
-    "Приемка и подготовка",
-    current.pnl.inboundHandlingExpense,
-    "Приемка, маркировка и подготовка товара на стороне маркетплейса.",
-    financeDocs((event) => isChannelOperatingTreatment(event.treatment) && event.category === "inbound_handling")
-  );
-  const subscriptionNode = createPnlLeaf(
-    "channel-subscription",
-    "Подписки и тарифы",
-    current.pnl.subscriptionExpense,
-    "Регулярные платежи за тарифы и сервисы канала.",
-    financeDocs((event) => isChannelOperatingTreatment(event.treatment) && event.category === "subscription")
-  );
-  const otherChannelNode = createPnlLeaf(
-    "channel-other",
-    "Прочие расходы канала",
-    current.pnl.otherChannelExpense,
-    "Операционные списания площадки, которые не относятся к конкретной продаже.",
-    financeDocs(
-      (event) =>
-        isChannelOperatingTreatment(event.treatment) &&
-        !["ads", "storage", "cross_docking", "inbound_handling", "subscription"].includes(String(event.category ?? ""))
-    )
-  );
-  const channelOperatingNode = createPnlBranch(
-    "channel-operating",
-    "Прочие расходы по маркетплейсу",
-    current.pnl.channelOperatingExpenses,
-    "Расходы канала, которые влияют на прибыль периода, но не относятся к одной продаже.",
-    [adsNode, storageNode, crossDockingNode, inboundNode, subscriptionNode, otherChannelNode]
-  );
-  const operatingExpensesNode = createPnlLeaf(
-    "operating-expenses",
-    "Операционные расходы бизнеса",
-    current.pnl.operatingExpenses,
-    "Расходы вне маркетплейса: аренда, услуги, зарплата и прочие затраты компании.",
-    buildOperatingExpenseDocumentRefs(current.operatingExpenses, documentsById)
-  );
-  const otherExpenseNode = createPnlLeaf(
-    "other-expenses",
-    "Прочие расходы",
-    current.pnl.otherExpense,
-    "Корректировки и разовые списания, которые не входят в обычные продажи.",
-    otherExpenseDocs
-  );
-  const incomeNode = createPnlBranch(
-    "income",
-    "Доходы",
-    round2(current.pnl.revenue + current.pnl.otherIncome),
-    "Все доходы периода: продажи и прочие поступления в отчет о прибыли и убытках.",
-    [
-      createPnlLeaf("revenue", "Выручка от продаж", current.pnl.revenue, "Продажи за выбранный период.", revenueDocs, "success"),
-      createPnlLeaf("other-income", "Прочие доходы", current.pnl.otherIncome, "Доходы вне обычных продаж.", otherIncomeDocs)
-    ],
-    "success"
-  );
-  const expensesNode = createPnlBranch(
-    "expenses",
-    "Расходы",
-    current.pnl.totalExpenses,
-    "Все затраты периода: товар, удержания маркетплейса и прочие расходы компании.",
-    [
-      createPnlLeaf("cost-of-sales", "Себестоимость товара", current.pnl.costOfSales, "Списанная себестоимость проданных товаров.", costOfSalesDocs, "warning"),
-      variableMarketplaceNode,
-      channelOperatingNode,
-      operatingExpensesNode,
-      otherExpenseNode
-    ],
-    "warning"
-  );
-  const netProfitNode = createPnlLeaf(
-    "net-profit",
-    "Чистая прибыль",
-    current.pnl.netProfit,
-    "Что осталось после всех расходов периода.",
-    mergePnlDocumentRefs(incomeNode.documents, expensesNode.documents),
-    current.pnl.netProfit >= 0 ? "success" : "danger"
-  );
-  return [incomeNode, expensesNode, netProfitNode];
-}
-
-function createPnlLeaf(
-  id: string,
-  label: string,
-  amountRub: number,
-  note: string,
-  documents: PnlDocumentRef[],
-  tone: PnlTreeNode["tone"] = "neutral"
-): PnlTreeNode {
-  return { id, label, amountRub: round2(amountRub), note, documents: sortPnlDocuments(documents), children: [], tone };
-}
-
-function createPnlBranch(
-  id: string,
-  label: string,
-  amountRub: number,
-  note: string,
-  children: PnlTreeNode[],
-  tone: PnlTreeNode["tone"] = "neutral"
-): PnlTreeNode {
-  const visibleChildren = children.filter((child) => Math.abs(child.amountRub) > 0.0001 || child.children.length > 0 || child.documents.length > 0);
-  return {
-    id,
-    label,
-    amountRub: round2(amountRub),
-    note,
-    documents: mergePnlDocumentRefs(...visibleChildren.map((child) => child.documents)),
-    children: visibleChildren,
-    tone
-  };
-}
-
-function sortPnlDocuments(documents: PnlDocumentRef[]) {
-  return [...documents].sort(
-    (left, right) =>
-      Math.abs(right.amountRub) - Math.abs(left.amountRub) || String(right.accountingDate).localeCompare(String(left.accountingDate))
-  );
-}
-
-function mergePnlDocumentRefs(...groups: PnlDocumentRef[][]): PnlDocumentRef[] {
-  const merged = new Map<string, PnlDocumentRef>();
-  for (const group of groups) {
-    for (const document of group) {
-      const current = merged.get(document.id);
-      if (current) current.amountRub = round2(current.amountRub + document.amountRub);
-      else merged.set(document.id, { ...document });
-    }
-  }
-  return sortPnlDocuments([...merged.values()]);
-}
-
-function buildJournalDocumentRefs(
-  journalLines: any[],
-  journalEntriesById: Map<string, any>,
-  documentsById: Map<string, any>,
-  options: { accountCode: string; mode: "debit" | "credit" | "signed" }
-) {
-  const rows = new Map<string, PnlDocumentRef>();
-  for (const line of journalLines) {
-    if (line.accountCode !== options.accountCode) continue;
-    const entry = journalEntriesById.get(line.journalEntryId);
-    if (!entry?.documentId) continue;
-    const document = documentsById.get(entry.documentId);
-    const amountRub =
-      options.mode === "debit"
-        ? round2(Number(line.debit ?? 0) - Number(line.credit ?? 0))
-        : round2(Number(line.credit ?? 0) - Number(line.debit ?? 0));
-    if (Math.abs(amountRub) < 0.0001) continue;
-    const current = rows.get(entry.documentId);
-    if (current) current.amountRub = round2(current.amountRub + amountRub);
-    else {
-      rows.set(entry.documentId, {
-        id: entry.documentId,
-        number: document?.number ?? entry.documentId,
-        title: document?.title ?? "Документ",
-        accountingDate: entry.accountingDate,
-        amountRub
-      });
-    }
-  }
-  return sortPnlDocuments([...rows.values()]);
-}
-
-function buildFinanceEventDocumentRefs(financeEvents: any[], documentsById: Map<string, any>, predicate: (event: any) => boolean) {
-  const rows = new Map<string, PnlDocumentRef>();
-  for (const event of financeEvents.filter(predicate)) {
-    const documentId = event.documentId ?? event.id;
-    const document = documentsById.get(event.documentId);
-    const amountRub = Number(event.amountRub ?? 0);
-    if (Math.abs(amountRub) < 0.0001) continue;
-    const current = rows.get(documentId);
-    if (current) current.amountRub = round2(current.amountRub + amountRub);
-    else {
-      rows.set(documentId, {
-        id: documentId,
-        number: document?.number ?? event.number ?? documentId,
-        title: document?.title ?? channelFinanceCategoryLabel(event.category),
-        accountingDate: String(document?.accountingDate ?? event.occurredAt ?? ""),
-        amountRub
-      });
-    }
-  }
-  return sortPnlDocuments([...rows.values()]);
-}
-
-function buildOperatingExpenseDocumentRefs(operatingExpenses: any[], documentsById: Map<string, any>) {
-  return sortPnlDocuments(
-    operatingExpenses
-      .filter((expense: any) => Number(expense.amountRub ?? 0) !== 0)
-      .map((expense: any) => {
-        const document = documentsById.get(expense.documentId);
-        return {
-          id: expense.documentId,
-          number: document?.number ?? expense.documentId,
-          title: document?.title ?? expense.category ?? "Операционный расход",
-          accountingDate: String(document?.accountingDate ?? expense.expenseDate ?? ""),
-          amountRub: Number(expense.amountRub ?? 0)
-        };
-      })
-  );
-}
-
 function findPnlNode(nodes: PnlTreeNode[], id: string): PnlTreeNode | null {
   for (const node of nodes) {
     if (node.id === id) return node;
@@ -1982,42 +831,6 @@ function findPnlNode(nodes: PnlTreeNode[], id: string): PnlTreeNode | null {
     if (child) return child;
   }
   return null;
-}
-
-function buildPnlTrendSeries(state: any, from: string, to: string, granularity: "week" | "month") {
-  return buildTrendBuckets(from, to, granularity).map((bucket) => {
-    const report = buildReportData(state, bucket.from, bucket.to);
-    return {
-      label: bucket.label,
-      revenue: report.pnl.revenue,
-      expenses: report.pnl.totalExpenses,
-      netProfit: report.pnl.netProfit
-    };
-  });
-}
-
-function buildTrendBuckets(from: string, to: string, granularity: "week" | "month") {
-  if (granularity === "week") {
-    const buckets: Array<{ from: string; to: string; label: string }> = [];
-    let cursor = from;
-    while (cursor <= to) {
-      const end = minDate(addDays(cursor, 6), to);
-      buckets.push({ from: cursor, to: end, label: `${shortDateLabel(cursor)} - ${shortDateLabel(end)}` });
-      cursor = addDays(end, 1);
-    }
-    return buckets;
-  }
-  const buckets: Array<{ from: string; to: string; label: string }> = [];
-  let cursor = startOfMonth(from);
-  const finalMonth = startOfMonth(to);
-  while (cursor <= finalMonth) {
-    const bucketFrom = cursor < from ? from : cursor;
-    const monthEnd = endOfMonth(cursor);
-    const bucketTo = monthEnd > to ? to : monthEnd;
-    buckets.push({ from: bucketFrom, to: bucketTo, label: monthLabel(bucketFrom) });
-    cursor = startOfMonth(addDays(monthEnd, 1));
-  }
-  return buckets;
 }
 
 function shareHint(amount: number, revenue: number) {

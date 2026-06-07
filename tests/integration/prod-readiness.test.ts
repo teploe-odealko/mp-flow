@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createApi } from "../../src/backend/app";
 import { AccountingApp } from "../../src/core/accounting-app";
 import { resetIds } from "../../src/core/utils";
+import { buildReportsWorkspacePayload } from "../../src/shared/reports-workspace";
 
 async function request<T>(api: ReturnType<typeof createApi>, method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
   const response = await api.request(path, {
@@ -107,6 +108,7 @@ describe("prod-ready contracts", () => {
     await app.setupDemo();
     let collectionReads = 0;
     let dashboardReads = 0;
+    let reportWorkspaceReads = 0;
     let readModelApps = 0;
     let readSessions = 0;
     const api = createApi(app, {
@@ -122,6 +124,22 @@ describe("prod-ready contracts", () => {
           dashboardReads += 1;
           return await app.dashboard();
         },
+        async readReportWorkspace(_workspaceId, options) {
+          reportWorkspaceReads += 1;
+          return buildReportsWorkspacePayload({
+            channelFinanceEvents: app.state.channelFinanceEvents,
+            chartAccounts: app.state.chartAccounts,
+            documents: app.state.documents,
+            journalEntries: app.state.journalEntries,
+            journalLines: app.state.journalLines,
+            operatingExpenses: app.state.operatingExpenses,
+            ownerTransactions: app.state.ownerTransactions,
+            products: app.state.products,
+            saleLines: app.state.saleLines,
+            sales: app.state.sales,
+            salesChannels: app.state.salesChannels
+          }, options);
+        },
         async openReadModelApp() {
           readModelApps += 1;
           return app;
@@ -136,6 +154,7 @@ describe("prod-ready contracts", () => {
     const organization = await get<any>(api, "/api/collections/organization");
     const dashboard = await get<any>(api, "/api/dashboard");
     const reports = await get<any>(api, "/api/reports");
+    const reportWorkspace = await get<any>(api, "/api/reports/workspace?dateFrom=2026-06-01&dateTo=2026-06-30&balanceDate=2026-06-30");
     const channel = app.state.salesChannels.find((candidate) => candidate.name.includes("Ozon"));
     const channelDetail = await get<any>(api, `/api/integrations/channels/${channel?.id}`);
     const syncRuns = await get<any[]>(api, `/api/integrations/channels/${channel?.id}/sync-runs`);
@@ -185,6 +204,7 @@ describe("prod-ready contracts", () => {
     expect(organization.displayName).toBe("ИП Иванов");
     expect(dashboard.configured).toBe(true);
     expect(reports.pnl.revenue).toBeGreaterThan(0);
+    expect(reportWorkspace.current.pnl.revenue).toBeGreaterThan(0);
     expect(channelDetail.channel.id).toBe(channel?.id);
     expect(syncRuns).toEqual(expect.any(Array));
     expect(observedStocks).toEqual(expect.any(Array));
@@ -223,6 +243,7 @@ describe("prod-ready contracts", () => {
     expect(agentTokensResponse.status).toBe(404);
     expect(collectionReads).toBe(1);
     expect(dashboardReads).toBe(1);
+    expect(reportWorkspaceReads).toBe(1);
     expect(readModelApps).toBeGreaterThan(6);
     expect(readSessions).toBe(0);
   });

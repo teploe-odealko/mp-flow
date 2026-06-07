@@ -8,6 +8,7 @@ import type { ObservedStockStore, ObservedStockListFilter } from "../../core/obs
 import type { SyncRunStore } from "../../core/sync-run-store";
 import type { CollectionRepo, Repositories } from "../../core/repositories";
 import { createEmptyState, currentIdSequence, restoreIdSequence, round2 } from "../../core/utils";
+import { buildReportsWorkspacePayload, type ReportsWorkspaceOptions } from "../../shared/reports-workspace";
 import { stableUuid } from "./ids";
 import {
   ACCOUNTING_POLICY_JOINS,
@@ -276,6 +277,7 @@ export interface RuntimePersistence {
   readCollection?(workspaceId: string | undefined, name: string): Promise<{ found: boolean; data?: unknown }>;
   readDashboard?(workspaceId?: string): Promise<unknown>;
   readReports?(workspaceId?: string): Promise<unknown>;
+  readReportWorkspace?(workspaceId: string | undefined, options: ReportsWorkspaceOptions): Promise<unknown>;
   readLedgerBalances?(workspaceId?: string): Promise<RuntimeLedgerBalances>;
   openReadModelApp?(workspaceId?: string): Promise<AccountingApp>;
   openReadSession?(workspaceId?: string): Promise<RuntimeSession>;
@@ -1893,6 +1895,11 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     return await readRuntimeReports(this.pool, normalizeWorkspaceId(workspaceId));
   }
 
+  async readReportWorkspace(workspaceId: string | undefined, options: ReportsWorkspaceOptions): Promise<unknown> {
+    await this.init();
+    return await readRuntimeReportWorkspace(this.pool, normalizeWorkspaceId(workspaceId), options);
+  }
+
   async readLedgerBalances(workspaceId = DEFAULT_WORKSPACE_ID): Promise<RuntimeLedgerBalances> {
     await this.init();
     return await readRuntimeLedgerBalances(this.pool, normalizeWorkspaceId(workspaceId));
@@ -2658,6 +2665,48 @@ export async function readRuntimeReports(source: Queryable, workspaceId: string 
       grossMarginPercent: Number(line.revenueRub ?? 0) > 0 ? round2(((Number(line.revenueRub ?? 0) - Number(line.costRub ?? 0)) / Number(line.revenueRub ?? 0)) * 100) : 0
     }))
   };
+}
+
+export async function readRuntimeReportWorkspace(source: Queryable, workspaceId: string | undefined, options: ReportsWorkspaceOptions) {
+  const scope = normalizeWorkspaceId(workspaceId);
+  const [
+    channelFinanceEvents,
+    chartAccounts,
+    documents,
+    journalEntries,
+    journalLines,
+    operatingExpenses,
+    ownerTransactions,
+    products,
+    saleLines,
+    sales,
+    salesChannels
+  ] = await Promise.all([
+    readCollectionData<RuntimeEntity>(source, scope, "channelFinanceEvents"),
+    readCollectionData<RuntimeEntity>(source, scope, "chartAccounts"),
+    readCollectionData<RuntimeEntity>(source, scope, "documents"),
+    readCollectionData<RuntimeEntity>(source, scope, "journalEntries"),
+    readCollectionData<RuntimeEntity>(source, scope, "journalLines"),
+    readCollectionData<RuntimeEntity>(source, scope, "operatingExpenses"),
+    readCollectionData<RuntimeEntity>(source, scope, "ownerTransactions"),
+    readCollectionData<RuntimeEntity>(source, scope, "products"),
+    readCollectionData<RuntimeEntity>(source, scope, "saleLines"),
+    readCollectionData<RuntimeEntity>(source, scope, "sales"),
+    readCollectionData<RuntimeEntity>(source, scope, "salesChannels")
+  ]);
+  return buildReportsWorkspacePayload({
+    channelFinanceEvents,
+    chartAccounts,
+    documents,
+    journalEntries,
+    journalLines,
+    operatingExpenses,
+    ownerTransactions,
+    products,
+    saleLines,
+    sales,
+    salesChannels
+  }, options);
 }
 
 async function readCollectionData<T extends RuntimeEntity>(source: Queryable, workspaceId: string, name: RuntimeCollectionName): Promise<T[]> {

@@ -289,6 +289,13 @@ singleton `organization/accountingPolicy`, counters, current period и ledger ba
 Postgres read-model без создания `AccountingApp`. `RuntimePersistence` получил `readDashboard`, а
 prod-readiness фиксирует, что dashboard больше не открывает request-scoped snapshot/read session.
 
+### ✅ Frontend ReportsPage больше не собирает локальный god-state
+Экран отчётов перешёл с `state = { ...useCollection(...) }` на `/api/reports/workspace` с query-фильтрами
+`dateFrom/dateTo/balanceDate/compareBalanceDate/pnlGranularity`. Postgres runtime обслуживает endpoint через
+`readRuntimeReportWorkspace()` и typed коллекции, без `openReadModelApp`; in-memory fallback есть только для
+тестового контура. Балансовый drilldown временно снят с клиентского расчёта и должен стать отдельной
+атомарной ручкой, если понадобится вернуть кликабельную расшифровку.
+
 ### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
 Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/
 addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocumentSummary(x))` — хелперы каскадно

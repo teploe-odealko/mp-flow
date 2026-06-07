@@ -6,12 +6,13 @@ import { z } from "zod";
 import { AccountingApp } from "../core/accounting-app";
 import type { AgentToken, ChannelFinanceEvent, ChannelStreamCode, ExternalEvent, Payout, Sale, SalesChannel, SalesReturn, SyncRun } from "../core/models";
 import { DomainError, id, nowIso, runWithIdSequence } from "../core/utils";
-import { openPostgresReadModelApp, readRuntimeCollection, readRuntimeDashboard, readRuntimeLedgerBalances, readRuntimeReports, type RuntimePersistence } from "../infra/db/runtime-store";
+import { openPostgresReadModelApp, readRuntimeCollection, readRuntimeDashboard, readRuntimeLedgerBalances, readRuntimeReports, readRuntimeReportWorkspace, type RuntimePersistence } from "../infra/db/runtime-store";
 import { pluginRegistry } from "../plugins/registry";
 import { createPluginSecretApi, createPluginStateApi, pluginStateKey } from "../plugins/runtime";
 import { buildMediaKey, createPresignedUpload, headObject, isAllowedImageType, isStorageConfigured } from "../infra/storage/s3";
 import { getCardStudioGenerationRequirements, getCardStudioPlaybook } from "./card-studio";
 import { classifyChannelFinancePayload } from "../shared/channel-finance";
+import { buildReportsWorkspacePayload, type ReportsWorkspaceInput, type ReportsWorkspaceOptions } from "../shared/reports-workspace";
 import { AuthService, createAuthMiddleware, ensureAppUser, publicUser } from "./auth";
 import { initHttpMetrics, metricsMiddleware, renderMetrics } from "./metrics";
 import { captureException } from "./observability";
@@ -219,6 +220,13 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (postgresBacked()) return await readRuntimeDashboard(getPool(), workspaceId);
     return await (await readModelAppFor(c)).dashboard();
   };
+  const reportWorkspaceFor = async (c: Context): Promise<any> => {
+    const workspaceId = eventsWorkspaceId(c);
+    const reportOptions = reportWorkspaceOptionsFor(c);
+    if (options.persistence?.readReportWorkspace) return await options.persistence.readReportWorkspace(workspaceId, reportOptions);
+    if (postgresBacked()) return await readRuntimeReportWorkspace(getPool(), workspaceId, reportOptions);
+    return buildReportsWorkspacePayload(await reportsWorkspaceInputFor(await readModelAppFor(c)), reportOptions);
+  };
   const ledgerBalancesFor = async (c: Context): Promise<Record<string, { debit: number; credit: number }>> => {
     const workspaceId = eventsWorkspaceId(c);
     if (options.persistence?.readLedgerBalances) return await options.persistence.readLedgerBalances(workspaceId);
@@ -396,6 +404,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: await dashboardFor(c) });
   });
   api.get("/api/reports", async (c) => c.json({ ok: true, data: await reportsFor(c) }));
+  api.get("/api/reports/workspace", async (c) => c.json({ ok: true, data: await reportWorkspaceFor(c) }));
   api.get("/api/reports/profit-and-loss", async (c) => c.json({ ok: true, data: (await reportsFor(c)).pnl }));
   api.get("/api/reports/balance-sheet", async (c) => c.json({ ok: true, data: (await reportsFor(c)).balanceSheet }));
   api.get("/api/reports/cash-flow", async (c) => c.json({ ok: true, data: (await reportsFor(c)).cashFlow }));
@@ -2369,6 +2378,66 @@ async function collectionPayload(
   if (!repo) throw new DomainError("collection_not_found", `Неизвестная коллекция: ${name}`);
   const items = await repo.all();
   return sanitizeCollectionPayload(name, items);
+}
+
+function reportWorkspaceOptionsFor(c: Context): ReportsWorkspaceOptions {
+  const now = new Date();
+  const defaultFrom = formatLocalDate(new Date(now.getFullYear(), now.getMonth(), 1));
+  const defaultTo = formatLocalDate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+  const dateFrom = c.req.query("dateFrom") || defaultFrom;
+  const dateTo = c.req.query("dateTo") || defaultTo;
+  const balanceDate = c.req.query("balanceDate") || dateTo;
+  const compareBalanceDate = c.req.query("compareBalanceDate") || undefined;
+  const pnlGranularity = c.req.query("pnlGranularity") === "month" ? "month" : "week";
+  return { dateFrom, dateTo, balanceDate, compareBalanceDate, pnlGranularity };
+}
+
+async function reportsWorkspaceInputFor(app: AccountingApp): Promise<ReportsWorkspaceInput> {
+  const [
+    channelFinanceEvents,
+    chartAccounts,
+    documents,
+    journalEntries,
+    journalLines,
+    operatingExpenses,
+    ownerTransactions,
+    products,
+    saleLines,
+    sales,
+    salesChannels
+  ] = await Promise.all([
+    app.repos.channelFinanceEvents.all(),
+    app.repos.chartAccounts.all(),
+    app.repos.documents.all(),
+    app.repos.journalEntries.all(),
+    app.repos.journalLines.all(),
+    app.repos.operatingExpenses.all(),
+    app.repos.ownerTransactions.all(),
+    app.repos.products.all(),
+    app.repos.saleLines.all(),
+    app.repos.sales.all(),
+    app.repos.salesChannels.all()
+  ]);
+  return {
+    channelFinanceEvents,
+    chartAccounts,
+    documents,
+    journalEntries,
+    journalLines,
+    operatingExpenses,
+    ownerTransactions,
+    products,
+    saleLines,
+    sales,
+    salesChannels
+  };
+}
+
+function formatLocalDate(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 async function mcpSettingsPayload(app: AccountingApp, endpoint: string) {

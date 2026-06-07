@@ -81,6 +81,7 @@ describePostgres("postgres runtime store", () => {
     });
     const dashboard = await request<any>(api, "GET", "/api/dashboard");
     const reports = await request<any>(api, "GET", "/api/reports");
+    const reportWorkspace = await request<any>(api, "GET", "/api/reports/workspace?dateFrom=2026-01-01&dateTo=2026-12-31&balanceDate=2026-12-31");
     const ledger = await request<Record<string, { debit: number; credit: number }>>(api, "GET", "/api/ledger");
 
     const inspectPool = new Pool({ connectionString: connectionString! });
@@ -101,6 +102,7 @@ describePostgres("postgres runtime store", () => {
       expect(products.rows).toContainEqual({ sku: "PG-001", public_id: product.id });
       expect(dashboard.configured).toBe(true);
       expect(dashboard.counters.products).toBe(1);
+      expect(reportWorkspace.productOptions).toContainEqual(expect.objectContaining({ id: product.id, sku: "PG-001" }));
       expect(credentials.rows[0]?.fields.sort()).toEqual(["apiKey", "clientId"]);
       expect(JSON.stringify(credentials.rows[0]?.encrypted_credentials)).not.toContain("pg-key");
       expect(reports.trialBalance).toEqual(expect.any(Array));
