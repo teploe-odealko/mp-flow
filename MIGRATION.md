@@ -201,6 +201,18 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   тоже собирает read DTO через `RuntimeReadContext`, включая строки приемки, доступный остаток,
   уже отгруженное количество, связки external offer и plugin meta. Prod-readiness держит
   `readSessions = 0` на этих read paths.
+- ✅ Rollback/shortage previews вынесены в backend service поверх `RuntimeReadContext`
+  (`src/backend/services/rollback-preview-service.ts`) и зарегистрированы до session middleware:
+  `/api/procurement/receipts/:id/delete-preview`, `/api/procurement/costs/:id/delete-preview`,
+  `/api/procurement/purchase-orders/:id/shortages/preview`, `/api/payments/:id/delete-preview`,
+  `/api/inventory/transfers/:id/delete-preview`, `/api/sales/:id/delete-preview`. Эти контроллеры
+  теперь идут по схеме `controller → service → repositories`, не открывают `AccountingApp` read session
+  и покрыты prod-readiness проверкой `readSessions = 0`.
+- ✅ Receipt preview тоже снят с session middleware: GET/POST
+  `/api/procurement/purchase-orders/:id/receipt-preview` обслуживаются
+  `src/backend/services/procurement-preview-service.ts` через `RuntimeReadContext`. POST preview больше
+  не открывает write session ради чистого расчёта; prod-readiness сравнивает DTO с прежним
+  `AccountingApp.previewGoodsReceipt`.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,

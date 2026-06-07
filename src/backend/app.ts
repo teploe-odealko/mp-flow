@@ -19,6 +19,15 @@ import { initHttpMetrics, metricsMiddleware, renderMetrics } from "./metrics";
 import { captureException } from "./observability";
 import { getPool } from "./db/pool";
 import { ExternalEventRepository } from "./repositories/external-event-repository";
+import { defaultReceiptPreviewFor, receiptPreviewFor } from "./services/procurement-preview-service";
+import {
+  goodsReceiptRollbackPreviewFor,
+  paymentRollbackPreviewFor,
+  procurementCostRollbackPreviewFor,
+  saleRollbackPreviewFor,
+  shortagePreviewFor,
+  stockTransferRollbackPreviewFor
+} from "./services/rollback-preview-service";
 
 interface CreateApiOptions {
   persistence?: RuntimePersistence;
@@ -1584,6 +1593,31 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/procurement/receipts/:id/dispatch-context", async (c) => {
     return c.json({ ok: true, data: await receiptDispatchContextFor(await readContextFor(c), c.req.param("id"), c.req.query("channelId")) });
   });
+  api.get("/api/procurement/receipts/:id/delete-preview", async (c) => {
+    return c.json({ ok: true, data: await goodsReceiptRollbackPreviewFor(await readContextFor(c), c.req.param("id")) });
+  });
+  api.get("/api/procurement/costs/:id/delete-preview", async (c) => {
+    return c.json({ ok: true, data: await procurementCostRollbackPreviewFor(await readContextFor(c), c.req.param("id")) });
+  });
+  api.get("/api/procurement/purchase-orders/:id/shortages/preview", async (c) => {
+    return c.json({ ok: true, data: await shortagePreviewFor(await readContextFor(c), c.req.param("id")) });
+  });
+  api.get("/api/payments/:id/delete-preview", async (c) => {
+    return c.json({ ok: true, data: await paymentRollbackPreviewFor(await readContextFor(c), c.req.param("id")) });
+  });
+  api.get("/api/inventory/transfers/:id/delete-preview", async (c) => {
+    return c.json({ ok: true, data: await stockTransferRollbackPreviewFor(await readContextFor(c), c.req.param("id")) });
+  });
+  api.get("/api/sales/:id/delete-preview", async (c) => {
+    return c.json({ ok: true, data: await saleRollbackPreviewFor(await readContextFor(c), c.req.param("id")) });
+  });
+  api.get("/api/procurement/purchase-orders/:id/receipt-preview", async (c) => {
+    return c.json({ ok: true, data: await defaultReceiptPreviewFor(await readContextFor(c), c.req.param("id")) });
+  });
+  api.post("/api/procurement/purchase-orders/:id/receipt-preview", async (c) => {
+    const body = receiptPreviewSchema.parse(await c.req.json());
+    return c.json({ ok: true, data: await receiptPreviewFor(await readContextFor(c), { ...body, purchaseOrderId: c.req.param("id") }) });
+  });
 
   api.use("/api/*", async (c, next) => {
     const authUser = c.get("authUser") as PublicAuthUser | undefined;
@@ -1811,36 +1845,11 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = supplierPaymentSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.recordSupplierPayment({ ...body, purchaseOrderId: c.req.param("id") }) });
   });
-  api.get("/api/procurement/purchase-orders/:id/receipt-preview", async (c) => {
-    const details = await scopedApp.purchaseOrderDetails(c.req.param("id"));
-    const documents = await scopedApp.repos.documents.all();
-    const receiptLines = await scopedApp.repos.goodsReceiptLines.all();
-    const postedReceiptIds = new Set(
-      (await scopedApp.repos.goodsReceipts.all())
-        .filter((receipt) => receipt.status === "posted")
-        .filter((receipt) => documents.find((document) => document.id === receipt.documentId)?.status === "posted")
-        .map((receipt) => receipt.id)
-    );
-    const lines = details.lines
-      .map((line) => ({
-        purchaseOrderLineId: line.id,
-        qtyReceived: line.qtyOrdered - receiptLines
-          .filter((receiptLine) => receiptLine.purchaseOrderLineId === line.id && postedReceiptIds.has(receiptLine.goodsReceiptId))
-          .reduce((sum, receiptLine) => sum + receiptLine.qtyReceived, 0)
-      }))
-      .filter((line) => line.qtyReceived > 0);
-    return c.json({ ok: true, data: await scopedApp.previewGoodsReceipt({ purchaseOrderId: details.order.id, lines }) });
-  });
-  api.post("/api/procurement/purchase-orders/:id/receipt-preview", async (c) => {
-    const body = receiptPreviewSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: await scopedApp.previewGoodsReceipt({ ...body, purchaseOrderId: c.req.param("id") }) });
-  });
   api.post("/api/procurement/purchase-orders/:id/receipts", async (c) => {
     const body = goodsReceiptSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.receiveGoods({ ...body, purchaseOrderId: c.req.param("id") }) });
   });
   api.post("/api/procurement/receipts/:id/post", async (c) => c.json({ ok: true, data: await scopedApp.postGoodsReceipt(c.req.param("id")) }));
-  api.get("/api/procurement/receipts/:id/delete-preview", async (c) => c.json({ ok: true, data: await scopedApp.goodsReceiptRollbackPreview(c.req.param("id")) }));
   api.delete("/api/procurement/receipts/:id", async (c) => c.json({ ok: true, data: await scopedApp.deleteGoodsReceipt(c.req.param("id")) }));
   api.post("/api/procurement/receipts/:id/channel-dispatch/basic", async (c) => {
     const receiptId = c.req.param("id");
@@ -2062,13 +2071,11 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: cost });
   });
   api.post("/api/procurement/costs/:id/post", async (c) => c.json({ ok: true, data: await scopedApp.postProcurementCost(c.req.param("id")) }));
-  api.get("/api/procurement/costs/:id/delete-preview", async (c) => c.json({ ok: true, data: await scopedApp.procurementCostRollbackPreview(c.req.param("id")) }));
   api.delete("/api/procurement/costs/:id", async (c) => c.json({ ok: true, data: await scopedApp.deleteProcurementCost(c.req.param("id")) }));
   api.post("/api/procurement/purchase-orders/:id/shortages", async (c) => {
     const body = shortageSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.resolveShortage({ ...body, purchaseOrderId: c.req.param("id") }) });
   });
-  api.get("/api/procurement/purchase-orders/:id/shortages/preview", async (c) => c.json({ ok: true, data: await scopedApp.shortagePreview(c.req.param("id")) }));
   api.post("/api/procurement/shortages/:id/post", async (c) => c.json({ ok: true, data: await scopedApp.postShortage(c.req.param("id")) }));
 
   api.post("/api/money/owner-contributions", async (c) => {
@@ -2088,7 +2095,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: await scopedApp.updateCashAccount(c.req.param("id"), body) });
   });
   api.post("/api/payments/:id/post", async (c) => c.json({ ok: true, data: await scopedApp.postPayment(c.req.param("id")) }));
-  api.get("/api/payments/:id/delete-preview", async (c) => c.json({ ok: true, data: await scopedApp.paymentRollbackPreview(c.req.param("id")) }));
   api.delete("/api/payments/:id", async (c) => c.json({ ok: true, data: await scopedApp.deletePayment(c.req.param("id")) }));
 
   api.post("/api/inventory/transfers", async (c) => {
@@ -2096,7 +2102,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: await scopedApp.transferStock(body) });
   });
   api.patch("/api/inventory/transfers/:id", async (c) => c.json({ ok: true, data: await scopedApp.transferDetails(c.req.param("id")) }));
-  api.get("/api/inventory/transfers/:id/delete-preview", async (c) => c.json({ ok: true, data: await scopedApp.stockTransferRollbackPreview(c.req.param("id")) }));
   api.delete("/api/inventory/transfers/:id", async (c) => c.json({ ok: true, data: await scopedApp.deleteStockTransfer(c.req.param("id")) }));
   api.post("/api/inventory/transfers/:id/post", async (c) => c.json({ ok: true, data: await scopedApp.postStockTransfer(c.req.param("id")) }));
   api.post("/api/inventory/stocktakes", async (c) => {
@@ -2449,9 +2454,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/sales", async (c) => {
     const body = saleSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.recordSale(body) });
-  });
-  api.get("/api/sales/:id/delete-preview", async (c) => {
-    return c.json({ ok: true, data: await scopedApp.saleRollbackPreview(c.req.param("id")) });
   });
   api.patch("/api/sales/:id", async (c) => {
     const body = z.object({ status: z.enum(["shipped", "posted", "reversed"]).optional() }).parse(await c.req.json());

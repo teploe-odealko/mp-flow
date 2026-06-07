@@ -191,9 +191,11 @@ describe("prod-ready contracts", () => {
     const journal = await get<any>(api, "/api/accounting/journal");
     const document = app.state.documents[0];
     const purchaseOrder = app.state.purchaseOrders[0];
+    const purchaseOrderLines = app.state.purchaseOrderLines.filter((line) => line.purchaseOrderId === purchaseOrder.id);
     const receipt = app.state.goodsReceipts[0];
     const procurementCost = app.state.procurementCosts[0];
     const transfer = app.state.stockTransfers[0];
+    const payment = app.state.payments[0];
     const product = app.state.products[0];
     const sale = app.state.sales[0];
     const financeEvent = app.state.channelFinanceEvents[0];
@@ -204,6 +206,9 @@ describe("prod-ready contracts", () => {
     const orderDetail = await get<any>(api, `/api/procurement/purchase-orders/${purchaseOrder.id}`);
     const orderPayments = await get<any[]>(api, `/api/procurement/purchase-orders/${purchaseOrder.id}/payments`);
     const orderReceipts = await get<any[]>(api, `/api/procurement/purchase-orders/${purchaseOrder.id}/receipts`);
+    const receiptPreview = await get<any>(api, `/api/procurement/purchase-orders/${purchaseOrder.id}/receipt-preview`);
+    const receiptPreviewInput = { lines: [{ purchaseOrderLineId: purchaseOrderLines[0].id, qtyReceived: 1 }] };
+    const customReceiptPreview = await post<any>(api, `/api/procurement/purchase-orders/${purchaseOrder.id}/receipt-preview`, receiptPreviewInput);
     const receiptDetail = await get<any>(api, `/api/procurement/receipts/${receipt.id}`);
     const orderCosts = await get<any[]>(api, `/api/procurement/purchase-orders/${purchaseOrder.id}/costs`);
     const costDetail = await get<any>(api, `/api/procurement/costs/${procurementCost.id}`);
@@ -227,6 +232,12 @@ describe("prod-ready contracts", () => {
     const navigation = await get<any[]>(api, "/api/meta/navigation");
     const dispatchState = await get<any>(api, `/api/procurement/receipts/${receipt.id}/channel-dispatch/state?channelId=${channel?.id}`);
     const dispatchContext = await get<any>(api, `/api/procurement/receipts/${receipt.id}/dispatch-context?channelId=${channel?.id}`);
+    const receiptDeletePreview = await get<any>(api, `/api/procurement/receipts/${receipt.id}/delete-preview`);
+    const costDeletePreview = await get<any>(api, `/api/procurement/costs/${procurementCost.id}/delete-preview`);
+    const shortagePreview = await get<any>(api, `/api/procurement/purchase-orders/${purchaseOrder.id}/shortages/preview`);
+    const paymentDeletePreview = await get<any>(api, `/api/payments/${payment.id}/delete-preview`);
+    const transferDeletePreview = await get<any>(api, `/api/inventory/transfers/${transfer.id}/delete-preview`);
+    const saleDeletePreview = await get<any>(api, `/api/sales/${sale.id}/delete-preview`);
     const mcpConfig = await get<any>(api, "/api/mcp/config");
     const productListWorkspace = await get<any>(api, "/api/products/workspace");
     const productChannelMapping = await get<any>(api, "/api/products/channel-mapping");
@@ -269,6 +280,22 @@ describe("prod-ready contracts", () => {
     expect(orderDetail.order.id).toBe(purchaseOrder.id);
     expect(orderPayments.length).toBeGreaterThan(0);
     expect(orderReceipts[0]?.id).toBe(receipt.id);
+    const postedReceiptIds = new Set(
+      app.state.goodsReceipts
+        .filter((candidate) => candidate.status === "posted")
+        .filter((candidate) => app.state.documents.find((item) => item.id === candidate.documentId)?.status === "posted")
+        .map((candidate) => candidate.id)
+    );
+    const defaultReceiptPreviewLines = purchaseOrderLines
+      .map((line) => ({
+        purchaseOrderLineId: line.id,
+        qtyReceived: line.qtyOrdered - app.state.goodsReceiptLines
+          .filter((receiptLine) => receiptLine.purchaseOrderLineId === line.id && postedReceiptIds.has(receiptLine.goodsReceiptId))
+          .reduce((sum, receiptLine) => sum + receiptLine.qtyReceived, 0)
+      }))
+      .filter((line) => line.qtyReceived > 0);
+    expect(receiptPreview).toEqual(await app.previewGoodsReceipt({ purchaseOrderId: purchaseOrder.id, lines: defaultReceiptPreviewLines }));
+    expect(customReceiptPreview).toEqual(await app.previewGoodsReceipt({ purchaseOrderId: purchaseOrder.id, ...receiptPreviewInput }));
     expect(receiptDetail.receipt.id).toBe(receipt.id);
     expect(orderCosts[0]?.id).toBe(procurementCost.id);
     expect(costDetail.cost.id).toBe(procurementCost.id);
@@ -295,6 +322,18 @@ describe("prod-ready contracts", () => {
     expect(dispatchContext.channel.id).toBe(channel?.id);
     expect(dispatchContext.plugin?.code).toBe("ozon");
     expect(dispatchContext.lines).toEqual(expect.any(Array));
+    expect(receiptDeletePreview).toEqual(await app.goodsReceiptRollbackPreview(receipt.id));
+    expect(receiptDeletePreview.entityType).toBe("goods_receipt");
+    expect(costDeletePreview).toEqual(await app.procurementCostRollbackPreview(procurementCost.id));
+    expect(costDeletePreview.entityType).toBe("procurement_cost");
+    expect(shortagePreview).toEqual(await app.shortagePreview(purchaseOrder.id));
+    expect(shortagePreview.purchaseOrderId).toBe(purchaseOrder.id);
+    expect(paymentDeletePreview).toEqual(await app.paymentRollbackPreview(payment.id));
+    expect(paymentDeletePreview.entityType).toBe("payment");
+    expect(transferDeletePreview).toEqual(await app.stockTransferRollbackPreview(transfer.id));
+    expect(transferDeletePreview.entityType).toBe("stock_transfer");
+    expect(saleDeletePreview).toEqual(await app.saleRollbackPreview(sale.id));
+    expect(saleDeletePreview.entityType).toBe("sale");
     expect(mcpConfig.tools.length).toBeGreaterThan(0);
     expect(productListWorkspace.products).toEqual(expect.any(Array));
     expect(productChannelMapping.products).toEqual(expect.any(Array));
