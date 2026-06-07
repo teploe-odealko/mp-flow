@@ -696,6 +696,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const readModelApp = await readModelAppFor(c);
     return c.json({ ok: true, data: { cashAccounts: await readModelApp.repos.cashAccounts.all(), payments: await readModelApp.repos.payments.all(), allocations: await readModelApp.repos.paymentAllocations.all() } });
   });
+  api.get("/api/finance/workspace", async (c) => c.json({ ok: true, data: await financeWorkspaceFor(await readModelAppFor(c)) }));
   api.get("/api/inventory/transfer-preview", async (c) => {
     const readModelApp = await readModelAppFor(c);
     return c.json({ ok: true, data: { stock: await readModelApp.stockByProduct(), lots: await readModelApp.repos.inventoryLots.all() } });
@@ -766,17 +767,11 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const readModelApp = await readModelAppFor(c);
     return c.json({ ok: true, data: { expenses: await readModelApp.repos.operatingExpenses.all(), categories: await readModelApp.repos.expenseCategories.all() } });
   });
+  api.get("/api/finance/expenses/workspace", async (c) => c.json({ ok: true, data: await expensesWorkspaceFor(await readModelAppFor(c)) }));
+  api.get("/api/finance/expenses/form-workspace", async (c) => c.json({ ok: true, data: await expenseFormWorkspaceFor(await readModelAppFor(c)) }));
   api.get("/api/finance/expenses/:id", async (c) => {
     const readModelApp = await readModelAppFor(c);
-    const expense = await readModelApp.repos.operatingExpenses.getById(c.req.param("id"));
-    if (!expense) throw new DomainError("expense_not_found", "Расход не найден");
-    return c.json({ ok: true, data: {
-      expense,
-      document: await readModelApp.repos.documents.getById(expense.documentId),
-      payment: await readModelApp.repos.payments.getById(expense.paymentId),
-      counterparty: expense.counterpartyId ? await readModelApp.repos.counterparties.getById(expense.counterpartyId) : undefined,
-      category: await readModelApp.repos.expenseCategories.getById(expense.categoryId)
-    } });
+    return c.json({ ok: true, data: await expenseDetailFor(readModelApp, c.req.param("id")) });
   });
   api.get("/api/controls/corrections", async (c) => {
     const readModelApp = await readModelAppFor(c);
@@ -2599,6 +2594,104 @@ async function reportsWorkspaceInputFor(app: AccountingApp): Promise<ReportsWork
     sales,
     salesChannels
   };
+}
+
+async function financeWorkspaceFor(app: AccountingApp) {
+  const [
+    documents,
+    cashAccounts,
+    payments,
+    counterparties,
+    expenseCategories,
+    operatingExpenses,
+    ownerTransactions,
+    paymentAllocations,
+    payouts,
+    procurementCosts,
+    purchaseOrders,
+    salesChannels
+  ] = await Promise.all([
+    app.repos.documents.all(),
+    app.repos.cashAccounts.all(),
+    app.repos.payments.all(),
+    app.repos.counterparties.all(),
+    app.repos.expenseCategories.all(),
+    app.repos.operatingExpenses.all(),
+    app.repos.ownerTransactions.all(),
+    app.repos.paymentAllocations.all(),
+    app.repos.payouts.all(),
+    app.repos.procurementCosts.all(),
+    app.repos.purchaseOrders.all(),
+    app.repos.salesChannels.all()
+  ]);
+  return {
+    documents,
+    cashAccounts,
+    payments,
+    accountingPolicy: app.setupMetadata().accountingPolicy,
+    counterparties,
+    expenseCategories,
+    operatingExpenses,
+    ownerTransactions,
+    paymentAllocations,
+    payouts,
+    procurementCosts,
+    purchaseOrders,
+    salesChannels
+  };
+}
+
+async function expensesWorkspaceFor(app: AccountingApp) {
+  const [
+    expenses,
+    categories,
+    counterparties,
+    ownerTransactions,
+    payments,
+    documents
+  ] = await Promise.all([
+    app.repos.operatingExpenses.all(),
+    app.repos.expenseCategories.all(),
+    app.repos.counterparties.all(),
+    app.repos.ownerTransactions.all(),
+    app.repos.payments.all(),
+    app.repos.documents.all()
+  ]);
+  return {
+    expenses,
+    categories,
+    counterparties,
+    ownerTransactions,
+    payments,
+    documents,
+    accountingPolicy: app.setupMetadata().accountingPolicy
+  };
+}
+
+async function expenseFormWorkspaceFor(app: AccountingApp) {
+  const [categories, counterparties, cashAccounts] = await Promise.all([
+    app.repos.expenseCategories.all(),
+    app.repos.counterparties.all(),
+    app.repos.cashAccounts.all()
+  ]);
+  return {
+    categories,
+    counterparties,
+    cashAccounts,
+    accountingPolicy: app.setupMetadata().accountingPolicy
+  };
+}
+
+async function expenseDetailFor(app: AccountingApp, expenseId: string) {
+  const expense = await app.repos.operatingExpenses.getById(expenseId);
+  if (!expense) throw new DomainError("expense_not_found", "Расход не найден");
+  const [document, payment, counterparty, category] = await Promise.all([
+    app.repos.documents.getById(expense.documentId),
+    app.repos.payments.getById(expense.paymentId),
+    expense.counterpartyId ? app.repos.counterparties.getById(expense.counterpartyId) : Promise.resolve(undefined),
+    app.repos.expenseCategories.getById(expense.categoryId)
+  ]);
+  return { expense, document, payment, counterparty, category };
 }
 
 function formatLocalDate(value: Date) {

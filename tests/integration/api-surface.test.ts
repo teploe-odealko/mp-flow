@@ -64,6 +64,7 @@ describe("MPFlow api surface", () => {
       get<{ stock: unknown[]; lots: unknown[]; movements: unknown[] }>(api, "/api/inventory"),
       get<{ orders: unknown[]; lines: unknown[] }>(api, "/api/procurement/purchase-orders"),
       get<{ cashAccounts: unknown[]; payments: unknown[]; allocations: unknown[] }>(api, "/api/money/payments"),
+      get<{ cashAccounts: unknown[]; payments: unknown[]; documents: unknown[]; operatingExpenses: unknown[]; payouts: unknown[] }>(api, "/api/finance/workspace"),
       get<{ plugins: unknown[]; channels: unknown[] }>(api, "/api/channels"),
       get<{ externalProducts: unknown[]; links: unknown[]; products: unknown[]; channels: unknown[] }>(api, "/api/products/channel-mapping"),
       get<unknown[]>(api, "/api/integrations/events"),
@@ -75,7 +76,7 @@ describe("MPFlow api surface", () => {
       get<unknown[]>(api, "/api/controls/audit-events")
     ]);
 
-    const [dashboard, setup, accounts, journal, ledger, documents, products, inventory, purchaseOrders, money, channels, mapping, events, sales, returns, payouts, expenses, corrections, auditEvents] = readModels;
+    const [dashboard, setup, accounts, journal, ledger, documents, products, inventory, purchaseOrders, money, financeWorkspace, channels, mapping, events, sales, returns, payouts, expenses, corrections, auditEvents] = readModels;
     expect(dashboard.configured).toBe(true);
     expect(dashboard.counters.products).toBeGreaterThan(0);
     expect(dashboard.counters.documents).toBeGreaterThan(0);
@@ -92,6 +93,9 @@ describe("MPFlow api surface", () => {
     expect(purchaseOrders.lines.length).toBe(2);
     expect(money.cashAccounts.length).toBeGreaterThan(0);
     expect(money.payments.length).toBeGreaterThan(0);
+    expect(financeWorkspace.cashAccounts.length).toBeGreaterThan(0);
+    expect(financeWorkspace.documents.length).toBeGreaterThan(0);
+    expect(financeWorkspace.payments.length).toBeGreaterThan(0);
     expect(channels.plugins.length).toBeGreaterThan(0);
     expect(channels.channels.length).toBe(1);
     expect(mapping.products.length).toBe(2);
@@ -103,6 +107,50 @@ describe("MPFlow api surface", () => {
     expect(expenses.categories.length).toBeGreaterThan(0);
     expect(corrections.jobs).toEqual([]);
     expect(Array.isArray(auditEvents)).toBe(true);
+  });
+
+  it("exposes expense workspace, form workspace and detail payloads", async () => {
+    const { app, api } = makeApi();
+    await app.setupDemo();
+
+    const form = await get<{ categories: any[]; counterparties: any[]; cashAccounts: any[]; accountingPolicy?: any }>(
+      api,
+      "/api/finance/expenses/form-workspace"
+    );
+    const cashAccount = form.cashAccounts.find((account: any) => account.isActive);
+    expect(form.categories.length).toBeGreaterThan(0);
+    expect(form.counterparties.length).toBeGreaterThan(0);
+    expect(cashAccount).toBeTruthy();
+    expect(form.accountingPolicy?.accountingStartDate).toBe("2026-06-01");
+
+    const expense = await post<any>(api, "/api/finance/expenses", {
+      categoryId: form.categories[0].id,
+      counterpartyId: form.counterparties[0].id,
+      expenseDate: "2026-06-24",
+      amountRub: 1500,
+      cashAccountId: cashAccount.id,
+      comment: "QA расход workspace"
+    });
+
+    const workspace = await get<{ expenses: any[]; categories: any[]; counterparties: any[]; ownerTransactions: any[]; payments: any[]; documents: any[]; accountingPolicy?: any }>(
+      api,
+      "/api/finance/expenses/workspace"
+    );
+    expect(workspace.expenses.some((item: any) => item.id === expense.id)).toBe(true);
+    expect(workspace.categories.length).toBeGreaterThan(0);
+    expect(workspace.counterparties.length).toBeGreaterThan(0);
+    expect(workspace.payments.some((item: any) => item.id === expense.paymentId)).toBe(true);
+    expect(workspace.documents.some((item: any) => item.id === expense.documentId)).toBe(true);
+
+    const detail = await get<{ expense: any; category: any; counterparty?: any; document: any; payment: any }>(
+      api,
+      `/api/finance/expenses/${expense.id}`
+    );
+    expect(detail.expense.id).toBe(expense.id);
+    expect(detail.category.id).toBe(expense.categoryId);
+    expect(detail.counterparty?.id).toBe(expense.counterpartyId);
+    expect(detail.document.id).toBe(expense.documentId);
+    expect(detail.payment.id).toBe(expense.paymentId);
   });
 
   it("runs existing-store onboarding through opening balance creation", async () => {

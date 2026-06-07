@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Banknote, CreditCard, Plus, ReceiptText, Save, UserRound } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,24 +14,77 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Pagination } from "@/components/ui/pagination";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useCollection } from "@/lib/use-collection";
-import { apiPost } from "@/api";
+import { apiGet, apiPost } from "@/api";
 import { rub, date, dateTime } from "@/lib/format";
 import { paginateRows } from "@/lib/pagination";
 
 const today = () => new Date().toISOString().slice(0, 10);
+const EXPENSES_WORKSPACE_QUERY_KEY = ["expenses-workspace"] as const;
+const EXPENSE_FORM_QUERY_KEY = ["expense-form-workspace"] as const;
+
+interface ExpensesWorkspacePayload {
+  expenses: any[];
+  categories: any[];
+  counterparties: any[];
+  ownerTransactions: any[];
+  payments: any[];
+  documents: any[];
+  accountingPolicy?: any;
+}
+
+interface ExpenseFormWorkspacePayload {
+  categories: any[];
+  counterparties: any[];
+  cashAccounts: any[];
+  accountingPolicy?: any;
+}
+
+interface ExpenseDetailPayload {
+  expense: any;
+  category?: any;
+  counterparty?: any;
+  document?: any;
+  payment?: any;
+}
+
+const LEGACY_EXPENSE_COLLECTION_KEYS = [
+  "operatingExpenses",
+  "expenseCategories",
+  "ownerTransactions",
+  "payments",
+  "documents",
+  "cashAccounts",
+  "counterparties"
+] as const;
+
+function invalidateExpenseArea(queryClient: QueryClient, expenseId?: string) {
+  void queryClient.invalidateQueries({ queryKey: EXPENSES_WORKSPACE_QUERY_KEY });
+  void queryClient.invalidateQueries({ queryKey: EXPENSE_FORM_QUERY_KEY });
+  void queryClient.invalidateQueries({ queryKey: ["finance-workspace"] });
+  void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+  void queryClient.invalidateQueries({ queryKey: ["documents-workspace"] });
+  void queryClient.invalidateQueries({ queryKey: ["accounting-journal-workspace"] });
+  if (expenseId) void queryClient.invalidateQueries({ queryKey: ["expense-card", expenseId] });
+  for (const key of LEGACY_EXPENSE_COLLECTION_KEYS) {
+    void queryClient.invalidateQueries({ queryKey: ["collection", key] });
+  }
+}
 
 export function ExpensesWorkspace() {
-  const state = { operatingExpenses: useCollection<any[]>("operatingExpenses") ?? [], expenseCategories: useCollection<any[]>("expenseCategories") ?? [], counterparties: useCollection<any[]>("counterparties") ?? [], ownerTransactions: useCollection<any[]>("ownerTransactions") ?? [], payments: useCollection<any[]>("payments") ?? [], documents: useCollection<any[]>("documents") ?? [], accountingPolicy: useCollection<any>("accountingPolicy") };
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const expenses = state.operatingExpenses ?? [];
-  const categories = state.expenseCategories ?? [];
-  const counterparties = state.counterparties ?? [];
-  const ownerTransactions = state.ownerTransactions ?? [];
-  const payments = state.payments ?? [];
-  const documents = state.documents ?? [];
-  const [dateFrom, setDateFrom] = useState(state.accountingPolicy?.accountingStartDate ?? today());
+  const workspaceQuery = useQuery({
+    queryKey: EXPENSES_WORKSPACE_QUERY_KEY,
+    queryFn: () => apiGet<ExpensesWorkspacePayload>("/api/finance/expenses/workspace")
+  });
+  const expenses = workspaceQuery.data?.expenses ?? [];
+  const categories = workspaceQuery.data?.categories ?? [];
+  const counterparties = workspaceQuery.data?.counterparties ?? [];
+  const ownerTransactions = workspaceQuery.data?.ownerTransactions ?? [];
+  const payments = workspaceQuery.data?.payments ?? [];
+  const documents = workspaceQuery.data?.documents ?? [];
+  const accountingStartDate = workspaceQuery.data?.accountingPolicy?.accountingStartDate;
+  const [dateFrom, setDateFrom] = useState(today());
   const [dateTo, setDateTo] = useState(today());
   const [categoryId, setCategoryId] = useState("");
   const [counterpartyId, setCounterpartyId] = useState("");
@@ -43,7 +96,7 @@ export function ExpensesWorkspace() {
 
   const postExpense = useMutation({
     mutationFn: (expenseId: string) => apiPost(`/api/finance/expenses/${expenseId}/post`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: (_data, expenseId) => invalidateExpenseArea(queryClient, expenseId)
   });
   const postSelected = useMutation({
     mutationFn: async () => {
@@ -52,10 +105,15 @@ export function ExpensesWorkspace() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries();
+      invalidateExpenseArea(queryClient);
       setSelectedIds([]);
     }
   });
+
+  useEffect(() => {
+    if (!accountingStartDate) return;
+    setDateFrom((current) => current === today() ? accountingStartDate : current);
+  }, [accountingStartDate]);
 
   const rows = useMemo(() => {
     return expenses
@@ -223,20 +281,37 @@ export function ExpensesWorkspace() {
 }
 
 export function ExpenseFormPage() {
-  const state = { expenseCategories: useCollection<any[]>("expenseCategories") ?? [], counterparties: useCollection<any[]>("counterparties") ?? [], cashAccounts: useCollection<any[]>("cashAccounts") ?? [], accountingPolicy: useCollection<any>("accountingPolicy") };
-  const categories = state.expenseCategories ?? [];
-  const counterparties = state.counterparties ?? [];
-  const cashAccounts = (state.cashAccounts ?? []).filter((account: any) => account.isActive);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const formQuery = useQuery({
+    queryKey: EXPENSE_FORM_QUERY_KEY,
+    queryFn: () => apiGet<ExpenseFormWorkspacePayload>("/api/finance/expenses/form-workspace")
+  });
+  const categories = formQuery.data?.categories ?? [];
+  const counterparties = formQuery.data?.counterparties ?? [];
+  const cashAccounts = (formQuery.data?.cashAccounts ?? []).filter((account: any) => account.isActive);
+  const defaultExpenseDate = formQuery.data?.accountingPolicy?.accountingStartDate ?? today();
+  const defaultCategoryId = categories[0]?.id ?? "";
+  const defaultCounterpartyId = counterparties[0]?.id ?? "";
+  const defaultCashAccountId = cashAccounts[0]?.id ?? "";
 
-  const [expenseDate, setExpenseDate] = useState(state.accountingPolicy?.accountingStartDate ?? today());
-  const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
-  const [counterpartyId, setCounterpartyId] = useState(counterparties[0]?.id ?? "");
+  const [defaultsApplied, setDefaultsApplied] = useState(false);
+  const [expenseDate, setExpenseDate] = useState(today());
+  const [categoryId, setCategoryId] = useState("");
+  const [counterpartyId, setCounterpartyId] = useState("");
   const [counterpartyName, setCounterpartyName] = useState("");
   const [amountRub, setAmountRub] = useState("45000");
-  const [cashAccountId, setCashAccountId] = useState(cashAccounts[0]?.id ?? "");
+  const [cashAccountId, setCashAccountId] = useState("");
   const [comment, setComment] = useState("Аренда склада за июнь");
+
+  useEffect(() => {
+    if (defaultsApplied || !formQuery.data) return;
+    setExpenseDate(defaultExpenseDate);
+    setCategoryId(defaultCategoryId);
+    setCounterpartyId(defaultCounterpartyId);
+    setCashAccountId(defaultCashAccountId);
+    setDefaultsApplied(true);
+  }, [defaultCashAccountId, defaultCategoryId, defaultCounterpartyId, defaultExpenseDate, defaultsApplied, formQuery.data]);
 
   const create = useMutation({
     mutationFn: async () => apiPost("/api/finance/expenses", {
@@ -248,8 +323,8 @@ export function ExpenseFormPage() {
       cashAccountId,
       comment
     }),
-    onSuccess: () => {
-      queryClient.invalidateQueries();
+    onSuccess: (created: any) => {
+      invalidateExpenseArea(queryClient, created?.id);
       navigate("/money?view=outgoing&type=expense_like");
     }
   });
@@ -363,22 +438,26 @@ export function ExpenseFormPage() {
 
 export function ExpenseCardPage() {
   const { id } = useParams();
-  const state = { operatingExpenses: useCollection<any[]>("operatingExpenses") ?? [], expenseCategories: useCollection<any[]>("expenseCategories") ?? [], counterparties: useCollection<any[]>("counterparties") ?? [], documents: useCollection<any[]>("documents") ?? [], payments: useCollection<any[]>("payments") ?? [] };
   const queryClient = useQueryClient();
-  const expense = (state.operatingExpenses ?? []).find((candidate: any) => candidate.id === id);
-  const categories = state.expenseCategories ?? [];
-  const counterparties = state.counterparties ?? [];
-  const documents = state.documents ?? [];
-  const payments = state.payments ?? [];
-  const category = categories.find((candidate: any) => candidate.id === expense?.categoryId);
-  const counterparty = counterparties.find((candidate: any) => candidate.id === expense?.counterpartyId);
-  const document = documents.find((candidate: any) => candidate.id === expense?.documentId);
-  const payment = payments.find((candidate: any) => candidate.id === expense?.paymentId);
+  const expenseQuery = useQuery({
+    queryKey: ["expense-card", id],
+    queryFn: () => apiGet<ExpenseDetailPayload>(`/api/finance/expenses/${encodeURIComponent(id ?? "")}`),
+    enabled: Boolean(id)
+  });
+  const expense = expenseQuery.data?.expense;
+  const category = expenseQuery.data?.category;
+  const counterparty = expenseQuery.data?.counterparty;
+  const document = expenseQuery.data?.document;
+  const payment = expenseQuery.data?.payment;
 
   const post = useMutation({
     mutationFn: () => apiPost(`/api/finance/expenses/${id}/post`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => invalidateExpenseArea(queryClient, id)
   });
+
+  if (!expense && expenseQuery.isLoading) {
+    return <PageHeader title="Карточка расхода" breadcrumbs={[{ label: "Деньги и расчеты", to: "/money" }]} subtitle="Загружаем расход" />;
+  }
 
   if (!expense) {
     return <PageHeader title="Карточка расхода" breadcrumbs={[{ label: "Деньги и расчеты", to: "/money" }]} subtitle="Расход не найден" />;
@@ -441,7 +520,7 @@ function OwnerWithdrawalDialog({ open, onClose }: { open: boolean; onClose: () =
   const create = useMutation({
     mutationFn: () => apiPost("/api/finance/owner-withdrawals", { paidAt, amountRub: Number(amountRub), comment }),
     onSuccess: () => {
-      queryClient.invalidateQueries();
+      invalidateExpenseArea(queryClient);
       onClose();
     }
   });

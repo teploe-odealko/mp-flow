@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Plus, Wallet } from "lucide-react";
-import { apiPost } from "@/api";
+import { apiGet, apiPost } from "@/api";
 import { FinanceOperationLauncher } from "@/components/finance-operation-launcher";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,9 +27,54 @@ import {
   type FinanceOperationView
 } from "@/lib/finance-operations";
 import { paginateRows } from "@/lib/pagination";
-import { useCollection } from "@/lib/use-collection";
 
 const today = () => new Date().toISOString().slice(0, 10);
+const FINANCE_WORKSPACE_QUERY_KEY = ["finance-workspace"] as const;
+
+interface FinanceWorkspacePayload {
+  documents: any[];
+  cashAccounts: any[];
+  payments: any[];
+  accountingPolicy?: any;
+  counterparties: any[];
+  expenseCategories: any[];
+  operatingExpenses: any[];
+  ownerTransactions: any[];
+  paymentAllocations: any[];
+  payouts: any[];
+  procurementCosts: any[];
+  purchaseOrders: any[];
+  salesChannels: any[];
+}
+
+const LEGACY_FINANCE_COLLECTION_KEYS = [
+  "documents",
+  "cashAccounts",
+  "payments",
+  "accountingPolicy",
+  "counterparties",
+  "expenseCategories",
+  "operatingExpenses",
+  "ownerTransactions",
+  "paymentAllocations",
+  "payouts",
+  "procurementCosts",
+  "purchaseOrders",
+  "salesChannels"
+] as const;
+
+function invalidateFinanceArea(queryClient: QueryClient) {
+  void queryClient.invalidateQueries({ queryKey: FINANCE_WORKSPACE_QUERY_KEY });
+  void queryClient.invalidateQueries({ queryKey: ["expenses-workspace"] });
+  void queryClient.invalidateQueries({ queryKey: ["expense-form-workspace"] });
+  void queryClient.invalidateQueries({ queryKey: ["expense-card"] });
+  void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+  void queryClient.invalidateQueries({ queryKey: ["documents-workspace"] });
+  void queryClient.invalidateQueries({ queryKey: ["accounting-journal-workspace"] });
+  for (const key of LEGACY_FINANCE_COLLECTION_KEYS) {
+    void queryClient.invalidateQueries({ queryKey: ["collection", key] });
+  }
+}
 
 const VIEW_OPTIONS: Array<{ value: FinanceOperationView; label: string }> = [
   { value: "all", label: "Все" },
@@ -61,19 +106,23 @@ export function FinanceWorkspace() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const documents = useCollection<any[]>("documents") ?? [];
-  const cashAccounts = useCollection<any[]>("cashAccounts") ?? [];
-  const payments = useCollection<any[]>("payments") ?? [];
-  const accountingPolicy = useCollection<any>("accountingPolicy");
-  const counterparties = useCollection<any[]>("counterparties") ?? [];
-  const expenseCategories = useCollection<any[]>("expenseCategories") ?? [];
-  const operatingExpenses = useCollection<any[]>("operatingExpenses") ?? [];
-  const ownerTransactions = useCollection<any[]>("ownerTransactions") ?? [];
-  const paymentAllocations = useCollection<any[]>("paymentAllocations") ?? [];
-  const payouts = useCollection<any[]>("payouts") ?? [];
-  const procurementCosts = useCollection<any[]>("procurementCosts") ?? [];
-  const purchaseOrders = useCollection<any[]>("purchaseOrders") ?? [];
-  const salesChannels = useCollection<any[]>("salesChannels") ?? [];
+  const workspaceQuery = useQuery({
+    queryKey: FINANCE_WORKSPACE_QUERY_KEY,
+    queryFn: () => apiGet<FinanceWorkspacePayload>("/api/finance/workspace")
+  });
+  const documents = workspaceQuery.data?.documents ?? [];
+  const cashAccounts = workspaceQuery.data?.cashAccounts ?? [];
+  const payments = workspaceQuery.data?.payments ?? [];
+  const accountingPolicy = workspaceQuery.data?.accountingPolicy;
+  const counterparties = workspaceQuery.data?.counterparties ?? [];
+  const expenseCategories = workspaceQuery.data?.expenseCategories ?? [];
+  const operatingExpenses = workspaceQuery.data?.operatingExpenses ?? [];
+  const ownerTransactions = workspaceQuery.data?.ownerTransactions ?? [];
+  const paymentAllocations = workspaceQuery.data?.paymentAllocations ?? [];
+  const payouts = workspaceQuery.data?.payouts ?? [];
+  const procurementCosts = workspaceQuery.data?.procurementCosts ?? [];
+  const purchaseOrders = workspaceQuery.data?.purchaseOrders ?? [];
+  const salesChannels = workspaceQuery.data?.salesChannels ?? [];
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -134,7 +183,7 @@ export function FinanceWorkspace() {
 
   const postAction = useMutation({
     mutationFn: (payload: { endpoint: string }) => apiPost(payload.endpoint),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => invalidateFinanceArea(queryClient)
   });
 
   const marketplaceAttention = operations.filter((item) => item.kind === "payout" && item.needsAttention).length;
