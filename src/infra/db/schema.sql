@@ -135,6 +135,7 @@ create table if not exists audit_event (
   actor_label text not null,
   entity_type text not null,
   entity_id uuid not null,
+  entity_public_id text,
   event_type text not null,
   before_json jsonb,
   after_json jsonb,
@@ -404,9 +405,9 @@ create table if not exists channel_credential (id uuid primary key default gen_r
 create table if not exists channel_capability (id uuid primary key default gen_random_uuid(), channel_id uuid not null references sales_channel(id), capability_code text not null);
 create table if not exists external_product (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), channel_id uuid not null references sales_channel(id), external_sku text not null, external_name text not null, image_url text, status text not null);
 create table if not exists product_external_link (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), product_id uuid not null references product(id), external_product_id uuid not null references external_product(id), channel_id uuid not null references sales_channel(id), status text not null);
-create table if not exists sync_run (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), channel_id uuid not null references sales_channel(id), status text not null, started_at timestamptz not null, finished_at timestamptz, stats jsonb not null default '{}');
+create table if not exists sync_run (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), channel_id uuid not null references sales_channel(id), status text not null, started_at timestamptz not null, finished_at timestamptz, stats jsonb not null default '{}', mode text, streams text[], errors text[], since text, summary jsonb, stream_runs jsonb, last_error text);
 create table if not exists sync_stream_run (id uuid primary key default gen_random_uuid(), sync_run_id uuid not null references sync_run(id), stream_code text not null, status text not null, stats jsonb not null default '{}');
-create table if not exists external_event (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), channel_id uuid not null references sales_channel(id), sync_run_id uuid references sync_run(id), event_type text not null, external_id text not null, idempotency_key text, occurred_at timestamptz not null, raw_payload jsonb not null, normalized_payload jsonb not null, status text not null, materialized_document_id uuid references document(id), external_product_id uuid references external_product(id), product_id uuid references product(id), reason text, unique (channel_id, external_id));
+create table if not exists external_event (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), channel_id uuid not null references sales_channel(id), sync_run_id uuid references sync_run(id), event_type text not null, external_id text not null, idempotency_key text, occurred_at timestamptz not null, raw_payload jsonb not null, normalized_payload jsonb not null, status text not null, materialized_document_id uuid references document(id), external_product_id uuid references external_product(id), product_id uuid references product(id), reason text, last_error text, created_at timestamptz not null default now(), updated_at timestamptz not null default now(), unique (channel_id, external_id));
 create table if not exists observed_stock (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), channel_id uuid not null references sales_channel(id), external_product_id uuid not null references external_product(id), product_id uuid references product(id), warehouse_id uuid references warehouse(id), observed_at timestamptz not null, qty_observed numeric(18,4) not null, location_status text not null);
 create table if not exists sale (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), document_id uuid not null references document(id), channel_id uuid not null references sales_channel(id), sale_date date not null, external_event_id uuid references external_event(id), gross_amount_rub numeric(18,2) not null, status text not null);
 create table if not exists sale_line (id uuid primary key default gen_random_uuid(), sale_id uuid not null references sale(id), product_id uuid not null references product(id), qty numeric(18,4) not null, price_rub numeric(18,2) not null, revenue_rub numeric(18,2) not null, cost_rub numeric(18,2) not null);
@@ -460,6 +461,17 @@ alter table external_event add column if not exists idempotency_key text;
 alter table external_event add column if not exists external_product_id uuid;
 alter table external_event add column if not exists product_id uuid;
 alter table external_event add column if not exists reason text;
+alter table external_event add column if not exists last_error text;
+alter table external_event add column if not exists created_at timestamptz not null default now();
+alter table external_event add column if not exists updated_at timestamptz not null default now();
+alter table audit_event add column if not exists entity_public_id text;
+alter table sync_run add column if not exists mode text;
+alter table sync_run add column if not exists streams text[];
+alter table sync_run add column if not exists errors text[];
+alter table sync_run add column if not exists since text;
+alter table sync_run add column if not exists summary jsonb;
+alter table sync_run add column if not exists stream_runs jsonb;
+alter table sync_run add column if not exists last_error text;
 alter table procurement_cost add column if not exists allocation_basis text;
 alter table procurement_cost_line add column if not exists lot_id uuid references inventory_lot(id);
 alter table procurement_cost_line add column if not exists warehouse_id uuid references warehouse(id);
@@ -544,6 +556,29 @@ alter table channel_agent_permission add column if not exists state_json jsonb n
 update external_event
   set idempotency_key = coalesce(nullif(state_json->>'idempotencyKey', ''), external_id)
   where idempotency_key is null;
+update external_event
+  set created_at = coalesce(nullif(state_json->>'createdAt', '')::timestamptz, created_at),
+      updated_at = coalesce(nullif(state_json->>'updatedAt', '')::timestamptz, updated_at),
+      last_error = nullif(state_json->>'lastError', '')
+  where state_json <> '{}'::jsonb;
+update audit_event
+  set entity_public_id = nullif(state_json->>'entityId', '')
+  where entity_public_id is null;
+update sync_run
+  set mode = nullif(state_json->>'mode', ''),
+      streams = case when jsonb_typeof(state_json->'streams') = 'array'
+        then array(select jsonb_array_elements_text(state_json->'streams'))
+        else streams
+      end,
+      errors = case when jsonb_typeof(state_json->'errors') = 'array'
+        then array(select jsonb_array_elements_text(state_json->'errors'))
+        else errors
+      end,
+      since = nullif(state_json->>'since', ''),
+      summary = case when state_json ? 'summary' then state_json->'summary' else summary end,
+      stream_runs = case when state_json ? 'streamRuns' then state_json->'streamRuns' else stream_runs end,
+      last_error = nullif(state_json->>'lastError', '')
+  where state_json <> '{}'::jsonb;
 
 do $$
 declare

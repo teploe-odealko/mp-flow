@@ -9,6 +9,20 @@ import type { SyncRunStore } from "../../core/sync-run-store";
 import type { CollectionRepo, Repositories } from "../../core/repositories";
 import { createEmptyState, currentIdSequence, restoreIdSequence } from "../../core/utils";
 import { stableUuid } from "./ids";
+import {
+  EXTERNAL_EVENT_JOINS,
+  EXTERNAL_EVENT_SELECT,
+  OBSERVED_STOCK_JOINS,
+  OBSERVED_STOCK_SELECT,
+  SYNC_RUN_JOINS,
+  SYNC_RUN_SELECT,
+  externalEventFromRow,
+  observedStockFromRow,
+  syncRunFromRow,
+  type ExternalEventDbRow,
+  type ObservedStockDbRow,
+  type SyncRunDbRow
+} from "./runtime-hydrators";
 
 export interface RuntimeSession {
   app: AccountingApp;
@@ -217,9 +231,43 @@ const SCHEMA_ALTERS = `
   alter table external_event add column if not exists external_product_id uuid;
   alter table external_event add column if not exists product_id uuid;
   alter table external_event add column if not exists reason text;
+  alter table external_event add column if not exists last_error text;
+  alter table external_event add column if not exists created_at timestamptz not null default now();
+  alter table external_event add column if not exists updated_at timestamptz not null default now();
   update external_event
     set idempotency_key = coalesce(nullif(state_json->>'idempotencyKey', ''), external_id)
     where idempotency_key is null;
+  update external_event
+    set created_at = coalesce(nullif(state_json->>'createdAt', '')::timestamptz, created_at),
+        updated_at = coalesce(nullif(state_json->>'updatedAt', '')::timestamptz, updated_at),
+        last_error = nullif(state_json->>'lastError', '')
+    where state_json <> '{}'::jsonb;
+  alter table audit_event add column if not exists entity_public_id text;
+  update audit_event
+    set entity_public_id = nullif(state_json->>'entityId', '')
+    where entity_public_id is null;
+  alter table sync_run add column if not exists mode text;
+  alter table sync_run add column if not exists streams text[];
+  alter table sync_run add column if not exists errors text[];
+  alter table sync_run add column if not exists since text;
+  alter table sync_run add column if not exists summary jsonb;
+  alter table sync_run add column if not exists stream_runs jsonb;
+  alter table sync_run add column if not exists last_error text;
+  update sync_run
+    set mode = nullif(state_json->>'mode', ''),
+        streams = case when jsonb_typeof(state_json->'streams') = 'array'
+          then array(select jsonb_array_elements_text(state_json->'streams'))
+          else streams
+        end,
+        errors = case when jsonb_typeof(state_json->'errors') = 'array'
+          then array(select jsonb_array_elements_text(state_json->'errors'))
+          else errors
+        end,
+        since = nullif(state_json->>'since', ''),
+        summary = case when state_json ? 'summary' then state_json->'summary' else summary end,
+        stream_runs = case when state_json ? 'streamRuns' then state_json->'streamRuns' else stream_runs end,
+        last_error = nullif(state_json->>'lastError', '')
+    where state_json <> '{}'::jsonb;
   alter table plugin_secret_record add column if not exists created_at timestamptz not null default now();
   alter table plugin_secret_record add column if not exists updated_at timestamptz not null default now();
   alter table procurement_cost add column if not exists allocation_basis text;
@@ -392,6 +440,7 @@ const TABLES: TableSpec[] = [
     actor_label: requiredString(entity.actorLabel, "auditEvents.actorLabel"),
     entity_type: requiredString(entity.entityType, "auditEvents.entityType"),
     entity_id: stableUuid(requiredString(entity.entityId, "auditEvents.entityId")),
+    entity_public_id: requiredString(entity.entityId, "auditEvents.entityId"),
     event_type: requiredString(entity.eventType, "auditEvents.eventType"),
     before_json: entity.before ?? null,
     after_json: entity.after ?? null,
@@ -733,6 +782,13 @@ const TABLES: TableSpec[] = [
     started_at: requiredString(entity.startedAt, "syncRuns.startedAt"),
     finished_at: optionalString(entity.finishedAt),
     stats: entity.stats ?? {},
+    mode: optionalString(entity.mode),
+    streams: Array.isArray(entity.streams) ? entity.streams : null,
+    errors: Array.isArray(entity.errors) ? entity.errors : null,
+    since: optionalString(entity.since),
+    summary: entity.summary ? JSON.stringify(entity.summary) : null,
+    stream_runs: entity.streamRuns ? JSON.stringify(entity.streamRuns) : null,
+    last_error: optionalString(entity.lastError),
     state_json: entity
   }), "started_at, id"),
   spec("externalEvents", "external_event", ["id"], (entity) => ({
@@ -751,6 +807,9 @@ const TABLES: TableSpec[] = [
     external_product_id: optionalUuid(entity.externalProductId),
     product_id: optionalUuid(entity.productId),
     reason: optionalString(entity.reason),
+    last_error: optionalString(entity.lastError),
+    created_at: requiredString(entity.createdAt, "externalEvents.createdAt"),
+    updated_at: requiredString(entity.updatedAt, "externalEvents.updatedAt"),
     state_json: entity
   }), "occurred_at, id"),
   spec("observedStocks", "observed_stock", ["id"], (entity) => ({
@@ -1506,45 +1565,55 @@ export class PostgresExternalEventStore implements ExternalEventStore {
   constructor(private readonly q: Queryable, private readonly workspaceId: string) {}
 
   async getById(id: ID): Promise<ExternalEvent | undefined> {
-    const result = await this.q.query<{ state_json: ExternalEvent }>(
-      "select state_json from external_event where workspace_id = $1 and public_id = $2 limit 1",
+    const result = await this.q.query<ExternalEventDbRow>(
+      `select ${EXTERNAL_EVENT_SELECT}
+       from external_event
+       ${EXTERNAL_EVENT_JOINS}
+       where external_event.workspace_id = $1 and external_event.public_id = $2
+       limit 1`,
       [this.workspaceId, id]
     );
-    return result.rows[0]?.state_json;
+    return result.rows[0] ? externalEventFromRow(result.rows[0]) : undefined;
   }
 
   async findByIdentity(channelId: ID, externalId: string, idempotencyKey?: string): Promise<ExternalEvent | undefined> {
-    const result = await this.q.query<{ state_json: ExternalEvent }>(
-      `select state_json from external_event
-       where workspace_id = $1 and channel_id = $2
-         and (external_id = $3 or idempotency_key = $4)
-       order by (idempotency_key = $4) desc
+    const result = await this.q.query<ExternalEventDbRow>(
+      `select ${EXTERNAL_EVENT_SELECT}
+       from external_event
+       ${EXTERNAL_EVENT_JOINS}
+       where external_event.workspace_id = $1 and external_event.channel_id = $2
+         and (external_event.external_id = $3 or external_event.idempotency_key = $4)
+       order by (external_event.idempotency_key = $4) desc
        limit 1`,
       [this.workspaceId, entityUuid(channelId), externalId, idempotencyKey ?? externalId]
     );
-    return result.rows[0]?.state_json;
+    return result.rows[0] ? externalEventFromRow(result.rows[0]) : undefined;
   }
 
   async list(filter: ExternalEventListFilter = {}): Promise<ExternalEvent[]> {
-    const conditions = ["workspace_id = $1"];
+    const conditions = ["external_event.workspace_id = $1"];
     const params: unknown[] = [this.workspaceId];
     if (filter.channelId) {
       params.push(entityUuid(filter.channelId));
-      conditions.push(`channel_id = $${params.length}`);
+      conditions.push(`external_event.channel_id = $${params.length}`);
     }
     if (filter.status) {
       params.push(filter.status);
-      conditions.push(`status = $${params.length}`);
+      conditions.push(`external_event.status = $${params.length}`);
     }
     if (filter.eventType) {
       params.push(filter.eventType);
-      conditions.push(`event_type = $${params.length}`);
+      conditions.push(`external_event.event_type = $${params.length}`);
     }
-    const result = await this.q.query<{ state_json: ExternalEvent }>(
-      `select state_json from external_event where ${conditions.join(" and ")} order by occurred_at, id`,
+    const result = await this.q.query<ExternalEventDbRow>(
+      `select ${EXTERNAL_EVENT_SELECT}
+       from external_event
+       ${EXTERNAL_EVENT_JOINS}
+       where ${conditions.join(" and ")}
+       order by external_event.occurred_at, external_event.id`,
       params
     );
-    return result.rows.map((row) => row.state_json);
+    return result.rows.map(externalEventFromRow);
   }
 
   async count(filter: { channelId?: ID; status?: string } = {}): Promise<number> {
@@ -1589,40 +1658,50 @@ export class PostgresObservedStockStore implements ObservedStockStore {
   constructor(private readonly q: Queryable, private readonly workspaceId: string) {}
 
   async getById(id: ID): Promise<ObservedStock | undefined> {
-    const result = await this.q.query<{ state_json: ObservedStock }>(
-      "select state_json from observed_stock where workspace_id = $1 and public_id = $2 limit 1",
+    const result = await this.q.query<ObservedStockDbRow>(
+      `select ${OBSERVED_STOCK_SELECT}
+       from observed_stock
+       ${OBSERVED_STOCK_JOINS}
+       where observed_stock.workspace_id = $1 and observed_stock.public_id = $2
+       limit 1`,
       [this.workspaceId, id]
     );
-    return result.rows[0]?.state_json;
+    return result.rows[0] ? observedStockFromRow(result.rows[0]) : undefined;
   }
 
   async findByKey(channelId: ID, externalProductId: ID, warehouseId: ID | undefined, observedAt: string): Promise<ObservedStock | undefined> {
-    const result = await this.q.query<{ state_json: ObservedStock }>(
-      `select state_json from observed_stock
-       where workspace_id = $1 and channel_id = $2 and external_product_id = $3
-         and observed_at = $4 and warehouse_id is not distinct from $5
+    const result = await this.q.query<ObservedStockDbRow>(
+      `select ${OBSERVED_STOCK_SELECT}
+       from observed_stock
+       ${OBSERVED_STOCK_JOINS}
+       where observed_stock.workspace_id = $1 and observed_stock.channel_id = $2 and observed_stock.external_product_id = $3
+         and observed_stock.observed_at = $4 and observed_stock.warehouse_id is not distinct from $5
        limit 1`,
       [this.workspaceId, entityUuid(channelId), entityUuid(externalProductId), observedAt, warehouseId ? entityUuid(warehouseId) : null]
     );
-    return result.rows[0]?.state_json;
+    return result.rows[0] ? observedStockFromRow(result.rows[0]) : undefined;
   }
 
   async list(filter: ObservedStockListFilter = {}): Promise<ObservedStock[]> {
-    const conditions = ["workspace_id = $1"];
+    const conditions = ["observed_stock.workspace_id = $1"];
     const params: unknown[] = [this.workspaceId];
     if (filter.channelId) {
       params.push(entityUuid(filter.channelId));
-      conditions.push(`channel_id = $${params.length}`);
+      conditions.push(`observed_stock.channel_id = $${params.length}`);
     }
     if (filter.externalProductId) {
       params.push(entityUuid(filter.externalProductId));
-      conditions.push(`external_product_id = $${params.length}`);
+      conditions.push(`observed_stock.external_product_id = $${params.length}`);
     }
-    const result = await this.q.query<{ state_json: ObservedStock }>(
-      `select state_json from observed_stock where ${conditions.join(" and ")} order by observed_at, id`,
+    const result = await this.q.query<ObservedStockDbRow>(
+      `select ${OBSERVED_STOCK_SELECT}
+       from observed_stock
+       ${OBSERVED_STOCK_JOINS}
+       where ${conditions.join(" and ")}
+       order by observed_stock.observed_at, observed_stock.id`,
       params
     );
-    return result.rows.map((row) => row.state_json);
+    return result.rows.map(observedStockFromRow);
   }
 
   async count(filter: { channelId?: ID } = {}): Promise<number> {
@@ -1663,27 +1742,39 @@ export class PostgresSyncRunStore implements SyncRunStore {
   constructor(private readonly q: Queryable, private readonly workspaceId: string) {}
 
   async getById(id: ID): Promise<SyncRun | undefined> {
-    const result = await this.q.query<{ state_json: SyncRun }>(
-      "select state_json from sync_run where workspace_id = $1 and public_id = $2 limit 1",
+    const result = await this.q.query<SyncRunDbRow>(
+      `select ${SYNC_RUN_SELECT}
+       from sync_run
+       ${SYNC_RUN_JOINS}
+       where sync_run.workspace_id = $1 and sync_run.public_id = $2
+       limit 1`,
       [this.workspaceId, id]
     );
-    return result.rows[0]?.state_json;
+    return result.rows[0] ? syncRunFromRow(result.rows[0]) : undefined;
   }
 
   async listAll(): Promise<SyncRun[]> {
-    const result = await this.q.query<{ state_json: SyncRun }>(
-      "select state_json from sync_run where workspace_id = $1 order by started_at, id",
+    const result = await this.q.query<SyncRunDbRow>(
+      `select ${SYNC_RUN_SELECT}
+       from sync_run
+       ${SYNC_RUN_JOINS}
+       where sync_run.workspace_id = $1
+       order by sync_run.started_at, sync_run.id`,
       [this.workspaceId]
     );
-    return result.rows.map((row) => row.state_json);
+    return result.rows.map(syncRunFromRow);
   }
 
   async listByChannel(channelId: ID): Promise<SyncRun[]> {
-    const result = await this.q.query<{ state_json: SyncRun }>(
-      "select state_json from sync_run where workspace_id = $1 and channel_id = $2 order by started_at, id",
+    const result = await this.q.query<SyncRunDbRow>(
+      `select ${SYNC_RUN_SELECT}
+       from sync_run
+       ${SYNC_RUN_JOINS}
+       where sync_run.workspace_id = $1 and sync_run.channel_id = $2
+       order by sync_run.started_at, sync_run.id`,
       [this.workspaceId, entityUuid(channelId)]
     );
-    return result.rows.map((row) => row.state_json);
+    return result.rows.map(syncRunFromRow);
   }
 
   async upsert(run: SyncRun): Promise<void> {

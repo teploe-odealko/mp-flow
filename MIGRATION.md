@@ -172,6 +172,14 @@ credentials join, `ExternalEventRepository`, `AuditEventRepository`, `PostgresEx
 и backfill-источником в миграциях. Следующий этап — typed hydrators/serializers, после чего `state_json`
 можно удалить из схемы и read-model.
 
+### ✅ Typed hydrate для stream/audit таблиц
+`ExternalEventRepository`, `AuditEventRepository`, `PostgresExternalEventStore`, `PostgresObservedStockStore`
+и `PostgresSyncRunStore` больше не делают `select state_json`: чтение строится из typed columns и `public_id`
+joins через `runtime-hydrators.ts`. Для полноты модели добавлены колонки `external_event.created_at/updated_at/
+last_error`, `audit_event.entity_public_id`, а также `sync_run.mode/streams/errors/since/summary/stream_runs/
+last_error`. PG-тесты проверяют этот путь на реальной схеме. Следующий остаток — generic collection repo:
+`readRuntimeCollection` и `PostgresRuntimeCollectionRepo` всё ещё hydrate'ят остальные коллекции из `state_json`.
+
 ### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
 Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/
 addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocumentSummary(x))` — хелперы каскадно

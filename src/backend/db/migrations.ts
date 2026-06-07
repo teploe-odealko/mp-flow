@@ -114,5 +114,47 @@ export const migrations: Migration[] = [
         end loop;
       end $$;
     `
+  },
+  {
+    id: "0005",
+    name: "stream_typed_hydrate_columns",
+    sql: `
+      alter table external_event add column if not exists last_error text;
+      alter table external_event add column if not exists created_at timestamptz not null default now();
+      alter table external_event add column if not exists updated_at timestamptz not null default now();
+      update external_event
+        set created_at = coalesce(nullif(state_json->>'createdAt', '')::timestamptz, created_at),
+            updated_at = coalesce(nullif(state_json->>'updatedAt', '')::timestamptz, updated_at),
+            last_error = nullif(state_json->>'lastError', '')
+        where state_json <> '{}'::jsonb;
+
+      alter table audit_event add column if not exists entity_public_id text;
+      update audit_event
+        set entity_public_id = nullif(state_json->>'entityId', '')
+        where entity_public_id is null;
+
+      alter table sync_run add column if not exists mode text;
+      alter table sync_run add column if not exists streams text[];
+      alter table sync_run add column if not exists errors text[];
+      alter table sync_run add column if not exists since text;
+      alter table sync_run add column if not exists summary jsonb;
+      alter table sync_run add column if not exists stream_runs jsonb;
+      alter table sync_run add column if not exists last_error text;
+      update sync_run
+        set mode = nullif(state_json->>'mode', ''),
+            streams = case when jsonb_typeof(state_json->'streams') = 'array'
+              then array(select jsonb_array_elements_text(state_json->'streams'))
+              else streams
+            end,
+            errors = case when jsonb_typeof(state_json->'errors') = 'array'
+              then array(select jsonb_array_elements_text(state_json->'errors'))
+              else errors
+            end,
+            since = nullif(state_json->>'since', ''),
+            summary = case when state_json ? 'summary' then state_json->'summary' else summary end,
+            stream_runs = case when state_json ? 'streamRuns' then state_json->'streamRuns' else stream_runs end,
+            last_error = nullif(state_json->>'lastError', '')
+        where state_json <> '{}'::jsonb;
+    `
   }
 ];
