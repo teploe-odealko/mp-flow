@@ -286,6 +286,14 @@ export interface RuntimeReadContext {
   };
 }
 
+export interface RuntimeAgentTokenPrincipal {
+  tokenId: string;
+  workspaceId: string;
+  name: string;
+  mode: "read_only" | "read_write";
+  scopes: string[];
+}
+
 export interface RuntimePersistence {
   save?(app: AccountingApp, workspaceId?: string): Promise<void>;
   readDashboard?(workspaceId?: string): Promise<unknown>;
@@ -294,6 +302,7 @@ export interface RuntimePersistence {
   readProductWorkspace?(workspaceId: string | undefined, productId: string): Promise<unknown>;
   readLedgerBalances?(workspaceId?: string): Promise<RuntimeLedgerBalances>;
   openReadContext?(workspaceId?: string): Promise<RuntimeReadContext>;
+  authenticateAgentToken?(workspaceId: string, tokenId: string, tokenHash: string, options?: { touchAt?: string }): Promise<RuntimeAgentTokenPrincipal | null>;
   openReadSession?(workspaceId?: string): Promise<RuntimeSession>;
   openWriteSession?(workspaceId?: string): Promise<RuntimeSession>;
   checkReady?(): Promise<{ ok: boolean; schemaVersion?: number; message?: string }>;
@@ -1883,17 +1892,6 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     await this.initPromise;
   }
 
-  async loadApp(): Promise<AccountingApp> {
-    await this.init();
-    const session = await this.openReadSession();
-    try {
-      restoreIdSequence(session.nextId);
-      return session.app;
-    } finally {
-      await session.close?.();
-    }
-  }
-
   async readDashboard(workspaceId = DEFAULT_WORKSPACE_ID): Promise<unknown> {
     await this.init();
     return await readRuntimeDashboard(this.pool, normalizeWorkspaceId(workspaceId));
@@ -1917,6 +1915,45 @@ export class PostgresRuntimeStore implements RuntimePersistence {
   async readLedgerBalances(workspaceId = DEFAULT_WORKSPACE_ID): Promise<RuntimeLedgerBalances> {
     await this.init();
     return await readRuntimeLedgerBalances(this.pool, normalizeWorkspaceId(workspaceId));
+  }
+
+  async authenticateAgentToken(
+    workspaceId: string,
+    tokenId: string,
+    tokenHash: string,
+    options: { touchAt?: string } = {}
+  ): Promise<RuntimeAgentTokenPrincipal | null> {
+    await this.init();
+    const scope = normalizeWorkspaceId(workspaceId);
+    if (!options.touchAt) {
+      return await readRuntimeAgentTokenPrincipal(this.pool, scope, tokenId, tokenHash);
+    }
+
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      const principal = await readRuntimeAgentTokenPrincipal(client, scope, tokenId, tokenHash, "for update");
+      if (principal) {
+        await client.query(
+          `
+            update agent_token
+            set last_used_at = $4::timestamptz
+            where workspace_id = $1
+              and public_id = $2
+              and token_hash = $3
+              and status = 'active'
+          `,
+          [scope, tokenId, tokenHash, options.touchAt]
+        );
+      }
+      await client.query("commit");
+      return principal;
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async openReadContext(workspaceId = DEFAULT_WORKSPACE_ID): Promise<RuntimeReadContext> {
@@ -2955,6 +2992,42 @@ async function readRuntimeChannelCredentialStatus(source: Queryable, workspaceId
     channelId,
     saved: Array.isArray(fields) && fields.length > 0,
     fields: Array.isArray(fields) ? fields : []
+  };
+}
+
+async function readRuntimeAgentTokenPrincipal(
+  source: Queryable,
+  workspaceId: string,
+  tokenId: string,
+  tokenHash: string,
+  lockClause = ""
+): Promise<RuntimeAgentTokenPrincipal | null> {
+  const result = await source.query<{ token_id: string; name: string; mode: string | null; scopes: unknown }>(
+    `
+      select
+        agent_token.public_id as token_id,
+        agent_token.name,
+        agent_token.mode,
+        agent_token.scopes
+      from agent_token
+      where agent_token.workspace_id = $1
+        and agent_token.public_id = $2
+        and agent_token.token_hash = $3
+        and agent_token.status = 'active'
+      limit 1
+      ${lockClause}
+    `,
+    [workspaceId, tokenId, tokenHash]
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  const mode = row.mode === "read_write" ? "read_write" : "read_only";
+  return {
+    tokenId: row.token_id,
+    workspaceId,
+    name: row.name,
+    mode,
+    scopes: Array.isArray(row.scopes) ? row.scopes.map(String) : []
   };
 }
 

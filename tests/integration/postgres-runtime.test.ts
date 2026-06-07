@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Pool } from "pg";
 import { describe, expect, it } from "vitest";
 import { createApi } from "../../src/backend/app";
@@ -37,6 +38,14 @@ async function request<T>(api: ReturnType<typeof createApi>, method: "GET" | "PO
   const payload = await response.json() as { ok: boolean; data: T; error?: { code: string; message: string } };
   if (!payload.ok) throw new Error(`${payload.error?.code}: ${payload.error?.message}`);
   return payload.data;
+}
+
+function hashToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function decodeKeyPart(value: string) {
+  return Buffer.from(value, "base64url").toString("utf8");
 }
 
 describePostgres("postgres runtime store", () => {
@@ -356,6 +365,46 @@ describePostgres("postgres runtime store", () => {
         ]);
         expect(documentTypeRows.rows).toEqual([{ workspace_id: "default", count: expect.any(Number) }]);
         expect(documentTypeRows.rows[0]?.count).toBeGreaterThan(0);
+      } finally {
+        await inspectPool.end();
+      }
+    } finally {
+      await store.close();
+    }
+  }, 30_000);
+
+  it("authenticates MCP agent tokens without opening app sessions", async () => {
+    await resetRuntimeTables();
+
+    const store = new PostgresRuntimeStore(new Pool({ connectionString: connectionString! }), "postgres-mcp-auth-secret");
+    const api = createApi(new AccountingApp(), { persistence: store });
+    try {
+      await request(api, "POST", "/api/setup", { displayName: "MCP Auth", accountingStartDate: "2026-01-01" });
+      const issued = await request<any>(api, "POST", "/api/mcp/keys", { name: "PG MCP", mode: "read_only" });
+      const match = /^mpf_([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$/.exec(issued.secret);
+      if (!match) throw new Error("invalid_mcp_secret_shape");
+      const workspaceId = decodeKeyPart(match[1]);
+      const tokenId = decodeKeyPart(match[2]);
+      const touchedAt = "2026-06-07T10:00:00.000Z";
+
+      const principal = await store.authenticateAgentToken(workspaceId, tokenId, hashToken(issued.secret), { touchAt: touchedAt });
+      expect(principal).toEqual({
+        tokenId,
+        workspaceId,
+        name: "PG MCP",
+        mode: "read_only",
+        scopes: ["api:read", "mcp:tools"]
+      });
+      await expect(store.authenticateAgentToken(workspaceId, tokenId, hashToken(`${issued.secret}-bad`))).resolves.toBeNull();
+
+      const inspectPool = new Pool({ connectionString: connectionString! });
+      try {
+        const rows = await inspectPool.query<{ last_used_at: Date | string | null }>(
+          "select last_used_at from agent_token where workspace_id = $1 and public_id = $2",
+          [workspaceId, tokenId]
+        );
+        const lastUsedAt = rows.rows[0]?.last_used_at;
+        expect(lastUsedAt instanceof Date ? lastUsedAt.toISOString() : lastUsedAt).toBe(touchedAt);
       } finally {
         await inspectPool.end();
       }

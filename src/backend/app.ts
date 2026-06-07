@@ -3065,10 +3065,15 @@ async function authenticateMcpKey(
 ): Promise<McpAgentPrincipal | null> {
   const parsed = parseMcpKey(rawKey);
   if (!parsed) return null;
+  const tokenHash = hashToken(rawKey);
+
+  if (persistence?.authenticateAgentToken) {
+    return await persistence.authenticateAgentToken(parsed.workspaceId, parsed.tokenId, tokenHash, touch ? { touchAt: nowIso() } : undefined);
+  }
 
   const verify = async (targetApp: AccountingApp) => {
     const token = await targetApp.repos.agentTokens.getById(parsed.tokenId);
-    if (!token || token.status !== "active" || !token.tokenHash || !safeEqual(token.tokenHash, hashToken(rawKey))) {
+    if (!token || token.status !== "active" || !token.tokenHash || !safeEqual(token.tokenHash, tokenHash)) {
       return null;
     }
     if (touch) {

@@ -18,6 +18,7 @@ async function request<T>(api: ReturnType<typeof createApi>, method: "GET" | "PO
 
 const get = <T>(api: ReturnType<typeof createApi>, path: string) => request<T>(api, "GET", path);
 const post = <T>(api: ReturnType<typeof createApi>, path: string, body?: unknown) => request<T>(api, "POST", path, body);
+const keyPart = (value: string) => Buffer.from(value).toString("base64url");
 
 describe("prod-ready contracts", () => {
   it("accepts frontend procurement payloads without losing supplier, quantity or receipt lines", async () => {
@@ -349,6 +350,48 @@ describe("prod-ready contracts", () => {
         process.env.ACCOUNTING_ENABLE_ACCESS_MANAGEMENT = previousAlias;
       }
     }
+  });
+
+  it("authenticates MCP keys through persistence without app sessions", async () => {
+    resetIds();
+    let authenticateCalls = 0;
+    let touchedAt: string | undefined;
+    const api = createApi(new AccountingApp(), {
+      persistence: {
+        async authenticateAgentToken(workspaceId, tokenId, _tokenHash, options) {
+          authenticateCalls += 1;
+          touchedAt = options?.touchAt;
+          return {
+            tokenId,
+            workspaceId,
+            name: "Readonly agent",
+            mode: "read_only",
+            scopes: ["api:read", "mcp:tools"]
+          };
+        },
+        async openReadSession() {
+          throw new Error("MCP authentication must not open read session");
+        },
+        async openWriteSession() {
+          throw new Error("MCP authentication must not open write session");
+        }
+      }
+    });
+    const secret = `mpf_${keyPart("workspace_a")}.${keyPart("token_a")}.${keyPart("secret")}`;
+    const response = await api.request("/mcp", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${secret}`
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })
+    });
+    const payload = await response.json() as { result?: unknown };
+
+    expect(response.status).toBe(200);
+    expect(payload.result).toBeTruthy();
+    expect(authenticateCalls).toBe(1);
+    expect(touchedAt).toBeTruthy();
   });
 
   it("exports and imports channel credentials outside the public state object", async () => {

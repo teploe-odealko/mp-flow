@@ -188,6 +188,13 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   `openPostgresRepositoryBackedApp` и используется только для repository-backed `openReadSession`/
   `openWriteSession`, то есть для write/control use-cases до финального удаления `AccountingApp`.
   HTTP `readModelAppFor` теперь только локальный in-memory fallback без БД.
+- ✅ `PostgresRuntimeStore.loadApp()` удалён: runtime больше не имеет публичного метода, который
+  материализует целый `AccountingApp` из Postgres. Единственный оставшийся app-facade путь —
+  явные request sessions (`openReadSession/openWriteSession`) для пока не перенесённых write/control
+  use-cases.
+- ✅ MCP key authentication снят с `AccountingApp` sessions: `RuntimePersistence.authenticateAgentToken`
+  проверяет `agent_token` и обновляет `last_used_at` прямым Postgres-путём. `/mcp` больше не открывает
+  `openReadSession/openWriteSession` только ради проверки ключа; prod-readiness покрывает это регрессом.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,
