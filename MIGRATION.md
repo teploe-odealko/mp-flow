@@ -186,6 +186,13 @@ typed columns и `public_id` join для `organizationId`. Добавлены/з
 и `accounting_policy.allow_open_period_edits/comment`; `saveRuntimeSingleton` пишет эти колонки при bootstrap/commit.
 Остаток singleton `state_json` — только legacy payload/backfill до финального удаления колонки.
 
+### ✅ Typed specs подключены к generic collection repo для stream/audit
+`TableSpec` получил optional `select/joins/hydrate`, поэтому `readRuntimeCollection` и
+`PostgresRuntimeCollectionRepo` для `auditEvents`, `externalEvents`, `observedStocks`, `syncRuns`
+тоже читают typed rows, а не payload. Для этих таблиц и для singletons запись нового `state_json`
+остановлена; колонка остаётся только как legacy/backfill совместимость. Текущий остаток
+`state_json: entity` в runtime-store — 57 таблиц.
+
 ### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
 Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/
 addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocumentSummary(x))` — хелперы каскадно

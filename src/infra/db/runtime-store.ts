@@ -12,6 +12,8 @@ import { stableUuid } from "./ids";
 import {
   ACCOUNTING_POLICY_JOINS,
   ACCOUNTING_POLICY_SELECT,
+  AUDIT_EVENT_JOINS,
+  AUDIT_EVENT_SELECT,
   EXTERNAL_EVENT_JOINS,
   EXTERNAL_EVENT_SELECT,
   OBSERVED_STOCK_JOINS,
@@ -20,11 +22,13 @@ import {
   SYNC_RUN_JOINS,
   SYNC_RUN_SELECT,
   accountingPolicyFromRow,
+  auditEventFromRow,
   externalEventFromRow,
   observedStockFromRow,
   organizationFromRow,
   syncRunFromRow,
   type AccountingPolicyDbRow,
+  type AuditEventDbRow,
   type ExternalEventDbRow,
   type OrganizationDbRow,
   type ObservedStockDbRow,
@@ -80,7 +84,10 @@ interface TableSpec {
   table: string;
   keyColumns: string[];
   orderBy?: string;
+  select?: string;
+  joins?: string;
   serialize(entity: RuntimeEntity): RowRecord;
+  hydrate?(row: RowRecord): RuntimeEntity;
 }
 
 const RUNTIME_SCHEMA_VERSION = 3;
@@ -467,9 +474,12 @@ const TABLES: TableSpec[] = [
     before_json: entity.before ?? null,
     after_json: entity.after ?? null,
     reason: optionalString(entity.reason),
-    created_at: requiredString(entity.createdAt, "auditEvents.createdAt"),
-    state_json: entity
-  }), "created_at, id"),
+    created_at: requiredString(entity.createdAt, "auditEvents.createdAt")
+  }), "audit_event.created_at, audit_event.id", {
+    select: AUDIT_EVENT_SELECT,
+    joins: AUDIT_EVENT_JOINS,
+    hydrate: (row) => auditEventFromRow(row as unknown as AuditEventDbRow) as unknown as RuntimeEntity
+  }),
   spec("counterparties", "counterparty", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "counterparties.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "counterparties.organizationId")),
@@ -810,9 +820,12 @@ const TABLES: TableSpec[] = [
     since: optionalString(entity.since),
     summary: entity.summary ? JSON.stringify(entity.summary) : null,
     stream_runs: entity.streamRuns ? JSON.stringify(entity.streamRuns) : null,
-    last_error: optionalString(entity.lastError),
-    state_json: entity
-  }), "started_at, id"),
+    last_error: optionalString(entity.lastError)
+  }), "sync_run.started_at, sync_run.id", {
+    select: SYNC_RUN_SELECT,
+    joins: SYNC_RUN_JOINS,
+    hydrate: (row) => syncRunFromRow(row as unknown as SyncRunDbRow) as unknown as RuntimeEntity
+  }),
   spec("externalEvents", "external_event", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "externalEvents.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "externalEvents.organizationId")),
@@ -831,9 +844,12 @@ const TABLES: TableSpec[] = [
     reason: optionalString(entity.reason),
     last_error: optionalString(entity.lastError),
     created_at: requiredString(entity.createdAt, "externalEvents.createdAt"),
-    updated_at: requiredString(entity.updatedAt, "externalEvents.updatedAt"),
-    state_json: entity
-  }), "occurred_at, id"),
+    updated_at: requiredString(entity.updatedAt, "externalEvents.updatedAt")
+  }), "external_event.occurred_at, external_event.id", {
+    select: EXTERNAL_EVENT_SELECT,
+    joins: EXTERNAL_EVENT_JOINS,
+    hydrate: (row) => externalEventFromRow(row as unknown as ExternalEventDbRow) as unknown as RuntimeEntity
+  }),
   spec("observedStocks", "observed_stock", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "observedStocks.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "observedStocks.organizationId")),
@@ -843,9 +859,12 @@ const TABLES: TableSpec[] = [
     warehouse_id: optionalUuid(entity.warehouseId),
     observed_at: requiredString(entity.observedAt, "observedStocks.observedAt"),
     qty_observed: requiredNumber(entity.qtyObserved, "observedStocks.qtyObserved"),
-    location_status: requiredString(entity.locationStatus, "observedStocks.locationStatus"),
-    state_json: entity
-  }), "observed_at, id"),
+    location_status: requiredString(entity.locationStatus, "observedStocks.locationStatus")
+  }), "observed_stock.observed_at, observed_stock.id", {
+    select: OBSERVED_STOCK_SELECT,
+    joins: OBSERVED_STOCK_JOINS,
+    hydrate: (row) => observedStockFromRow(row as unknown as ObservedStockDbRow) as unknown as RuntimeEntity
+  }),
   spec("sales", "sale", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "sales.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "sales.organizationId")),
@@ -1839,11 +1858,11 @@ export async function readRuntimeCollection(source: Queryable, workspaceId: stri
   const table = TABLES.find((candidate) => candidate.collection === name);
   if (!table) return { found: false };
   const tableWorkspaceId = workspaceIdForTable(table, scope);
-  const result = await source.query<{ state_json: unknown }>(
-    `select state_json from ${table.table} where workspace_id = $1${table.orderBy ? ` order by ${table.orderBy}` : ""}`,
+  const result = await source.query<RowRecord>(
+    tableReadSql(table, `${table.table}.workspace_id = $1`),
     [tableWorkspaceId]
   );
-  return { found: true, data: result.rows.map((row) => hydrateEntity(row.state_json)) };
+  return { found: true, data: result.rows.map((row) => hydrateTableRow(table, row)) };
 }
 
 export async function openPostgresReadModelApp(source: Queryable, workspaceId: string | undefined): Promise<AccountingApp> {
@@ -1878,20 +1897,20 @@ class PostgresRuntimeCollectionRepo<T> implements CollectionRepo<T> {
 
   async all(): Promise<T[]> {
     const tableWorkspaceId = workspaceIdForTable(this.table, this.workspaceId);
-    const result = await this.q.query<{ state_json: unknown }>(
-      `select state_json from ${this.table.table} where workspace_id = $1${this.table.orderBy ? ` order by ${this.table.orderBy}` : ""}`,
+    const result = await this.q.query<RowRecord>(
+      tableReadSql(this.table, `${this.table.table}.workspace_id = $1`),
       [tableWorkspaceId]
     );
-    return result.rows.map((row) => hydrateEntity(row.state_json) as T);
+    return result.rows.map((row) => hydrateTableRow(this.table, row) as T);
   }
 
   async getById(id: string): Promise<T | undefined> {
     const tableWorkspaceId = workspaceIdForTable(this.table, this.workspaceId);
-    const result = await this.q.query<{ state_json: unknown }>(
-      `select state_json from ${this.table.table} where workspace_id = $1 and public_id = $2 limit 1`,
+    const result = await this.q.query<RowRecord>(
+      tableReadSql(this.table, `${this.table.table}.workspace_id = $1 and ${this.table.table}.public_id = $2`, "limit 1"),
       [tableWorkspaceId, id]
     );
-    return result.rows[0] ? hydrateEntity(result.rows[0].state_json) as T : undefined;
+    return result.rows[0] ? hydrateTableRow(this.table, result.rows[0]) as T : undefined;
   }
 
   async add(item: T): Promise<T> {
@@ -1971,8 +1990,7 @@ async function saveRuntimeSingleton(source: Queryable, workspaceId: string, tabl
         created_at: requiredString(entity.createdAt, "organization.createdAt"),
         updated_at: optionalString(entity.updatedAt),
         workspace_id: workspaceId,
-        public_id: requiredString(entity.id, "organization.id"),
-        state_json: entity
+        public_id: requiredString(entity.id, "organization.id")
       }
     : {
         id: entityUuid(requiredString(entity.id, "accountingPolicy.id")),
@@ -1983,8 +2001,7 @@ async function saveRuntimeSingleton(source: Queryable, workspaceId: string, tabl
         allow_open_period_edits: typeof entity.allowOpenPeriodEdits === "boolean" ? entity.allowOpenPeriodEdits : null,
         comment: optionalString(entity.comment),
         workspace_id: workspaceId,
-        public_id: requiredString(entity.id, "accountingPolicy.id"),
-        state_json: entity
+        public_id: requiredString(entity.id, "accountingPolicy.id")
       };
 
   await upsertRow(source, table, ["id"], row);
@@ -1997,8 +2014,26 @@ async function saveRuntimeSingleton(source: Queryable, workspaceId: string, tabl
   }
 }
 
-function spec(collection: RuntimeCollectionName, table: string, keyColumns: string[], serialize: (entity: RuntimeEntity) => RowRecord, orderBy?: string): TableSpec {
-  return { collection, table, keyColumns, serialize, orderBy };
+function tableReadSql(table: TableSpec, whereSql: string, suffix = "") {
+  const select = table.select ?? "state_json";
+  const joins = table.joins ? ` ${table.joins}` : "";
+  const orderBy = table.orderBy && !suffix ? ` order by ${table.orderBy}` : "";
+  return `select ${select} from ${table.table}${joins} where ${whereSql}${orderBy}${suffix ? ` ${suffix}` : ""}`;
+}
+
+function hydrateTableRow(table: TableSpec, row: RowRecord): RuntimeEntity {
+  return table.hydrate ? table.hydrate(row) : hydrateEntity(row.state_json);
+}
+
+function spec(
+  collection: RuntimeCollectionName,
+  table: string,
+  keyColumns: string[],
+  serialize: (entity: RuntimeEntity) => RowRecord,
+  orderBy?: string,
+  read?: Pick<TableSpec, "select" | "joins" | "hydrate">
+): TableSpec {
+  return { collection, table, keyColumns, serialize, orderBy, ...read };
 }
 
 async function upsertRow(client: Queryable, table: string, keyColumns: string[], row: RowRecord) {
