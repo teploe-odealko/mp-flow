@@ -1,6 +1,7 @@
 import type {
   AccountingPeriod,
   AccountingPolicy,
+  AgentToken,
   AuditEvent,
   BackfillItem,
   BackfillProject,
@@ -44,6 +45,7 @@ import type {
   ObservedStock,
   Product,
   SyncRun,
+  UserAccount,
   Warehouse,
   Organization
 } from "../../core/models";
@@ -1545,6 +1547,93 @@ export function roleFromRow(row: RoleDbRow): Role {
   };
 }
 
+export const USER_ACCOUNT_SELECT = `
+  user_account.public_id as id,
+  user_account_organization.public_id as organization_id,
+  user_account.email,
+  user_account.name,
+  user_account.role_code,
+  user_account.status,
+  user_account.invited_at,
+  user_account.last_active_at
+`;
+
+export const USER_ACCOUNT_JOINS = `
+  left join organization user_account_organization on user_account_organization.id = user_account.organization_id
+`;
+
+export interface UserAccountDbRow {
+  id: string;
+  organization_id: string;
+  email: string;
+  name: string;
+  role_code: UserAccount["roleCode"];
+  status: UserAccount["status"];
+  invited_at: unknown;
+  last_active_at: unknown;
+}
+
+export function userAccountFromRow(row: UserAccountDbRow): UserAccount {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    email: row.email,
+    name: row.name,
+    roleCode: row.role_code,
+    status: row.status,
+    invitedAt: optionalDateTimeString(row.invited_at),
+    lastActiveAt: optionalDateTimeString(row.last_active_at)
+  });
+}
+
+export const AGENT_TOKEN_SELECT = `
+  agent_token.public_id as id,
+  agent_token_organization.public_id as organization_id,
+  agent_token.name,
+  agent_token.mode,
+  agent_token.status,
+  agent_token.scopes,
+  agent_token.masked_token,
+  agent_token.token_hash,
+  agent_token.created_at,
+  agent_token.last_used_at,
+  agent_token.revoked_at
+`;
+
+export const AGENT_TOKEN_JOINS = `
+  left join organization agent_token_organization on agent_token_organization.id = agent_token.organization_id
+`;
+
+export interface AgentTokenDbRow {
+  id: string;
+  organization_id: string;
+  name: string;
+  mode: AgentToken["mode"];
+  status: AgentToken["status"];
+  scopes: unknown;
+  masked_token: string | null;
+  token_hash: string | null;
+  created_at: unknown;
+  last_used_at: unknown;
+  revoked_at: unknown;
+}
+
+export function agentTokenFromRow(row: AgentTokenDbRow): AgentToken {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    name: row.name,
+    mode: row.mode,
+    status: row.status,
+    scopes: stringArray(row.scopes),
+    maskedToken: optionalText(row.masked_token),
+    tokenHash: optionalText(row.token_hash),
+    createdAt: dateTimeString(row.created_at),
+    lastUsedAt: optionalDateTimeString(row.last_used_at),
+    revokedAt: optionalDateTimeString(row.revoked_at)
+  });
+}
+
 export const PLUGIN_STATE_RECORD_SELECT = `
   plugin_state_record.public_id as id,
   plugin_state_record_organization.public_id as organization_id,
@@ -1959,6 +2048,19 @@ export function auditEventFromRow(row: AuditEventDbRow): AuditEvent {
 
 function optionalText(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function stringArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string");
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }
 
 function optionalDateTimeString(value: unknown): string | undefined {

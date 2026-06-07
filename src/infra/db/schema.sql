@@ -501,6 +501,15 @@ alter table sales_channel add column if not exists enabled_streams text[];
 alter table sales_channel add column if not exists last_checked_at timestamptz;
 alter table sales_channel add column if not exists last_error text;
 alter table sales_channel add column if not exists last_sync_at timestamptz;
+alter table user_account add column if not exists role_code text;
+alter table user_account add column if not exists invited_at timestamptz;
+alter table user_account add column if not exists last_active_at timestamptz;
+alter table agent_token add column if not exists mode text;
+alter table agent_token add column if not exists masked_token text;
+alter table agent_token add column if not exists token_hash text;
+alter table agent_token add column if not exists created_at timestamptz not null default now();
+alter table agent_token add column if not exists last_used_at timestamptz;
+alter table agent_token add column if not exists revoked_at timestamptz;
 alter table backfill_project add column if not exists created_at timestamptz not null default now();
 alter table organization add column if not exists state_json jsonb not null default '{}'::jsonb;
 alter table accounting_policy add column if not exists state_json jsonb not null default '{}'::jsonb;
@@ -618,6 +627,21 @@ update sales_channel
       last_error = nullif(state_json->>'lastError', ''),
       last_sync_at = case when nullif(state_json->>'lastSyncAt', '') is not null then (state_json->>'lastSyncAt')::timestamptz else last_sync_at end
   where state_json <> '{}'::jsonb;
+update user_account
+  set role_code = coalesce(nullif(state_json->>'roleCode', ''), role_code, 'operator'),
+      invited_at = case when nullif(state_json->>'invitedAt', '') is not null then (state_json->>'invitedAt')::timestamptz else invited_at end,
+      last_active_at = case when nullif(state_json->>'lastActiveAt', '') is not null then (state_json->>'lastActiveAt')::timestamptz else last_active_at end
+  where state_json <> '{}'::jsonb or role_code is null;
+alter table user_account alter column role_code set default 'operator';
+update agent_token
+  set mode = coalesce(nullif(state_json->>'mode', ''), mode, 'read_only'),
+      masked_token = coalesce(nullif(state_json->>'maskedToken', ''), masked_token),
+      token_hash = coalesce(nullif(state_json->>'tokenHash', ''), token_hash),
+      created_at = case when nullif(state_json->>'createdAt', '') is not null then (state_json->>'createdAt')::timestamptz else created_at end,
+      last_used_at = case when nullif(state_json->>'lastUsedAt', '') is not null then (state_json->>'lastUsedAt')::timestamptz else last_used_at end,
+      revoked_at = case when nullif(state_json->>'revokedAt', '') is not null then (state_json->>'revokedAt')::timestamptz else revoked_at end
+  where state_json <> '{}'::jsonb or mode is null;
+alter table agent_token alter column mode set default 'read_only';
 
 do $$
 declare

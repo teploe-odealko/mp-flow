@@ -232,6 +232,11 @@ typed read/write без `state_json`. Текущий остаток `state_json:
 добавлены typed колонки `enabled_streams`, `last_checked_at`, `last_error`, `last_sync_at` с backfill из
 legacy `state_json`. Текущий остаток `state_json: entity` — 16 таблиц.
 
+### ✅ Typed hydrate для пользователей и агентских токенов
+На typed specs переведены `users` и `agentTokens`. Для `user_account` добавлены `role_code`, `invited_at`,
+`last_active_at`; для `agent_token` — `mode`, `masked_token`, `token_hash`, `created_at`, `last_used_at`,
+`revoked_at` с backfill из legacy `state_json`. Текущий остаток `state_json: entity` — 14 таблиц.
+
 ### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
 Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/
 addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocumentSummary(x))` — хелперы каскадно

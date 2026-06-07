@@ -14,6 +14,8 @@ import {
   ACCOUNTING_POLICY_SELECT,
   ACCOUNTING_PERIOD_JOINS,
   ACCOUNTING_PERIOD_SELECT,
+  AGENT_TOKEN_JOINS,
+  AGENT_TOKEN_SELECT,
   AUDIT_EVENT_JOINS,
   AUDIT_EVENT_SELECT,
   BACKFILL_ITEM_JOINS,
@@ -99,10 +101,13 @@ import {
   SALES_CHANNEL_SELECT,
   SYNC_RUN_JOINS,
   SYNC_RUN_SELECT,
+  USER_ACCOUNT_JOINS,
+  USER_ACCOUNT_SELECT,
   WAREHOUSE_JOINS,
   WAREHOUSE_SELECT,
   accountingPeriodFromRow,
   accountingPolicyFromRow,
+  agentTokenFromRow,
   auditEventFromRow,
   backfillItemFromRow,
   backfillProjectFromRow,
@@ -147,9 +152,11 @@ import {
   roleFromRow,
   salesChannelFromRow,
   syncRunFromRow,
+  userAccountFromRow,
   warehouseFromRow,
   type AccountingPeriodDbRow,
   type AccountingPolicyDbRow,
+  type AgentTokenDbRow,
   type AuditEventDbRow,
   type BackfillItemDbRow,
   type BackfillProjectDbRow,
@@ -194,6 +201,7 @@ import {
   type RoleDbRow,
   type SalesChannelDbRow,
   type SyncRunDbRow,
+  type UserAccountDbRow,
   type WarehouseDbRow
 } from "./runtime-hydrators";
 
@@ -484,6 +492,43 @@ const SCHEMA_ALTERS = `
   alter table product add column if not exists height_mm integer;
   alter table product add column if not exists manufacturer_article text;
   alter table product add column if not exists comment text;
+  alter table sales_channel add column if not exists enabled_streams text[];
+  alter table sales_channel add column if not exists last_checked_at timestamptz;
+  alter table sales_channel add column if not exists last_error text;
+  alter table sales_channel add column if not exists last_sync_at timestamptz;
+  update sales_channel
+    set enabled_streams = case when jsonb_typeof(state_json->'enabledStreams') = 'array'
+          then array(select jsonb_array_elements_text(state_json->'enabledStreams'))
+          else enabled_streams
+        end,
+        last_checked_at = case when nullif(state_json->>'lastCheckedAt', '') is not null then (state_json->>'lastCheckedAt')::timestamptz else last_checked_at end,
+        last_error = nullif(state_json->>'lastError', ''),
+        last_sync_at = case when nullif(state_json->>'lastSyncAt', '') is not null then (state_json->>'lastSyncAt')::timestamptz else last_sync_at end
+    where state_json <> '{}'::jsonb;
+  alter table user_account add column if not exists role_code text;
+  alter table user_account add column if not exists invited_at timestamptz;
+  alter table user_account add column if not exists last_active_at timestamptz;
+  update user_account
+    set role_code = coalesce(nullif(state_json->>'roleCode', ''), role_code, 'operator'),
+        invited_at = case when nullif(state_json->>'invitedAt', '') is not null then (state_json->>'invitedAt')::timestamptz else invited_at end,
+        last_active_at = case when nullif(state_json->>'lastActiveAt', '') is not null then (state_json->>'lastActiveAt')::timestamptz else last_active_at end
+    where state_json <> '{}'::jsonb or role_code is null;
+  alter table user_account alter column role_code set default 'operator';
+  alter table agent_token add column if not exists mode text;
+  alter table agent_token add column if not exists masked_token text;
+  alter table agent_token add column if not exists token_hash text;
+  alter table agent_token add column if not exists created_at timestamptz not null default now();
+  alter table agent_token add column if not exists last_used_at timestamptz;
+  alter table agent_token add column if not exists revoked_at timestamptz;
+  update agent_token
+    set mode = coalesce(nullif(state_json->>'mode', ''), mode, 'read_only'),
+        masked_token = coalesce(nullif(state_json->>'maskedToken', ''), masked_token),
+        token_hash = coalesce(nullif(state_json->>'tokenHash', ''), token_hash),
+        created_at = case when nullif(state_json->>'createdAt', '') is not null then (state_json->>'createdAt')::timestamptz else created_at end,
+        last_used_at = case when nullif(state_json->>'lastUsedAt', '') is not null then (state_json->>'lastUsedAt')::timestamptz else last_used_at end,
+        revoked_at = case when nullif(state_json->>'revokedAt', '') is not null then (state_json->>'revokedAt')::timestamptz else revoked_at end
+    where state_json <> '{}'::jsonb or mode is null;
+  alter table agent_token alter column mode set default 'read_only';
   alter table backfill_project add column if not exists created_at timestamptz not null default now();
 `;
 
@@ -1322,9 +1367,15 @@ const TABLES: TableSpec[] = [
     organization_id: entityUuid(requiredString(entity.organizationId, "users.organizationId")),
     email: requiredString(entity.email, "users.email"),
     name: requiredString(entity.name, "users.name"),
+    role_code: requiredString(entity.roleCode, "users.roleCode"),
     status: requiredString(entity.status, "users.status"),
-    state_json: entity
-  }), "email, id"),
+    invited_at: optionalString(entity.invitedAt),
+    last_active_at: optionalString(entity.lastActiveAt)
+  }), "user_account.email, user_account.id", {
+    select: USER_ACCOUNT_SELECT,
+    joins: USER_ACCOUNT_JOINS,
+    hydrate: (row) => userAccountFromRow(row as unknown as UserAccountDbRow) as unknown as RuntimeEntity
+  }),
   spec("roles", "role", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "roles.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "roles.organizationId")),
@@ -1339,10 +1390,19 @@ const TABLES: TableSpec[] = [
     id: entityUuid(requiredString(entity.id, "agentTokens.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "agentTokens.organizationId")),
     name: requiredString(entity.name, "agentTokens.name"),
+    mode: requiredString(entity.mode, "agentTokens.mode"),
     status: requiredString(entity.status, "agentTokens.status"),
     scopes: JSON.stringify(entity.scopes ?? []),
-    state_json: entity
-  }), "name, id"),
+    masked_token: optionalString(entity.maskedToken),
+    token_hash: optionalString(entity.tokenHash),
+    created_at: requiredString(entity.createdAt, "agentTokens.createdAt"),
+    last_used_at: optionalString(entity.lastUsedAt),
+    revoked_at: optionalString(entity.revokedAt)
+  }), "agent_token.name, agent_token.id", {
+    select: AGENT_TOKEN_SELECT,
+    joins: AGENT_TOKEN_JOINS,
+    hydrate: (row) => agentTokenFromRow(row as unknown as AgentTokenDbRow) as unknown as RuntimeEntity
+  }),
   spec("channelAgentPermissions", "channel_agent_permission", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "channelAgentPermissions.id")),
     agent_token_id: entityUuid(requiredString(entity.agentTokenId, "channelAgentPermissions.agentTokenId")),
