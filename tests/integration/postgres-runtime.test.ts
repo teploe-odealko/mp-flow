@@ -2,6 +2,7 @@ import { Pool } from "pg";
 import { describe, expect, it } from "vitest";
 import { createApi } from "../../src/backend/app";
 import { AuthService } from "../../src/backend/auth";
+import { runMigrations } from "../../src/backend/db/migrate";
 import { AccountingApp } from "../../src/core/accounting-app";
 import { PostgresRuntimeStore } from "../../src/infra/db/runtime-store";
 import { ozonPlugin } from "../../src/plugins/ozon";
@@ -39,6 +40,28 @@ async function request<T>(api: ReturnType<typeof createApi>, method: "GET" | "PO
 }
 
 describePostgres("postgres runtime store", () => {
+  it("keeps normalized runtime tables without state_json payload columns", async () => {
+    await resetRuntimeTables();
+
+    const pool = new Pool({ connectionString: connectionString! });
+    const store = new PostgresRuntimeStore(pool, "postgres-no-state-json-secret");
+    try {
+      await store.init();
+      await runMigrations(pool);
+      const stateJsonColumns = await pool.query<{ table_name: string }>(
+        `
+          select table_name
+          from information_schema.columns
+          where table_schema = 'public' and column_name = 'state_json'
+          order by table_name
+        `
+      );
+      expect(stateJsonColumns.rows).toEqual([]);
+    } finally {
+      await store.close();
+    }
+  }, 30_000);
+
   it("uses Postgres as the source of truth for request-scoped API sessions", async () => {
     await resetRuntimeTables();
 

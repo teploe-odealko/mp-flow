@@ -316,7 +316,7 @@ interface TableSpec {
   hydrate?(row: RowRecord): RuntimeEntity;
 }
 
-const RUNTIME_SCHEMA_VERSION = 3;
+const RUNTIME_SCHEMA_VERSION = 4;
 const RUNTIME_ROW_KEY = "default";
 const DEFAULT_WORKSPACE_ID = "default";
 const CREDENTIALS_AAD = Buffer.from("mpflow-channel-credentials");
@@ -743,8 +743,12 @@ const SCHEMA_ALTERS = `
   alter table backfill_project add column if not exists created_at timestamptz not null default now();
 `;
 
-const STATE_JSON_ALTERS = STATE_JSON_TABLES
+export const LEGACY_STATE_JSON_ALTERS = STATE_JSON_TABLES
   .map((table) => `alter table ${table} add column if not exists state_json jsonb not null default '{}'::jsonb;`)
+  .join("\n");
+
+export const DROP_LEGACY_STATE_JSON_ALTERS = STATE_JSON_TABLES
+  .map((table) => `alter table ${table} drop column if exists state_json;`)
   .join("\n");
 
 const PUBLIC_ID_ALTERS = STATE_JSON_TABLES
@@ -2018,12 +2022,13 @@ export class PostgresRuntimeStore implements RuntimePersistence {
   private async initialize() {
     const schemaSql = await schemaSqlPromise;
     await this.pool.query(schemaSql);
+    await this.pool.query(LEGACY_STATE_JSON_ALTERS);
     await this.pool.query(SCHEMA_ALTERS);
-    await this.pool.query(STATE_JSON_ALTERS);
     await this.pool.query(WORKSPACE_ALTERS);
     await this.pool.query(PUBLIC_ID_ALTERS);
     await this.pool.query(POST_PUBLIC_ID_BACKFILLS);
     await this.migrateLegacyState();
+    await this.pool.query(DROP_LEGACY_STATE_JSON_ALTERS);
   }
 
   private async migrateLegacyState() {
@@ -2423,7 +2428,6 @@ const externalEventTableSpec = TABLES.find((table) => table.collection === "exte
 
 /**
  * Postgres-реализация ExternalEventStore: события живут в таблице external_event, а НЕ в snapshot.
- * Чтение пока hydrate'ит entity payload, но lookup уже идёт по typed/public columns.
  * Инжектится в сессию (read: pool, write: транзакционный client), чтобы app не грузил общий snapshot.
  */
 export class PostgresExternalEventStore implements ExternalEventStore {
@@ -2839,14 +2843,20 @@ async function saveRuntimeSingleton(source: Queryable, workspaceId: string, tabl
 }
 
 function tableReadSql(table: TableSpec, whereSql: string, suffix = "") {
-  const select = table.select ?? "state_json";
+  if (!table.select || !table.hydrate) {
+    throw new Error(`Runtime table ${table.collection} must declare typed select/hydrate; state_json fallback is disabled`);
+  }
+  const select = table.select;
   const joins = table.joins ? ` ${table.joins}` : "";
   const orderBy = table.orderBy && !suffix ? ` order by ${table.orderBy}` : "";
   return `select ${select} from ${table.table}${joins} where ${whereSql}${orderBy}${suffix ? ` ${suffix}` : ""}`;
 }
 
 function hydrateTableRow(table: TableSpec, row: RowRecord): RuntimeEntity {
-  return table.hydrate ? table.hydrate(row) : hydrateEntity(row.state_json);
+  if (!table.hydrate) {
+    throw new Error(`Runtime table ${table.collection} must declare typed hydrate; state_json fallback is disabled`);
+  }
+  return table.hydrate(row);
 }
 
 function spec(

@@ -260,6 +260,14 @@ state_code)`, а `public_id` теперь `productId:warehouseId:stateCode`. Д�
 text public-id колонки. Текущий остаток `state_json: entity` — 0 таблиц; `state_json` остался только в
 legacy/backfill SQL до финальной зачистки колонок.
 
+### ✅ `state_json` удалён из целевой схемы и runtime-БД
+`schema.sql` больше не создаёт `state_json` и legacy `accounting_runtime_entity`/`accounting_runtime_channel_credential`.
+Generic runtime repo больше не имеет fallback `select state_json`/`hydrateEntity(row.state_json)`: все runtime specs
+обязаны читать typed columns. Для старых БД сохранён только временный legacy-bootstrap: runtime/migrator создают
+`state_json` на время backfill старых payload-колонок и затем всегда дропают их. Новый PG-тест проверяет реальную
+схему через `information_schema`: после `PostgresRuntimeStore.init()` + `runMigrations()` нет ни одной
+`state_json`-колонки. Проверка: `npm run build`, `npm test`, `npm run test:postgres` зелёные.
+
 ### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
 Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/
 addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocumentSummary(x))` — хелперы каскадно

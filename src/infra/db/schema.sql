@@ -1,8 +1,7 @@
 -- MPFlow PostgreSQL target schema.
 -- The production runtime uses PostgreSQL as the source of truth and keeps
 -- request-scoped aggregate sessions in memory only for the lifetime of a request.
--- Domain tables below are the durable source; `state_json` columns preserve the
--- exact runtime shape while typed columns remain queryable and constrained.
+-- Domain tables below are the durable typed source of truth.
 -- Table names, keys and core constraints below remain the target normalized model.
 
 create extension if not exists "pgcrypto";
@@ -12,24 +11,6 @@ create table if not exists accounting_runtime_meta (
   schema_version integer not null,
   next_id integer not null,
   singletons jsonb not null default '{}'::jsonb,
-  updated_at timestamptz not null default now()
-);
-
-create table if not exists accounting_runtime_entity (
-  collection text not null,
-  entity_id text not null,
-  data jsonb not null,
-  updated_at timestamptz not null default now(),
-  primary key (collection, entity_id)
-);
-
-create index if not exists accounting_runtime_entity_collection_idx
-  on accounting_runtime_entity(collection);
-
-create table if not exists accounting_runtime_channel_credential (
-  channel_id text primary key,
-  encrypted_credentials jsonb not null,
-  fields text[] not null default '{}',
   updated_at timestamptz not null default now()
 );
 
@@ -559,6 +540,15 @@ alter table payout_line add column if not exists source_type text;
 alter table payout_line add column if not exists source_id text;
 alter table payout_line add column if not exists line_group text;
 alter table stock_state add column if not exists state_code text not null default 'sellable';
+do $$
+begin
+  if exists (select 1 from pg_constraint where conname = 'stock_state_pkey') then
+    alter table stock_state drop constraint stock_state_pkey;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'stock_state_pkey') then
+    alter table stock_state add constraint stock_state_pkey primary key (product_id, warehouse_id, state_code);
+  end if;
+end $$;
 alter table inventory_lot add column if not exists stock_state_code text;
 alter table inventory_lot add column if not exists source_line_public_id text;
 alter table stock_movement add column if not exists stock_state_code text;
@@ -576,228 +566,6 @@ alter table stock_transfer_line add column if not exists source_goods_receipt_li
 alter table stock_transfer_line add column if not exists source_purchase_order_line_id uuid references purchase_order_line(id);
 alter table stock_transfer_line add column if not exists provider_metadata jsonb;
 alter table backfill_project add column if not exists created_at timestamptz not null default now();
-alter table organization add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table accounting_policy add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table accounting_period add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table chart_account add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table document_type_registry add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table document add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table document_line add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table document_version add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table document_link add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table audit_event add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table journal_entry add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table journal_line add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table counterparty add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table product add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table product_asset add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table warehouse add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table stock_state add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table inventory_lot add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table stock_movement add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table cost_application add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table purchase_order add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table purchase_order_line add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table cash_account add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table payment add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table payment_allocation add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table settlement_entry add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table goods_receipt add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table goods_receipt_line add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table procurement_cost add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table procurement_cost_line add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table shortage_resolution add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table shortage_resolution_line add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table supplier_claim add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table stock_transfer add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table stock_transfer_line add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table plugin_state_record add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table integration_plugin add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table sales_channel add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table external_product add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table product_external_link add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table sync_run add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table external_event add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table observed_stock add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table sale add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table sale_line add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table sales_return add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table channel_finance_event add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table payout add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table payout_line add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table expense_category add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table operating_expense add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table owner_transaction add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table stocktake add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table stocktake_line add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table correction_case add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table recalculation_job add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table report_snapshot add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table backfill_project add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table backfill_item add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table user_account add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table role add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table agent_token add column if not exists state_json jsonb not null default '{}'::jsonb;
-alter table channel_agent_permission add column if not exists state_json jsonb not null default '{}'::jsonb;
-
-update external_event
-  set idempotency_key = coalesce(nullif(state_json->>'idempotencyKey', ''), external_id)
-  where idempotency_key is null;
-update organization
-  set inn = nullif(state_json->>'inn', ''),
-      updated_at = case when nullif(state_json->>'updatedAt', '') is not null then (state_json->>'updatedAt')::timestamptz else updated_at end
-  where state_json <> '{}'::jsonb;
-update accounting_policy
-  set allow_open_period_edits = case
-        when state_json ? 'allowOpenPeriodEdits' then (state_json->>'allowOpenPeriodEdits')::boolean
-        else allow_open_period_edits
-      end,
-      comment = nullif(state_json->>'comment', '')
-  where state_json <> '{}'::jsonb;
-update procurement_cost
-  set pending_allocation = case
-    when state_json ? 'pendingAllocation' then (state_json->>'pendingAllocation')::boolean
-    else pending_allocation
-  end
-  where state_json <> '{}'::jsonb;
-update external_event
-  set created_at = coalesce(nullif(state_json->>'createdAt', '')::timestamptz, created_at),
-      updated_at = coalesce(nullif(state_json->>'updatedAt', '')::timestamptz, updated_at),
-      last_error = nullif(state_json->>'lastError', '')
-  where state_json <> '{}'::jsonb;
-update audit_event
-  set entity_public_id = nullif(state_json->>'entityId', '')
-  where entity_public_id is null;
-update sync_run
-  set mode = nullif(state_json->>'mode', ''),
-      streams = case when jsonb_typeof(state_json->'streams') = 'array'
-        then array(select jsonb_array_elements_text(state_json->'streams'))
-        else streams
-      end,
-      errors = case when jsonb_typeof(state_json->'errors') = 'array'
-        then array(select jsonb_array_elements_text(state_json->'errors'))
-        else errors
-      end,
-      since = nullif(state_json->>'since', ''),
-      summary = case when state_json ? 'summary' then state_json->'summary' else summary end,
-      stream_runs = case when state_json ? 'streamRuns' then state_json->'streamRuns' else stream_runs end,
-      last_error = nullif(state_json->>'lastError', '')
-  where state_json <> '{}'::jsonb;
-update product_asset
-  set mime_type = coalesce(nullif(state_json->>'mimeType', ''), mime_type),
-      width = coalesce(nullif(state_json->>'width', '')::integer, width),
-      height = coalesce(nullif(state_json->>'height', '')::integer, height),
-      created_by = coalesce(nullif(state_json->>'createdBy', ''), created_by, 'user'),
-      updated_at = case when nullif(state_json->>'updatedAt', '') is not null then (state_json->>'updatedAt')::timestamptz else updated_at end,
-      meta = case when state_json ? 'meta' then state_json->'meta' else meta end
-  where state_json <> '{}'::jsonb;
-update sales_channel
-  set enabled_streams = case when jsonb_typeof(state_json->'enabledStreams') = 'array'
-        then array(select jsonb_array_elements_text(state_json->'enabledStreams'))
-        else enabled_streams
-      end,
-      last_checked_at = case when nullif(state_json->>'lastCheckedAt', '') is not null then (state_json->>'lastCheckedAt')::timestamptz else last_checked_at end,
-      last_error = nullif(state_json->>'lastError', ''),
-      last_sync_at = case when nullif(state_json->>'lastSyncAt', '') is not null then (state_json->>'lastSyncAt')::timestamptz else last_sync_at end
-  where state_json <> '{}'::jsonb;
-update user_account
-  set role_code = coalesce(nullif(state_json->>'roleCode', ''), role_code, 'operator'),
-      invited_at = case when nullif(state_json->>'invitedAt', '') is not null then (state_json->>'invitedAt')::timestamptz else invited_at end,
-      last_active_at = case when nullif(state_json->>'lastActiveAt', '') is not null then (state_json->>'lastActiveAt')::timestamptz else last_active_at end
-  where state_json <> '{}'::jsonb or role_code is null;
-alter table user_account alter column role_code set default 'operator';
-update agent_token
-  set mode = coalesce(nullif(state_json->>'mode', ''), mode, 'read_only'),
-      masked_token = coalesce(nullif(state_json->>'maskedToken', ''), masked_token),
-      token_hash = coalesce(nullif(state_json->>'tokenHash', ''), token_hash),
-      created_at = case when nullif(state_json->>'createdAt', '') is not null then (state_json->>'createdAt')::timestamptz else created_at end,
-      last_used_at = case when nullif(state_json->>'lastUsedAt', '') is not null then (state_json->>'lastUsedAt')::timestamptz else last_used_at end,
-      revoked_at = case when nullif(state_json->>'revokedAt', '') is not null then (state_json->>'revokedAt')::timestamptz else revoked_at end
-  where state_json <> '{}'::jsonb or mode is null;
-alter table agent_token alter column mode set default 'read_only';
-update operating_expense
-  set amount_paid_rub = coalesce(nullif(state_json->>'amountPaidRub', '')::numeric, amount_paid_rub, amount_rub),
-      payment_mode = coalesce(nullif(state_json->>'paymentMode', ''), payment_mode, 'paid_now'),
-      payment_status = coalesce(nullif(state_json->>'paymentStatus', ''), payment_status, 'paid')
-  where state_json <> '{}'::jsonb or amount_paid_rub is null or payment_mode is null or payment_status is null;
-alter table operating_expense alter column payment_mode set default 'paid_now';
-alter table operating_expense alter column payment_status set default 'paid';
-update sale
-  set external_order_id = coalesce(nullif(state_json->>'externalOrderId', ''), external_order_id),
-      recognized_gross_amount_rub = coalesce(nullif(state_json->>'recognizedGrossAmountRub', '')::numeric, recognized_gross_amount_rub),
-      financial_recognition_date = case when nullif(state_json->>'financialRecognitionDate', '') is not null then (state_json->>'financialRecognitionDate')::date else financial_recognition_date end,
-      cost_amount_rub = coalesce(nullif(state_json->>'costAmountRub', '')::numeric, cost_amount_rub, 0),
-      gross_profit_rub = coalesce(nullif(state_json->>'grossProfitRub', '')::numeric, gross_profit_rub, gross_amount_rub)
-  where state_json <> '{}'::jsonb or cost_amount_rub is null or gross_profit_rub is null;
-update sale_line
-  set gross_profit_rub = coalesce(nullif(state_json->>'grossProfitRub', '')::numeric, gross_profit_rub, revenue_rub - cost_rub)
-  where state_json <> '{}'::jsonb or gross_profit_rub is null;
-update sales_return
-  set stock_state_code = coalesce(nullif(state_json->>'stockStateCode', ''), stock_state_code),
-      status = coalesce(nullif(state_json->>'status', ''), status, 'draft'),
-      comment = coalesce(nullif(state_json->>'comment', ''), comment)
-  where state_json <> '{}'::jsonb or status is null;
-alter table sales_return alter column status set default 'draft';
-update channel_finance_event
-  set external_id = coalesce(nullif(state_json->>'externalId', ''), external_id),
-      treatment = coalesce(nullif(state_json->>'treatment', ''), treatment),
-      category = coalesce(nullif(state_json->>'category', ''), category),
-      operation_type = coalesce(nullif(state_json->>'operationType', ''), operation_type),
-      operation_type_name = coalesce(nullif(state_json->>'operationTypeName', ''), operation_type_name),
-      sale_allocations = case when state_json ? 'saleAllocations' then state_json->'saleAllocations' else sale_allocations end,
-      status = coalesce(nullif(state_json->>'status', ''), status, 'new'),
-      comment = coalesce(nullif(state_json->>'comment', ''), comment)
-  where state_json <> '{}'::jsonb or status is null;
-alter table channel_finance_event alter column status set default 'new';
-update payout
-  set composition_mode = coalesce(nullif(state_json->>'compositionMode', ''), composition_mode, 'auto'),
-      external_payout_id = coalesce(nullif(state_json->>'externalPayoutId', ''), external_payout_id),
-      period_from = case when nullif(state_json->>'periodFrom', '') is not null then (state_json->>'periodFrom')::date else period_from end,
-      period_to = case when nullif(state_json->>'periodTo', '') is not null then (state_json->>'periodTo')::date else period_to end,
-      expected_amount_rub = coalesce(nullif(state_json->>'expectedAmountRub', '')::numeric, expected_amount_rub, gross_events_rub),
-      difference_reason = coalesce(nullif(state_json->>'differenceReason', ''), difference_reason),
-      difference_accepted = coalesce(nullif(state_json->>'differenceAccepted', '')::boolean, difference_accepted, false)
-  where state_json <> '{}'::jsonb or composition_mode is null or expected_amount_rub is null;
-alter table payout alter column composition_mode set default 'auto';
-update payout_line
-  set source_type = coalesce(nullif(state_json->>'sourceType', ''), source_type),
-      source_id = coalesce(nullif(state_json->>'sourceId', ''), source_id),
-      line_group = coalesce(nullif(state_json->>'lineGroup', ''), line_group)
-  where state_json <> '{}'::jsonb;
-update stock_state
-  set state_code = coalesce(nullif(state_json->>'stateCode', ''), state_code, 'sellable')
-  where state_json <> '{}'::jsonb or state_code is null;
-do $$
-begin
-  if exists (select 1 from pg_constraint where conname = 'stock_state_pkey') then
-    alter table stock_state drop constraint stock_state_pkey;
-  end if;
-  if not exists (select 1 from pg_constraint where conname = 'stock_state_pkey') then
-    alter table stock_state add constraint stock_state_pkey primary key (product_id, warehouse_id, state_code);
-  end if;
-end $$;
-update inventory_lot
-  set stock_state_code = coalesce(nullif(state_json->>'stockStateCode', ''), stock_state_code),
-      source_line_public_id = coalesce(nullif(state_json->>'sourceLineId', ''), source_line_public_id)
-  where state_json <> '{}'::jsonb;
-update stock_movement
-  set stock_state_code = coalesce(nullif(state_json->>'stockStateCode', ''), stock_state_code)
-  where state_json <> '{}'::jsonb;
-update cost_application
-  set target_line_id = coalesce(nullif(state_json->>'targetLineId', ''), target_line_id),
-      target_line_type = coalesce(nullif(state_json->>'targetLineType', ''), target_line_type)
-  where state_json <> '{}'::jsonb;
-update stock_transfer
-  set from_stock_state_code = coalesce(nullif(state_json->>'fromStockStateCode', ''), from_stock_state_code),
-      to_stock_state_code = coalesce(nullif(state_json->>'toStockStateCode', ''), to_stock_state_code),
-      transfer_type = coalesce(nullif(state_json->>'transferType', ''), transfer_type),
-      provider_metadata = case when state_json ? 'providerMetadata' then state_json->'providerMetadata' else provider_metadata end,
-      comment = coalesce(nullif(state_json->>'comment', ''), comment)
-  where state_json <> '{}'::jsonb;
-update stock_transfer_line
-  set provider_metadata = case when state_json ? 'providerMetadata' then state_json->'providerMetadata' else provider_metadata end
-  where state_json <> '{}'::jsonb;
-
 do $$
 declare
   target_table text;
@@ -821,22 +589,6 @@ begin
   ]
   loop
     execute format('alter table %I add column if not exists public_id text', target_table);
-    if target_table = 'stock_state' then
-      execute format($fmt$
-        update %I
-          set public_id = concat(state_json->>'productId', ':', state_json->>'warehouseId', ':', coalesce(nullif(state_json->>'stateCode', ''), 'sellable'))
-          where public_id is null
-            and nullif(state_json->>'productId', '') is not null
-            and nullif(state_json->>'warehouseId', '') is not null
-      $fmt$, target_table);
-    else
-      execute format($fmt$
-        update %I
-          set public_id = coalesce(nullif(state_json->>'id', ''), nullif(state_json->>'code', ''))
-          where public_id is null
-            and coalesce(nullif(state_json->>'id', ''), nullif(state_json->>'code', '')) is not null
-      $fmt$, target_table);
-    end if;
   end loop;
 end $$;
 
