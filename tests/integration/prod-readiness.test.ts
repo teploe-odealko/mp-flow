@@ -490,12 +490,13 @@ describe("prod-ready contracts", () => {
     }
   });
 
-  it("serves access user writes before snapshot sessions", async () => {
+  it("serves access and agent token writes before snapshot sessions", async () => {
     const previous = process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED;
     process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED = "true";
     resetIds();
     const app = new AccountingApp();
     await app.setupDemo();
+    const channel = app.state.salesChannels[0];
     let readContexts = 0;
     let readSessions = 0;
     let writeContexts = 0;
@@ -542,16 +543,35 @@ describe("prod-ready contracts", () => {
       const roleChange = await patch<any>(api, `/api/settings/users/${user.id}/role`, { roleCode: "viewer" });
       const resent = await post<any>(api, `/api/settings/users/${user.id}/resend`);
       const disabled = await post<any>(api, `/api/settings/users/${user.id}/disable`);
+      const token = await post<any>(api, "/api/agent-tokens", { name: "Access agent", scopes: ["channels:sync"] });
+      const permission = await post<any>(api, `/api/channels/${channel.id}/agent-permission`, {
+        agentTokenId: token.id,
+        permissionCode: "sync:write"
+      });
+      const revoked = await post<any>(api, `/api/agent-tokens/${token.id}/revoke`);
+      const mcpKey = await post<any>(api, "/api/mcp/keys", { name: "MCP agent", mode: "read_only" });
+      const revokedMcpKey = await post<any>(api, `/api/mcp/keys/${mcpKey.token.id}/revoke`);
       const users = await get<any>(api, "/api/settings/users");
 
       expect(user.status).toBe("invited");
       expect(roleChange.role.code).toBe("viewer");
       expect(resent.status).toBe("invited");
       expect(disabled.status).toBe("disabled");
+      expect(token).toEqual(expect.objectContaining({ status: "active", scopes: ["channels:sync"] }));
+      expect(token.secret).toMatch(/^mpf_/);
+      expect(token.tokenHash).toBeUndefined();
+      expect(permission).toMatchObject({ agentTokenId: token.id, channelId: channel.id, permissionCode: "sync:write" });
+      expect(revoked).toEqual(expect.objectContaining({ id: token.id, status: "revoked" }));
+      expect(mcpKey.secret).toMatch(/^mpf_/);
+      expect(mcpKey.token).toEqual(expect.objectContaining({ name: "MCP agent", status: "active" }));
+      expect(revokedMcpKey).toEqual(expect.objectContaining({ id: mcpKey.token.id, status: "revoked" }));
       expect(users.users).toContainEqual(expect.objectContaining({ id: user.id, roleCode: "viewer", status: "disabled" }));
+      expect(users.agentTokens).toContainEqual(expect.objectContaining({ id: token.id, status: "revoked" }));
+      expect(users.agentTokens).toContainEqual(expect.objectContaining({ id: mcpKey.token.id, status: "revoked" }));
+      expect(users.channelAgentPermissions).toContainEqual(expect.objectContaining({ id: permission.id, agentTokenId: token.id, channelId: channel.id }));
       expect(readContexts).toBe(1);
       expect(readSessions).toBe(0);
-      expect(writeContexts).toBe(4);
+      expect(writeContexts).toBe(9);
       expect(writeSessions).toBe(0);
     } finally {
       if (previous === undefined) {

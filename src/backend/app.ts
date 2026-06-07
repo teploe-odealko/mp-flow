@@ -1,10 +1,10 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { z } from "zod";
 import { AccountingApp } from "../core/accounting-app";
-import type { AgentToken, ChannelFinanceEvent, ChannelStreamCode, ExternalEvent, Payout, Sale, SalesChannel, SalesReturn, SyncRun } from "../core/models";
+import type { ChannelFinanceEvent, ChannelStreamCode, ExternalEvent, Payout, Sale, SalesChannel, SalesReturn, SyncRun } from "../core/models";
 import { DomainError, id, nowIso, runWithIdSequence } from "../core/utils";
 import { openPostgresReadContext, readRuntimeDashboard, readRuntimeLedgerBalances, readRuntimeReports, readRuntimeReportWorkspace, readRuntimeProductWorkspace, type RuntimePersistence, type RuntimeReadContext, type RuntimeWriteContext } from "../infra/db/runtime-store";
 import { pluginRegistry } from "../plugins/registry";
@@ -20,6 +20,7 @@ import { captureException } from "./observability";
 import { getPool } from "./db/pool";
 import { ExternalEventRepository } from "./repositories/external-event-repository";
 import { disableUser, inviteUser, resendUserInvite, updateUserRole } from "./services/access-management-service";
+import { hashToken, issueMcpAgentToken, publicAgentToken, revokeAgentToken, setChannelAgentPermission } from "./services/agent-token-service";
 import { onboardingProjectDetailsFor } from "./services/onboarding-project-service";
 import { updateOrganization } from "./services/organization-service";
 import { confirmProductAsset, createProductAsset, deleteProductAsset, updateProductAsset } from "./services/product-asset-service";
@@ -1688,6 +1689,23 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.get("/api/mcp/config", async (c) => c.json({ ok: true, data: await mcpSettingsPayload(await readContextFor(c), publicMcpEndpoint(c)) }));
   api.get("/api/mcp/keys", async (c) => c.json({ ok: true, data: await mcpSettingsPayload(await readContextFor(c), publicMcpEndpoint(c)) }));
+  api.post("/api/mcp/keys", async (c) => {
+    const body = agentTokenCreateSchema.parse(await c.req.json());
+    const issued = await writeContextFor(c, (writeContext) => issueMcpAgentToken(writeContext, c.get("authUser")?.workspaceId ?? "default", body));
+    return c.json({
+      ok: true,
+      data: {
+        endpoint: publicMcpEndpoint(c),
+        token: publicAgentToken(issued.token),
+        secret: issued.secret,
+        instructions: mcpConnectionInstructions(publicMcpEndpoint(c), issued.secret)
+      }
+    });
+  });
+  api.post("/api/mcp/keys/:id/revoke", async (c) => {
+    const token = await writeContextFor(c, (writeContext) => revokeAgentToken(writeContext, c.req.param("id"), "Ключ MCP не найден"));
+    return c.json({ ok: true, data: publicAgentToken(token) });
+  });
   api.get("/api/users", async (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
     const readContext = await readContextFor(c);
@@ -1717,6 +1735,22 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/agent-tokens", async (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
     return c.json({ ok: true, data: (await (await readContextFor(c)).repos.agentTokens.all()).map(publicAgentToken) });
+  });
+  api.post("/api/agent-tokens", async (c) => {
+    if (!accessManagementEnabled()) return accessManagementDisabled(c);
+    const body = agentTokenCreateSchema.parse(await c.req.json());
+    const issued = await writeContextFor(c, (writeContext) => issueMcpAgentToken(writeContext, c.get("authUser")?.workspaceId ?? "default", body));
+    return c.json({ ok: true, data: { ...publicAgentToken(issued.token), secret: issued.secret } });
+  });
+  api.post("/api/agent-tokens/:id/revoke", async (c) => {
+    if (!accessManagementEnabled()) return accessManagementDisabled(c);
+    const token = await writeContextFor(c, (writeContext) => revokeAgentToken(writeContext, c.req.param("id")));
+    return c.json({ ok: true, data: publicAgentToken(token) });
+  });
+  api.post("/api/channels/:id/agent-permission", async (c) => {
+    if (!accessManagementEnabled()) return accessManagementDisabled(c);
+    const body = channelAgentPermissionSchema.parse(await c.req.json());
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => setChannelAgentPermission(writeContext, c.req.param("id"), body)) });
   });
   api.post("/api/settings/users/invite", async (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
@@ -2923,52 +2957,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: await scopedApp.applyReceiptQuantityCorrection({ goodsReceiptId: c.req.param("id"), ...body }) });
   });
 
-  api.post("/api/mcp/keys", async (c) => {
-    const body = agentTokenCreateSchema.parse(await c.req.json());
-    const issued = await issueMcpAgentToken(scopedApp, c.get("authUser")?.workspaceId ?? "default", body);
-    return c.json({
-      ok: true,
-      data: {
-        endpoint: publicMcpEndpoint(c),
-        token: publicAgentToken(issued.token),
-        secret: issued.secret,
-        instructions: mcpConnectionInstructions(publicMcpEndpoint(c), issued.secret)
-      }
-    });
-  });
-  api.post("/api/mcp/keys/:id/revoke", async (c) => {
-    const token = await scopedApp.repos.agentTokens.getById(c.req.param("id"));
-    if (!token) throw new DomainError("agent_token_not_found", "Ключ MCP не найден");
-    token.status = "revoked";
-    token.revokedAt = nowIso();
-    await scopedApp.repos.agentTokens.upsert(token);
-    return c.json({ ok: true, data: publicAgentToken(token) });
-  });
-  api.post("/api/agent-tokens", async (c) => {
-    if (!accessManagementEnabled()) return accessManagementDisabled(c);
-    const body = agentTokenCreateSchema.parse(await c.req.json());
-    const issued = await issueMcpAgentToken(scopedApp, c.get("authUser")?.workspaceId ?? "default", body);
-    return c.json({ ok: true, data: { ...publicAgentToken(issued.token), secret: issued.secret } });
-  });
-  api.post("/api/agent-tokens/:id/revoke", async (c) => {
-    if (!accessManagementEnabled()) return accessManagementDisabled(c);
-    const token = await scopedApp.repos.agentTokens.getById(c.req.param("id"));
-    if (!token) throw new DomainError("agent_token_not_found", "Токен агента не найден");
-    token.status = "revoked";
-    token.revokedAt = nowIso();
-    await scopedApp.repos.agentTokens.upsert(token);
-    return c.json({ ok: true, data: publicAgentToken(token) });
-  });
-  api.post("/api/channels/:id/agent-permission", async (c) => {
-    if (!accessManagementEnabled()) return accessManagementDisabled(c);
-    const body = z.object({ agentTokenId: z.string(), permissionCode: z.string() }).parse(await c.req.json());
-    const existing = (await scopedApp.repos.channelAgentPermissions.all()).find((candidate) => candidate.agentTokenId === body.agentTokenId && candidate.channelId === c.req.param("id"));
-    const permission = existing ?? { id: id("channel_agent_permission"), agentTokenId: body.agentTokenId, channelId: c.req.param("id"), permissionCode: body.permissionCode };
-    permission.permissionCode = body.permissionCode;
-    if (existing) await scopedApp.repos.channelAgentPermissions.upsert(permission);
-    else await scopedApp.repos.channelAgentPermissions.add(permission);
-    return c.json({ ok: true, data: permission });
-  });
   api.get("/mcp", (c) => {
     return c.json({ error: "SSE для MCP не включен. Используйте Streamable HTTP POST." }, 405);
   });
@@ -3024,6 +3012,7 @@ const agentTokenCreateSchema = z.object({
   mode: z.enum(["read_only", "read_write"]).optional(),
   scopes: z.array(z.string().trim().min(1)).optional()
 });
+const channelAgentPermissionSchema = z.object({ agentTokenId: z.string(), permissionCode: z.string() });
 
 const MCP_TOOL_DEFINITIONS = [
   {
@@ -3134,17 +3123,6 @@ const MCP_TOOL_DEFINITIONS = [
   }
 ];
 
-async function issueMcpAgentToken(app: AccountingApp, workspaceId: string, input: z.infer<typeof agentTokenCreateSchema>) {
-  const mode = input.mode ?? (input.scopes?.some((scope) => /write|post|patch|delete|sync/i.test(scope)) ? "read_write" : "read_only");
-  const scopes = input.scopes?.length ? input.scopes : defaultMcpScopes(mode);
-  const token = await app.createAgentToken({ name: input.name, mode, scopes });
-  const key = createMcpKey(workspaceId, token.id);
-  token.maskedToken = key.maskedToken;
-  token.tokenHash = key.tokenHash;
-  await app.repos.agentTokens.upsert(token);
-  return { token, secret: key.secret };
-}
-
 async function authenticateMcpKey(
   rawKey: string,
   app: AccountingApp,
@@ -3203,18 +3181,6 @@ async function authenticateMcpKey(
   }
 }
 
-function createMcpKey(workspaceId: string, tokenId: string) {
-  const workspacePart = encodeKeyPart(workspaceId);
-  const tokenPart = encodeKeyPart(tokenId);
-  const secretPart = randomBytes(32).toString("base64url");
-  const secret = `mpf_${workspacePart}.${tokenPart}.${secretPart}`;
-  return {
-    secret,
-    tokenHash: hashToken(secret),
-    maskedToken: `mpf_${workspaceId}.${tokenId}.••••${secretPart.slice(-6)}`
-  };
-}
-
 function parseMcpKey(rawKey: string) {
   const match = /^mpf_([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$/.exec(rawKey.trim());
   if (!match) return null;
@@ -3228,31 +3194,14 @@ function parseMcpKey(rawKey: string) {
   }
 }
 
-function encodeKeyPart(value: string) {
-  return Buffer.from(value, "utf8").toString("base64url");
-}
-
 function decodeKeyPart(value: string) {
   return Buffer.from(value, "base64url").toString("utf8");
-}
-
-function hashToken(token: string) {
-  return createHash("sha256").update(token).digest("hex");
 }
 
 function safeEqual(actual: string, expected: string) {
   const actualBuffer = Buffer.from(actual);
   const expectedBuffer = Buffer.from(expected);
   return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
-}
-
-function defaultMcpScopes(mode: "read_only" | "read_write") {
-  return mode === "read_only" ? ["api:read", "mcp:tools"] : ["api:read", "api:write", "mcp:tools"];
-}
-
-function publicAgentToken(token: AgentToken) {
-  const { tokenHash: _tokenHash, ...publicToken } = token;
-  return publicToken;
 }
 
 function reportWorkspaceOptionsFor(c: Context): ReportsWorkspaceOptions {

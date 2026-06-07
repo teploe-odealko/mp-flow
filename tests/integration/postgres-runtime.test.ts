@@ -121,6 +121,25 @@ describePostgres("postgres runtime store", () => {
       channelType: "marketplace",
       pluginCode: "ozon"
     });
+    const previousAccessForToken = process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED;
+    process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED = "true";
+    let accessToken: any;
+    let channelPermission: any;
+    let revokedAccessToken: any;
+    try {
+      accessToken = await request<any>(api, "POST", "/api/agent-tokens", { name: "PG access agent", scopes: ["channels:sync"] });
+      channelPermission = await request<any>(api, "POST", `/api/channels/${channel.id}/agent-permission`, {
+        agentTokenId: accessToken.id,
+        permissionCode: "sync:write"
+      });
+      revokedAccessToken = await request<any>(api, "POST", `/api/agent-tokens/${accessToken.id}/revoke`);
+    } finally {
+      if (previousAccessForToken === undefined) {
+        delete process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED;
+      } else {
+        process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED = previousAccessForToken;
+      }
+    }
     await request(api, "POST", `/api/integrations/channels/${channel.id}/sync-runs`, {
       since: "2026-01-01",
       credentials: { clientId: "pg-client", apiKey: "pg-key" }
@@ -172,6 +191,20 @@ describePostgres("postgres runtime store", () => {
       const userRows = await inspectPool.query<{ email: string; name: string; role_code: string; status: string; invited_at: Date | null }>(
         "select email, name, role_code, status, invited_at from user_account where public_id = $1",
         [invitedUser.id]
+      );
+      const agentTokenRows = await inspectPool.query<{ name: string; mode: string; status: string; scopes: string[]; revoked_at: Date | null }>(
+        "select name, mode, status, scopes, revoked_at from agent_token where public_id = $1",
+        [accessToken.id]
+      );
+      const channelPermissionRows = await inspectPool.query<{ agent_token_id: string; channel_id: string; permission_code: string }>(
+        `
+          select agent_token.public_id as agent_token_id, sales_channel.public_id as channel_id, channel_agent_permission.permission_code
+          from channel_agent_permission
+          join agent_token on agent_token.id = channel_agent_permission.agent_token_id
+          join sales_channel on sales_channel.id = channel_agent_permission.channel_id
+          where channel_agent_permission.public_id = $1
+        `,
+        [channelPermission.id]
       );
       const productRows = await inspectPool.query<{ image_url: string | null }>(
         "select image_url from product where public_id = $1",
@@ -228,6 +261,14 @@ describePostgres("postgres runtime store", () => {
       expect(disabledUser).toEqual(expect.objectContaining({ id: invitedUser.id, roleCode: "viewer", status: "disabled" }));
       expect(userRows.rows[0]).toEqual(expect.objectContaining({ email: "pg-access@example.test", name: "PG Access", role_code: "viewer", status: "disabled" }));
       expect(userRows.rows[0]?.invited_at).toBeTruthy();
+      expect(accessToken).toEqual(expect.objectContaining({ name: "PG access agent", status: "active", scopes: ["channels:sync"] }));
+      expect(accessToken.secret).toMatch(/^mpf_/);
+      expect(accessToken.tokenHash).toBeUndefined();
+      expect(channelPermission).toEqual(expect.objectContaining({ agentTokenId: accessToken.id, channelId: channel.id, permissionCode: "sync:write" }));
+      expect(revokedAccessToken).toEqual(expect.objectContaining({ id: accessToken.id, status: "revoked" }));
+      expect(agentTokenRows.rows[0]).toEqual(expect.objectContaining({ name: "PG access agent", mode: "read_write", status: "revoked", scopes: ["channels:sync"] }));
+      expect(agentTokenRows.rows[0]?.revoked_at).toBeTruthy();
+      expect(channelPermissionRows.rows[0]).toEqual({ agent_token_id: accessToken.id, channel_id: channel.id, permission_code: "sync:write" });
       expect(productImage).toEqual({ id: `${product.id}:main`, productId: product.id, url: "https://example.test/pg-product.jpg", sortOrder: 0 });
       expect(productRows.rows[0]?.image_url).toBe("https://example.test/pg-product.jpg");
       expect(productImageAudit.rows).toContainEqual({ entity_public_id: product.id, event_type: "image_update" });

@@ -225,6 +225,13 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   Контроллеры больше не пишут через request-scoped `AccountingApp`; prod-readiness фиксирует
   `writeSessions = 0`, а Postgres runtime проверяет запись в нормализованной таблице
   `user_account`.
+- ✅ MCP/agent-token writes и права агента на канал сняты с session middleware:
+  `/api/mcp/keys`, `/api/mcp/keys/:id/revoke`, `/api/agent-tokens`,
+  `/api/agent-tokens/:id/revoke`, `/api/channels/:id/agent-permission`
+  обслуживаются `src/backend/services/agent-token-service.ts` через `RuntimeWriteContext`.
+  Выпуск ключа, `tokenHash`, public token shaping и upsert permission больше не пишут через
+  request-scoped `AccountingApp`; prod-readiness фиксирует `writeSessions = 0`, Postgres runtime
+  проверяет typed rows в `agent_token` и `channel_agent_permission`.
 - ✅ Начат перенос write/control на обычные сервисы без `AccountingApp` session: добавлен
   `RuntimeWriteContext` и `PostgresRuntimeStore.runWriteContext`, который открывает транзакцию,
   отдаёт сервису `repos + typed stores`, сохраняет `next_id` и коммитит без request-scoped app facade.
