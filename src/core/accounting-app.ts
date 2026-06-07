@@ -421,6 +421,14 @@ export class AccountingApp {
     return { organization: this.organization, policy: this.accountingPolicy };
   }
 
+  setupMetadata() {
+    return {
+      organization: this.organization,
+      accountingPolicy: this.accountingPolicy,
+      configured: Boolean(this.organization)
+    };
+  }
+
   currentOrgId(): ID {
     return this.ensureBootstrapped().organization.id;
   }

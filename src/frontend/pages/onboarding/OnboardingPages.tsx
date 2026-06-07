@@ -23,7 +23,6 @@ import { Kpi } from "@/components/ui/kpi";
 import { EmptyState } from "@/components/ui/empty-state";
 import { CheckLabel } from "@/components/ui/checkbox";
 import { ProductThumb } from "@/components/product-thumb";
-import { useCollection } from "@/lib/use-collection";
 import { apiGet, apiPatch, apiPost } from "@/api";
 import { qty, rub } from "@/lib/format";
 
@@ -40,6 +39,15 @@ const HISTORICAL_STEPS = [
 type WizardStepKey = (typeof HISTORICAL_STEPS)[number]["key"];
 type InventoryStartMode = "opening_balance" | "documented_flow";
 
+interface OnboardingWorkspacePayload {
+  salesChannels: any[];
+  products: any[];
+  warehouses: any[];
+  backfillProjects: any[];
+  accountingPolicy?: any;
+  organization?: any;
+}
+
 function inventoryStartModeFromPayload(payload?: Record<string, unknown> | null): InventoryStartMode {
   return payload?.inventoryStartMode === "documented_flow" || payload?.startInventoryMode === "documented_flow"
     ? "documented_flow"
@@ -47,11 +55,14 @@ function inventoryStartModeFromPayload(payload?: Record<string, unknown> | null)
 }
 
 export function BackfillWizardPage() {
-  const state = { salesChannels: useCollection<any[]>("salesChannels") ?? [], products: useCollection<any[]>("products") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [], backfillProjects: useCollection<any[]>("backfillProjects") ?? [], accountingPolicy: useCollection<any>("accountingPolicy"), organization: useCollection<any>("organization") };
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
   const routeParams = useParams();
+  const workspaceQuery = useQuery({
+    queryKey: ["onboarding-workspace"],
+    queryFn: () => apiGet<OnboardingWorkspacePayload>("/api/onboarding/existing-store/workspace")
+  });
   const channelIdFromRoute = routeParams.id ? String(routeParams.id) : undefined;
   const searchParams = new URLSearchParams(location.search);
   const modeFromSetup = searchParams.get("mode") === "historical_backfill" ? "historical_backfill" : searchParams.get("mode") === "current_stock_start" ? "current_stock_start" : undefined;
@@ -64,10 +75,13 @@ export function BackfillWizardPage() {
   const historyDateLocked = setupContinuation && Boolean(startFromSetup);
   const returnTo = `${location.pathname}${location.search}`;
   const createChannelPath = `/integrations/channels/new?returnTo=${encodeURIComponent(returnTo)}`;
-  const channels = (state.salesChannels ?? []).filter((channel: any) => channel.status !== "disabled");
-  const selectedProducts = state.products ?? [];
-  const warehouses = state.warehouses ?? [];
-  const latestProject = (state.backfillProjects ?? []).slice().sort((left: any, right: any) => String(right.createdAt).localeCompare(String(left.createdAt)))[0];
+  const accountingPolicy = workspaceQuery.data?.accountingPolicy;
+  const organization = workspaceQuery.data?.organization;
+  const channels = (workspaceQuery.data?.salesChannels ?? []).filter((channel: any) => channel.status !== "disabled");
+  const selectedProducts = workspaceQuery.data?.products ?? [];
+  const warehouses = workspaceQuery.data?.warehouses ?? [];
+  const backfillProjects = workspaceQuery.data?.backfillProjects ?? [];
+  const latestProject = backfillProjects.slice().sort((left: any, right: any) => String(right.createdAt).localeCompare(String(left.createdAt)))[0];
   const [step, setStep] = useState(0);
   const [projectId, setProjectId] = useState<string | null>(projectIdFromQuery ?? latestProject?.id ?? null);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
@@ -79,9 +93,14 @@ export function BackfillWizardPage() {
     inventoryStartModeFromSetup ?? (latestProject ? inventoryStartModeFromPayload(latestProject.payload) : null)
   );
   const [accountingStartDate, setAccountingStartDate] = useState(
-    String(startFromSetup ?? latestProject?.payload?.accountingStartDate ?? state.accountingPolicy?.accountingStartDate ?? today())
+    String(startFromSetup ?? latestProject?.payload?.accountingStartDate ?? accountingPolicy?.accountingStartDate ?? today())
   );
   const firstChannelId = channels[0]?.id ?? "";
+  const invalidateOnboarding = (id = projectId) => {
+    void queryClient.invalidateQueries({ queryKey: ["onboarding-workspace"] });
+    if (id) void queryClient.invalidateQueries({ queryKey: ["backfill-project", id] });
+    void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+  };
   const steps = useMemo(() => {
     const sourceSteps = mode === "historical_backfill" && !historyDateLocked ? HISTORICAL_STEPS : CURRENT_STOCK_STEPS;
     return sourceSteps.map((stepDefinition) =>
@@ -113,8 +132,28 @@ export function BackfillWizardPage() {
   };
 
   useEffect(() => {
+    if (!salesChannelId && latestProject?.payload?.salesChannelId) {
+      setSalesChannelId(String(latestProject.payload.salesChannelId));
+      return;
+    }
     if (!salesChannelId && firstChannelId) setSalesChannelId(firstChannelId);
-  }, [firstChannelId, salesChannelId]);
+  }, [firstChannelId, latestProject?.payload?.salesChannelId, salesChannelId]);
+
+  useEffect(() => {
+    if (!projectId && !projectIdFromQuery && latestProject?.id) setProjectId(String(latestProject.id));
+  }, [latestProject?.id, projectId, projectIdFromQuery]);
+
+  useEffect(() => {
+    if (startFromSetup) {
+      setAccountingStartDate(String(startFromSetup));
+      return;
+    }
+    if (latestProject?.payload?.accountingStartDate) {
+      setAccountingStartDate(String(latestProject.payload.accountingStartDate));
+      return;
+    }
+    if (accountingPolicy?.accountingStartDate) setAccountingStartDate(String(accountingPolicy.accountingStartDate));
+  }, [accountingPolicy?.accountingStartDate, latestProject?.payload?.accountingStartDate, startFromSetup]);
 
   useEffect(() => {
     if (step >= steps.length) setStep(Math.max(0, steps.length - 1));
@@ -131,8 +170,7 @@ export function BackfillWizardPage() {
       return apiPatch(`/api/onboarding/existing-store/projects/${projectId}/items/${itemId}`, { payload, status });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["backfill-project", projectId] });
-      queryClient.invalidateQueries();
+      invalidateOnboarding();
     }
   });
   const apply = useMutation({
@@ -141,7 +179,7 @@ export function BackfillWizardPage() {
       return apiPost<any>(`/api/onboarding/existing-store/projects/${projectId}/create-opening-balances`, { allowPartial: Boolean(allowPartial) });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries();
+      invalidateOnboarding();
     }
   });
 
@@ -149,8 +187,9 @@ export function BackfillWizardPage() {
     mutationFn: (externalProductId: string) =>
       apiPost<any>(`/api/external-products/${externalProductId}/create-internal-product`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["backfill-project", projectId] });
-      queryClient.invalidateQueries();
+      invalidateOnboarding();
+      void queryClient.invalidateQueries({ queryKey: ["products-workspace"] });
+      void queryClient.invalidateQueries({ queryKey: ["product-channel-mapping"] });
     }
   });
   const createAllUnmatched = useMutation({
@@ -160,8 +199,9 @@ export function BackfillWizardPage() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["backfill-project", projectId] });
-      queryClient.invalidateQueries();
+      invalidateOnboarding();
+      void queryClient.invalidateQueries({ queryKey: ["products-workspace"] });
+      void queryClient.invalidateQueries({ queryKey: ["product-channel-mapping"] });
     }
   });
   const [onlyExceptions, setOnlyExceptions] = useState(false);
@@ -171,7 +211,7 @@ export function BackfillWizardPage() {
       if (!salesChannelId) throw new Error("Выберите канал Ozon");
       if (!inventoryStartMode) throw new Error("Выберите способ заведения остатков");
       const existingProject = projectId
-        ? (projectQuery.data?.project ?? (state.backfillProjects ?? []).find((project: any) => project.id === projectId))
+        ? (projectQuery.data?.project ?? backfillProjects.find((project: any) => project.id === projectId))
         : undefined;
       if (projectMatchesSelection(existingProject)) return projectId as string;
       const project = await apiPost<any>("/api/onboarding/existing-store/projects", {
@@ -180,7 +220,7 @@ export function BackfillWizardPage() {
           salesChannelId,
           mode,
           inventoryStartMode,
-          accountingStartDate: mode === "historical_backfill" ? accountingStartDate : (state.accountingPolicy?.accountingStartDate ?? today())
+          accountingStartDate: mode === "historical_backfill" ? accountingStartDate : (accountingPolicy?.accountingStartDate ?? today())
         }
       });
       setProjectId(project.id);
@@ -212,8 +252,9 @@ export function BackfillWizardPage() {
       return { id, project };
     },
     onSuccess: async ({ id, project }) => {
+      await queryClient.invalidateQueries({ queryKey: ["onboarding-workspace"] });
       await queryClient.invalidateQueries({ queryKey: ["backfill-project", id] });
-      await queryClient.invalidateQueries();
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       setProjectId(id);
       const importedItems = project?.items?.length ?? 0;
       if (importedItems > 0) goToStep("mapping");
@@ -236,7 +277,7 @@ export function BackfillWizardPage() {
   const historicalBackfill = mode === "historical_backfill";
   const documentedFlow = inventoryStartMode === "documented_flow";
   const selectedProject = projectId
-    ? (currentData?.project ?? (state.backfillProjects ?? []).find((project: any) => project.id === projectId))
+    ? (currentData?.project ?? backfillProjects.find((project: any) => project.id === projectId))
     : undefined;
   const hasImportedItems = items.length > 0 && projectMatchesSelection(selectedProject);
   const importInProgress = importData.isPending || ensureProject.isPending;
@@ -256,9 +297,9 @@ export function BackfillWizardPage() {
   useEffect(() => {
     if (!projectId) return;
     if (projectQuery.isLoading) return;
-    const existingProject = currentData?.project ?? (state.backfillProjects ?? []).find((project: any) => project.id === projectId);
+    const existingProject = currentData?.project ?? backfillProjects.find((project: any) => project.id === projectId);
     if (existingProject && !projectMatchesSelection(existingProject)) setProjectId(null);
-  }, [projectId, projectQuery.isLoading, currentData?.project, state.backfillProjects, salesChannelId, mode, inventoryStartMode, accountingStartDate]);
+  }, [projectId, projectQuery.isLoading, currentData?.project, backfillProjects, salesChannelId, mode, inventoryStartMode, accountingStartDate]);
 
   useEffect(() => {
     const project = currentData?.project;
@@ -294,6 +335,7 @@ export function BackfillWizardPage() {
   const standaloneReturnPath = channelIdFromRoute ? `/integrations/channels/${channelIdFromRoute}` : "/inventory";
   const saveAndExit = async () => {
     const id = await ensureProject.mutateAsync();
+    await queryClient.invalidateQueries({ queryKey: ["onboarding-workspace"] });
     await queryClient.invalidateQueries({ queryKey: ["backfill-project", id] });
     navigate(setupContinuation ? "/settings" : standaloneReturnPath);
   };
@@ -332,7 +374,7 @@ export function BackfillWizardPage() {
         {
           key: "org" as const,
           label: "Кабинет",
-          desc: state.organization?.displayName ?? "Создан",
+          desc: organization?.displayName ?? "Создан",
           onClick: () => goToSetupStep("org")
         },
 	        ...(historyDateLocked

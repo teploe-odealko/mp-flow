@@ -224,6 +224,7 @@ describe("prod-ready contracts", () => {
     const accountsWorkspace = await get<any>(api, "/api/accounting/accounts/workspace");
     const journalWorkspace = await get<any>(api, "/api/accounting/journal/workspace");
     const controlsWorkspace = await get<any>(api, "/api/controls/workspace");
+    const onboardingWorkspace = await get<any>(api, "/api/onboarding/existing-store/workspace");
     const card = await get<any>(api, `/api/products/${product.id}/card`);
     const cardBrief = await get<any>(api, `/api/products/${product.id}/card/brief`);
     const usersResponse = await api.request("/api/users");
@@ -286,6 +287,12 @@ describe("prod-ready contracts", () => {
     expect(controlsWorkspace.periods).toEqual(expect.any(Array));
     expect(controlsWorkspace.documents).toEqual(expect.any(Array));
     expect(controlsWorkspace.auditEvents.length).toBeGreaterThan(0);
+    expect(onboardingWorkspace.organization.displayName).toBe("ИП Иванов");
+    expect(onboardingWorkspace.accountingPolicy.accountingStartDate).toBeTruthy();
+    expect(onboardingWorkspace.salesChannels).toEqual(expect.any(Array));
+    expect(onboardingWorkspace.products).toEqual(expect.any(Array));
+    expect(onboardingWorkspace.warehouses).toEqual(expect.any(Array));
+    expect(onboardingWorkspace.backfillProjects).toEqual(expect.any(Array));
     expect(card.product.id).toBe(product.id);
     expect(cardBrief.product.id).toBe(product.id);
     expect(cardBrief.generationRequirements).toBeTruthy();

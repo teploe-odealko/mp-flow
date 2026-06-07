@@ -92,6 +92,7 @@ describePostgres("postgres runtime store", () => {
     const reportWorkspace = await request<any>(api, "GET", "/api/reports/workspace?dateFrom=2026-01-01&dateTo=2026-12-31&balanceDate=2026-12-31");
     const documentsWorkspace = await request<any>(api, "GET", "/api/documents/workspace");
     const documentDetail = await request<any>(api, "GET", `/api/documents/${note.id}`);
+    const onboardingWorkspace = await request<any>(api, "GET", "/api/onboarding/existing-store/workspace");
     const productListWorkspace = await request<any>(api, "GET", "/api/products/workspace");
     const productChannelMapping = await request<any>(api, "GET", "/api/products/channel-mapping");
     const productWorkspace = await request<any>(api, "GET", `/api/products/${product.id}/workspace`);
@@ -131,6 +132,12 @@ describePostgres("postgres runtime store", () => {
       expect(documentDetail.journalEntries).toEqual(expect.any(Array));
       expect(documentDetail.journalLines).toEqual(expect.any(Array));
       expect(documentDetail.accounts).toEqual(expect.any(Array));
+      expect(onboardingWorkspace.organization).toEqual(expect.objectContaining({ displayName: "Postgres Runtime" }));
+      expect(onboardingWorkspace.accountingPolicy.accountingStartDate).toEqual(expect.any(String));
+      expect(onboardingWorkspace.salesChannels).toContainEqual(expect.objectContaining({ id: channel.id }));
+      expect(onboardingWorkspace.products).toContainEqual(expect.objectContaining({ id: product.id, sku: "PG-001" }));
+      expect(onboardingWorkspace.warehouses).toEqual(expect.any(Array));
+      expect(onboardingWorkspace.backfillProjects).toEqual(expect.any(Array));
       expect(reportWorkspace.productOptions).toContainEqual(expect.objectContaining({ id: product.id, sku: "PG-001" }));
       expect(productListWorkspace.products).toContainEqual(expect.objectContaining({ id: product.id, sku: "PG-001" }));
       expect(productListWorkspace.stockStates).toEqual(expect.any(Array));

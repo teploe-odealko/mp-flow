@@ -108,11 +108,14 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   `DocumentsPage` → `/api/documents/workspace` с серверными агрегатами `entryCount`/
   `journalLineCount`/`linkCount`, `DocumentCardPage` → `/api/documents/:id` с карточечным payload.
   В `src/frontend/pages/documents` больше нет `useCollection` и глобального `queryClient.invalidateQueries()`.
+- ✅ Onboarding existing-store снят с generic collections:
+  `BackfillWizardPage` → `/api/onboarding/existing-store/workspace` + точечные project endpoints.
+  В `src/frontend/pages/onboarding` больше нет `useCollection` и глобального `queryClient.invalidateQueries()`.
 - ⚠️ Фактический текущий остаток фронта: `useCollection` ещё есть в channel/finance/
   procurement/inventory/sales/expenses/money/onboarding pages:
   `ChannelDetailPage`, `ChannelsPages`, `ExpensesPages`, `FinanceWorkspace`,
-  `InventoryWorkspace`, `inventory/forms`, `MoneyPages`, `OnboardingPages`,
-  `ProcurementWorkspace`, `PurchaseOrderCardPage`, `procurement/forms`, `SalesPages`.
+  `InventoryWorkspace`, `inventory/forms`, `MoneyPages`, `ProcurementWorkspace`,
+  `PurchaseOrderCardPage`, `procurement/forms`, `SalesPages`.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,

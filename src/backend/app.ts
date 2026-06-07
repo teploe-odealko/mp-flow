@@ -311,6 +311,22 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     ]);
     return { corrections, jobs, periods, documents, products, lines, auditEvents };
   };
+  const onboardingWorkspaceFor = async (c: Context): Promise<any> => {
+    const readModelApp = await readModelAppFor(c);
+    const [salesChannels, products, warehouses, backfillProjects] = await Promise.all([
+      readModelApp.repos.salesChannels.all(),
+      readModelApp.repos.products.all(),
+      readModelApp.repos.warehouses.all(),
+      readModelApp.repos.backfillProjects.all()
+    ]);
+    return {
+      salesChannels,
+      products,
+      warehouses,
+      backfillProjects,
+      ...readModelApp.setupMetadata()
+    };
+  };
   const ledgerBalancesFor = async (c: Context): Promise<Record<string, { debit: number; credit: number }>> => {
     const workspaceId = eventsWorkspaceId(c);
     if (options.persistence?.readLedgerBalances) return await options.persistence.readLedgerBalances(workspaceId);
@@ -767,6 +783,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: { corrections: await readModelApp.repos.correctionCases.all(), jobs: await readModelApp.repos.recalculationJobs.all() } });
   });
   api.get("/api/controls/workspace", async (c) => c.json({ ok: true, data: await controlsWorkspaceFor(c) }));
+  api.get("/api/onboarding/existing-store/workspace", async (c) => c.json({ ok: true, data: await onboardingWorkspaceFor(c) }));
   api.get("/api/recalculation-jobs", async (c) => c.json({ ok: true, data: await collectionFor(c, "recalculationJobs") }));
   api.get("/api/mcp/config", async (c) => c.json({ ok: true, data: await mcpSettingsPayload(await readModelAppFor(c), publicMcpEndpoint(c)) }));
   api.get("/api/mcp/keys", async (c) => c.json({ ok: true, data: await mcpSettingsPayload(await readModelAppFor(c), publicMcpEndpoint(c)) }));
@@ -2069,7 +2086,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     for (const [warehouseId, lines] of linesByWarehouse.entries()) {
       const document = await scopedApp.createOpeningBalance({
         warehouseId,
-        date: historicalStartDate ?? (await scopedApp.setupSnapshot()).accountingPolicy?.accountingStartDate ?? new Date().toISOString().slice(0, 10),
+        date: historicalStartDate ?? scopedApp.setupMetadata().accountingPolicy?.accountingStartDate ?? new Date().toISOString().slice(0, 10),
         comment: `Стартовые остатки по проекту ${project.name}`,
         lines
       });
