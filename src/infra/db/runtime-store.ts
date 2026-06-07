@@ -71,6 +71,8 @@ import {
   PROCUREMENT_COST_LINE_JOINS,
   PROCUREMENT_COST_LINE_SELECT,
   PROCUREMENT_COST_SELECT,
+  PRODUCT_ASSET_JOINS,
+  PRODUCT_ASSET_SELECT,
   PRODUCT_EXTERNAL_LINK_JOINS,
   PRODUCT_EXTERNAL_LINK_SELECT,
   RECALCULATION_JOB_JOINS,
@@ -137,6 +139,7 @@ import {
   pluginStateRecordFromRow,
   procurementCostFromRow,
   procurementCostLineFromRow,
+  productAssetFromRow,
   productExternalLinkFromRow,
   recalculationJobFromRow,
   reportSnapshotFromRow,
@@ -185,6 +188,7 @@ import {
   type PluginStateRecordDbRow,
   type ProcurementCostDbRow,
   type ProcurementCostLineDbRow,
+  type ProductAssetDbRow,
   type ProductExternalLinkDbRow,
   type RecalculationJobDbRow,
   type ReportSnapshotDbRow,
@@ -492,6 +496,20 @@ const SCHEMA_ALTERS = `
   alter table product add column if not exists height_mm integer;
   alter table product add column if not exists manufacturer_article text;
   alter table product add column if not exists comment text;
+  alter table product_asset add column if not exists mime_type text;
+  alter table product_asset add column if not exists width integer;
+  alter table product_asset add column if not exists height integer;
+  alter table product_asset add column if not exists created_by text not null default 'user';
+  alter table product_asset add column if not exists updated_at timestamptz;
+  alter table product_asset add column if not exists meta jsonb;
+  update product_asset
+    set mime_type = coalesce(nullif(state_json->>'mimeType', ''), mime_type),
+        width = coalesce(nullif(state_json->>'width', '')::integer, width),
+        height = coalesce(nullif(state_json->>'height', '')::integer, height),
+        created_by = coalesce(nullif(state_json->>'createdBy', ''), created_by, 'user'),
+        updated_at = case when nullif(state_json->>'updatedAt', '') is not null then (state_json->>'updatedAt')::timestamptz else updated_at end,
+        meta = case when state_json ? 'meta' then state_json->'meta' else meta end
+    where state_json <> '{}'::jsonb;
   alter table sales_channel add column if not exists enabled_streams text[];
   alter table sales_channel add column if not exists last_checked_at timestamptz;
   alter table sales_channel add column if not exists last_error text;
@@ -765,11 +783,20 @@ const TABLES: TableSpec[] = [
     slide_type: optionalString(entity.slideType),
     url: requiredString(entity.url, "productAssets.url"),
     storage_key: requiredString(entity.storageKey, "productAssets.storageKey"),
+    mime_type: optionalString(entity.mimeType),
+    width: optionalNumber(entity.width),
+    height: optionalNumber(entity.height),
     status: requiredString(entity.status, "productAssets.status"),
     sort_order: requiredNumber(entity.sortOrder, "productAssets.sortOrder"),
+    created_by: requiredString(entity.createdBy, "productAssets.createdBy"),
     created_at: requiredString(entity.createdAt, "productAssets.createdAt"),
-    state_json: entity
-  }), "product_id, sort_order, created_at"),
+    updated_at: optionalString(entity.updatedAt),
+    meta: entity.meta ?? null
+  }), "product_asset.product_id, product_asset.sort_order, product_asset.created_at", {
+    select: PRODUCT_ASSET_SELECT,
+    joins: PRODUCT_ASSET_JOINS,
+    hydrate: (row) => productAssetFromRow(row as unknown as ProductAssetDbRow) as unknown as RuntimeEntity
+  }),
   spec("warehouses", "warehouse", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "warehouses.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "warehouses.organizationId")),

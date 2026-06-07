@@ -237,6 +237,11 @@ legacy `state_json`. Текущий остаток `state_json: entity` — 16 �
 `last_active_at`; для `agent_token` — `mode`, `masked_token`, `token_hash`, `created_at`, `last_used_at`,
 `revoked_at` с backfill из legacy `state_json`. Текущий остаток `state_json: entity` — 14 таблиц.
 
+### ✅ Typed hydrate для медиа фотостудии
+На typed specs переведены `productAssets`. Для `product_asset` добавлены `mime_type`, `width`, `height`,
+`created_by`, `updated_at`, `meta` с backfill из legacy `state_json`. Текущий остаток `state_json: entity` —
+13 таблиц.
+
 ### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
 Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/
 addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocumentSummary(x))` — хелперы каскадно

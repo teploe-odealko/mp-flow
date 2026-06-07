@@ -44,6 +44,7 @@ import type {
   SupplierClaim,
   ObservedStock,
   Product,
+  ProductAsset,
   SyncRun,
   UserAccount,
   Warehouse,
@@ -327,6 +328,70 @@ export function productFromRow(row: ProductDbRow): Product {
     imageUrl: optionalText(row.image_url),
     status: row.status,
     createdAt: dateTimeString(row.created_at)
+  });
+}
+
+export const PRODUCT_ASSET_SELECT = `
+  product_asset.public_id as id,
+  product_asset_organization.public_id as organization_id,
+  product_asset_product.public_id as product_id,
+  product_asset.role,
+  product_asset.slide_type,
+  product_asset.storage_key,
+  product_asset.url,
+  product_asset.mime_type,
+  product_asset.width,
+  product_asset.height,
+  product_asset.sort_order,
+  product_asset.status,
+  product_asset.created_by,
+  product_asset.created_at,
+  product_asset.updated_at,
+  product_asset.meta
+`;
+
+export const PRODUCT_ASSET_JOINS = `
+  left join organization product_asset_organization on product_asset_organization.id = product_asset.organization_id
+  left join product product_asset_product on product_asset_product.id = product_asset.product_id
+`;
+
+export interface ProductAssetDbRow {
+  id: string;
+  organization_id: string;
+  product_id: string;
+  role: ProductAsset["role"];
+  slide_type: string | null;
+  storage_key: string;
+  url: string;
+  mime_type: string | null;
+  width: string | number | null;
+  height: string | number | null;
+  sort_order: string | number;
+  status: ProductAsset["status"];
+  created_by: ProductAsset["createdBy"];
+  created_at: unknown;
+  updated_at: unknown;
+  meta: Record<string, unknown> | null;
+}
+
+export function productAssetFromRow(row: ProductAssetDbRow): ProductAsset {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    productId: row.product_id,
+    role: row.role,
+    slideType: optionalText(row.slide_type),
+    storageKey: row.storage_key,
+    url: row.url,
+    mimeType: optionalText(row.mime_type),
+    width: optionalNumber(row.width),
+    height: optionalNumber(row.height),
+    sortOrder: Number(row.sort_order),
+    status: row.status,
+    createdBy: row.created_by,
+    createdAt: dateTimeString(row.created_at),
+    updatedAt: optionalDateTimeString(row.updated_at),
+    meta: row.meta ?? undefined
   });
 }
 

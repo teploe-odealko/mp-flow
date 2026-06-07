@@ -497,6 +497,12 @@ alter table product add column if not exists width_mm integer;
 alter table product add column if not exists height_mm integer;
 alter table product add column if not exists manufacturer_article text;
 alter table product add column if not exists comment text;
+alter table product_asset add column if not exists mime_type text;
+alter table product_asset add column if not exists width integer;
+alter table product_asset add column if not exists height integer;
+alter table product_asset add column if not exists created_by text not null default 'user';
+alter table product_asset add column if not exists updated_at timestamptz;
+alter table product_asset add column if not exists meta jsonb;
 alter table sales_channel add column if not exists enabled_streams text[];
 alter table sales_channel add column if not exists last_checked_at timestamptz;
 alter table sales_channel add column if not exists last_error text;
@@ -617,6 +623,14 @@ update sync_run
       summary = case when state_json ? 'summary' then state_json->'summary' else summary end,
       stream_runs = case when state_json ? 'streamRuns' then state_json->'streamRuns' else stream_runs end,
       last_error = nullif(state_json->>'lastError', '')
+  where state_json <> '{}'::jsonb;
+update product_asset
+  set mime_type = coalesce(nullif(state_json->>'mimeType', ''), mime_type),
+      width = coalesce(nullif(state_json->>'width', '')::integer, width),
+      height = coalesce(nullif(state_json->>'height', '')::integer, height),
+      created_by = coalesce(nullif(state_json->>'createdBy', ''), created_by, 'user'),
+      updated_at = case when nullif(state_json->>'updatedAt', '') is not null then (state_json->>'updatedAt')::timestamptz else updated_at end,
+      meta = case when state_json ? 'meta' then state_json->'meta' else meta end
   where state_json <> '{}'::jsonb;
 update sales_channel
   set enabled_streams = case when jsonb_typeof(state_json->'enabledStreams') = 'array'
