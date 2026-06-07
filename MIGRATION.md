@@ -230,6 +230,11 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   `src/backend/services/product-asset-service.ts` через `RuntimeWriteContext`; audit вынесен в общий
   `runtime-audit-service.ts`. In-memory regression проверяет, что эти commands не открывают
   `openWriteSession`, Postgres-тест проверяет обновление `product_asset.role/status` и audit row.
+- ✅ Product CRUD (`POST /api/products`, update/archive/restore) снят с request-scoped `AccountingApp`
+  и обслуживается `src/backend/services/product-service.ts` через `RuntimeWriteContext`: duplicate SKU,
+  статус и audit сохраняются на repo уровне. Prod-readiness проверяет create/update/archive/restore
+  без `openWriteSession`, Postgres runtime продолжает создавать товар через публичный API и читать его из
+  typed таблицы `product`.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,

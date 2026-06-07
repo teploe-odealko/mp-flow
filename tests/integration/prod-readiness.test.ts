@@ -218,6 +218,10 @@ describe("prod-ready contracts", () => {
     const sale = app.state.sales[0];
     const financeEvent = app.state.channelFinanceEvents[0];
     const payout = app.state.payouts[0];
+    const createdProduct = await post<any>(api, "/api/products", { sku: "SERVICE-CRUD-1", name: "Сервисный товар" });
+    const updatedProduct = await patch<any>(api, `/api/products/${createdProduct.id}`, { name: "Сервисный товар обновлен", category: "Тест" });
+    const archivedProduct = await post<any>(api, `/api/products/${createdProduct.id}/archive`);
+    const restoredProduct = await post<any>(api, `/api/products/${createdProduct.id}/restore`);
     const productImage = await post<any>(api, `/api/products/${product.id}/images`, { url: "https://example.test/product-image.jpg" });
     await app.repos.productAssets.add({
       id: "asset_route_test",
@@ -310,6 +314,11 @@ describe("prod-ready contracts", () => {
     expect(observedStocks).toEqual(expect.any(Array));
     expect(auditEvents.length).toBeGreaterThan(0);
     expect(products[0]?.id).toBe(product.id);
+    expect(createdProduct).toEqual(expect.objectContaining({ sku: "SERVICE-CRUD-1", name: "Сервисный товар", status: "active" }));
+    expect(updatedProduct).toEqual(expect.objectContaining({ id: createdProduct.id, name: "Сервисный товар обновлен", category: "Тест" }));
+    expect(archivedProduct).toEqual(expect.objectContaining({ id: createdProduct.id, status: "archived" }));
+    expect(restoredProduct).toEqual(expect.objectContaining({ id: createdProduct.id, status: "active" }));
+    expect(app.state.products.find((candidate) => candidate.id === createdProduct.id)?.status).toBe("active");
     expect(productImage).toEqual({ id: `${product.id}:main`, productId: product.id, url: "https://example.test/product-image.jpg", sortOrder: 0 });
     expect(app.state.products.find((candidate) => candidate.id === product.id)?.imageUrl).toBe("https://example.test/product-image.jpg");
     expect(confirmedAsset).toEqual(expect.objectContaining({ id: "asset_route_test", status: "ready", width: 800, height: 1000 }));
@@ -423,7 +432,7 @@ describe("prod-ready contracts", () => {
     expect(productWorkspaceReads).toBe(1);
     expect(readContexts).toBeGreaterThanOrEqual(10);
     expect(readSessions).toBe(0);
-    expect(writeContexts).toBe(5);
+    expect(writeContexts).toBe(9);
     expect(writeSessions).toBe(0);
   });
 

@@ -23,6 +23,7 @@ import { onboardingProjectDetailsFor } from "./services/onboarding-project-servi
 import { confirmProductAsset, createProductAsset, deleteProductAsset, updateProductAsset } from "./services/product-asset-service";
 import { defaultReceiptPreviewFor, receiptPreviewFor } from "./services/procurement-preview-service";
 import { deleteProductImage, setProductImage } from "./services/product-image-service";
+import { archiveProduct, createProduct, restoreProduct, updateProduct } from "./services/product-service";
 import {
   goodsReceiptRollbackPreviewFor,
   paymentRollbackPreviewFor,
@@ -1395,6 +1396,24 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/products/:id/stock-movements", async (c) => c.json({ ok: true, data: (await productDetailsFor(await readContextFor(c), c.req.param("id"))).movements }));
   api.get("/api/products/:id/card", async (c) => c.json({ ok: true, data: await studioViewFor(await readContextFor(c), c.req.param("id")) }));
   api.get("/api/products/:id/card/brief", async (c) => c.json({ ok: true, data: await studioBriefFor(await readContextFor(c), c.req.param("id")) }));
+  api.post("/api/products", async (c) => {
+    const body = productSchema.parse(await c.req.json());
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => createProduct(writeContext, body)) });
+  });
+  api.post("/api/products/:id/update", async (c) => {
+    const body = productSchema.partial().parse(await c.req.json());
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => updateProduct(writeContext, c.req.param("id"), body)) });
+  });
+  api.patch("/api/products/:id", async (c) => {
+    const body = productSchema.partial().parse(await c.req.json());
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => updateProduct(writeContext, c.req.param("id"), body)) });
+  });
+  api.post("/api/products/:id/archive", async (c) => {
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => archiveProduct(writeContext, c.req.param("id"))) });
+  });
+  api.post("/api/products/:id/restore", async (c) => {
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => restoreProduct(writeContext, c.req.param("id"))) });
+  });
   api.post("/api/products/:id/images", async (c) => {
     const body = imageSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => setProductImage(writeContext, c.req.param("id"), body.url)) });
@@ -1781,20 +1800,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: await scopedApp.previewCorrection(c.req.param("id"), body.patch, body.reason) });
   });
 
-  api.post("/api/products", async (c) => {
-    const body = productSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: await scopedApp.createProduct(body) });
-  });
-  api.post("/api/products/:id/update", async (c) => {
-    const body = productSchema.partial().parse(await c.req.json());
-    return c.json({ ok: true, data: await scopedApp.updateProduct(c.req.param("id"), body) });
-  });
-  api.patch("/api/products/:id", async (c) => {
-    const body = productSchema.partial().parse(await c.req.json());
-    return c.json({ ok: true, data: await scopedApp.updateProduct(c.req.param("id"), body) });
-  });
-  api.post("/api/products/:id/archive", async (c) => c.json({ ok: true, data: await scopedApp.archiveProduct(c.req.param("id")) }));
-  api.post("/api/products/:id/restore", async (c) => c.json({ ok: true, data: await scopedApp.restoreProduct(c.req.param("id")) }));
   const requireStudioProduct = async (productId: string) => {
     const product = await scopedApp.repos.products.getById(productId);
     if (!product) throw new DomainError("product_not_found", "Товар не найден");
