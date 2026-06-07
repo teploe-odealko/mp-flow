@@ -30,7 +30,7 @@ async function resetRuntimeTables() {
   }
 }
 
-async function request<T>(api: ReturnType<typeof createApi>, method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
+async function request<T>(api: ReturnType<typeof createApi>, method: "GET" | "POST" | "PATCH", path: string, body?: unknown): Promise<T> {
   const response = await api.request(path, {
     method,
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -80,6 +80,10 @@ describePostgres("postgres runtime store", () => {
 
     await request(api, "POST", "/api/setup", { displayName: "Postgres Runtime", accountingStartDate: "2026-01-01" });
     const product = await request<any>(api, "POST", "/api/products", { sku: "PG-001", name: "Postgres товар" });
+    const serviceWarehouse = await request<any>(api, "POST", "/api/warehouses", { name: "PG service warehouse", warehouseType: "own" });
+    const serviceCounterparty = await request<any>(api, "POST", "/api/counterparties", { name: "PG service supplier", counterpartyType: "supplier", country: "CN" });
+    const serviceCashAccount = await request<any>(api, "POST", "/api/money/cash-accounts", { name: "PG service account", accountCode: "51", openingBalanceRub: 321.45 });
+    const serviceCashAccountUpdated = await request<any>(api, "PATCH", `/api/money/cash-accounts/${serviceCashAccount.id}`, { name: "PG service account updated", isActive: false });
     const productImage = await request<any>(api, "POST", `/api/products/${product.id}/images`, { url: "https://example.test/pg-product.jpg" });
     const productAsset = await store.runWriteContext("default", (writeContext) => createProductAsset(writeContext, {
       productId: product.id,
@@ -155,6 +159,18 @@ describePostgres("postgres runtime store", () => {
         "select event_type, entity_public_id from audit_event where entity_type = 'product_asset' and entity_public_id = $1 and event_type = 'update'",
         [productAsset.id]
       );
+      const serviceWarehouseRows = await inspectPool.query<{ name: string; public_id: string }>(
+        "select name, public_id from warehouse where public_id = $1",
+        [serviceWarehouse.id]
+      );
+      const serviceCounterpartyRows = await inspectPool.query<{ name: string; country: string | null }>(
+        "select name, country from counterparty where public_id = $1",
+        [serviceCounterparty.id]
+      );
+      const serviceCashAccountRows = await inspectPool.query<{ name: string; is_active: boolean; balance_rub: number }>(
+        "select name, is_active, balance_rub::float8 as balance_rub from cash_account where public_id = $1",
+        [serviceCashAccount.id]
+      );
       const credentials = await inspectPool.query<{ encrypted_credentials: unknown; fields: string[] }>(
         `
           select cc.encrypted_credentials, cc.fields
@@ -172,6 +188,13 @@ describePostgres("postgres runtime store", () => {
       expect(approvedAsset).toEqual(expect.objectContaining({ id: productAsset.id, role: "approved", status: "ready" }));
       expect(productAssetRows.rows[0]).toEqual({ role: "approved", status: "ready" });
       expect(productAssetAudit.rows).toContainEqual({ entity_public_id: productAsset.id, event_type: "update" });
+      expect(serviceWarehouse).toEqual(expect.objectContaining({ name: "PG service warehouse", warehouseType: "own", isActive: true }));
+      expect(serviceWarehouseRows.rows[0]).toEqual({ name: "PG service warehouse", public_id: serviceWarehouse.id });
+      expect(serviceCounterparty).toEqual(expect.objectContaining({ name: "PG service supplier", counterpartyType: "supplier", country: "CN", isActive: true }));
+      expect(serviceCounterpartyRows.rows[0]).toEqual({ name: "PG service supplier", country: "CN" });
+      expect(serviceCashAccount).toEqual(expect.objectContaining({ name: "PG service account", accountCode: "51", balanceRub: 321.45, isActive: true }));
+      expect(serviceCashAccountUpdated).toEqual(expect.objectContaining({ id: serviceCashAccount.id, name: "PG service account updated", isActive: false }));
+      expect(serviceCashAccountRows.rows[0]).toEqual({ name: "PG service account updated", is_active: false, balance_rub: 321.45 });
       expect(dashboard.configured).toBe(true);
       expect(dashboard.counters.products).toBe(1);
       expect(documentsWorkspace.documents).toContainEqual(expect.objectContaining({

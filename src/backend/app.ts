@@ -24,6 +24,7 @@ import { confirmProductAsset, createProductAsset, deleteProductAsset, updateProd
 import { defaultReceiptPreviewFor, receiptPreviewFor } from "./services/procurement-preview-service";
 import { deleteProductImage, setProductImage } from "./services/product-image-service";
 import { archiveProduct, createProduct, restoreProduct, updateProduct } from "./services/product-service";
+import { createCashAccount, createCounterparty, createWarehouse, updateCashAccount } from "./services/reference-data-service";
 import {
   goodsReceiptRollbackPreviewFor,
   paymentRollbackPreviewFor,
@@ -1470,6 +1471,10 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => deleteProductAsset(writeContext, c.req.param("assetId"))) });
   });
   api.get("/api/warehouses", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.warehouses.all() }));
+  api.post("/api/warehouses", async (c) => {
+    const body = warehouseSchema.parse(await c.req.json());
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => createWarehouse(writeContext, body)) });
+  });
   api.get("/api/inventory", async (c) => {
     const readContext = await readContextFor(c);
     return c.json({ ok: true, data: { stock: await stockByProductFor(readContext), lots: await readContext.repos.inventoryLots.all(), movements: await readContext.repos.stockMovements.all() } });
@@ -1484,6 +1489,10 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: { stocktakes: await readContext.repos.stocktakes.all(), lines: await readContext.repos.stocktakeLines.all(), observedStocks: await readContext.observedStocks.list() } });
   });
   api.get("/api/counterparties", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.counterparties.all() }));
+  api.post("/api/counterparties", async (c) => {
+    const body = counterpartySchema.parse(await c.req.json());
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => createCounterparty(writeContext, body)) });
+  });
   api.get("/api/procurement/purchase-orders", async (c) => {
     const readContext = await readContextFor(c);
     const [orders, lines] = await Promise.all([readContext.repos.purchaseOrders.all(), readContext.repos.purchaseOrderLines.all()]);
@@ -1546,6 +1555,14 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/procurement/costs/:id", async (c) => c.json({ ok: true, data: await procurementCostDetailsFor(await readContextFor(c), c.req.param("id")) }));
   api.get("/api/procurement/shortages/:id", async (c) => c.json({ ok: true, data: await shortageDetailsFor(await readContextFor(c), c.req.param("id")) }));
   api.get("/api/money/cash-accounts", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.cashAccounts.all() }));
+  api.post("/api/money/cash-accounts", async (c) => {
+    const body = cashAccountSchema.parse(await c.req.json());
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => createCashAccount(writeContext, body)) });
+  });
+  api.patch("/api/money/cash-accounts/:id", async (c) => {
+    const body = cashAccountPatchSchema.parse(await c.req.json());
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => updateCashAccount(writeContext, c.req.param("id"), body)) });
+  });
   api.get("/api/money/payments", async (c) => {
     const readContext = await readContextFor(c);
     return c.json({ ok: true, data: { cashAccounts: await readContext.repos.cashAccounts.all(), payments: await readContext.repos.payments.all(), allocations: await readContext.repos.paymentAllocations.all() } });
@@ -1834,20 +1851,11 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     });
     return c.json({ ok: true, data: { deleted } });
   });
-  api.post("/api/warehouses", async (c) => {
-    const body = warehouseSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: await scopedApp.createWarehouse(body) });
-  });
   api.post("/api/inventory/opening-balances", async (c) => {
     const body = openingBalanceSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.createOpeningBalance(body) });
   });
   api.post("/api/inventory/opening-balances/:id/post", async (c) => c.json({ ok: true, data: await scopedApp.postOpeningBalance(c.req.param("id")) }));
-
-  api.post("/api/counterparties", async (c) => {
-    const body = counterpartySchema.parse(await c.req.json());
-    return c.json({ ok: true, data: await scopedApp.createCounterparty(body) });
-  });
 
   api.post("/api/procurement/purchase-orders", async (c) => {
     const body = purchaseOrderSchema.parse(await c.req.json());
@@ -2109,14 +2117,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/money/owner-withdrawals", async (c) => {
     const body = ownerContributionSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.recordOwnerWithdrawal(body) });
-  });
-  api.post("/api/money/cash-accounts", async (c) => {
-    const body = cashAccountSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: await scopedApp.createCashAccount(body) });
-  });
-  api.patch("/api/money/cash-accounts/:id", async (c) => {
-    const body = cashAccountPatchSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: await scopedApp.updateCashAccount(c.req.param("id"), body) });
   });
   api.post("/api/payments/:id/post", async (c) => c.json({ ok: true, data: await scopedApp.postPayment(c.req.param("id")) }));
   api.delete("/api/payments/:id", async (c) => c.json({ ok: true, data: await scopedApp.deletePayment(c.req.param("id")) }));

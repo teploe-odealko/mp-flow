@@ -222,6 +222,10 @@ describe("prod-ready contracts", () => {
     const updatedProduct = await patch<any>(api, `/api/products/${createdProduct.id}`, { name: "Сервисный товар обновлен", category: "Тест" });
     const archivedProduct = await post<any>(api, `/api/products/${createdProduct.id}/archive`);
     const restoredProduct = await post<any>(api, `/api/products/${createdProduct.id}/restore`);
+    const createdWarehouse = await post<any>(api, "/api/warehouses", { name: "Сервисный склад", warehouseType: "own" });
+    const createdCounterparty = await post<any>(api, "/api/counterparties", { name: "Сервисный поставщик", counterpartyType: "supplier", country: "CN" });
+    const createdCashAccount = await post<any>(api, "/api/money/cash-accounts", { name: "Сервисный счет", accountCode: "51", openingBalanceRub: 123.45 });
+    const updatedCashAccount = await patch<any>(api, `/api/money/cash-accounts/${createdCashAccount.id}`, { name: "Сервисный счет обновлен", isActive: false });
     const productImage = await post<any>(api, `/api/products/${product.id}/images`, { url: "https://example.test/product-image.jpg" });
     await app.repos.productAssets.add({
       id: "asset_route_test",
@@ -319,6 +323,10 @@ describe("prod-ready contracts", () => {
     expect(archivedProduct).toEqual(expect.objectContaining({ id: createdProduct.id, status: "archived" }));
     expect(restoredProduct).toEqual(expect.objectContaining({ id: createdProduct.id, status: "active" }));
     expect(app.state.products.find((candidate) => candidate.id === createdProduct.id)?.status).toBe("active");
+    expect(createdWarehouse).toEqual(expect.objectContaining({ name: "Сервисный склад", warehouseType: "own", isActive: true }));
+    expect(createdCounterparty).toEqual(expect.objectContaining({ name: "Сервисный поставщик", counterpartyType: "supplier", country: "CN", isActive: true }));
+    expect(createdCashAccount).toEqual(expect.objectContaining({ name: "Сервисный счет", accountCode: "51", balanceRub: 123.45, isActive: true }));
+    expect(updatedCashAccount).toEqual(expect.objectContaining({ id: createdCashAccount.id, name: "Сервисный счет обновлен", isActive: false }));
     expect(productImage).toEqual({ id: `${product.id}:main`, productId: product.id, url: "https://example.test/product-image.jpg", sortOrder: 0 });
     expect(app.state.products.find((candidate) => candidate.id === product.id)?.imageUrl).toBe("https://example.test/product-image.jpg");
     expect(confirmedAsset).toEqual(expect.objectContaining({ id: "asset_route_test", status: "ready", width: 800, height: 1000 }));
@@ -432,7 +440,7 @@ describe("prod-ready contracts", () => {
     expect(productWorkspaceReads).toBe(1);
     expect(readContexts).toBeGreaterThanOrEqual(10);
     expect(readSessions).toBe(0);
-    expect(writeContexts).toBe(9);
+    expect(writeContexts).toBe(13);
     expect(writeSessions).toBe(0);
   });
 

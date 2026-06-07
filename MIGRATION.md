@@ -235,6 +235,11 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   статус и audit сохраняются на repo уровне. Prod-readiness проверяет create/update/archive/restore
   без `openWriteSession`, Postgres runtime продолжает создавать товар через публичный API и читать его из
   typed таблицы `product`.
+- ✅ Простые справочные write-ручки (`POST /api/warehouses`, `POST /api/counterparties`,
+  `POST/PATCH /api/money/cash-accounts`) вынесены в `src/backend/services/reference-data-service.ts`
+  и обслуживаются через `RuntimeWriteContext` до session middleware. Prod-readiness фиксирует, что
+  эти commands не открывают `openWriteSession`; Postgres runtime проверяет typed rows в `warehouse`,
+  `counterparty`, `cash_account`.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,
