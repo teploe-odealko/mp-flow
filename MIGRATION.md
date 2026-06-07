@@ -242,6 +242,11 @@ legacy `state_json`. Текущий остаток `state_json: entity` — 16 �
 `created_by`, `updated_at`, `meta` с backfill из legacy `state_json`. Текущий остаток `state_json: entity` —
 13 таблиц.
 
+### ✅ Typed hydrate для операционных расходов
+На typed specs переведены `operatingExpenses`. Для `operating_expense` добавлены `counterparty_id`,
+`amount_paid_rub`, `payment_mode`, `payment_status`, `cash_account_id`; FK backfill выполняется после
+`public_id` backfill. Текущий остаток `state_json: entity` — 12 таблиц.
+
 ### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
 Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/
 addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocumentSummary(x))` — хелперы каскадно

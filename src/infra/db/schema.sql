@@ -516,6 +516,11 @@ alter table agent_token add column if not exists token_hash text;
 alter table agent_token add column if not exists created_at timestamptz not null default now();
 alter table agent_token add column if not exists last_used_at timestamptz;
 alter table agent_token add column if not exists revoked_at timestamptz;
+alter table operating_expense add column if not exists counterparty_id uuid references counterparty(id);
+alter table operating_expense add column if not exists amount_paid_rub numeric(18,2);
+alter table operating_expense add column if not exists payment_mode text;
+alter table operating_expense add column if not exists payment_status text;
+alter table operating_expense add column if not exists cash_account_id uuid references cash_account(id);
 alter table backfill_project add column if not exists created_at timestamptz not null default now();
 alter table organization add column if not exists state_json jsonb not null default '{}'::jsonb;
 alter table accounting_policy add column if not exists state_json jsonb not null default '{}'::jsonb;
@@ -656,6 +661,13 @@ update agent_token
       revoked_at = case when nullif(state_json->>'revokedAt', '') is not null then (state_json->>'revokedAt')::timestamptz else revoked_at end
   where state_json <> '{}'::jsonb or mode is null;
 alter table agent_token alter column mode set default 'read_only';
+update operating_expense
+  set amount_paid_rub = coalesce(nullif(state_json->>'amountPaidRub', '')::numeric, amount_paid_rub, amount_rub),
+      payment_mode = coalesce(nullif(state_json->>'paymentMode', ''), payment_mode, 'paid_now'),
+      payment_status = coalesce(nullif(state_json->>'paymentStatus', ''), payment_status, 'paid')
+  where state_json <> '{}'::jsonb or amount_paid_rub is null or payment_mode is null or payment_status is null;
+alter table operating_expense alter column payment_mode set default 'paid_now';
+alter table operating_expense alter column payment_status set default 'paid';
 
 do $$
 declare

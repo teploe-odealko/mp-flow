@@ -21,6 +21,7 @@ import type {
   IntegrationPlugin,
   JournalEntry,
   JournalLine,
+  OperatingExpense,
   OwnerTransaction,
   Payment,
   PaymentAllocation,
@@ -1404,6 +1405,65 @@ export function expenseCategoryFromRow(row: ExpenseCategoryDbRow): ExpenseCatego
     name: row.name,
     accountCode: row.account_code
   };
+}
+
+export const OPERATING_EXPENSE_SELECT = `
+  operating_expense.public_id as id,
+  operating_expense_organization.public_id as organization_id,
+  operating_expense_document.public_id as document_id,
+  operating_expense_category.public_id as category_id,
+  operating_expense_payment.public_id as payment_id,
+  operating_expense_counterparty.public_id as counterparty_id,
+  operating_expense.expense_date,
+  operating_expense.amount_rub,
+  operating_expense.amount_paid_rub,
+  operating_expense.payment_mode,
+  operating_expense.payment_status,
+  operating_expense_cash_account.public_id as cash_account_id,
+  operating_expense.comment
+`;
+
+export const OPERATING_EXPENSE_JOINS = `
+  left join organization operating_expense_organization on operating_expense_organization.id = operating_expense.organization_id
+  left join document operating_expense_document on operating_expense_document.id = operating_expense.document_id
+  left join expense_category operating_expense_category on operating_expense_category.id = operating_expense.category_id
+  left join payment operating_expense_payment on operating_expense_payment.id = operating_expense.payment_id
+  left join counterparty operating_expense_counterparty on operating_expense_counterparty.id = operating_expense.counterparty_id
+  left join cash_account operating_expense_cash_account on operating_expense_cash_account.id = operating_expense.cash_account_id
+`;
+
+export interface OperatingExpenseDbRow {
+  id: string;
+  organization_id: string;
+  document_id: string;
+  category_id: string;
+  payment_id: string;
+  counterparty_id: string | null;
+  expense_date: unknown;
+  amount_rub: string | number;
+  amount_paid_rub: string | number | null;
+  payment_mode: OperatingExpense["paymentMode"] | null;
+  payment_status: OperatingExpense["paymentStatus"] | null;
+  cash_account_id: string | null;
+  comment: string | null;
+}
+
+export function operatingExpenseFromRow(row: OperatingExpenseDbRow): OperatingExpense {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    documentId: row.document_id,
+    categoryId: row.category_id,
+    paymentId: row.payment_id,
+    counterpartyId: optionalText(row.counterparty_id),
+    expenseDate: dateString(row.expense_date),
+    amountRub: Number(row.amount_rub),
+    amountPaidRub: Number(row.amount_paid_rub ?? row.amount_rub),
+    paymentMode: row.payment_mode ?? "paid_now",
+    paymentStatus: row.payment_status ?? "paid",
+    cashAccountId: optionalText(row.cash_account_id),
+    comment: optionalText(row.comment)
+  });
 }
 
 export const CORRECTION_CASE_SELECT = `

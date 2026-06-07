@@ -58,6 +58,8 @@ import {
   JOURNAL_LINE_SELECT,
   OBSERVED_STOCK_JOINS,
   OBSERVED_STOCK_SELECT,
+  OPERATING_EXPENSE_JOINS,
+  OPERATING_EXPENSE_SELECT,
   OWNER_TRANSACTION_JOINS,
   OWNER_TRANSACTION_SELECT,
   ORGANIZATION_SELECT,
@@ -132,6 +134,7 @@ import {
   journalEntryFromRow,
   journalLineFromRow,
   observedStockFromRow,
+  operatingExpenseFromRow,
   ownerTransactionFromRow,
   organizationFromRow,
   paymentAllocationFromRow,
@@ -181,6 +184,7 @@ import {
   type IntegrationPluginDbRow,
   type JournalEntryDbRow,
   type JournalLineDbRow,
+  type OperatingExpenseDbRow,
   type OrganizationDbRow,
   type OwnerTransactionDbRow,
   type PaymentAllocationDbRow,
@@ -547,6 +551,18 @@ const SCHEMA_ALTERS = `
         revoked_at = case when nullif(state_json->>'revokedAt', '') is not null then (state_json->>'revokedAt')::timestamptz else revoked_at end
     where state_json <> '{}'::jsonb or mode is null;
   alter table agent_token alter column mode set default 'read_only';
+  alter table operating_expense add column if not exists counterparty_id uuid references counterparty(id);
+  alter table operating_expense add column if not exists amount_paid_rub numeric(18,2);
+  alter table operating_expense add column if not exists payment_mode text;
+  alter table operating_expense add column if not exists payment_status text;
+  alter table operating_expense add column if not exists cash_account_id uuid references cash_account(id);
+  update operating_expense
+    set amount_paid_rub = coalesce(nullif(state_json->>'amountPaidRub', '')::numeric, amount_paid_rub, amount_rub),
+        payment_mode = coalesce(nullif(state_json->>'paymentMode', ''), payment_mode, 'paid_now'),
+        payment_status = coalesce(nullif(state_json->>'paymentStatus', ''), payment_status, 'paid')
+    where state_json <> '{}'::jsonb or amount_paid_rub is null or payment_mode is null or payment_status is null;
+  alter table operating_expense alter column payment_mode set default 'paid_now';
+  alter table operating_expense alter column payment_status set default 'paid';
   alter table backfill_project add column if not exists created_at timestamptz not null default now();
 `;
 
@@ -563,6 +579,23 @@ const PUBLIC_ID_ALTERS = STATE_JSON_TABLES
     create index if not exists ${table}_workspace_public_id_idx on ${table}(workspace_id, public_id);
   `)
   .join("\n");
+
+const POST_PUBLIC_ID_BACKFILLS = `
+  update operating_expense expense
+    set counterparty_id = counterparty.id
+    from counterparty
+    where expense.counterparty_id is null
+      and nullif(expense.state_json->>'counterpartyId', '') is not null
+      and counterparty.workspace_id = expense.workspace_id
+      and counterparty.public_id = nullif(expense.state_json->>'counterpartyId', '');
+  update operating_expense expense
+    set cash_account_id = cash_account.id
+    from cash_account
+    where expense.cash_account_id is null
+      and nullif(expense.state_json->>'cashAccountId', '') is not null
+      and cash_account.workspace_id = expense.workspace_id
+      and cash_account.public_id = nullif(expense.state_json->>'cashAccountId', '');
+`;
 
 function publicIdBackfillExpression(table: typeof STATE_JSON_TABLES[number]) {
   if (table === "stock_state") {
@@ -1280,11 +1313,19 @@ const TABLES: TableSpec[] = [
     document_id: entityUuid(requiredString(entity.documentId, "operatingExpenses.documentId")),
     category_id: entityUuid(requiredString(entity.categoryId, "operatingExpenses.categoryId")),
     payment_id: entityUuid(requiredString(entity.paymentId, "operatingExpenses.paymentId")),
+    counterparty_id: optionalUuid(entity.counterpartyId),
     expense_date: requiredString(entity.expenseDate, "operatingExpenses.expenseDate"),
     amount_rub: requiredNumber(entity.amountRub, "operatingExpenses.amountRub"),
-    comment: optionalString(entity.comment),
-    state_json: entity
-  }), "expense_date, id"),
+    amount_paid_rub: requiredNumber(entity.amountPaidRub, "operatingExpenses.amountPaidRub"),
+    payment_mode: requiredString(entity.paymentMode, "operatingExpenses.paymentMode"),
+    payment_status: requiredString(entity.paymentStatus, "operatingExpenses.paymentStatus"),
+    cash_account_id: optionalUuid(entity.cashAccountId),
+    comment: optionalString(entity.comment)
+  }), "operating_expense.expense_date, operating_expense.id", {
+    select: OPERATING_EXPENSE_SELECT,
+    joins: OPERATING_EXPENSE_JOINS,
+    hydrate: (row) => operatingExpenseFromRow(row as unknown as OperatingExpenseDbRow) as unknown as RuntimeEntity
+  }),
   spec("ownerTransactions", "owner_transaction", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "ownerTransactions.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "ownerTransactions.organizationId")),
@@ -1581,6 +1622,7 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     await this.pool.query(STATE_JSON_ALTERS);
     await this.pool.query(WORKSPACE_ALTERS);
     await this.pool.query(PUBLIC_ID_ALTERS);
+    await this.pool.query(POST_PUBLIC_ID_BACKFILLS);
     await this.migrateLegacyState();
   }
 
