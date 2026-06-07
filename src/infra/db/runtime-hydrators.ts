@@ -6,6 +6,7 @@ import type {
   BackfillProject,
   CashAccount,
   ChartAccount,
+  ChannelAgentPermission,
   CorrectionCase,
   Counterparty,
   Document,
@@ -18,8 +19,10 @@ import type {
   IntegrationPlugin,
   JournalEntry,
   JournalLine,
+  OwnerTransaction,
   Payment,
   PaymentAllocation,
+  PluginStateRecord,
   ProcurementCost,
   ProcurementCostLine,
   PurchaseOrder,
@@ -32,6 +35,8 @@ import type {
   GoodsReceiptLine,
   ShortageResolution,
   ShortageResolutionLine,
+  Stocktake,
+  StocktakeLine,
   SupplierClaim,
   ObservedStock,
   Product,
@@ -1408,6 +1413,195 @@ export function roleFromRow(row: RoleDbRow): Role {
     organizationId: row.organization_id,
     code: row.code,
     name: row.name
+  };
+}
+
+export const PLUGIN_STATE_RECORD_SELECT = `
+  plugin_state_record.public_id as id,
+  plugin_state_record_organization.public_id as organization_id,
+  plugin_state_record.plugin_code,
+  plugin_state_record.namespace,
+  plugin_state_record.visibility,
+  plugin_state_record.scope_type,
+  plugin_state_record.scope_id,
+  plugin_state_record.state_key,
+  plugin_state_record.revision,
+  plugin_state_record.payload_json,
+  plugin_state_record.created_at,
+  plugin_state_record.updated_at
+`;
+
+export const PLUGIN_STATE_RECORD_JOINS = `
+  left join organization plugin_state_record_organization on plugin_state_record_organization.id = plugin_state_record.organization_id
+`;
+
+export interface PluginStateRecordDbRow {
+  id: string;
+  organization_id: string;
+  plugin_code: string;
+  namespace: string;
+  visibility: PluginStateRecord["visibility"];
+  scope_type: PluginStateRecord["scopeType"];
+  scope_id: string;
+  state_key: string;
+  revision: string | number;
+  payload_json: Record<string, unknown>;
+  created_at: unknown;
+  updated_at: unknown;
+}
+
+export function pluginStateRecordFromRow(row: PluginStateRecordDbRow): PluginStateRecord {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    pluginCode: row.plugin_code,
+    namespace: row.namespace,
+    visibility: row.visibility,
+    scopeType: row.scope_type,
+    scopeId: row.scope_id,
+    stateKey: row.state_key,
+    revision: Number(row.revision),
+    payload: row.payload_json ?? {},
+    createdAt: dateTimeString(row.created_at),
+    updatedAt: dateTimeString(row.updated_at)
+  };
+}
+
+export const OWNER_TRANSACTION_SELECT = `
+  owner_transaction.public_id as id,
+  owner_transaction_organization.public_id as organization_id,
+  owner_transaction_document.public_id as document_id,
+  owner_transaction_payment.public_id as payment_id,
+  owner_transaction.transaction_type,
+  owner_transaction.amount_rub
+`;
+
+export const OWNER_TRANSACTION_JOINS = `
+  left join organization owner_transaction_organization on owner_transaction_organization.id = owner_transaction.organization_id
+  left join document owner_transaction_document on owner_transaction_document.id = owner_transaction.document_id
+  left join payment owner_transaction_payment on owner_transaction_payment.id = owner_transaction.payment_id
+`;
+
+export interface OwnerTransactionDbRow {
+  id: string;
+  organization_id: string;
+  document_id: string;
+  payment_id: string;
+  transaction_type: OwnerTransaction["transactionType"];
+  amount_rub: string | number;
+}
+
+export function ownerTransactionFromRow(row: OwnerTransactionDbRow): OwnerTransaction {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    documentId: row.document_id,
+    paymentId: row.payment_id,
+    transactionType: row.transaction_type,
+    amountRub: Number(row.amount_rub)
+  };
+}
+
+export const STOCKTAKE_SELECT = `
+  stocktake.public_id as id,
+  stocktake_organization.public_id as organization_id,
+  stocktake_warehouse.public_id as warehouse_id,
+  stocktake_document.public_id as document_id,
+  stocktake.stocktake_date,
+  stocktake.status
+`;
+
+export const STOCKTAKE_JOINS = `
+  left join organization stocktake_organization on stocktake_organization.id = stocktake.organization_id
+  left join warehouse stocktake_warehouse on stocktake_warehouse.id = stocktake.warehouse_id
+  left join document stocktake_document on stocktake_document.id = stocktake.document_id
+`;
+
+export interface StocktakeDbRow {
+  id: string;
+  organization_id: string;
+  warehouse_id: string;
+  document_id: string;
+  stocktake_date: unknown;
+  status: Stocktake["status"];
+}
+
+export function stocktakeFromRow(row: StocktakeDbRow): Stocktake {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    warehouseId: row.warehouse_id,
+    documentId: row.document_id,
+    stocktakeDate: dateString(row.stocktake_date),
+    status: row.status
+  };
+}
+
+export const STOCKTAKE_LINE_SELECT = `
+  stocktake_line.public_id as id,
+  stocktake_line_stocktake.public_id as stocktake_id,
+  stocktake_line_product.public_id as product_id,
+  stocktake_line.book_qty,
+  stocktake_line.observed_qty,
+  stocktake_line.difference_qty,
+  stocktake_line.book_cost_rub,
+  stocktake_line.adjustment_cost_rub
+`;
+
+export const STOCKTAKE_LINE_JOINS = `
+  left join stocktake stocktake_line_stocktake on stocktake_line_stocktake.id = stocktake_line.stocktake_id
+  left join product stocktake_line_product on stocktake_line_product.id = stocktake_line.product_id
+`;
+
+export interface StocktakeLineDbRow {
+  id: string;
+  stocktake_id: string;
+  product_id: string;
+  book_qty: string | number;
+  observed_qty: string | number;
+  difference_qty: string | number;
+  book_cost_rub: string | number;
+  adjustment_cost_rub: string | number;
+}
+
+export function stocktakeLineFromRow(row: StocktakeLineDbRow): StocktakeLine {
+  return {
+    id: row.id,
+    stocktakeId: row.stocktake_id,
+    productId: row.product_id,
+    bookQty: Number(row.book_qty),
+    observedQty: Number(row.observed_qty),
+    differenceQty: Number(row.difference_qty),
+    bookCostRub: Number(row.book_cost_rub),
+    adjustmentCostRub: Number(row.adjustment_cost_rub)
+  };
+}
+
+export const CHANNEL_AGENT_PERMISSION_SELECT = `
+  channel_agent_permission.public_id as id,
+  channel_agent_permission_token.public_id as agent_token_id,
+  channel_agent_permission_channel.public_id as channel_id,
+  channel_agent_permission.permission_code
+`;
+
+export const CHANNEL_AGENT_PERMISSION_JOINS = `
+  left join agent_token channel_agent_permission_token on channel_agent_permission_token.id = channel_agent_permission.agent_token_id
+  left join sales_channel channel_agent_permission_channel on channel_agent_permission_channel.id = channel_agent_permission.channel_id
+`;
+
+export interface ChannelAgentPermissionDbRow {
+  id: string;
+  agent_token_id: string;
+  channel_id: string;
+  permission_code: string;
+}
+
+export function channelAgentPermissionFromRow(row: ChannelAgentPermissionDbRow): ChannelAgentPermission {
+  return {
+    id: row.id,
+    agentTokenId: row.agent_token_id,
+    channelId: row.channel_id,
+    permissionCode: row.permission_code
   };
 }
 

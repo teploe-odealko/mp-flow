@@ -222,6 +222,11 @@ counterparty/channel/order references восстанавливаются чер�
 `public_id` joins, запись нового `state_json` остановлена. Текущий остаток `state_json: entity` —
 24 таблицы.
 
+### ✅ Typed hydrate для простых служебных хвостов
+На typed specs переведены `pluginStateRecords`, `ownerTransactions`, `stocktakes`, `stocktakeLines`,
+`channelAgentPermissions`. Для них схема уже покрывала доменную модель, поэтому миграция ограничилась
+typed read/write без `state_json`. Текущий остаток `state_json: entity` — 19 таблиц.
+
 ### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
 Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/
 addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocumentSummary(x))` — хелперы каскадно

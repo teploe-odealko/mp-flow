@@ -22,6 +22,8 @@ import {
   BACKFILL_PROJECT_SELECT,
   CASH_ACCOUNT_JOINS,
   CASH_ACCOUNT_SELECT,
+  CHANNEL_AGENT_PERMISSION_JOINS,
+  CHANNEL_AGENT_PERMISSION_SELECT,
   CHART_ACCOUNT_JOINS,
   CHART_ACCOUNT_SELECT,
   COUNTERPARTY_JOINS,
@@ -52,11 +54,15 @@ import {
   JOURNAL_LINE_SELECT,
   OBSERVED_STOCK_JOINS,
   OBSERVED_STOCK_SELECT,
+  OWNER_TRANSACTION_JOINS,
+  OWNER_TRANSACTION_SELECT,
   ORGANIZATION_SELECT,
   PAYMENT_ALLOCATION_JOINS,
   PAYMENT_ALLOCATION_SELECT,
   PAYMENT_JOINS,
   PAYMENT_SELECT,
+  PLUGIN_STATE_RECORD_JOINS,
+  PLUGIN_STATE_RECORD_SELECT,
   PROCUREMENT_COST_JOINS,
   PROCUREMENT_COST_LINE_JOINS,
   PROCUREMENT_COST_LINE_SELECT,
@@ -77,6 +83,10 @@ import {
   SHORTAGE_RESOLUTION_LINE_JOINS,
   SHORTAGE_RESOLUTION_LINE_SELECT,
   SHORTAGE_RESOLUTION_SELECT,
+  STOCKTAKE_JOINS,
+  STOCKTAKE_LINE_JOINS,
+  STOCKTAKE_LINE_SELECT,
+  STOCKTAKE_SELECT,
   SUPPLIER_CLAIM_JOINS,
   SUPPLIER_CLAIM_SELECT,
   ROLE_JOINS,
@@ -91,6 +101,7 @@ import {
   backfillItemFromRow,
   backfillProjectFromRow,
   cashAccountFromRow,
+  channelAgentPermissionFromRow,
   chartAccountFromRow,
   counterpartyFromRow,
   correctionCaseFromRow,
@@ -107,9 +118,11 @@ import {
   journalEntryFromRow,
   journalLineFromRow,
   observedStockFromRow,
+  ownerTransactionFromRow,
   organizationFromRow,
   paymentAllocationFromRow,
   paymentFromRow,
+  pluginStateRecordFromRow,
   procurementCostFromRow,
   procurementCostLineFromRow,
   recalculationJobFromRow,
@@ -120,6 +133,8 @@ import {
   settlementEntryFromRow,
   shortageResolutionFromRow,
   shortageResolutionLineFromRow,
+  stocktakeFromRow,
+  stocktakeLineFromRow,
   supplierClaimFromRow,
   roleFromRow,
   syncRunFromRow,
@@ -130,6 +145,7 @@ import {
   type BackfillItemDbRow,
   type BackfillProjectDbRow,
   type CashAccountDbRow,
+  type ChannelAgentPermissionDbRow,
   type ChartAccountDbRow,
   type CounterpartyDbRow,
   type CorrectionCaseDbRow,
@@ -146,8 +162,10 @@ import {
   type JournalEntryDbRow,
   type JournalLineDbRow,
   type OrganizationDbRow,
+  type OwnerTransactionDbRow,
   type PaymentAllocationDbRow,
   type PaymentDbRow,
+  type PluginStateRecordDbRow,
   type ProcurementCostDbRow,
   type ProcurementCostLineDbRow,
   type RecalculationJobDbRow,
@@ -159,6 +177,8 @@ import {
   type SettlementEntryDbRow,
   type ShortageResolutionDbRow,
   type ShortageResolutionLineDbRow,
+  type StocktakeDbRow,
+  type StocktakeLineDbRow,
   type SupplierClaimDbRow,
   type RoleDbRow,
   type SyncRunDbRow,
@@ -978,9 +998,12 @@ const TABLES: TableSpec[] = [
     revision: requiredNumber(entity.revision, "pluginStateRecords.revision"),
     payload_json: entity.payload ?? {},
     created_at: requiredString(entity.createdAt, "pluginStateRecords.createdAt"),
-    updated_at: requiredString(entity.updatedAt, "pluginStateRecords.updatedAt"),
-    state_json: entity
-  }), "plugin_code, namespace, scope_type, scope_id, state_key"),
+    updated_at: requiredString(entity.updatedAt, "pluginStateRecords.updatedAt")
+  }), "plugin_state_record.plugin_code, plugin_state_record.namespace, plugin_state_record.scope_type, plugin_state_record.scope_id, plugin_state_record.state_key", {
+    select: PLUGIN_STATE_RECORD_SELECT,
+    joins: PLUGIN_STATE_RECORD_JOINS,
+    hydrate: (row) => pluginStateRecordFromRow(row as unknown as PluginStateRecordDbRow) as unknown as RuntimeEntity
+  }),
   spec("integrationPlugins", "integration_plugin", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "integrationPlugins.id")),
     code: requiredString(entity.code, "integrationPlugins.code"),
@@ -1171,18 +1194,24 @@ const TABLES: TableSpec[] = [
     document_id: entityUuid(requiredString(entity.documentId, "ownerTransactions.documentId")),
     payment_id: entityUuid(requiredString(entity.paymentId, "ownerTransactions.paymentId")),
     transaction_type: requiredString(entity.transactionType, "ownerTransactions.transactionType"),
-    amount_rub: requiredNumber(entity.amountRub, "ownerTransactions.amountRub"),
-    state_json: entity
-  }), "id"),
+    amount_rub: requiredNumber(entity.amountRub, "ownerTransactions.amountRub")
+  }), "owner_transaction.id", {
+    select: OWNER_TRANSACTION_SELECT,
+    joins: OWNER_TRANSACTION_JOINS,
+    hydrate: (row) => ownerTransactionFromRow(row as unknown as OwnerTransactionDbRow) as unknown as RuntimeEntity
+  }),
   spec("stocktakes", "stocktake", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "stocktakes.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "stocktakes.organizationId")),
     warehouse_id: entityUuid(requiredString(entity.warehouseId, "stocktakes.warehouseId")),
     document_id: entityUuid(requiredString(entity.documentId, "stocktakes.documentId")),
     stocktake_date: requiredString(entity.stocktakeDate, "stocktakes.stocktakeDate"),
-    status: requiredString(entity.status, "stocktakes.status"),
-    state_json: entity
-  }), "stocktake_date, id"),
+    status: requiredString(entity.status, "stocktakes.status")
+  }), "stocktake.stocktake_date, stocktake.id", {
+    select: STOCKTAKE_SELECT,
+    joins: STOCKTAKE_JOINS,
+    hydrate: (row) => stocktakeFromRow(row as unknown as StocktakeDbRow) as unknown as RuntimeEntity
+  }),
   spec("stocktakeLines", "stocktake_line", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "stocktakeLines.id")),
     stocktake_id: entityUuid(requiredString(entity.stocktakeId, "stocktakeLines.stocktakeId")),
@@ -1191,9 +1220,12 @@ const TABLES: TableSpec[] = [
     observed_qty: requiredNumber(entity.observedQty, "stocktakeLines.observedQty"),
     difference_qty: requiredNumber(entity.differenceQty, "stocktakeLines.differenceQty"),
     book_cost_rub: requiredNumber(entity.bookCostRub, "stocktakeLines.bookCostRub"),
-    adjustment_cost_rub: requiredNumber(entity.adjustmentCostRub, "stocktakeLines.adjustmentCostRub"),
-    state_json: entity
-  }), "stocktake_id, id"),
+    adjustment_cost_rub: requiredNumber(entity.adjustmentCostRub, "stocktakeLines.adjustmentCostRub")
+  }), "stocktake_line.stocktake_id, stocktake_line.id", {
+    select: STOCKTAKE_LINE_SELECT,
+    joins: STOCKTAKE_LINE_JOINS,
+    hydrate: (row) => stocktakeLineFromRow(row as unknown as StocktakeLineDbRow) as unknown as RuntimeEntity
+  }),
   spec("correctionCases", "correction_case", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "correctionCases.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "correctionCases.organizationId")),
@@ -1290,9 +1322,12 @@ const TABLES: TableSpec[] = [
     id: entityUuid(requiredString(entity.id, "channelAgentPermissions.id")),
     agent_token_id: entityUuid(requiredString(entity.agentTokenId, "channelAgentPermissions.agentTokenId")),
     channel_id: entityUuid(requiredString(entity.channelId, "channelAgentPermissions.channelId")),
-    permission_code: requiredString(entity.permissionCode, "channelAgentPermissions.permissionCode"),
-    state_json: entity
-  }), "id")
+    permission_code: requiredString(entity.permissionCode, "channelAgentPermissions.permissionCode")
+  }), "channel_agent_permission.id", {
+    select: CHANNEL_AGENT_PERMISSION_SELECT,
+    joins: CHANNEL_AGENT_PERMISSION_JOINS,
+    hydrate: (row) => channelAgentPermissionFromRow(row as unknown as ChannelAgentPermissionDbRow) as unknown as RuntimeEntity
+  })
 ];
 
 export async function createAccountingRuntimeFromEnv(): Promise<AccountingRuntime> {
