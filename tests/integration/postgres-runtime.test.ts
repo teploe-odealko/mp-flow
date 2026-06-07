@@ -7,7 +7,7 @@ import { AccountingApp } from "../../src/core/accounting-app";
 import { PostgresRuntimeStore } from "../../src/infra/db/runtime-store";
 import { ozonPlugin } from "../../src/plugins/ozon";
 import { createPluginSecretApi, createPluginStateApi } from "../../src/plugins/runtime";
-import { readStateViaCollections } from "../support/api-state";
+import { readStateViaApi } from "../support/api-state";
 
 const connectionString = process.env.TEST_DATABASE_URL;
 const runPostgresTests = process.env.RUN_POSTGRES_TESTS === "1" && Boolean(connectionString);
@@ -206,7 +206,7 @@ describePostgres("postgres runtime store", () => {
       await inspectPool.end();
     }
 
-    const restored = await readStateViaCollections(api);
+    const restored = await readStateViaApi(api);
     expect(restored.organization?.displayName).toBe("Postgres Runtime");
     expect(restored.products.find((item: any) => item.id === product.id)?.sku).toBe("PG-001");
 

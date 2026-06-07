@@ -275,7 +275,6 @@ export type RuntimeLedgerBalances = Record<string, { debit: number; credit: numb
 
 export interface RuntimePersistence {
   save?(app: AccountingApp, workspaceId?: string): Promise<void>;
-  readCollection?(workspaceId: string | undefined, name: string): Promise<{ found: boolean; data?: unknown }>;
   readDashboard?(workspaceId?: string): Promise<unknown>;
   readReports?(workspaceId?: string): Promise<unknown>;
   readReportWorkspace?(workspaceId: string | undefined, options: ReportsWorkspaceOptions): Promise<unknown>;
@@ -1882,11 +1881,6 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     }
   }
 
-  async readCollection(workspaceId: string | undefined, name: string): Promise<{ found: boolean; data?: unknown }> {
-    await this.init();
-    return await readRuntimeCollection(this.pool, normalizeWorkspaceId(workspaceId), name);
-  }
-
   async readDashboard(workspaceId = DEFAULT_WORKSPACE_ID): Promise<unknown> {
     await this.init();
     return await readRuntimeDashboard(this.pool, normalizeWorkspaceId(workspaceId));
@@ -2529,7 +2523,7 @@ export class PostgresSyncRunStore implements SyncRunStore {
   }
 }
 
-export async function readRuntimeCollection(source: Queryable, workspaceId: string | undefined, name: string): Promise<{ found: boolean; data?: unknown }> {
+async function readRuntimeCollection(source: Queryable, workspaceId: string | undefined, name: string): Promise<{ found: boolean; data?: unknown }> {
   const scope = normalizeWorkspaceId(workspaceId);
   if (name === "organization") {
     return { found: true, data: await readRuntimeSingleton(source, scope, "organization") };

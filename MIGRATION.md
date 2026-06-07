@@ -75,8 +75,9 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
 Цель «ни на фронте всесущего snapshot» — самостоятельная и не трогает синхронность домена.
 - ✅ Старый переходный слой: бэк `GET /api/collections/:name` (классический пер-ресурс, тот же public-шейпинг,
   что `/api/state`, 404 на неизвестную) + хук `useCollection(name)` дали механический срез
-  `state.X` → `useCollection("X")`. После финального фронтового среза hook удалён; generic collections
-  остаются только как backend/test compatibility до конверсии ядра.
+  `state.X` → `useCollection("X")`. После финального фронтового среза hook удалён, а public
+  `/api/collections/*` route больше не публикуется; тестовый helper собирает нужные данные через dedicated
+  resource/workspace endpoints.
 - ✅ Уже на запросах (dedicated): события (`/api/integrations/events`+`/:id`), остатки (`/api/integrations/observed-stock`),
   аудит (`/api/controls/audit-events`), sync-runs (`/api/integrations/channels/:id/sync-runs`).
 - ✅ Старый промежуточный этап: все страницы были сняты с `/api/state` и переведены на `useCollection(...)`.
@@ -85,8 +86,8 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
 - ✅ **God-объект убран целиком:** `AppShell` больше НЕ дёргает `/api/state`; `workingPeriodId`,
   organization и остальной shell-контекст берутся из dedicated DTO. `AppCtx` без `state`.
   Ни одна строка фронта не держит всесущий снимок и не вызывает `/api/collections/*`.
-- ✅ Бэкенд `/api/state` удалён. Тесты переведены на чтение через `/api/collections/:name`, поэтому полного
-  публичного снимка состояния больше нет ни во фронте, ни в API-контракте.
+- ✅ Бэкенд `/api/state` и public `/api/collections/:name` удалены. Полного публичного снимка состояния
+  больше нет ни во фронте, ни в API-контракте.
 - ✅ Часть GET-ручек уже обслуживается read-model путём до snapshot-сессии: collections, dashboard, reports,
   stream-чтения (sync-runs/observed-stock/audit), legacy-списки, channel detail и detail-чтения account/journal/product.
 - ⚠️ Это промежуточный слой: Postgres read-model сейчас читает те же таблицы `state_json` по коллекциям. Он убирает
@@ -158,7 +159,9 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   `/api/inventory/forms/workspace`. В `src/frontend/pages/inventory/forms.tsx` больше нет `useCollection`
   и глобального `queryClient.invalidateQueries()`.
 - ✅ Фронтовый transitional hook `useCollection` удалён. `src/frontend` больше не вызывает `/api/collections/*`;
-  оставшийся `/api/collections/:name` — backend/test compatibility до полного выноса ядра из snapshot-модели.
+  public `/api/collections/:name` тоже удалён. Оставшиеся legacy list endpoints (`/api/products`,
+  `/api/documents` и т.п.) — обычные ресурсные URL, но часть из них всё ещё использует внутренний
+  `collectionFor` helper до финальной раскладки controllers/services.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,
@@ -335,7 +338,7 @@ Generic runtime repo больше не имеет fallback `select state_json`/`
 Runtime больше не читает `accounting_runtime_snapshot`, `accounting_runtime_entity` и
 `accounting_runtime_channel_credential`; `exportRuntimeEntities` удалён. Если нормализованных строк ещё нет,
 Postgres runtime создаёт только metadata и ждёт обычный `/api/setup`, а не пытается восстановить старый
-всесущий snapshot. Тест prod-readiness теперь проверяет durable rows через `/api/collections/:name`.
+всесущий snapshot. Тест prod-readiness теперь проверяет durable rows через dedicated resource/workspace endpoints.
 
 ### ✅ Backend reports/ledger API сняты с `AccountingApp.reports()`
 `/api/reports*` и `/api/ledger` в Postgres-runtime теперь читают typed Postgres read-model напрямую:
@@ -429,7 +432,8 @@ addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocument
    с Postgres-репозиториями на `client`/`pool`; снять глобальный `pg_advisory_xact_lock` (транзакция на запрос
    заменяет full-state-write-lock). Удалить остатки `state_json`-снэпшота.
 5. Отчёты (`/api/reports*`) — в SQL (агрегаты), а не перебор state.
-6. Стыковка: `tsc` 0 → fast → PG → smoke (browser). Тесты, дергающие `/api/state`, перевести на `/api/collections`.
+6. Стыковка: `tsc` 0 → fast → PG → smoke (browser). Тесты, дергающие `/api/state`, перевести на dedicated
+   resource/workspace endpoints.
 
 ## Уточнение стратегии (важный вывод из кода)
 Домен — **синхронный in-memory движок**: почти каждая коллекция читается ПОСРЕДИ

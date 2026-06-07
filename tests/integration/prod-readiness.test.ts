@@ -97,17 +97,16 @@ describe("prod-ready contracts", () => {
     });
 
     await post(api, "/api/setup", { displayName: "Persisted", accountingStartDate: "2026-01-01" });
-    await get(api, "/api/collections/organization");
+    await get(api, "/api/setup");
 
     expect(savedSnapshots).toHaveLength(1);
     expect(JSON.parse(savedSnapshots[0]).organization.displayName).toBe("Persisted");
   });
 
-  it("serves collection and dashboard reads before snapshot sessions", async () => {
+  it("serves dashboard and workspace reads before snapshot sessions", async () => {
     resetIds();
     const app = new AccountingApp();
     await app.setupDemo();
-    let collectionReads = 0;
     let dashboardReads = 0;
     let reportWorkspaceReads = 0;
     let productWorkspaceReads = 0;
@@ -115,13 +114,6 @@ describe("prod-ready contracts", () => {
     let readSessions = 0;
     const api = createApi(app, {
       persistence: {
-        async readCollection(_workspaceId, name) {
-          collectionReads += 1;
-          if (name === "organization") return { found: true, data: app.state.organization };
-          if (name === "accountingPolicy") return { found: true, data: app.state.accountingPolicy };
-          const data = (app.state as unknown as Record<string, unknown>)[name];
-          return data === undefined ? { found: false } : { found: true, data };
-        },
         async readDashboard() {
           dashboardReads += 1;
           return await app.dashboard();
@@ -173,7 +165,7 @@ describe("prod-ready contracts", () => {
       }
     });
 
-    const organization = await get<any>(api, "/api/collections/organization");
+    const setup = await get<any>(api, "/api/setup");
     const dashboard = await get<any>(api, "/api/dashboard");
     const reports = await get<any>(api, "/api/reports");
     const reportWorkspace = await get<any>(api, "/api/reports/workspace?dateFrom=2026-06-01&dateTo=2026-06-30&balanceDate=2026-06-30");
@@ -231,7 +223,7 @@ describe("prod-ready contracts", () => {
     const settingsUsersResponse = await api.request("/api/settings/users");
     const agentTokensResponse = await api.request("/api/agent-tokens");
 
-    expect(organization.displayName).toBe("ИП Иванов");
+    expect(setup.organization.displayName).toBe("ИП Иванов");
     expect(dashboard.configured).toBe(true);
     expect(reports.pnl.revenue).toBeGreaterThan(0);
     expect(reportWorkspace.current.pnl.revenue).toBeGreaterThan(0);
@@ -299,7 +291,6 @@ describe("prod-ready contracts", () => {
     expect(usersResponse.status).toBe(404);
     expect(settingsUsersResponse.status).toBe(404);
     expect(agentTokensResponse.status).toBe(404);
-    expect(collectionReads).toBe(1);
     expect(dashboardReads).toBe(1);
     expect(reportWorkspaceReads).toBe(1);
     expect(productWorkspaceReads).toBe(1);
@@ -355,7 +346,7 @@ describe("prod-ready contracts", () => {
     expect(restored.credentialsForChannel(channel.id)).toEqual({ clientId: "client", apiKey: "key" });
   });
 
-  it("exposes durable collection rows and keeps secrets out of public data", async () => {
+  it("exposes durable resource rows and keeps secrets out of public data", async () => {
     resetIds();
     const app = new AccountingApp();
     const api = createApi(app);
@@ -370,15 +361,15 @@ describe("prod-ready contracts", () => {
     const channel = await app.createSalesChannel({ name: "Ozon DB", channelType: "marketplace", pluginCode: "ozon" });
     await app.saveChannelCredentials(channel.id, { clientId: "client-secret", apiKey: "api-secret" });
 
-    const products = await get<any[]>(api, "/api/collections/products");
-    const stockStates = await get<any[]>(api, "/api/collections/stockStates");
-    const channels = await get<any[]>(api, "/api/collections/salesChannels");
-    const organization = await get<any>(api, "/api/collections/organization");
+    const productWorkspace = await get<any>(api, "/api/products/workspace");
+    const inventoryForms = await get<any>(api, "/api/inventory/forms/workspace");
+    const channelsWorkspace = await get<any>(api, "/api/channels/workspace");
+    const setup = await get<any>(api, "/api/setup");
 
-    expect(products.some((row) => row.id === product.id)).toBe(true);
-    expect(stockStates.some((row) => row.productId === product.id && row.warehouseId === warehouse?.id && (row.stateCode ?? "sellable") === "sellable")).toBe(true);
-    expect(channels.some((row) => row.id === channel.id)).toBe(true);
-    expect(organization.displayName).toBe("Entity Store");
-    expect(JSON.stringify({ products, stockStates, channels, organization })).not.toContain("api-secret");
+    expect(productWorkspace.products.some((row: any) => row.id === product.id)).toBe(true);
+    expect(inventoryForms.stockStates.some((row: any) => row.productId === product.id && row.warehouseId === warehouse?.id && (row.stateCode ?? "sellable") === "sellable")).toBe(true);
+    expect(channelsWorkspace.channels.some((row: any) => row.id === channel.id)).toBe(true);
+    expect(setup.organization.displayName).toBe("Entity Store");
+    expect(JSON.stringify({ productWorkspace, inventoryForms, channelsWorkspace, setup })).not.toContain("api-secret");
   });
 });

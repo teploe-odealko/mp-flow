@@ -6,7 +6,7 @@ import { z } from "zod";
 import { AccountingApp } from "../core/accounting-app";
 import type { AgentToken, ChannelFinanceEvent, ChannelStreamCode, ExternalEvent, Payout, Sale, SalesChannel, SalesReturn, SyncRun } from "../core/models";
 import { DomainError, id, nowIso, runWithIdSequence } from "../core/utils";
-import { openPostgresReadModelApp, readRuntimeCollection, readRuntimeDashboard, readRuntimeLedgerBalances, readRuntimeReports, readRuntimeReportWorkspace, readRuntimeProductWorkspace, type RuntimePersistence } from "../infra/db/runtime-store";
+import { openPostgresReadModelApp, readRuntimeDashboard, readRuntimeLedgerBalances, readRuntimeReports, readRuntimeReportWorkspace, readRuntimeProductWorkspace, type RuntimePersistence } from "../infra/db/runtime-store";
 import { pluginRegistry } from "../plugins/registry";
 import { createPluginSecretApi, createPluginStateApi, pluginStateKey } from "../plugins/runtime";
 import { buildMediaKey, createPresignedUpload, headObject, isAllowedImageType, isStorageConfigured } from "../infra/storage/s3";
@@ -987,23 +987,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const event = await scopedApp.externalEvents.getById(c.req.param("id"));
     if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
     return c.json({ ok: true, data: event });
-  });
-
-  api.get("/api/collections/:name", async (c) => {
-    const name = c.req.param("name");
-    const workspaceId = eventsWorkspaceId(c);
-    const persisted = options.persistence?.readCollection
-      ? await options.persistence.readCollection(workspaceId, name)
-      : postgresBacked()
-        ? await readRuntimeCollection(getPool(), workspaceId, name)
-        : undefined;
-    if (persisted) {
-      if (!persisted.found) throw new DomainError("collection_not_found", `Неизвестная коллекция: ${name}`);
-      return c.json({ ok: true, data: sanitizeCollectionPayload(name, persisted.data) });
-    }
-    return c.json({ ok: true, data: await collectionPayload(app, name, {
-      loadAuditEvents: () => app.repos.auditEvents.all()
-    }) });
   });
 
   api.get("/api/dashboard", async (c) => {
