@@ -306,6 +306,7 @@ describe("prod-ready contracts", () => {
       await app.repos.backfillProjects.add(backfillProject);
     }
     const onboardingProject = await get<any>(api, `/api/onboarding/existing-store/projects/${backfillProject.id}`);
+    const updatedOrganization = await patch<any>(api, "/api/organization", { displayName: "ИП Иванов API", inn: "123456789012" });
     const card = await get<any>(api, `/api/products/${product.id}/card`);
     const cardBrief = await get<any>(api, `/api/products/${product.id}/card/brief`);
     const usersResponse = await api.request("/api/users");
@@ -333,6 +334,8 @@ describe("prod-ready contracts", () => {
     expect(createdRecalculationJob).toEqual(expect.objectContaining({ jobType: "sales_profit", scope: { channelId: "all" }, status: "completed", progress: 100 }));
     expect(retriedRecalculationJob).toEqual(expect.objectContaining({ id: createdRecalculationJob.id, status: "completed", progress: 100 }));
     expect(reportsRecalculationJob).toEqual(expect.objectContaining({ jobType: "reports", status: "completed", progress: 100 }));
+    expect(updatedOrganization).toEqual(expect.objectContaining({ displayName: "ИП Иванов API", inn: "123456789012" }));
+    expect(app.state.organization).toEqual(expect.objectContaining({ displayName: "ИП Иванов API", inn: "123456789012" }));
     expect(productImage).toEqual({ id: `${product.id}:main`, productId: product.id, url: "https://example.test/product-image.jpg", sortOrder: 0 });
     expect(app.state.products.find((candidate) => candidate.id === product.id)?.imageUrl).toBe("https://example.test/product-image.jpg");
     expect(confirmedAsset).toEqual(expect.objectContaining({ id: "asset_route_test", status: "ready", width: 800, height: 1000 }));
@@ -446,7 +449,7 @@ describe("prod-ready contracts", () => {
     expect(productWorkspaceReads).toBe(1);
     expect(readContexts).toBeGreaterThanOrEqual(10);
     expect(readSessions).toBe(0);
-    expect(writeContexts).toBe(16);
+    expect(writeContexts).toBe(17);
     expect(writeSessions).toBe(0);
   });
 

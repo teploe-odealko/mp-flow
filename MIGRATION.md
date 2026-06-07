@@ -244,6 +244,10 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   `POST /api/reports/recalculate`) вынесены в `src/backend/services/recalculation-service.ts` и
   обслуживаются через `RuntimeWriteContext`. Prod-readiness покрывает create/retry/reports-recalculate
   без `openWriteSession`; Postgres runtime проверяет typed rows в `recalculation_job`.
+- ✅ Organization update (`PATCH /api/organization`) вынесен в
+  `src/backend/services/organization-service.ts`: singleton `organization` сохраняется через
+  `repos.saveSingletons` и audit пишется без request-scoped `AccountingApp`. Prod-readiness проверяет
+  отсутствие `openWriteSession`, Postgres runtime проверяет typed singleton row в `organization`.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,

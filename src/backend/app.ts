@@ -20,6 +20,7 @@ import { captureException } from "./observability";
 import { getPool } from "./db/pool";
 import { ExternalEventRepository } from "./repositories/external-event-repository";
 import { onboardingProjectDetailsFor } from "./services/onboarding-project-service";
+import { updateOrganization } from "./services/organization-service";
 import { confirmProductAsset, createProductAsset, deleteProductAsset, updateProductAsset } from "./services/product-asset-service";
 import { defaultReceiptPreviewFor, receiptPreviewFor } from "./services/procurement-preview-service";
 import { deleteProductImage, setProductImage } from "./services/product-image-service";
@@ -1371,6 +1372,10 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     });
   });
   api.get("/api/organization", async (c) => c.json({ ok: true, data: (await readContextFor(c)).setupMetadata().organization }));
+  api.patch("/api/organization", async (c) => {
+    const body = organizationPatchSchema.parse(await c.req.json());
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => updateOrganization(writeContext, body)) });
+  });
   api.get("/api/periods", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.periods.all() }));
   api.get("/api/accounts", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.chartAccounts.all() }));
   api.get("/api/accounting/accounts", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.chartAccounts.all() }));
@@ -1802,11 +1807,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (authUser) await ensureAppUser(scopedApp, { ...authUser, status: "active" });
     return c.json({ ok: true, data });
   });
-  api.patch("/api/organization", async (c) => {
-    const body = organizationPatchSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: await scopedApp.updateOrganization(body) });
-  });
-
   api.post("/api/documents", async (c) => {
     const body = documentCreateSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.createManualDocument(body) });

@@ -79,6 +79,7 @@ describePostgres("postgres runtime store", () => {
     const api = createApi(new AccountingApp(), { persistence: store });
 
     await request(api, "POST", "/api/setup", { displayName: "Postgres Runtime", accountingStartDate: "2026-01-01" });
+    const updatedOrganization = await request<any>(api, "PATCH", "/api/organization", { displayName: "Postgres Runtime Updated", inn: "7700000000" });
     const product = await request<any>(api, "POST", "/api/products", { sku: "PG-001", name: "Postgres товар" });
     const serviceWarehouse = await request<any>(api, "POST", "/api/warehouses", { name: "PG service warehouse", warehouseType: "own" });
     const serviceCounterparty = await request<any>(api, "POST", "/api/counterparties", { name: "PG service supplier", counterpartyType: "supplier", country: "CN" });
@@ -146,6 +147,10 @@ describePostgres("postgres runtime store", () => {
       const products = await inspectPool.query<{ sku: string; public_id: string }>(
         "select sku, public_id from product order by sku"
       );
+      const organizationRows = await inspectPool.query<{ display_name: string; inn: string | null; public_id: string }>(
+        "select display_name, inn, public_id from organization where public_id = $1",
+        [updatedOrganization.id]
+      );
       const productRows = await inspectPool.query<{ image_url: string | null }>(
         "select image_url from product where public_id = $1",
         [product.id]
@@ -193,6 +198,8 @@ describePostgres("postgres runtime store", () => {
       );
 
       expect(products.rows).toContainEqual({ sku: "PG-001", public_id: product.id });
+      expect(updatedOrganization).toEqual(expect.objectContaining({ displayName: "Postgres Runtime Updated", inn: "7700000000" }));
+      expect(organizationRows.rows[0]).toEqual({ display_name: "Postgres Runtime Updated", inn: "7700000000", public_id: updatedOrganization.id });
       expect(productImage).toEqual({ id: `${product.id}:main`, productId: product.id, url: "https://example.test/pg-product.jpg", sortOrder: 0 });
       expect(productRows.rows[0]?.image_url).toBe("https://example.test/pg-product.jpg");
       expect(productImageAudit.rows).toContainEqual({ entity_public_id: product.id, event_type: "image_update" });
@@ -226,7 +233,7 @@ describePostgres("postgres runtime store", () => {
       expect(documentDetail.journalEntries).toEqual(expect.any(Array));
       expect(documentDetail.journalLines).toEqual(expect.any(Array));
       expect(documentDetail.accounts).toEqual(expect.any(Array));
-      expect(onboardingWorkspace.organization).toEqual(expect.objectContaining({ displayName: "Postgres Runtime" }));
+      expect(onboardingWorkspace.organization).toEqual(expect.objectContaining({ displayName: "Postgres Runtime Updated" }));
       expect(onboardingWorkspace.accountingPolicy.accountingStartDate).toEqual(expect.any(String));
       expect(onboardingWorkspace.salesChannels).toContainEqual(expect.objectContaining({ id: channel.id }));
       expect(onboardingWorkspace.products).toContainEqual(expect.objectContaining({ id: product.id, sku: "PG-001" }));
@@ -288,7 +295,7 @@ describePostgres("postgres runtime store", () => {
     }
 
     const restored = await readStateViaApi(api);
-    expect(restored.organization?.displayName).toBe("Postgres Runtime");
+    expect(restored.organization?.displayName).toBe("Postgres Runtime Updated");
     expect(restored.products.find((item: any) => item.id === product.id)?.sku).toBe("PG-001");
 
     const session = await store.openReadSession?.();
