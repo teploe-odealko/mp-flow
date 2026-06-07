@@ -151,6 +151,14 @@ async `previewProcurementCost`, setup metadata fields, `audit`/`createCorrection
 Синглтоны `organization`/`accountingPolicy` уже изолированы как поля приложения; `app.state` пока остаётся
 только для совместимости runtime-store/tests до финального удаления snapshot.
 
+### ✅ REQUEST-TIME SNAPSHOT STORE снят с сессий runtime
+`PostgresRuntimeStore.openReadSession/openWriteSession` теперь открывают `AccountingApp` сразу с
+Postgres repositories (`openPostgresReadModelApp`) и не вызывают `loadSnapshot/saveState`. Удалён
+глобальный `WRITE_LOCK_SQL`: write-session держит обычную транзакцию, а доменные коллекции пишутся
+через repositories во время операции; commit сохраняет только singleton metadata, credentials/secrets
+и id meta. Legacy snapshot/entity-store остаётся только одноразовым importer'ом при миграции старой БД.
+Оставшийся большой слой: `state_json` всё ещё является payload-колонкой для generic repository hydrate/serialize.
+
 ### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
 Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/
 addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocumentSummary(x))` — хелперы каскадно

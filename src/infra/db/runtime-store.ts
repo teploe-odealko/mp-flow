@@ -61,32 +61,11 @@ interface TableSpec {
   serialize(entity: RuntimeEntity): RowRecord;
 }
 
-interface PreparedTableSnapshot {
-  table: TableSpec;
-  rows: RowRecord[];
-  signatureByKey: Map<string, string>;
-}
-
-interface PreparedStateSnapshot {
-  organization?: RuntimeEntity;
-  accountingPolicy?: RuntimeEntity;
-  organizationSignature: string;
-  accountingPolicySignature: string;
-  tables: PreparedTableSnapshot[];
-  tablesByCollection: Map<RuntimeCollectionName, PreparedTableSnapshot>;
-}
-
 const RUNTIME_SCHEMA_VERSION = 3;
 const RUNTIME_ROW_KEY = "default";
 const DEFAULT_WORKSPACE_ID = "default";
-const WRITE_LOCK_SQL = "select pg_advisory_xact_lock(684201, 3)";
 const CREDENTIALS_AAD = Buffer.from("mpflow-channel-credentials");
 const GLOBAL_REFERENCE_TABLES = new Set(["document_type_registry"]);
-
-// Коллекции, вынесенные из snapshot в классические репозитории: их НЕ грузим в state
-// на запрос и НЕ удаляем при сохранении. Append-only потоки (пишутся через loop-upsert,
-// читаются репозиторием напрямую). Это шаг переезда на controllers→services→repositories.
-const SNAPSHOT_APPEND_ONLY = new Set<RuntimeCollectionName>(["auditEvents", "externalEvents", "observedStocks", "syncRuns"]);
 
 const COLLECTIONS: RuntimeCollectionName[] = [
   "periods",
@@ -995,23 +974,6 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     }
   }
 
-  async save(app: AccountingApp, workspaceId = DEFAULT_WORKSPACE_ID): Promise<void> {
-    await this.init();
-    const scope = normalizeWorkspaceId(workspaceId);
-    const client = await this.pool.connect();
-    try {
-      await client.query("begin");
-      await client.query(WRITE_LOCK_SQL);
-      await this.saveState(client, scope, app.state, app.exportChannelCredentials(), currentIdSequence(), app.exportPluginSecrets());
-      await client.query("commit");
-    } catch (error) {
-      await client.query("rollback").catch(() => undefined);
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
   async readCollection(workspaceId: string | undefined, name: string): Promise<{ found: boolean; data?: unknown }> {
     await this.init();
     return await readRuntimeCollection(this.pool, normalizeWorkspaceId(workspaceId), name);
@@ -1029,13 +991,11 @@ export class PostgresRuntimeStore implements RuntimePersistence {
   async openReadSession(workspaceId = DEFAULT_WORKSPACE_ID): Promise<RuntimeSession> {
     await this.init();
     const scope = normalizeWorkspaceId(workspaceId);
-    const snapshot = await this.loadSnapshot(this.pool, scope);
-    snapshot.app.externalEvents = new PostgresExternalEventStore(this.pool, scope);
-    snapshot.app.observedStocks = new PostgresObservedStockStore(this.pool, scope);
-    snapshot.app.syncRuns = new PostgresSyncRunStore(this.pool, scope);
+    const app = await this.openRepositoryBackedApp(this.pool, scope);
+    const meta = await this.loadMeta(this.pool);
     return {
-      app: snapshot.app,
-      nextId: snapshot.nextId,
+      app,
+      nextId: meta?.next_id ?? 1,
       close: async () => undefined
     };
   }
@@ -1045,14 +1005,9 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     const scope = normalizeWorkspaceId(workspaceId);
     const client = await this.pool.connect();
     await client.query("begin");
-    await client.query(WRITE_LOCK_SQL);
-    const snapshot = await this.loadSnapshot(client, scope);
-    restoreIdSequence(snapshot.nextId);
-    const app = snapshot.app;
-    app.externalEvents = new PostgresExternalEventStore(client, scope);
-    app.observedStocks = new PostgresObservedStockStore(client, scope);
-    app.syncRuns = new PostgresSyncRunStore(client, scope);
-    const baseline = snapshot.baseline;
+    const meta = await this.loadMeta(client);
+    restoreIdSequence(meta?.next_id ?? 1);
+    const app = await this.openRepositoryBackedApp(client, scope);
     let finished = false;
 
     const finalize = async (mode: "commit" | "rollback") => {
@@ -1060,7 +1015,7 @@ export class PostgresRuntimeStore implements RuntimePersistence {
       try {
         if (mode === "commit") {
           await app.flushPendingExternalEventUpdates();
-          await this.saveState(client, scope, app.state, app.exportChannelCredentials(), currentIdSequence(), app.exportPluginSecrets(), baseline);
+          await this.saveAppSideEffects(client, scope, app);
           await client.query("commit");
         } else {
           await client.query("rollback");
@@ -1072,7 +1027,7 @@ export class PostgresRuntimeStore implements RuntimePersistence {
 
     return {
       app,
-      nextId: snapshot.nextId,
+      nextId: meta?.next_id ?? 1,
       commit: async () => await finalize("commit"),
       rollback: async () => await finalize("rollback"),
       close: async () => {
@@ -1114,12 +1069,11 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     const client = await this.pool.connect();
     try {
       await client.query("begin");
-      await client.query(WRITE_LOCK_SQL);
       const configured = await this.hasNormalizedData(client);
       if (!configured) {
         const legacy = await this.loadLegacyState(client);
         if (legacy) {
-          await this.saveState(client, DEFAULT_WORKSPACE_ID, legacy.state, legacy.credentials, legacy.nextId);
+          await this.importLegacyState(client, DEFAULT_WORKSPACE_ID, legacy.state, legacy.credentials, legacy.nextId);
         } else {
           await this.saveMeta(client, 1);
         }
@@ -1141,41 +1095,6 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     return Boolean(result.rows[0]?.exists);
   }
 
-  private async loadSnapshot(source: Queryable, workspaceId: string): Promise<{ app: AccountingApp; nextId: number; baseline: PreparedStateSnapshot }> {
-    const state = createEmptyState();
-
-    state.organization = await this.loadSingleton(source, workspaceId, "organization") as AccountingState["organization"];
-    state.accountingPolicy = await this.loadSingleton(source, workspaceId, "accounting_policy") as AccountingState["accountingPolicy"];
-
-    for (const table of TABLES) {
-      if (SNAPSHOT_APPEND_ONLY.has(table.collection)) continue;
-      const tableWorkspaceId = workspaceIdForTable(table, workspaceId);
-      const rows = await source.query<{ state_json: unknown }>(
-        `select state_json from ${table.table} where workspace_id = $1${table.orderBy ? ` order by ${table.orderBy}` : ""}`,
-        [tableWorkspaceId]
-      );
-      state[table.collection] = rows.rows.map((row) => hydrateEntity(row.state_json)) as never;
-    }
-
-    const meta = await this.loadMeta(source);
-    const nextId = Math.max(meta?.next_id ?? 1, inferNextIdFromState(state));
-
-    const baseline = prepareStateSnapshot(state, workspaceId);
-    const app = new AccountingApp(state);
-    await app.ensureRequiredSystemMetadata();
-    app.importChannelCredentials(await this.loadChannelCredentials(source, workspaceId));
-    app.importPluginSecrets(await this.loadPluginSecrets(source, workspaceId));
-    return { app, nextId, baseline };
-  }
-
-  private async loadSingleton(source: Queryable, workspaceId: string, table: "organization" | "accounting_policy") {
-    const result = await source.query<{ state_json: unknown }>(
-      `select state_json from ${table} where workspace_id = $1 order by id limit 1`,
-      [workspaceId]
-    );
-    return result.rows[0] ? hydrateEntity(result.rows[0].state_json) : undefined;
-  }
-
   private async loadMeta(source: Queryable) {
     const result = await source.query<RuntimeMetaRow>(
       "select next_id, singletons from accounting_runtime_meta where key = $1",
@@ -1184,61 +1103,41 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     return result.rows[0];
   }
 
-  private async saveState(
+  private async openRepositoryBackedApp(source: Queryable, workspaceId: string) {
+    const app = await openPostgresReadModelApp(source, workspaceId);
+    app.importChannelCredentials(await this.loadChannelCredentials(source, workspaceId));
+    app.importPluginSecrets(await this.loadPluginSecrets(source, workspaceId));
+    return app;
+  }
+
+  private async saveAppSideEffects(client: PoolClient, workspaceId: string, app: AccountingApp) {
+    await this.saveSingleton(client, workspaceId, "organization", app.state.organization as unknown as RuntimeEntity | undefined);
+    await this.saveSingleton(client, workspaceId, "accounting_policy", app.state.accountingPolicy as unknown as RuntimeEntity | undefined);
+    await this.saveChannelCredentials(client, workspaceId, app.exportChannelCredentials());
+    await this.savePluginSecrets(client, workspaceId, app.state.organization?.id, app.exportPluginSecrets());
+    await this.saveMeta(client, currentIdSequence());
+  }
+
+  private async importLegacyState(
     client: PoolClient,
     workspaceId: string,
     state: AccountingState,
     credentials: ChannelCredentials,
-    nextId: number,
-    pluginSecrets: PluginSecretRecords = {},
-    baseline?: PreparedStateSnapshot
+    nextId: number
   ) {
-    const preparedState = prepareStateSnapshot(state, workspaceId);
-    const prepared = preparedState.tables;
-
-    if (!state.organization && !state.accountingPolicy) {
-      await this.saveChannelCredentials(client, workspaceId, credentials);
-      await this.savePluginSecrets(client, workspaceId, undefined, pluginSecrets);
-      for (const entry of [...prepared].reverse()) {
-        if (SNAPSHOT_APPEND_ONLY.has(entry.table.collection)) continue;
-        await deleteObsoleteRows(client, workspaceId, entry.table, [], baseline?.tablesByCollection.get(entry.table.collection)?.rows);
-      }
-      if (!baseline || baseline.accountingPolicy) await this.saveSingleton(client, workspaceId, "accounting_policy", undefined);
-      if (!baseline || baseline.organization) await this.saveSingleton(client, workspaceId, "organization", undefined);
-      await this.saveMeta(client, nextId);
-      return;
-    }
-
-    if (!state.accountingPolicy && (!baseline || baseline.accountingPolicy)) {
-      await this.saveSingleton(client, workspaceId, "accounting_policy", undefined);
-    }
-    if (!state.organization && (!baseline || baseline.organization)) {
-      await this.saveSingleton(client, workspaceId, "organization", undefined);
-    }
-    if (state.organization && (!baseline || preparedState.organizationSignature !== baseline.organizationSignature)) {
-      await this.saveSingleton(client, workspaceId, "organization", state.organization as unknown as RuntimeEntity);
-    }
-    if (state.accountingPolicy && (!baseline || preparedState.accountingPolicySignature !== baseline.accountingPolicySignature)) {
-      await this.saveSingleton(client, workspaceId, "accounting_policy", state.accountingPolicy as unknown as RuntimeEntity);
-    }
-
-    for (const entry of prepared) {
-      const baselineEntry = baseline?.tablesByCollection.get(entry.table.collection);
-      for (const row of entry.rows) {
-        const rowKey = rowKeyFromValues(entry.table.keyColumns, row);
-        const nextSignature = rowSignature(row);
-        if (baselineEntry?.signatureByKey.get(rowKey) === nextSignature) continue;
-        await upsertRow(client, entry.table.table, entry.table.keyColumns, row);
+    await this.saveSingleton(client, workspaceId, "organization", state.organization as unknown as RuntimeEntity | undefined);
+    await this.saveSingleton(client, workspaceId, "accounting_policy", state.accountingPolicy as unknown as RuntimeEntity | undefined);
+    for (const table of TABLES) {
+      for (const entity of collectionEntities(state, table.collection)) {
+        const row = {
+          ...table.serialize(entity),
+          workspace_id: workspaceIdForTable(table, workspaceId)
+        };
+        await upsertRow(client, table.table, table.keyColumns, row);
       }
     }
-
-    for (const entry of [...prepared].reverse()) {
-      if (SNAPSHOT_APPEND_ONLY.has(entry.table.collection)) continue;
-      await deleteObsoleteRows(client, workspaceId, entry.table, entry.rows, baseline?.tablesByCollection.get(entry.table.collection)?.rows);
-    }
-
     await this.saveChannelCredentials(client, workspaceId, credentials);
-    await this.savePluginSecrets(client, workspaceId, state.organization?.id, pluginSecrets);
+    await this.savePluginSecrets(client, workspaceId, state.organization?.id, {});
     await this.saveMeta(client, nextId);
   }
 
@@ -1600,7 +1499,7 @@ const externalEventTableSpec = TABLES.find((table) => table.collection === "exte
 /**
  * Postgres-реализация ExternalEventStore: события живут в таблице external_event, а НЕ в snapshot.
  * Чтение — по state_json (источник истины); запись — через тот же spec-сериализатор, что и snapshot.
- * Инжектится в сессию (read: pool, write: транзакционный client). См. SNAPSHOT_APPEND_ONLY.
+ * Инжектится в сессию (read: pool, write: транзакционный client), чтобы app не грузил общий snapshot.
  */
 export class PostgresExternalEventStore implements ExternalEventStore {
   constructor(private readonly q: Queryable, private readonly workspaceId: string) {}
@@ -1943,64 +1842,8 @@ async function upsertRow(client: Queryable, table: string, keyColumns: string[],
   );
 }
 
-async function deleteObsoleteRows(client: PoolClient, workspaceId: string, table: TableSpec, rows: RowRecord[], baselineRows?: RowRecord[]) {
-  if (GLOBAL_REFERENCE_TABLES.has(table.table)) return;
-
-  const tableWorkspaceId = workspaceIdForTable(table, workspaceId);
-  const keep = new Set(rows.map((row) => rowKeyFromValues(table.keyColumns, row)));
-  const staleRows = baselineRows
-    ? baselineRows.filter((row) => !keep.has(rowKeyFromValues(table.keyColumns, row)))
-    : (await client.query<RowRecord>(
-        `select ${table.keyColumns.join(", ")} from ${table.table} where workspace_id = $1`,
-        [tableWorkspaceId]
-      )).rows
-        .filter((row) => !keep.has(rowKeyFromValues(table.keyColumns, row)));
-
-  if (table.table === "journal_entry" && staleRows.length > 0) {
-    const staleIds = staleRows
-      .map((row) => row.id)
-      .filter((value): value is string => typeof value === "string" && value.length > 0);
-    if (staleIds.length > 0) {
-      await client.query(
-        "update journal_entry set reversal_of_entry_id = null where workspace_id = $2 and (id = any($1::uuid[]) or reversal_of_entry_id = any($1::uuid[]))",
-        [staleIds, tableWorkspaceId]
-      );
-    }
-  }
-
-  for (const row of staleRows) {
-    await client.query(
-      `delete from ${table.table} where ${table.keyColumns.map((column, index) => `${column} = $${index + 1}`).join(" and ")} and workspace_id = $${table.keyColumns.length + 1}`,
-      [...table.keyColumns.map((column) => row[column]), tableWorkspaceId]
-    );
-  }
-}
-
 function collectionEntities(state: AccountingState, collection: RuntimeCollectionName): RuntimeEntity[] {
   return state[collection] as unknown as RuntimeEntity[];
-}
-
-function prepareStateSnapshot(state: AccountingState, workspaceId: string): PreparedStateSnapshot {
-  const tables = TABLES.map((table) => {
-    const tableWorkspaceId = workspaceIdForTable(table, workspaceId);
-    const rows = collectionEntities(state, table.collection).map((entity) => ({
-      ...table.serialize(entity),
-      workspace_id: tableWorkspaceId
-    }));
-    return {
-      table,
-      rows,
-      signatureByKey: new Map(rows.map((row) => [rowKeyFromValues(table.keyColumns, row), rowSignature(row)]))
-    } satisfies PreparedTableSnapshot;
-  });
-  return {
-    organization: state.organization as unknown as RuntimeEntity | undefined,
-    accountingPolicy: state.accountingPolicy as unknown as RuntimeEntity | undefined,
-    organizationSignature: singletonSignature(state.organization as unknown as RuntimeEntity | undefined),
-    accountingPolicySignature: singletonSignature(state.accountingPolicy as unknown as RuntimeEntity | undefined),
-    tables,
-    tablesByCollection: new Map(tables.map((entry) => [entry.table.collection, entry]))
-  };
 }
 
 function workspaceIdForTable(table: TableSpec, workspaceId: string) {
@@ -2028,18 +1871,6 @@ function entityId(collection: RuntimeCollectionName, entity: RuntimeEntity): str
     return `${entity.productId}:${entity.warehouseId}`;
   }
   throw new Error(`Нельзя сохранить ${collection}: нет id/code/composite key`);
-}
-
-function rowKeyFromValues(columns: string[], row: RowRecord) {
-  return columns.map((column) => String(row[column] ?? "")).join("|");
-}
-
-function rowSignature(row: RowRecord) {
-  return JSON.stringify(row);
-}
-
-function singletonSignature(entity: RuntimeEntity | undefined) {
-  return entity ? JSON.stringify(entity) : "";
 }
 
 function entityUuid(id: string) {
