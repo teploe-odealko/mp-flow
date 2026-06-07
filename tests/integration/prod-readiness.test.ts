@@ -246,6 +246,19 @@ describe("prod-ready contracts", () => {
     const journalWorkspace = await get<any>(api, "/api/accounting/journal/workspace");
     const controlsWorkspace = await get<any>(api, "/api/controls/workspace");
     const onboardingWorkspace = await get<any>(api, "/api/onboarding/existing-store/workspace");
+    let backfillProject = app.state.backfillProjects[0];
+    if (!backfillProject) {
+      backfillProject = {
+        id: "backfill_read_project",
+        organizationId: app.state.organization?.id ?? "org_test",
+        name: "Read model project",
+        status: "draft",
+        payload: {},
+        createdAt: "2026-01-01T00:00:00.000Z"
+      };
+      await app.repos.backfillProjects.add(backfillProject);
+    }
+    const onboardingProject = await get<any>(api, `/api/onboarding/existing-store/projects/${backfillProject.id}`);
     const card = await get<any>(api, `/api/products/${product.id}/card`);
     const cardBrief = await get<any>(api, `/api/products/${product.id}/card/brief`);
     const usersResponse = await api.request("/api/users");
@@ -352,6 +365,9 @@ describe("prod-ready contracts", () => {
     expect(onboardingWorkspace.products).toEqual(expect.any(Array));
     expect(onboardingWorkspace.warehouses).toEqual(expect.any(Array));
     expect(onboardingWorkspace.backfillProjects).toEqual(expect.any(Array));
+    expect(onboardingProject.project.id).toBe(backfillProject.id);
+    expect(onboardingProject.items).toEqual(expect.any(Array));
+    expect(onboardingProject.summary.totalItems).toBe(onboardingProject.items.length);
     expect(card.product.id).toBe(product.id);
     expect(cardBrief.product.id).toBe(product.id);
     expect(cardBrief.generationRequirements).toBeTruthy();

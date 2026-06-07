@@ -213,6 +213,11 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   `src/backend/services/procurement-preview-service.ts` через `RuntimeReadContext`. POST preview больше
   не открывает write session ради чистого расчёта; prod-readiness сравнивает DTO с прежним
   `AccountingApp.previewGoodsReceipt`.
+- ✅ `GET /api/onboarding/existing-store/projects/:id` снят с session middleware и скрытого write side
+  effect: `src/backend/services/onboarding-project-service.ts` строит read-only DTO проекта, items и
+  summary через `RuntimeReadContext`, клонируя вычисленные статусы/payload без `upsert`. Write/control
+  endpoints онбординга (`import`, `match-products`, `patch item`, `review`, `create-opening-balances`)
+  остаются в session-зоне до следующего транзакционного слоя.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,

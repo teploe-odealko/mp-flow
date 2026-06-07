@@ -19,6 +19,7 @@ import { initHttpMetrics, metricsMiddleware, renderMetrics } from "./metrics";
 import { captureException } from "./observability";
 import { getPool } from "./db/pool";
 import { ExternalEventRepository } from "./repositories/external-event-repository";
+import { onboardingProjectDetailsFor } from "./services/onboarding-project-service";
 import { defaultReceiptPreviewFor, receiptPreviewFor } from "./services/procurement-preview-service";
 import {
   goodsReceiptRollbackPreviewFor,
@@ -1618,6 +1619,9 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = receiptPreviewSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await receiptPreviewFor(await readContextFor(c), { ...body, purchaseOrderId: c.req.param("id") }) });
   });
+  api.get("/api/onboarding/existing-store/projects/:id", async (c) => {
+    return c.json({ ok: true, data: await onboardingProjectDetailsFor(await readContextFor(c), c.req.param("id")) });
+  });
 
   api.use("/api/*", async (c, next) => {
     const authUser = c.get("authUser") as PublicAuthUser | undefined;
@@ -2631,17 +2635,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     };
     await scopedApp.repos.backfillProjects.add(project);
     return c.json({ ok: true, data: project });
-  });
-  api.get("/api/onboarding/existing-store/projects/:id", async (c) => {
-    const project = await scopedApp.repos.backfillProjects.getById(c.req.param("id"));
-    if (!project) throw new DomainError("backfill_project_not_found", "Проект импорта не найден");
-    const items = await Promise.all((await scopedApp.repos.backfillItems.all())
-      .filter((item) => item.backfillProjectId === project.id)
-      .map((item) => evaluateBackfillItem(scopedApp, item)));
-    await syncBackfillProjectStatus(scopedApp, project);
-    await scopedApp.repos.backfillProjects.upsert(project);
-    for (const item of items) await scopedApp.repos.backfillItems.upsert(item);
-    return c.json({ ok: true, data: { project, items, summary: await buildBackfillSummary(scopedApp, project.id) } });
   });
   api.post("/api/onboarding/existing-store/projects/:id/import", async (c) => {
     const body = backfillImportSchema.parse(await c.req.json().catch(() => ({})));
