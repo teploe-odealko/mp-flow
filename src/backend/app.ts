@@ -6,13 +6,14 @@ import { z } from "zod";
 import { AccountingApp } from "../core/accounting-app";
 import type { AgentToken, ChannelFinanceEvent, ChannelStreamCode, ExternalEvent, Payout, Sale, SalesChannel, SalesReturn, SyncRun } from "../core/models";
 import { DomainError, id, nowIso, runWithIdSequence } from "../core/utils";
-import { openPostgresReadModelApp, readRuntimeCollection, readRuntimeDashboard, readRuntimeLedgerBalances, readRuntimeReports, readRuntimeReportWorkspace, type RuntimePersistence } from "../infra/db/runtime-store";
+import { openPostgresReadModelApp, readRuntimeCollection, readRuntimeDashboard, readRuntimeLedgerBalances, readRuntimeReports, readRuntimeReportWorkspace, readRuntimeProductWorkspace, type RuntimePersistence } from "../infra/db/runtime-store";
 import { pluginRegistry } from "../plugins/registry";
 import { createPluginSecretApi, createPluginStateApi, pluginStateKey } from "../plugins/runtime";
 import { buildMediaKey, createPresignedUpload, headObject, isAllowedImageType, isStorageConfigured } from "../infra/storage/s3";
 import { getCardStudioGenerationRequirements, getCardStudioPlaybook } from "./card-studio";
 import { classifyChannelFinancePayload } from "../shared/channel-finance";
 import { buildReportsWorkspacePayload, type ReportsWorkspaceInput, type ReportsWorkspaceOptions } from "../shared/reports-workspace";
+import { buildProductCardWorkspacePayload } from "../shared/product-card-workspace";
 import { AuthService, createAuthMiddleware, ensureAppUser, publicUser } from "./auth";
 import { initHttpMetrics, metricsMiddleware, renderMetrics } from "./metrics";
 import { captureException } from "./observability";
@@ -227,6 +228,39 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (postgresBacked()) return await readRuntimeReportWorkspace(getPool(), workspaceId, reportOptions);
     return buildReportsWorkspacePayload(await reportsWorkspaceInputFor(await readModelAppFor(c)), reportOptions);
   };
+  const productWorkspaceFor = async (c: Context, productId: string): Promise<any> => {
+    const workspaceId = eventsWorkspaceId(c);
+    const payload = options.persistence?.readProductWorkspace
+      ? await options.persistence.readProductWorkspace(workspaceId, productId)
+      : postgresBacked()
+        ? await readRuntimeProductWorkspace(getPool(), workspaceId, productId)
+        : undefined;
+    if (payload) {
+      if (!(payload as { product?: unknown }).product) throw new DomainError("product_not_found", "Товар не найден");
+      return payload;
+    }
+
+    const readModelApp = await readModelAppFor(c);
+    const product = await readModelApp.repos.products.getById(productId);
+    if (!product) throw new DomainError("product_not_found", "Товар не найден");
+    return buildProductCardWorkspacePayload({
+      accountingPolicy: readModelApp.state.accountingPolicy,
+      products: [product],
+      warehouses: await readModelApp.repos.warehouses.all(),
+      documents: await readModelApp.repos.documents.all(),
+      journalEntries: await readModelApp.repos.journalEntries.all(),
+      costApplications: await readModelApp.repos.costApplications.all(),
+      externalProducts: await readModelApp.repos.externalProducts.all(),
+      productExternalLinks: await readModelApp.repos.productExternalLinks.all(),
+      salesChannels: await readModelApp.repos.salesChannels.all(),
+      inventoryLots: await readModelApp.repos.inventoryLots.all(),
+      stockMovements: await readModelApp.repos.stockMovements.all(),
+      stockStates: await readModelApp.repos.stockStates.all(),
+      purchaseOrders: await readModelApp.repos.purchaseOrders.all(),
+      purchaseOrderLines: await readModelApp.repos.purchaseOrderLines.all(),
+      externalEvents: await readModelApp.externalEvents.list()
+    }, productId);
+  };
   const ledgerBalancesFor = async (c: Context): Promise<Record<string, { debit: number; credit: number }>> => {
     const workspaceId = eventsWorkspaceId(c);
     if (options.persistence?.readLedgerBalances) return await options.persistence.readLedgerBalances(workspaceId);
@@ -440,6 +474,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       channels: await collectionFor(c, "salesChannels")
     }
   }));
+  api.get("/api/products/:id/workspace", async (c) => c.json({ ok: true, data: await productWorkspaceFor(c, c.req.param("id")) }));
   api.get("/api/products/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).productDetails(c.req.param("id")) }));
   api.get("/api/products/:id/lots", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).productDetails(c.req.param("id"))).lots }));
   api.get("/api/products/:id/stock-movements", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).productDetails(c.req.param("id"))).movements }));

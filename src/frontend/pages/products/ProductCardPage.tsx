@@ -9,8 +9,7 @@ import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ProductCell, ProductThumb } from "@/components/product-thumb";
-import { useCollection } from "@/lib/use-collection";
+import { ProductThumb } from "@/components/product-thumb";
 import { apiDelete, apiGet } from "@/api";
 import { date, qty, rub } from "@/lib/format";
 import { documentStatusLabel, documentStatusTone, movementTypeLabel, stockStateLabel, warehouseTypeLabel } from "@/lib/i18n";
@@ -18,54 +17,58 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { PhotoStudioPanel } from "./PhotoStudioPanel";
 
+interface ProductCardWorkspace {
+  product?: any;
+  warehouses: any[];
+  documents: any[];
+  journalEntries: any[];
+  costApplications: any[];
+  externalProducts: any[];
+  externalLinks: any[];
+  salesChannels: any[];
+  lots: any[];
+  movements: any[];
+  balances: any[];
+  accountingPolicy?: any;
+  unresolvedExternalEvents: any[];
+}
+
 export function ProductCardPage() {
   const { id } = useParams();
   const location = useLocation();
-  const state = { products: useCollection<any[]>("products") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [], documents: useCollection<any[]>("documents") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], costApplications: useCollection<any[]>("costApplications") ?? [], externalProducts: useCollection<any[]>("externalProducts") ?? [], productExternalLinks: useCollection<any[]>("productExternalLinks") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], stockMovements: useCollection<any[]>("stockMovements") ?? [], stockStates: useCollection<any[]>("stockStates") ?? [], accountingPolicy: useCollection<any>("accountingPolicy") };
-  const product = (state.products ?? []).find((candidate: any) => candidate.id === id);
-  if (!product) return null;
-
-  const warehouses = state.warehouses ?? [];
-  const documents = state.documents ?? [];
-  const journalEntries = state.journalEntries ?? [];
-  const costApplications = state.costApplications ?? [];
-  const externalProducts = state.externalProducts ?? [];
-  const externalLinks = state.productExternalLinks ?? [];
-  const salesChannels = state.salesChannels ?? [];
-  const eventsQuery = useQuery({ queryKey: ["events"], queryFn: () => apiGet<any[]>("/api/integrations/events") });
-  const externalEvents = eventsQuery.data ?? [];
   const queryClient = useQueryClient();
+  const productId = id ?? "";
+  const workspaceQuery = useQuery<ProductCardWorkspace>({
+    queryKey: ["product-card-workspace", productId],
+    queryFn: () => apiGet<ProductCardWorkspace>(`/api/products/${encodeURIComponent(productId)}/workspace`),
+    enabled: Boolean(productId)
+  });
+  const workspace = workspaceQuery.data;
+  const product = workspace?.product;
+  const warehouses = workspace?.warehouses ?? [];
+  const documents = workspace?.documents ?? [];
+  const journalEntries = workspace?.journalEntries ?? [];
+  const costApplications = workspace?.costApplications ?? [];
+  const externalProducts = workspace?.externalProducts ?? [];
+  const externalLinks = workspace?.externalLinks ?? [];
+  const salesChannels = workspace?.salesChannels ?? [];
+  const lots = workspace?.lots ?? [];
+  const movements = workspace?.movements ?? [];
+  const balances = workspace?.balances ?? [];
+  const unresolvedExternalEvents = workspace?.unresolvedExternalEvents ?? [];
 
-  const lots = useMemo(
-    () => (state.inventoryLots ?? []).filter((lot: any) => lot.productId === id),
-    [id, state.inventoryLots]
-  );
   const hasOpenLots = useMemo(() => lots.some((lot: any) => Number(lot.qtyRemaining ?? 0) > 0), [lots]);
-  const movements = useMemo(
-    () => (state.stockMovements ?? []).filter((movement: any) => movement.productId === id),
-    [id, state.stockMovements]
-  );
-  const balances = useMemo(
-    () => (state.stockStates ?? []).filter((stock: any) => stock.productId === id),
-    [id, state.stockStates]
-  );
-  const relatedDocuments = useMemo(() => {
-    const ids = new Set<string>();
-    lots.forEach((lot: any) => lot.sourceDocumentId && ids.add(lot.sourceDocumentId));
-    movements.forEach((movement: any) => movement.documentId && ids.add(movement.documentId));
-    return documents.filter((document: any) => ids.has(document.id));
-  }, [documents, lots, movements]);
+  const relatedDocuments = documents;
   const channelLinkRows = useMemo(() => {
     return externalLinks
-      .filter((link: any) => link.productId === id && link.status === "active")
+      .filter((link: any) => link.productId === productId && link.status === "active")
       .map((link: any) => {
         const external = externalProducts.find((candidate: any) => candidate.id === link.externalProductId);
         const channel = salesChannels.find((candidate: any) => candidate.id === link.channelId);
         return { link, external, channel };
       })
       .filter((row) => row.external);
-  }, [externalLinks, externalProducts, id, salesChannels]);
-  const unresolvedExternalEvents = externalEvents.filter((event: any) => event.productId === id && event.status !== "processed" && event.status !== "ignored");
+  }, [externalLinks, externalProducts, productId, salesChannels]);
 
   const [tab, setTab] = useState(location.pathname.endsWith("/lots") ? "lots" : "overview");
 
@@ -77,7 +80,7 @@ export function ProductCardPage() {
   const [lotDateTo, setLotDateTo] = useState("");
   const [openLotsOnly, setOpenLotsOnly] = useState(true);
 
-  const [movementDateFrom, setMovementDateFrom] = useState(state.accountingPolicy?.accountingStartDate ?? "");
+  const [movementDateFrom, setMovementDateFrom] = useState<string | undefined>(undefined);
   const [movementDateTo, setMovementDateTo] = useState("");
   const [movementWarehouse, setMovementWarehouse] = useState("");
   const [movementState, setMovementState] = useState("");
@@ -86,6 +89,7 @@ export function ProductCardPage() {
 
   const [selectedLotId, setSelectedLotId] = useState<string | null>(null);
   const [selectedMovementId, setSelectedMovementId] = useState<string | null>(null);
+  const effectiveMovementDateFrom = movementDateFrom ?? workspace?.accountingPolicy?.accountingStartDate ?? "";
 
   const lotRows = useMemo(() => {
     return lots
@@ -149,7 +153,7 @@ export function ProductCardPage() {
         return { movement, warehouse, document, lot, balanceAfter: nextBalance };
       })
       .filter((row) => {
-        if (movementDateFrom && row.movement.occurredAt < movementDateFrom) return false;
+        if (effectiveMovementDateFrom && row.movement.occurredAt < effectiveMovementDateFrom) return false;
         if (movementDateTo && row.movement.occurredAt > movementDateTo) return false;
         if (movementWarehouse && row.movement.warehouseId !== movementWarehouse) return false;
         if (movementState && (row.movement.stockStateCode ?? "sellable") !== movementState) return false;
@@ -160,7 +164,7 @@ export function ProductCardPage() {
   }, [
     documents,
     lots,
-    movementDateFrom,
+    effectiveMovementDateFrom,
     movementDateTo,
     movementDocumentType,
     movementState,
@@ -174,13 +178,42 @@ export function ProductCardPage() {
   const selectedMovement = movementRows.find((row) => row.movement.id === selectedMovementId) ?? movementRows.at(-1);
   const unlinkExternalLink = useMutation({
     mutationFn: (payload: { productId: string; linkId: string }) => apiDelete(`/api/products/${payload.productId}/external-links/${payload.linkId}`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: (_result, payload) => {
+      void queryClient.invalidateQueries({ queryKey: ["product-card-workspace", payload.productId] });
+      void queryClient.invalidateQueries({ queryKey: ["product-card", payload.productId] });
+    }
   });
 
   const totalQty = balances.reduce((sum: number, stock: any) => sum + Number(stock.qty ?? 0), 0);
   const totalCostRub = balances.reduce((sum: number, stock: any) => sum + Number(stock.costRub ?? 0), 0);
   const averageCostRub = totalQty > 0 ? totalCostRub / totalQty : 0;
   const warehousesWithBalance = new Set(balances.filter((stock: any) => Number(stock.qty ?? 0) > 0).map((stock: any) => stock.warehouseId)).size;
+
+  if (!productId || workspaceQuery.isLoading) {
+    return (
+      <div className="flex flex-col gap-5">
+        <PageHeader breadcrumbs={[{ label: "Товары", to: "/products" }]} title="Карточка товара" />
+        <Card>
+          <CardContent className="py-10">
+            <EmptyState icon={<Package size={20} />} title="Загружаем карточку товара..." />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!product) {
+    return (
+      <div className="flex flex-col gap-5">
+        <PageHeader breadcrumbs={[{ label: "Товары", to: "/products" }]} title="Товар не найден" />
+        <Card>
+          <CardContent className="py-10">
+            <EmptyState icon={<Package size={20} />} title="Товар не найден" />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -192,7 +225,7 @@ export function ProductCardPage() {
         actions={
           <div className="flex gap-2 specActions">
             <Button variant="ghost" asChild><Link to="/products"><ArrowLeft size={14} /> К списку</Link></Button>
-            <Button variant="secondary" asChild><Link to={`/products/${id}/edit`}><Pencil size={14} /> Редактировать</Link></Button>
+            <Button variant="secondary" asChild><Link to={`/products/${product.id}/edit`}><Pencil size={14} /> Редактировать</Link></Button>
           </div>
         }
       />
@@ -424,7 +457,7 @@ export function ProductCardPage() {
               <Card className="renderPanel">
                 <CardContent className="p-0">
                   <div className="flex flex-wrap items-center gap-2 p-3 border-b border-[var(--color-border)]">
-                    <Input type="date" value={movementDateFrom} onChange={(event) => setMovementDateFrom(event.target.value)} className="w-40" aria-label="Период от" />
+                    <Input type="date" value={effectiveMovementDateFrom} onChange={(event) => setMovementDateFrom(event.target.value)} className="w-40" aria-label="Период от" />
                     <Input type="date" value={movementDateTo} onChange={(event) => setMovementDateTo(event.target.value)} className="w-40" aria-label="Период до" />
                     <Select value={movementWarehouse} onChange={(event) => setMovementWarehouse(event.target.value)} className="w-44">
                       <option value="">Все склады</option>

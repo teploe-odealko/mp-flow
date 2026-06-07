@@ -9,6 +9,7 @@ import type { SyncRunStore } from "../../core/sync-run-store";
 import type { CollectionRepo, Repositories } from "../../core/repositories";
 import { createEmptyState, currentIdSequence, restoreIdSequence, round2 } from "../../core/utils";
 import { buildReportsWorkspacePayload, type ReportsWorkspaceOptions } from "../../shared/reports-workspace";
+import { buildProductCardWorkspacePayload } from "../../shared/product-card-workspace";
 import { stableUuid } from "./ids";
 import {
   ACCOUNTING_POLICY_JOINS,
@@ -278,6 +279,7 @@ export interface RuntimePersistence {
   readDashboard?(workspaceId?: string): Promise<unknown>;
   readReports?(workspaceId?: string): Promise<unknown>;
   readReportWorkspace?(workspaceId: string | undefined, options: ReportsWorkspaceOptions): Promise<unknown>;
+  readProductWorkspace?(workspaceId: string | undefined, productId: string): Promise<unknown>;
   readLedgerBalances?(workspaceId?: string): Promise<RuntimeLedgerBalances>;
   openReadModelApp?(workspaceId?: string): Promise<AccountingApp>;
   openReadSession?(workspaceId?: string): Promise<RuntimeSession>;
@@ -1900,6 +1902,11 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     return await readRuntimeReportWorkspace(this.pool, normalizeWorkspaceId(workspaceId), options);
   }
 
+  async readProductWorkspace(workspaceId: string | undefined, productId: string): Promise<unknown> {
+    await this.init();
+    return await readRuntimeProductWorkspace(this.pool, normalizeWorkspaceId(workspaceId), productId);
+  }
+
   async readLedgerBalances(workspaceId = DEFAULT_WORKSPACE_ID): Promise<RuntimeLedgerBalances> {
     await this.init();
     return await readRuntimeLedgerBalances(this.pool, normalizeWorkspaceId(workspaceId));
@@ -2723,9 +2730,140 @@ export async function readRuntimeReportWorkspace(source: Queryable, workspaceId:
   }, options);
 }
 
+export async function readRuntimeProductWorkspace(source: Queryable, workspaceId: string | undefined, productId: string) {
+  const scope = normalizeWorkspaceId(workspaceId);
+  const productRows = await readRuntimeRows<RuntimeEntity>(source, scope, "products", "product.public_id = $2", [productId], "limit 1");
+  const product = productRows[0];
+  const productUuid = entityUuid(productId);
+  const [
+    accountingPolicy,
+    inventoryLots,
+    stockMovements,
+    stockStates,
+    costApplications,
+    productExternalLinks,
+    purchaseOrderLines,
+    externalEvents
+  ] = await Promise.all([
+    readRuntimeSingleton(source, scope, "accounting_policy"),
+    readRuntimeRows<RuntimeEntity>(source, scope, "inventoryLots", "inventory_lot.product_id = $2", [productUuid]),
+    readRuntimeRows<RuntimeEntity>(source, scope, "stockMovements", "stock_movement.product_id = $2", [productUuid]),
+    readRuntimeRows<RuntimeEntity>(source, scope, "stockStates", "stock_state.product_id = $2", [productUuid]),
+    readRuntimeRows<RuntimeEntity>(source, scope, "costApplications", "cost_application.product_id = $2", [productUuid]),
+    readRuntimeRows<RuntimeEntity>(source, scope, "productExternalLinks", "product_external_link.product_id = $2", [productUuid]),
+    readRuntimeRows<RuntimeEntity>(source, scope, "purchaseOrderLines", "purchase_order_line.product_id = $2", [productUuid]),
+    readRuntimeRows<RuntimeEntity>(
+      source,
+      scope,
+      "externalEvents",
+      "external_event.product_id = $2 and external_event.status not in ('processed', 'ignored')",
+      [productUuid]
+    )
+  ]);
+  const purchaseOrders = await readRuntimeRowsByPublicIds<RuntimeEntity>(
+    source,
+    scope,
+    "purchaseOrders",
+    purchaseOrderLines.map((line) => String(line.purchaseOrderId ?? ""))
+  );
+  const documentIds = [
+    ...inventoryLots.map((lot) => String(lot.sourceDocumentId ?? "")),
+    ...stockMovements.map((movement) => String(movement.documentId ?? "")),
+    ...costApplications.flatMap((application) => [String(application.sourceDocumentId ?? ""), String(application.outboundDocumentId ?? "")]),
+    ...purchaseOrders.map((order) => String(order.documentId ?? ""))
+  ];
+  const documents = await readRuntimeRowsByPublicIds<RuntimeEntity>(source, scope, "documents", documentIds);
+  const journalEntries = await readRuntimeRowsByForeignPublicIds<RuntimeEntity>(
+    source,
+    scope,
+    "journalEntries",
+    "journal_entry.document_id",
+    documents.map((document) => String(document.id ?? ""))
+  );
+  const warehouses = await readRuntimeRowsByPublicIds<RuntimeEntity>(
+    source,
+    scope,
+    "warehouses",
+    [
+      ...inventoryLots.map((lot) => String(lot.warehouseId ?? "")),
+      ...stockMovements.map((movement) => String(movement.warehouseId ?? "")),
+      ...stockStates.map((stock) => String(stock.warehouseId ?? ""))
+    ]
+  );
+  const externalProducts = await readRuntimeRowsByPublicIds<RuntimeEntity>(
+    source,
+    scope,
+    "externalProducts",
+    productExternalLinks.map((link) => String(link.externalProductId ?? ""))
+  );
+  const salesChannels = await readRuntimeRowsByPublicIds<RuntimeEntity>(
+    source,
+    scope,
+    "salesChannels",
+    productExternalLinks.map((link) => String(link.channelId ?? ""))
+  );
+
+  return buildProductCardWorkspacePayload({
+    accountingPolicy: accountingPolicy as RuntimeEntity | undefined,
+    products: product ? [product] : [],
+    warehouses,
+    documents,
+    journalEntries,
+    costApplications,
+    externalProducts,
+    productExternalLinks,
+    salesChannels,
+    inventoryLots,
+    stockMovements,
+    stockStates,
+    purchaseOrders,
+    purchaseOrderLines,
+    externalEvents
+  }, productId);
+}
+
 async function readCollectionData<T extends RuntimeEntity>(source: Queryable, workspaceId: string, name: RuntimeCollectionName): Promise<T[]> {
   const result = await readRuntimeCollection(source, workspaceId, name);
   return (result.data ?? []) as T[];
+}
+
+async function readRuntimeRows<T extends RuntimeEntity>(
+  source: Queryable,
+  workspaceId: string,
+  name: RuntimeCollectionName,
+  whereSql: string,
+  params: unknown[],
+  suffix = ""
+): Promise<T[]> {
+  const table = tableForCollection(name);
+  const result = await source.query<RowRecord>(
+    tableReadSql(table, `${table.table}.workspace_id = $1 and ${whereSql}`, suffix),
+    [workspaceIdForTable(table, workspaceId), ...params]
+  );
+  return result.rows.map((row) => hydrateTableRow(table, row) as T);
+}
+
+async function readRuntimeRowsByPublicIds<T extends RuntimeEntity>(
+  source: Queryable,
+  workspaceId: string,
+  name: RuntimeCollectionName,
+  publicIds: string[]
+): Promise<T[]> {
+  const ids = uniqueNonEmpty(publicIds);
+  if (ids.length === 0) return [];
+  return await readRuntimeRows<T>(source, workspaceId, name, `${tableForCollection(name).table}.public_id = any($2::text[])`, [ids]);
+}
+
+async function readRuntimeRowsByForeignPublicIds<T extends RuntimeEntity>(
+  source: Queryable,
+  workspaceId: string,
+  name: RuntimeCollectionName,
+  foreignColumn: string,
+  publicIds: string[]
+): Promise<T[]> {
+  const ids = uniqueNonEmpty(publicIds).map(entityUuid);
+  if (ids.length === 0) return [];
+  return await readRuntimeRows<T>(source, workspaceId, name, `${foreignColumn} = any($2::uuid[])`, [ids]);
 }
 
 function debitBalance(balance?: { debit: number; credit: number }): number {
@@ -2907,6 +3045,12 @@ function tableReadSql(table: TableSpec, whereSql: string, suffix = "") {
   return `select ${select} from ${table.table}${joins} where ${whereSql}${orderBy}${suffix ? ` ${suffix}` : ""}`;
 }
 
+function tableForCollection(name: RuntimeCollectionName): TableSpec {
+  const table = TABLES.find((candidate) => candidate.collection === name);
+  if (!table) throw new Error(`Unknown runtime collection ${name}`);
+  return table;
+}
+
 function hydrateTableRow(table: TableSpec, row: RowRecord): RuntimeEntity {
   if (!table.hydrate) {
     throw new Error(`Runtime table ${table.collection} must declare typed hydrate; state_json fallback is disabled`);
@@ -2969,6 +3113,10 @@ function entityUuid(id: string) {
 
 function optionalUuid(value: unknown) {
   return typeof value === "string" && value.length > 0 ? stableUuid(value) : null;
+}
+
+function uniqueNonEmpty(values: string[]) {
+  return [...new Set(values.filter((value) => value.length > 0))];
 }
 
 function normalizeWorkspaceId(workspaceId: string | undefined) {

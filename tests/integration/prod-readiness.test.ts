@@ -3,6 +3,7 @@ import { createApi } from "../../src/backend/app";
 import { AccountingApp } from "../../src/core/accounting-app";
 import { resetIds } from "../../src/core/utils";
 import { buildReportsWorkspacePayload } from "../../src/shared/reports-workspace";
+import { buildProductCardWorkspacePayload } from "../../src/shared/product-card-workspace";
 
 async function request<T>(api: ReturnType<typeof createApi>, method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
   const response = await api.request(path, {
@@ -109,6 +110,7 @@ describe("prod-ready contracts", () => {
     let collectionReads = 0;
     let dashboardReads = 0;
     let reportWorkspaceReads = 0;
+    let productWorkspaceReads = 0;
     let readModelApps = 0;
     let readSessions = 0;
     const api = createApi(app, {
@@ -139,6 +141,26 @@ describe("prod-ready contracts", () => {
             sales: app.state.sales,
             salesChannels: app.state.salesChannels
           }, options);
+        },
+        async readProductWorkspace(_workspaceId, productId) {
+          productWorkspaceReads += 1;
+          return buildProductCardWorkspacePayload({
+            accountingPolicy: app.state.accountingPolicy,
+            products: app.state.products,
+            warehouses: app.state.warehouses,
+            documents: app.state.documents,
+            journalEntries: app.state.journalEntries,
+            costApplications: app.state.costApplications,
+            externalProducts: app.state.externalProducts,
+            productExternalLinks: app.state.productExternalLinks,
+            salesChannels: app.state.salesChannels,
+            inventoryLots: app.state.inventoryLots,
+            stockMovements: app.state.stockMovements,
+            stockStates: app.state.stockStates,
+            purchaseOrders: app.state.purchaseOrders,
+            purchaseOrderLines: app.state.purchaseOrderLines,
+            externalEvents: app.state.externalEvents
+          }, productId);
         },
         async openReadModelApp() {
           readModelApps += 1;
@@ -195,6 +217,7 @@ describe("prod-ready contracts", () => {
     const corrections = await get<any>(api, "/api/controls/corrections");
     const recalculationJobs = await get<any[]>(api, "/api/recalculation-jobs");
     const mcpConfig = await get<any>(api, "/api/mcp/config");
+    const productWorkspace = await get<any>(api, `/api/products/${product.id}/workspace`);
     const card = await get<any>(api, `/api/products/${product.id}/card`);
     const cardBrief = await get<any>(api, `/api/products/${product.id}/card/brief`);
     const usersResponse = await api.request("/api/users");
@@ -235,6 +258,8 @@ describe("prod-ready contracts", () => {
     expect(corrections.corrections).toEqual(expect.any(Array));
     expect(recalculationJobs).toEqual(expect.any(Array));
     expect(mcpConfig.tools.length).toBeGreaterThan(0);
+    expect(productWorkspace.product.id).toBe(product.id);
+    expect(productWorkspace.lots).toEqual(expect.any(Array));
     expect(card.product.id).toBe(product.id);
     expect(cardBrief.product.id).toBe(product.id);
     expect(cardBrief.generationRequirements).toBeTruthy();
@@ -244,6 +269,7 @@ describe("prod-ready contracts", () => {
     expect(collectionReads).toBe(1);
     expect(dashboardReads).toBe(1);
     expect(reportWorkspaceReads).toBe(1);
+    expect(productWorkspaceReads).toBe(1);
     expect(readModelApps).toBeGreaterThan(6);
     expect(readSessions).toBe(0);
   });
