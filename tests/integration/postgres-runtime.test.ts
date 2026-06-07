@@ -144,6 +144,14 @@ describePostgres("postgres runtime store", () => {
       externalSku: "PG-OBS-001",
       externalName: "Postgres observed product"
     });
+    const externalEvent = await request<any>(api, "POST", `/api/channels/${channel.id}/external-events`, {
+      eventType: "sale",
+      externalId: "pg-event-service-1",
+      occurredAt: "2026-01-18T09:00:00.000Z",
+      payload: { sku: "PG-NOT-MAPPED", amountRub: 999 }
+    });
+    const ignoredExternalEvent = await request<any>(api, "POST", `/api/integrations/events/${externalEvent.id}/ignore`, { reason: "PG ignore" });
+    const reprocessedExternalEvent = await request<any>(api, "POST", `/api/integrations/events/${externalEvent.id}/reprocess`);
     const observedStock = await request<any>(api, "POST", `/api/channels/${channel.id}/observed-stock`, {
       externalProductId: observedExternalProduct.id,
       observedAt: "2026-01-18T10:00:00.000Z",
@@ -221,6 +229,15 @@ describePostgres("postgres runtime store", () => {
         `,
         [channelPermission.id]
       );
+      const externalEventRows = await inspectPool.query<{ channel_id: string; external_id: string; status: string; reason: string | null }>(
+        `
+          select sales_channel.public_id as channel_id, external_event.external_id, external_event.status, external_event.reason
+          from external_event
+          join sales_channel on sales_channel.id = external_event.channel_id
+          where external_event.public_id = $1
+        `,
+        [externalEvent.id]
+      );
       const observedStockRows = await inspectPool.query<{ channel_id: string; external_product_id: string; qty_observed: number; location_status: string }>(
         `
           select sales_channel.public_id as channel_id,
@@ -297,6 +314,10 @@ describePostgres("postgres runtime store", () => {
       expect(agentTokenRows.rows[0]).toEqual(expect.objectContaining({ name: "PG access agent", mode: "read_write", status: "revoked", scopes: ["channels:sync"] }));
       expect(agentTokenRows.rows[0]?.revoked_at).toBeTruthy();
       expect(channelPermissionRows.rows[0]).toEqual({ agent_token_id: accessToken.id, channel_id: channel.id, permission_code: "sync:write" });
+      expect(externalEvent).toEqual(expect.objectContaining({ externalId: "pg-event-service-1", status: "needs_mapping", reason: "Нет сопоставления товара для SKU: PG-NOT-MAPPED" }));
+      expect(ignoredExternalEvent).toEqual(expect.objectContaining({ id: externalEvent.id, status: "ignored", reason: "PG ignore" }));
+      expect(reprocessedExternalEvent).toEqual(expect.objectContaining({ id: externalEvent.id, status: "needs_mapping", reason: "Нет сопоставления товара для SKU: PG-NOT-MAPPED" }));
+      expect(externalEventRows.rows[0]).toEqual({ channel_id: channel.id, external_id: "pg-event-service-1", status: "needs_mapping", reason: "Нет сопоставления товара для SKU: PG-NOT-MAPPED" });
       expect(observedStock).toEqual(expect.objectContaining({ externalProductId: observedExternalProduct.id, qtyObserved: 5, locationStatus: "mapped" }));
       expect(updatedObservedStock).toEqual(expect.objectContaining({ id: observedStock.id, qtyObserved: 7, locationStatus: "mapped" }));
       expect(ignoredObservedStock).toEqual(expect.objectContaining({ id: observedStock.id, qtyObserved: 7, locationStatus: "needs_location" }));

@@ -21,6 +21,7 @@ import { getPool } from "./db/pool";
 import { ExternalEventRepository } from "./repositories/external-event-repository";
 import { disableUser, inviteUser, resendUserInvite, updateUserRole } from "./services/access-management-service";
 import { hashToken, issueMcpAgentToken, publicAgentToken, revokeAgentToken, setChannelAgentPermission } from "./services/agent-token-service";
+import { ignoreExternalEvent, ingestExternalEvent, reprocessExternalEvent } from "./services/external-event-service";
 import { ignoreObservedStock, recordObservedStock } from "./services/observed-stock-service";
 import { onboardingProjectDetailsFor } from "./services/onboarding-project-service";
 import { updateOrganization } from "./services/organization-service";
@@ -1360,6 +1361,17 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (!run) throw new DomainError("sync_run_not_found", "Запуск синхронизации не найден");
     return c.json({ ok: true, data: run });
   });
+  api.post("/api/channels/:id/external-events", async (c) => {
+    const body = externalEventSchema.parse(await c.req.json());
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => ingestExternalEvent(writeContext, { ...body, channelId: c.req.param("id") })) });
+  });
+  api.post("/api/integrations/events/:id/reprocess", async (c) => {
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => reprocessExternalEvent(writeContext, c.req.param("id"))) });
+  });
+  api.post("/api/integrations/events/:id/ignore", async (c) => {
+    const body = externalEventIgnoreSchema.parse(await c.req.json().catch(() => ({})));
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => ignoreExternalEvent(writeContext, c.req.param("id"), body.reason)) });
+  });
   api.get("/api/integrations/observed-stock", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).observedStocks.list() }));
   api.post("/api/channels/:id/observed-stock", async (c) => {
     const body = observedStockSchema.parse(await c.req.json());
@@ -2517,17 +2529,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       .filter((event) => JSON.stringify(event.rawPayload).includes(externalProduct.externalSku));
     for (const event of events) await scopedApp.reprocessExternalEvent(event.id);
     return c.json({ ok: true, data: events });
-  });
-  api.post("/api/channels/:id/external-events", async (c) => {
-    const body = externalEventSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: await scopedApp.ingestExternalEvent({ ...body, channelId: c.req.param("id") }) });
-  });
-  api.post("/api/integrations/events/:id/reprocess", async (c) => {
-    return c.json({ ok: true, data: await scopedApp.reprocessExternalEvent(c.req.param("id")) });
-  });
-  api.post("/api/integrations/events/:id/ignore", async (c) => {
-    const body = z.object({ reason: z.string().min(3) }).parse(await c.req.json().catch(() => ({})));
-    return c.json({ ok: true, data: await scopedApp.ignoreExternalEvent(c.req.param("id"), body.reason) });
   });
   api.post("/api/sales", async (c) => {
     const body = saleSchema.parse(await c.req.json());
@@ -3977,6 +3978,7 @@ const pluginSyncSchema = z.object({
 });
 const externalProductSchema = z.object({ externalSku: z.string(), externalName: z.string(), imageUrl: z.string().optional() });
 const externalEventSchema = z.object({ eventType: z.enum(["sale", "sale_accrual", "return", "fee", "payout", "stock", "product"]), externalId: z.string(), occurredAt: z.string(), payload: z.record(z.string(), z.unknown()) });
+const externalEventIgnoreSchema = z.object({ reason: z.string().min(3) });
 const observedStockSchema = z.object({ externalProductId: z.string(), observedAt: z.string(), qtyObserved: z.number() });
 const saleSchema = z.object({
   channelId: z.string(),

@@ -632,6 +632,48 @@ describe("prod-ready contracts", () => {
     expect(writeSessions).toBe(0);
   });
 
+  it("serves external event control writes before snapshot sessions", async () => {
+    resetIds();
+    const app = new AccountingApp();
+    await app.setupDemo();
+    const channel = app.state.salesChannels[0];
+    let writeContexts = 0;
+    let writeSessions = 0;
+    const api = createApi(app, {
+      persistence: {
+        async runWriteContext(_workspaceId, handler) {
+          writeContexts += 1;
+          return await handler({
+            repos: app.repos,
+            externalEvents: app.externalEvents,
+            observedStocks: app.observedStocks,
+            syncRuns: app.syncRuns,
+            setupMetadata: () => app.setupMetadata()
+          });
+        },
+        async openWriteSession() {
+          writeSessions += 1;
+          return { app, nextId: 1, commit: async () => undefined, rollback: async () => undefined, close: async () => undefined };
+        }
+      }
+    });
+
+    const event = await post<any>(api, `/api/channels/${channel.id}/external-events`, {
+      eventType: "sale",
+      externalId: "ext-event-service-1",
+      occurredAt: "2026-06-01T10:00:00.000Z",
+      payload: { sku: "NOT-MAPPED", amountRub: 1000 }
+    });
+    const ignored = await post<any>(api, `/api/integrations/events/${event.id}/ignore`, { reason: "QA ignore" });
+    const reprocessed = await post<any>(api, `/api/integrations/events/${event.id}/reprocess`);
+
+    expect(event).toEqual(expect.objectContaining({ status: "needs_mapping", reason: "Нет сопоставления товара для SKU: NOT-MAPPED" }));
+    expect(ignored).toEqual(expect.objectContaining({ id: event.id, status: "ignored", reason: "QA ignore" }));
+    expect(reprocessed).toEqual(expect.objectContaining({ id: event.id, status: "needs_mapping", reason: "Нет сопоставления товара для SKU: NOT-MAPPED" }));
+    expect(writeContexts).toBe(3);
+    expect(writeSessions).toBe(0);
+  });
+
   it("authenticates MCP keys through persistence without app sessions", async () => {
     resetIds();
     let authenticateCalls = 0;

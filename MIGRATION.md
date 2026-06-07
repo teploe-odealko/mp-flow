@@ -238,6 +238,13 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   и typed `ObservedStockStore`. Дедуп по ключу `(channelId, externalProductId, warehouseId,
   observedAt)` и ignore больше не пишут через request-scoped `AccountingApp`; prod-readiness
   фиксирует `writeSessions = 0`, Postgres runtime проверяет typed row в `observed_stock`.
+- ✅ External event ingest/control endpoints сняты с session middleware:
+  `/api/channels/:id/external-events`, `/api/integrations/events/:id/reprocess`,
+  `/api/integrations/events/:id/ignore` обслуживаются
+  `src/backend/services/external-event-service.ts` через `RuntimeWriteContext` и typed
+  `ExternalEventStore`. Дедуп по identity, классификация статуса по SKU/link, ignore и reprocess
+  больше не пишут через request-scoped `AccountingApp`; prod-readiness фиксирует `writeSessions = 0`,
+  Postgres runtime проверяет typed row в `external_event`.
 - ✅ Начат перенос write/control на обычные сервисы без `AccountingApp` session: добавлен
   `RuntimeWriteContext` и `PostgresRuntimeStore.runWriteContext`, который открывает транзакцию,
   отдаёт сервису `repos + typed stores`, сохраняет `next_id` и коммитит без request-scoped app facade.
