@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createApi } from "../../src/backend/app";
 import { AuthService } from "../../src/backend/auth";
 import { runMigrations } from "../../src/backend/db/migrate";
+import { createProductAsset } from "../../src/backend/services/product-asset-service";
 import { AccountingApp } from "../../src/core/accounting-app";
 import { PostgresRuntimeStore } from "../../src/infra/db/runtime-store";
 import { ozonPlugin } from "../../src/plugins/ozon";
@@ -80,6 +81,15 @@ describePostgres("postgres runtime store", () => {
     await request(api, "POST", "/api/setup", { displayName: "Postgres Runtime", accountingStartDate: "2026-01-01" });
     const product = await request<any>(api, "POST", "/api/products", { sku: "PG-001", name: "Postgres товар" });
     const productImage = await request<any>(api, "POST", `/api/products/${product.id}/images`, { url: "https://example.test/pg-product.jpg" });
+    const productAsset = await store.runWriteContext("default", (writeContext) => createProductAsset(writeContext, {
+      productId: product.id,
+      role: "source",
+      storageKey: "products/pg/source.jpg",
+      url: "https://example.test/pg-source.jpg",
+      mimeType: "image/jpeg",
+      status: "pending"
+    }));
+    const approvedAsset = await request<any>(api, "POST", `/api/products/${product.id}/card/assets/${productAsset.id}/approve`);
     const channel = await request<any>(api, "POST", "/api/integrations/channels", {
       name: "Ozon PG",
       channelType: "marketplace",
@@ -137,6 +147,14 @@ describePostgres("postgres runtime store", () => {
         "select event_type, entity_public_id from audit_event where entity_type = 'product' and entity_public_id = $1 and event_type = 'image_update'",
         [product.id]
       );
+      const productAssetRows = await inspectPool.query<{ role: string; status: string }>(
+        "select role, status from product_asset where public_id = $1",
+        [productAsset.id]
+      );
+      const productAssetAudit = await inspectPool.query<{ event_type: string; entity_public_id: string }>(
+        "select event_type, entity_public_id from audit_event where entity_type = 'product_asset' and entity_public_id = $1 and event_type = 'update'",
+        [productAsset.id]
+      );
       const credentials = await inspectPool.query<{ encrypted_credentials: unknown; fields: string[] }>(
         `
           select cc.encrypted_credentials, cc.fields
@@ -151,6 +169,9 @@ describePostgres("postgres runtime store", () => {
       expect(productImage).toEqual({ id: `${product.id}:main`, productId: product.id, url: "https://example.test/pg-product.jpg", sortOrder: 0 });
       expect(productRows.rows[0]?.image_url).toBe("https://example.test/pg-product.jpg");
       expect(productImageAudit.rows).toContainEqual({ entity_public_id: product.id, event_type: "image_update" });
+      expect(approvedAsset).toEqual(expect.objectContaining({ id: productAsset.id, role: "approved", status: "ready" }));
+      expect(productAssetRows.rows[0]).toEqual({ role: "approved", status: "ready" });
+      expect(productAssetAudit.rows).toContainEqual({ entity_public_id: productAsset.id, event_type: "update" });
       expect(dashboard.configured).toBe(true);
       expect(dashboard.counters.products).toBe(1);
       expect(documentsWorkspace.documents).toContainEqual(expect.objectContaining({

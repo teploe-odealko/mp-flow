@@ -225,6 +225,11 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   обслуживаются `src/backend/services/product-image-service.ts` по схеме
   `controller → service → repositories → Postgres`; prod-readiness фиксирует `writeSessions = 0`,
   Postgres-тест проверяет запись `product.image_url` и audit row.
+- ✅ Метаданные фотостудии тоже сняты с `AccountingApp`: `confirm/approve/patch/delete`
+  `/api/products/:id/card/assets/:assetId` и создание asset metadata в upload path обслуживаются
+  `src/backend/services/product-asset-service.ts` через `RuntimeWriteContext`; audit вынесен в общий
+  `runtime-audit-service.ts`. In-memory regression проверяет, что эти commands не открывают
+  `openWriteSession`, Postgres-тест проверяет обновление `product_asset.role/status` и audit row.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,

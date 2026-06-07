@@ -20,6 +20,7 @@ import { captureException } from "./observability";
 import { getPool } from "./db/pool";
 import { ExternalEventRepository } from "./repositories/external-event-repository";
 import { onboardingProjectDetailsFor } from "./services/onboarding-project-service";
+import { confirmProductAsset, createProductAsset, deleteProductAsset, updateProductAsset } from "./services/product-asset-service";
 import { defaultReceiptPreviewFor, receiptPreviewFor } from "./services/procurement-preview-service";
 import { deleteProductImage, setProductImage } from "./services/product-image-service";
 import {
@@ -1405,6 +1406,50 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.delete("/api/products/:id/images/:imageId", async (c) => {
     return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => deleteProductImage(writeContext, c.req.param("id"))) });
   });
+  api.post("/api/products/:id/card/uploads", async (c) => {
+    const productId = c.req.param("id");
+    const product = await (await readContextFor(c)).repos.products.getById(productId);
+    if (!product) throw new DomainError("product_not_found", "Товар не найден");
+    if (!isStorageConfigured()) throw new DomainError("storage_not_configured", "Хранилище медиа не настроено: задайте S3_* переменные");
+    const body = cardUploadSchema.parse(await c.req.json());
+    if (!isAllowedImageType(body.contentType)) throw new DomainError("unsupported_media_type", "Поддерживаются только изображения: png, jpg, webp");
+    const key = buildMediaKey({ productId, role: body.role, contentType: body.contentType });
+    const { uploadUrl, publicUrl } = await createPresignedUpload({ key, contentType: body.contentType });
+    const asset = await writeContextFor(c, (writeContext) => createProductAsset(writeContext, {
+      productId,
+      role: body.role,
+      storageKey: key,
+      url: publicUrl,
+      slideType: body.slideType,
+      mimeType: body.contentType,
+      status: "pending",
+      createdBy: c.get("authAgent") ? "agent" : "user",
+      meta: body.meta
+    }));
+    return c.json({ ok: true, data: { asset, uploadUrl } });
+  });
+  api.post("/api/products/:id/card/assets/:assetId/confirm", async (c) => {
+    const assetId = c.req.param("assetId");
+    const asset = await (await readContextFor(c)).repos.productAssets.getById(assetId);
+    if (!asset) throw new DomainError("product_asset_not_found", "Медиа не найдено");
+    const body = cardConfirmSchema.parse(await c.req.json().catch(() => ({})));
+    if (isStorageConfigured()) {
+      const head = await headObject(asset.storageKey);
+      if (!head) throw new DomainError("asset_not_uploaded", "Файл не найден в хранилище — загрузка не завершена");
+      if (!body.mimeType && head.contentType) body.mimeType = head.contentType;
+    }
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => confirmProductAsset(writeContext, assetId, body)) });
+  });
+  api.post("/api/products/:id/card/assets/:assetId/approve", async (c) => {
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => updateProductAsset(writeContext, c.req.param("assetId"), { role: "approved", status: "ready" })) });
+  });
+  api.patch("/api/products/:id/card/assets/:assetId", async (c) => {
+    const body = cardAssetPatchSchema.parse(await c.req.json());
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => updateProductAsset(writeContext, c.req.param("assetId"), body)) });
+  });
+  api.delete("/api/products/:id/card/assets/:assetId", async (c) => {
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => deleteProductAsset(writeContext, c.req.param("assetId"))) });
+  });
   api.get("/api/warehouses", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.warehouses.all() }));
   api.get("/api/inventory", async (c) => {
     const readContext = await readContextFor(c);
@@ -1784,50 +1829,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     });
     return c.json({ ok: true, data: { deleted } });
   });
-  api.post("/api/products/:id/card/uploads", async (c) => {
-    const productId = c.req.param("id");
-    await requireStudioProduct(productId);
-    if (!isStorageConfigured()) throw new DomainError("storage_not_configured", "Хранилище медиа не настроено: задайте S3_* переменные");
-    const body = cardUploadSchema.parse(await c.req.json());
-    if (!isAllowedImageType(body.contentType)) throw new DomainError("unsupported_media_type", "Поддерживаются только изображения: png, jpg, webp");
-    const key = buildMediaKey({ productId, role: body.role, contentType: body.contentType });
-    const { uploadUrl, publicUrl } = await createPresignedUpload({ key, contentType: body.contentType });
-    const asset = await scopedApp.createProductAsset({
-      productId,
-      role: body.role,
-      storageKey: key,
-      url: publicUrl,
-      slideType: body.slideType,
-      mimeType: body.contentType,
-      status: "pending",
-      createdBy: c.get("authAgent") ? "agent" : "user",
-      meta: body.meta
-    });
-    return c.json({ ok: true, data: { asset, uploadUrl } });
-  });
-  api.post("/api/products/:id/card/assets/:assetId/confirm", async (c) => {
-    const assetId = c.req.param("assetId");
-    const asset = await scopedApp.repos.productAssets.getById(assetId);
-    if (!asset) throw new DomainError("product_asset_not_found", "Медиа не найдено");
-    const body = cardConfirmSchema.parse(await c.req.json().catch(() => ({})));
-    if (isStorageConfigured()) {
-      const head = await headObject(asset.storageKey);
-      if (!head) throw new DomainError("asset_not_uploaded", "Файл не найден в хранилище — загрузка не завершена");
-      if (!body.mimeType && head.contentType) body.mimeType = head.contentType;
-    }
-    return c.json({ ok: true, data: await scopedApp.confirmProductAsset(assetId, body) });
-  });
-  api.post("/api/products/:id/card/assets/:assetId/approve", async (c) => {
-    return c.json({ ok: true, data: await scopedApp.updateProductAsset(c.req.param("assetId"), { role: "approved", status: "ready" }) });
-  });
-  api.patch("/api/products/:id/card/assets/:assetId", async (c) => {
-    const body = cardAssetPatchSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: await scopedApp.updateProductAsset(c.req.param("assetId"), body) });
-  });
-  api.delete("/api/products/:id/card/assets/:assetId", async (c) => {
-    return c.json({ ok: true, data: await scopedApp.deleteProductAsset(c.req.param("assetId")) });
-  });
-
   api.post("/api/warehouses", async (c) => {
     const body = warehouseSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.createWarehouse(body) });

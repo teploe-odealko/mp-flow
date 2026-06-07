@@ -5,7 +5,7 @@ import { resetIds } from "../../src/core/utils";
 import { buildReportsWorkspacePayload } from "../../src/shared/reports-workspace";
 import { buildProductCardWorkspacePayload } from "../../src/shared/product-card-workspace";
 
-async function request<T>(api: ReturnType<typeof createApi>, method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
+async function request<T>(api: ReturnType<typeof createApi>, method: "GET" | "POST" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<T> {
   const response = await api.request(path, {
     method,
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -18,6 +18,8 @@ async function request<T>(api: ReturnType<typeof createApi>, method: "GET" | "PO
 
 const get = <T>(api: ReturnType<typeof createApi>, path: string) => request<T>(api, "GET", path);
 const post = <T>(api: ReturnType<typeof createApi>, path: string, body?: unknown) => request<T>(api, "POST", path, body);
+const patch = <T>(api: ReturnType<typeof createApi>, path: string, body?: unknown) => request<T>(api, "PATCH", path, body);
+const del = <T>(api: ReturnType<typeof createApi>, path: string) => request<T>(api, "DELETE", path);
 const keyPart = (value: string) => Buffer.from(value).toString("base64url");
 
 describe("prod-ready contracts", () => {
@@ -217,6 +219,23 @@ describe("prod-ready contracts", () => {
     const financeEvent = app.state.channelFinanceEvents[0];
     const payout = app.state.payouts[0];
     const productImage = await post<any>(api, `/api/products/${product.id}/images`, { url: "https://example.test/product-image.jpg" });
+    await app.repos.productAssets.add({
+      id: "asset_route_test",
+      organizationId: app.state.organization?.id ?? "org_test",
+      productId: product.id,
+      role: "source",
+      storageKey: "products/test/source.jpg",
+      url: "https://example.test/source.jpg",
+      mimeType: "image/jpeg",
+      sortOrder: 0,
+      status: "pending",
+      createdBy: "user",
+      createdAt: "2026-01-01T00:00:00.000Z"
+    });
+    const confirmedAsset = await post<any>(api, `/api/products/${product.id}/card/assets/asset_route_test/confirm`, { width: 800, height: 1000 });
+    const patchedAsset = await patch<any>(api, `/api/products/${product.id}/card/assets/asset_route_test`, { slideType: "hero", meta: { checked: true } });
+    const approvedAsset = await post<any>(api, `/api/products/${product.id}/card/assets/asset_route_test/approve`);
+    const deletedAsset = await del<any>(api, `/api/products/${product.id}/card/assets/asset_route_test`);
     const documentsWorkspace = await get<any>(api, "/api/documents/workspace");
     const documentDetail = await get<any>(api, `/api/documents/${document.id}`);
     const documentDescendants = await get<any[]>(api, `/api/documents/${document.id}/descendants`);
@@ -293,6 +312,11 @@ describe("prod-ready contracts", () => {
     expect(products[0]?.id).toBe(product.id);
     expect(productImage).toEqual({ id: `${product.id}:main`, productId: product.id, url: "https://example.test/product-image.jpg", sortOrder: 0 });
     expect(app.state.products.find((candidate) => candidate.id === product.id)?.imageUrl).toBe("https://example.test/product-image.jpg");
+    expect(confirmedAsset).toEqual(expect.objectContaining({ id: "asset_route_test", status: "ready", width: 800, height: 1000 }));
+    expect(patchedAsset).toEqual(expect.objectContaining({ id: "asset_route_test", slideType: "hero", meta: expect.objectContaining({ checked: true }) }));
+    expect(approvedAsset).toEqual(expect.objectContaining({ id: "asset_route_test", role: "approved", status: "ready" }));
+    expect(deletedAsset).toEqual({ id: "asset_route_test", deleted: true });
+    expect(app.state.productAssets.find((candidate) => candidate.id === "asset_route_test")).toBeUndefined();
     expect(documents[0]?.id).toBe(document.id);
     expect(journal.entries).toEqual(expect.any(Array));
     expect(journal.lines).toEqual(expect.any(Array));
@@ -399,7 +423,7 @@ describe("prod-ready contracts", () => {
     expect(productWorkspaceReads).toBe(1);
     expect(readContexts).toBeGreaterThanOrEqual(10);
     expect(readSessions).toBe(0);
-    expect(writeContexts).toBe(1);
+    expect(writeContexts).toBe(5);
     expect(writeSessions).toBe(0);
   });
 
