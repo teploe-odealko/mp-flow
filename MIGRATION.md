@@ -144,6 +144,10 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   оплаты поставщику, приемки, доп. расхода и разбора недопоставки. Endpoint умеет возвращать общий
   контекст активных заказов или scoped-контекст одного `purchaseOrderId`; формы больше не используют
   `useCollection` и не делают глобального `queryClient.invalidateQueries()`.
+- ✅ `ReceiptDispatchPage` убрал последний широкий `queryClient.invalidateQueries()` в сценарии отправки
+  приемки в канал: после commit инвалидируются только scoped receipt-dispatch keys и затронутые
+  соседние workspaces (`procurement`, `inventory`, `documents`, `accounting-journal`, `dashboard`,
+  конкретная карточка документа).
 - ✅ Channels pages сняты с generic collections:
   `ChannelsWorkspace` → `/api/channels/workspace`, `ChannelDetailPage`/`ChannelSyncPage` →
   `/api/integrations/channels/:id`, `SyncInboxPage` → `/api/integrations/inbox/workspace`,
@@ -172,8 +176,13 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   accounting/controls/onboarding workspace payloads, document drilldown/history/links/descendants, sales/return/payout/
   finance-event details, finance/expense/payout workspaces, MCP settings и простые filtered endpoints больше
   не открывают `openReadModelApp` в Postgres path.
-  Оставшиеся `readModelAppFor` в HTTP-слое — доменные detail/card methods (`productDetails`, receipt/transfer/cost details,
-  card studio), channel credentials и write use-cases.
+- ✅ Detail/card GET-ручки сняты с `readModelAppFor` в Postgres path: account/journal/product details,
+  product lots/stock movements/card/brief, procurement purchase-order/receipt/cost/shortage details,
+  transfer detail, sales-point stock и channel detail теперь собираются через `RuntimeReadContext`
+  (`repos + typed stores + channelCredentialStatus`). `readModelAppFor` в Postgres runtime теперь
+  намеренно падает, а prod-readiness фиксирует `openReadModelApp = 0` для dashboard/workspace reads.
+  Оставшиеся `readModelAppFor` в HTTP-слое — только in-memory/test fallback для старого app facade,
+  reports/dashboard/ledger fallback без БД и write use-cases.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,

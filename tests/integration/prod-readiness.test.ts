@@ -108,6 +108,7 @@ describe("prod-ready contracts", () => {
     const app = new AccountingApp();
     await app.setupDemo();
     let dashboardReads = 0;
+    let reportReads = 0;
     let reportWorkspaceReads = 0;
     let productWorkspaceReads = 0;
     let readContexts = 0;
@@ -118,6 +119,10 @@ describe("prod-ready contracts", () => {
         async readDashboard() {
           dashboardReads += 1;
           return await app.dashboard();
+        },
+        async readReports() {
+          reportReads += 1;
+          return await app.reports();
         },
         async readReportWorkspace(_workspaceId, options) {
           reportWorkspaceReads += 1;
@@ -310,10 +315,11 @@ describe("prod-ready contracts", () => {
     expect(settingsUsersResponse.status).toBe(404);
     expect(agentTokensResponse.status).toBe(404);
     expect(dashboardReads).toBe(1);
+    expect(reportReads).toBe(1);
     expect(reportWorkspaceReads).toBe(1);
     expect(productWorkspaceReads).toBe(1);
     expect(readContexts).toBeGreaterThanOrEqual(10);
-    expect(readModelApps).toBeGreaterThan(6);
+    expect(readModelApps).toBe(0);
     expect(readSessions).toBe(0);
   });
 

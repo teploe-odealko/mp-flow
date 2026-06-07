@@ -152,7 +152,14 @@ export function ReceiptDispatchPage() {
         lines: selectedLines.map((line: any) => ({ goodsReceiptLineId: line.goodsReceiptLineId, qty: line.qtyToDispatch }))
       }),
     onSuccess: (transfer) => {
-      queryClient.invalidateQueries();
+      void queryClient.invalidateQueries({ queryKey: ["receipt-dispatch-context", receiptId, channelId] });
+      void queryClient.invalidateQueries({ queryKey: ["receipt-dispatch-state", receiptId, channelId] });
+      void queryClient.invalidateQueries({ queryKey: ["procurement-workspace"] });
+      void queryClient.invalidateQueries({ queryKey: ["inventory-workspace"] });
+      void queryClient.invalidateQueries({ queryKey: ["documents-workspace"] });
+      void queryClient.invalidateQueries({ queryKey: ["accounting-journal-workspace"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      void queryClient.invalidateQueries({ queryKey: ["document-card", transfer.documentId] });
       navigate(`/documents/${transfer.documentId}`);
     }
   });
@@ -170,7 +177,14 @@ export function ReceiptDispatchPage() {
         lines: selectedLines.map((line: any) => ({ goodsReceiptLineId: line.goodsReceiptLineId, qty: line.qtyToDispatch }))
       }),
     onSuccess: (transfer) => {
-      queryClient.invalidateQueries();
+      void queryClient.invalidateQueries({ queryKey: ["receipt-dispatch-context", receiptId, channelId] });
+      void queryClient.invalidateQueries({ queryKey: ["receipt-dispatch-state", receiptId, channelId] });
+      void queryClient.invalidateQueries({ queryKey: ["procurement-workspace"] });
+      void queryClient.invalidateQueries({ queryKey: ["inventory-workspace"] });
+      void queryClient.invalidateQueries({ queryKey: ["documents-workspace"] });
+      void queryClient.invalidateQueries({ queryKey: ["accounting-journal-workspace"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      void queryClient.invalidateQueries({ queryKey: ["document-card", transfer.documentId] });
       navigate(`/documents/${transfer.documentId}`);
     }
   });

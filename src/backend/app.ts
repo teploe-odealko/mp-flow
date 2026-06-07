@@ -6,7 +6,7 @@ import { z } from "zod";
 import { AccountingApp } from "../core/accounting-app";
 import type { AgentToken, ChannelFinanceEvent, ChannelStreamCode, ExternalEvent, Payout, Sale, SalesChannel, SalesReturn, SyncRun } from "../core/models";
 import { DomainError, id, nowIso, runWithIdSequence } from "../core/utils";
-import { openPostgresReadContext, openPostgresReadModelApp, readRuntimeDashboard, readRuntimeLedgerBalances, readRuntimeReports, readRuntimeReportWorkspace, readRuntimeProductWorkspace, type RuntimePersistence, type RuntimeReadContext } from "../infra/db/runtime-store";
+import { openPostgresReadContext, readRuntimeDashboard, readRuntimeLedgerBalances, readRuntimeReports, readRuntimeReportWorkspace, readRuntimeProductWorkspace, type RuntimePersistence, type RuntimeReadContext } from "../infra/db/runtime-store";
 import { pluginRegistry } from "../plugins/registry";
 import { createPluginSecretApi, createPluginStateApi, pluginStateKey } from "../plugins/runtime";
 import { buildMediaKey, createPresignedUpload, headObject, isAllowedImageType, isStorageConfigured } from "../infra/storage/s3";
@@ -199,8 +199,10 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   const postgresBacked = () => Boolean(process.env.DATABASE_URL);
   const readModelAppFor = async (c: Context) => {
     const workspaceId = eventsWorkspaceId(c);
+    if (postgresBacked()) {
+      throw new Error("Postgres read path must use RuntimeReadContext or typed read-model helpers, not AccountingApp");
+    }
     if (options.persistence?.openReadModelApp) return await options.persistence.openReadModelApp(workspaceId);
-    if (postgresBacked()) return await openPostgresReadModelApp(getPool(), workspaceId);
     return app;
   };
   const readContextFor = async (c: Context): Promise<RuntimeReadContext> => {
@@ -213,6 +215,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       externalEvents: readModelApp.externalEvents,
       observedStocks: readModelApp.observedStocks,
       syncRuns: readModelApp.syncRuns,
+      channelCredentialStatus: async (channelId) => readModelApp.channelCredentialStatus(channelId),
       setupMetadata: () => readModelApp.setupMetadata()
     };
   };
@@ -568,30 +571,33 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return { channels, plugins, warehouses };
   };
   const channelDetailFor = async (c: Context, channelId: string): Promise<any> => {
-    const readModelApp = await readModelAppFor(c);
-    const channel = await mustFindChannel(readModelApp, channelId);
-    const installedPlugin = channel.pluginId ? await readModelApp.repos.integrationPlugins.getById(channel.pluginId) : undefined;
+    const readContext = await readContextFor(c);
+    const channel = await readContext.repos.salesChannels.getById(channelId);
+    if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
+    const installedPlugin = channel.pluginId ? await readContext.repos.integrationPlugins.getById(channel.pluginId) : undefined;
     const plugin = installedPlugin ? pluginRegistry.get(installedPlugin.code) : undefined;
     const [sales, payouts, externalProducts, warehouses, backfillProjects, syncRuns] = await Promise.all([
-      readModelApp.repos.sales.all(),
-      readModelApp.repos.payouts.all(),
-      readModelApp.repos.externalProducts.all(),
-      readModelApp.repos.warehouses.all(),
-      readModelApp.repos.backfillProjects.all(),
-      readModelApp.syncRuns.listByChannel(channel.id)
+      readContext.repos.sales.all(),
+      readContext.repos.payouts.all(),
+      readContext.repos.externalProducts.all(),
+      readContext.repos.warehouses.all(),
+      readContext.repos.backfillProjects.all(),
+      readContext.syncRuns.listByChannel(channel.id)
     ]);
     return {
       channel,
-      credentialStatus: readModelApp.channelCredentialStatus(channel.id),
-      warehouse: await readModelApp.repos.warehouses.getById(channel.salesPointWarehouseId),
+      credentialStatus: readContext.channelCredentialStatus
+        ? await readContext.channelCredentialStatus(channel.id)
+        : { channelId: channel.id, saved: false, fields: [] },
+      warehouse: await readContext.repos.warehouses.getById(channel.salesPointWarehouseId),
       warehouses: warehouses.filter((warehouse) => warehouse.warehouseType === "sales_point"),
       backfillProjects: backfillProjects.filter((project) => String(project.payload?.salesChannelId ?? "") === channel.id),
       plugin: plugin ? serializePluginMeta(plugin) : null,
       syncRuns: syncRuns.slice(-20).reverse(),
       counts: {
         externalProducts: externalProducts.filter((product) => product.channelId === channel.id).length,
-        observedStocks: await readModelApp.observedStocks.count({ channelId: channel.id }),
-        externalEvents: await readModelApp.externalEvents.count({ channelId: channel.id }),
+        observedStocks: await readContext.observedStocks.count({ channelId: channel.id }),
+        externalEvents: await readContext.externalEvents.count({ channelId: channel.id }),
         sales: sales.filter((sale) => sale.channelId === channel.id).length,
         payouts: payouts.filter((payout) => payout.channelId === channel.id).length
       }
@@ -928,12 +934,187 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       periods
     };
   };
-  const studioViewFor = async (readModelApp: AccountingApp, productId: string) => {
-    const product = await readModelApp.repos.products.getById(productId);
+  const accountByIdOrCodeFor = async (readContext: RuntimeReadContext, idOrCode: string) => {
+    const accounts = await readContext.repos.chartAccounts.all();
+    const account = accounts.find((candidate) => candidate.id === idOrCode || candidate.code === idOrCode);
+    if (!account) throw new DomainError("account_not_found", "Счет не найден");
+    return account;
+  };
+  const journalEntryDetailsFor = async (readContext: RuntimeReadContext, entryId: string) => {
+    const entry = await readContext.repos.journalEntries.getById(entryId);
+    if (!entry) throw new DomainError("journal_entry_not_found", "Проводка не найдена");
+    const [lines, documents] = await Promise.all([
+      readContext.repos.journalLines.all(),
+      readContext.repos.documents.all()
+    ]);
+    return {
+      entry,
+      lines: lines.filter((line) => line.journalEntryId === entry.id),
+      document: documents.find((document) => document.id === entry.documentId)
+    };
+  };
+  const productDetailsFor = async (readContext: RuntimeReadContext, productId: string) => {
+    const product = await readContext.repos.products.getById(productId);
     if (!product) throw new DomainError("product_not_found", "Товар не найден");
-    const productExternalLinks = await readModelApp.repos.productExternalLinks.all();
-    const externalProducts = await readModelApp.repos.externalProducts.all();
-    const salesChannels = await readModelApp.repos.salesChannels.all();
+    const [stockMovements, inventoryLots, purchaseOrders, purchaseOrderLines, stockStates, documents, productExternalLinks] = await Promise.all([
+      readContext.repos.stockMovements.all(),
+      readContext.repos.inventoryLots.all(),
+      readContext.repos.purchaseOrders.all(),
+      readContext.repos.purchaseOrderLines.all(),
+      readContext.repos.stockStates.all(),
+      readContext.repos.documents.all(),
+      readContext.repos.productExternalLinks.all()
+    ]);
+    const movements = stockMovements.filter((movement) => movement.productId === product.id);
+    const relatedDocumentIds = new Set<string>();
+    inventoryLots.filter((lot) => lot.productId === product.id).forEach((lot) => relatedDocumentIds.add(lot.sourceDocumentId));
+    movements.forEach((movement) => relatedDocumentIds.add(movement.documentId));
+    purchaseOrderLines
+      .filter((line) => line.productId === product.id)
+      .forEach((line) => {
+        const order = purchaseOrders.find((candidate) => candidate.id === line.purchaseOrderId);
+        if (order) relatedDocumentIds.add(order.documentId);
+      });
+    return {
+      product,
+      lots: inventoryLots.filter((lot) => lot.productId === product.id),
+      stock: stockStates.filter((stock) => stock.productId === product.id),
+      movements,
+      documents: documents.filter((document) => relatedDocumentIds.has(document.id)),
+      externalLinks: productExternalLinks.filter((link) => link.productId === product.id)
+    };
+  };
+  const productAssetsFor = async (readContext: RuntimeReadContext, productId: string) =>
+    (await readContext.repos.productAssets.all())
+      .filter((asset) => asset.productId === productId)
+      .sort((left, right) => left.sortOrder - right.sortOrder || left.createdAt.localeCompare(right.createdAt));
+  const paymentsForPurchaseOrder = async (readContext: RuntimeReadContext, purchaseOrderId: string) => {
+    const [allocations, payments] = await Promise.all([
+      readContext.repos.paymentAllocations.all(),
+      readContext.repos.payments.all()
+    ]);
+    const paymentIds = new Set(allocations.filter((allocation) => allocation.purchaseOrderId === purchaseOrderId).map((allocation) => allocation.paymentId));
+    return payments.filter((payment) => paymentIds.has(payment.id));
+  };
+  const purchaseOrderDetailsFor = async (readContext: RuntimeReadContext, purchaseOrderId: string) => {
+    const order = await readContext.repos.purchaseOrders.getById(purchaseOrderId);
+    if (!order) throw new DomainError("purchase_order_not_found", "Заказ поставщику не найден");
+    const [documents, lines, payments, receipts, costs, shortages, links] = await Promise.all([
+      readContext.repos.documents.all(),
+      readContext.repos.purchaseOrderLines.all(),
+      paymentsForPurchaseOrder(readContext, order.id),
+      readContext.repos.goodsReceipts.all(),
+      readContext.repos.procurementCosts.all(),
+      readContext.repos.shortageResolutions.all(),
+      readContext.repos.documentLinks.all()
+    ]);
+    return {
+      order,
+      document: documents.find((document) => document.id === order.documentId),
+      lines: lines.filter((line) => line.purchaseOrderId === order.id),
+      payments,
+      receipts: receipts.filter((receipt) => receipt.purchaseOrderId === order.id),
+      costs: costs.filter((cost) => cost.purchaseOrderId === order.id),
+      shortages: shortages.filter((resolution) => resolution.purchaseOrderId === order.id),
+      links: links.filter((link) => link.fromDocumentId === order.documentId || link.toDocumentId === order.documentId)
+    };
+  };
+  const receiptDetailsFor = async (readContext: RuntimeReadContext, receiptId: string) => {
+    const receipt = await readContext.repos.goodsReceipts.getById(receiptId);
+    if (!receipt) throw new DomainError("receipt_not_found", "Приемка не найдена");
+    const [documents, lines, lots] = await Promise.all([
+      readContext.repos.documents.all(),
+      readContext.repos.goodsReceiptLines.all(),
+      readContext.repos.inventoryLots.all()
+    ]);
+    return {
+      receipt,
+      document: documents.find((document) => document.id === receipt.documentId),
+      lines: lines.filter((line) => line.goodsReceiptId === receipt.id),
+      lots: lots.filter((lot) => lot.sourceDocumentId === receipt.documentId)
+    };
+  };
+  const procurementCostDetailsFor = async (readContext: RuntimeReadContext, costId: string) => {
+    const cost = await readContext.repos.procurementCosts.getById(costId);
+    if (!cost) throw new DomainError("procurement_cost_not_found", "Расход закупки не найден");
+    const [documents, lines] = await Promise.all([
+      readContext.repos.documents.all(),
+      readContext.repos.procurementCostLines.all()
+    ]);
+    return {
+      cost,
+      document: documents.find((document) => document.id === cost.documentId),
+      lines: lines.filter((line) => line.procurementCostId === cost.id)
+    };
+  };
+  const shortageDetailsFor = async (readContext: RuntimeReadContext, shortageId: string) => {
+    const shortage = await readContext.repos.shortageResolutions.getById(shortageId);
+    if (!shortage) throw new DomainError("shortage_not_found", "Недопоставка не найдена");
+    const [documents, lines, claims] = await Promise.all([
+      readContext.repos.documents.all(),
+      readContext.repos.shortageResolutionLines.all(),
+      readContext.repos.supplierClaims.all()
+    ]);
+    const shortageLines = lines.filter((line) => line.shortageResolutionId === shortage.id);
+    const shortageLineIds = new Set(shortageLines.map((line) => line.id));
+    return {
+      shortage,
+      document: documents.find((document) => document.id === shortage.documentId),
+      lines: shortageLines,
+      claims: claims.filter((claim) => shortageLineIds.has(claim.shortageResolutionLineId))
+    };
+  };
+  const transferDetailsFor = async (readContext: RuntimeReadContext, transferId: string) => {
+    const transfer = await readContext.repos.stockTransfers.getById(transferId);
+    if (!transfer) throw new DomainError("transfer_not_found", "Перемещение не найдено");
+    const [documents, lines] = await Promise.all([
+      readContext.repos.documents.all(),
+      readContext.repos.stockTransferLines.all()
+    ]);
+    return {
+      transfer,
+      document: documents.find((document) => document.id === transfer.documentId),
+      lines: lines.filter((line) => line.stockTransferId === transfer.id)
+    };
+  };
+  const stockForSalesPointFor = async (readContext: RuntimeReadContext, warehouseId: string) => {
+    const warehouse = await readContext.repos.warehouses.getById(warehouseId);
+    if (!warehouse) throw new DomainError("warehouse_not_found", "Склад не найден");
+    if (warehouse.warehouseType !== "sales_point") {
+      throw new DomainError("warehouse_not_sales_point", "Склад не является точкой продаж");
+    }
+    const [products, stockStates, transfers, lots, documents] = await Promise.all([
+      readContext.repos.products.all(),
+      readContext.repos.stockStates.all(),
+      readContext.repos.stockTransfers.all(),
+      readContext.repos.inventoryLots.all(),
+      readContext.repos.documents.all()
+    ]);
+    const stock = stockStates
+      .filter((candidate) => candidate.warehouseId === warehouse.id)
+      .map((candidate) => ({ ...candidate, product: products.find((product) => product.id === candidate.productId), warehouse }));
+    const transferDocumentIds = new Set(
+      transfers
+        .filter((transfer) => transfer.toWarehouseId === warehouse.id || transfer.fromWarehouseId === warehouse.id)
+        .map((transfer) => transfer.documentId)
+    );
+    return {
+      warehouse,
+      stock,
+      lots: lots.filter((lot) => lot.warehouseId === warehouse.id),
+      recentDocuments: documents
+        .filter((document) => transferDocumentIds.has(document.id))
+        .slice()
+        .sort((left, right) => String(right.accountingDate).localeCompare(String(left.accountingDate)))
+        .slice(0, 12)
+    };
+  };
+  const studioViewFor = async (readContext: RuntimeReadContext, productId: string) => {
+    const product = await readContext.repos.products.getById(productId);
+    if (!product) throw new DomainError("product_not_found", "Товар не найден");
+    const productExternalLinks = await readContext.repos.productExternalLinks.all();
+    const externalProducts = await readContext.repos.externalProducts.all();
+    const salesChannels = await readContext.repos.salesChannels.all();
     const channels = productExternalLinks
       .filter((link) => link.productId === productId && link.status === "active")
       .map((link) => ({
@@ -965,15 +1146,15 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
         externalName: linkedRow.external.externalName,
         externalProductId: linkedRow.external.id
       } : null,
-      assets: await readModelApp.listProductAssets(productId),
+      assets: await productAssetsFor(readContext, productId),
       channels,
-      plan: await readCardStudioPlan(readModelApp, productId),
+      plan: await readCardStudioPlan(readContext, productId),
       storageReady: isStorageConfigured()
     };
   };
-  const studioBriefFor = async (readModelApp: AccountingApp, productId: string) => {
+  const studioBriefFor = async (readContext: RuntimeReadContext, productId: string) => {
     const ozon = pluginRegistry.get("ozon");
-    const studio = await studioViewFor(readModelApp, productId);
+    const studio = await studioViewFor(readContext, productId);
     return {
       ...studio,
       marketplace: studio.marketplace ?? "ozon",
@@ -1045,7 +1226,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/accounts", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.chartAccounts.all() }));
   api.get("/api/accounting/accounts", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.chartAccounts.all() }));
   api.get("/api/accounting/accounts/workspace", async (c) => c.json({ ok: true, data: await chartAccountsWorkspaceFor(c) }));
-  api.get("/api/accounting/accounts/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).accountByIdOrCode(c.req.param("id")) }));
+  api.get("/api/accounting/accounts/:id", async (c) => c.json({ ok: true, data: await accountByIdOrCodeFor(await readContextFor(c), c.req.param("id")) }));
   api.get("/api/journal", async (c) => {
     const readContext = await readContextFor(c);
     const [entries, lines] = await Promise.all([readContext.repos.journalEntries.all(), readContext.repos.journalLines.all()]);
@@ -1057,7 +1238,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: { entries, lines } });
   });
   api.get("/api/accounting/journal/workspace", async (c) => c.json({ ok: true, data: await journalWorkspaceFor(c) }));
-  api.get("/api/accounting/journal/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).journalEntryDetails(c.req.param("id")) }));
+  api.get("/api/accounting/journal/:id", async (c) => c.json({ ok: true, data: await journalEntryDetailsFor(await readContextFor(c), c.req.param("id")) }));
   api.get("/api/ledger", async (c) => c.json({ ok: true, data: await ledgerBalancesFor(c) }));
   api.get("/api/accounting/ledger", async (c) => c.json({ ok: true, data: await ledgerBalancesFor(c) }));
   api.get("/api/documents", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.documents.all() }));
@@ -1066,11 +1247,11 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/products/workspace", async (c) => c.json({ ok: true, data: await productListWorkspaceFor(c) }));
   api.get("/api/products/channel-mapping", async (c) => c.json({ ok: true, data: await productChannelMappingFor(c) }));
   api.get("/api/products/:id/workspace", async (c) => c.json({ ok: true, data: await productWorkspaceFor(c, c.req.param("id")) }));
-  api.get("/api/products/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).productDetails(c.req.param("id")) }));
-  api.get("/api/products/:id/lots", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).productDetails(c.req.param("id"))).lots }));
-  api.get("/api/products/:id/stock-movements", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).productDetails(c.req.param("id"))).movements }));
-  api.get("/api/products/:id/card", async (c) => c.json({ ok: true, data: await studioViewFor(await readModelAppFor(c), c.req.param("id")) }));
-  api.get("/api/products/:id/card/brief", async (c) => c.json({ ok: true, data: await studioBriefFor(await readModelAppFor(c), c.req.param("id")) }));
+  api.get("/api/products/:id", async (c) => c.json({ ok: true, data: await productDetailsFor(await readContextFor(c), c.req.param("id")) }));
+  api.get("/api/products/:id/lots", async (c) => c.json({ ok: true, data: (await productDetailsFor(await readContextFor(c), c.req.param("id"))).lots }));
+  api.get("/api/products/:id/stock-movements", async (c) => c.json({ ok: true, data: (await productDetailsFor(await readContextFor(c), c.req.param("id"))).movements }));
+  api.get("/api/products/:id/card", async (c) => c.json({ ok: true, data: await studioViewFor(await readContextFor(c), c.req.param("id")) }));
+  api.get("/api/products/:id/card/brief", async (c) => c.json({ ok: true, data: await studioBriefFor(await readContextFor(c), c.req.param("id")) }));
   api.get("/api/warehouses", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.warehouses.all() }));
   api.get("/api/inventory", async (c) => {
     const readContext = await readContextFor(c);
@@ -1139,14 +1320,14 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: { document, lines: (await readContext.repos.documentLines.all()).filter((line) => line.documentId === document?.id) } });
   });
   api.get("/api/procurement/purchase-orders/:id/workspace", async (c) => c.json({ ok: true, data: await purchaseOrderCardWorkspaceFor(c, c.req.param("id")) }));
-  api.get("/api/procurement/purchase-orders/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).purchaseOrderDetails(c.req.param("id")) }));
-  api.get("/api/procurement/purchase-orders/:id/payments", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).paymentsForPurchaseOrder(c.req.param("id")) }));
+  api.get("/api/procurement/purchase-orders/:id", async (c) => c.json({ ok: true, data: await purchaseOrderDetailsFor(await readContextFor(c), c.req.param("id")) }));
+  api.get("/api/procurement/purchase-orders/:id/payments", async (c) => c.json({ ok: true, data: await paymentsForPurchaseOrder(await readContextFor(c), c.req.param("id")) }));
   api.get("/api/settlements/suppliers/:id", async (c) => c.json({ ok: true, data: (await (await readContextFor(c)).repos.settlementEntries.all()).filter((entry) => entry.counterpartyId === c.req.param("id")) }));
   api.get("/api/procurement/purchase-orders/:id/receipts", async (c) => c.json({ ok: true, data: (await (await readContextFor(c)).repos.goodsReceipts.all()).filter((receipt) => receipt.purchaseOrderId === c.req.param("id")) }));
-  api.get("/api/procurement/receipts/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).receiptDetails(c.req.param("id")) }));
+  api.get("/api/procurement/receipts/:id", async (c) => c.json({ ok: true, data: await receiptDetailsFor(await readContextFor(c), c.req.param("id")) }));
   api.get("/api/procurement/purchase-orders/:id/costs", async (c) => c.json({ ok: true, data: (await (await readContextFor(c)).repos.procurementCosts.all()).filter((cost) => cost.purchaseOrderId === c.req.param("id")) }));
-  api.get("/api/procurement/costs/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).procurementCostDetails(c.req.param("id")) }));
-  api.get("/api/procurement/shortages/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).shortageDetails(c.req.param("id")) }));
+  api.get("/api/procurement/costs/:id", async (c) => c.json({ ok: true, data: await procurementCostDetailsFor(await readContextFor(c), c.req.param("id")) }));
+  api.get("/api/procurement/shortages/:id", async (c) => c.json({ ok: true, data: await shortageDetailsFor(await readContextFor(c), c.req.param("id")) }));
   api.get("/api/money/cash-accounts", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.cashAccounts.all() }));
   api.get("/api/money/payments", async (c) => {
     const readContext = await readContextFor(c);
@@ -1157,8 +1338,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const readContext = await readContextFor(c);
     return c.json({ ok: true, data: { stock: await stockByProductFor(readContext), lots: await readContext.repos.inventoryLots.all() } });
   });
-  api.get("/api/inventory/transfers/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).transferDetails(c.req.param("id")) }));
-  api.get("/api/inventory/sales-points/:id/stock", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).stockForSalesPoint(c.req.param("id")) }));
+  api.get("/api/inventory/transfers/:id", async (c) => c.json({ ok: true, data: await transferDetailsFor(await readContextFor(c), c.req.param("id")) }));
+  api.get("/api/inventory/sales-points/:id/stock", async (c) => c.json({ ok: true, data: await stockForSalesPointFor(await readContextFor(c), c.req.param("id")) }));
   api.get("/api/inventory/stocktakes/:id", async (c) => {
     const readContext = await readContextFor(c);
     const stocktake = await readContext.repos.stocktakes.getById(c.req.param("id"));
@@ -1402,7 +1583,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const productId = c.req.param("id");
     await requireStudioProduct(productId);
     const body = cardPlanSchema.parse(await c.req.json());
-    const pluginState = cardStudioPlanState(scopedApp);
+    const pluginState = cardStudioPlanWriteState(scopedApp);
     const existing = await pluginState.get({ namespace: "card_studio", scopeType: "flow_session", scopeId: productId, stateKey: "plan" });
     const saved = await pluginState.put({
       namespace: "card_studio",
@@ -1417,7 +1598,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.delete("/api/products/:id/card/plan", async (c) => {
     const productId = c.req.param("id");
     await requireStudioProduct(productId);
-    const deleted = await cardStudioPlanState(scopedApp).delete({
+    const deleted = await cardStudioPlanWriteState(scopedApp).delete({
       namespace: "card_studio",
       scopeType: "flow_session",
       scopeId: productId,
@@ -3490,17 +3671,18 @@ function mcpError(c: any, id: string | number | null | undefined, code: number, 
   return c.json({ jsonrpc: "2.0", id, error: { code, message, data } }, code === -32601 ? 404 : 200);
 }
 
-function cardStudioPlanState(app: AccountingApp) {
+function cardStudioPlanWriteState(app: AccountingApp) {
   return createPluginStateApi(app, pluginRegistry.get("ozon"));
 }
 
-async function readCardStudioPlan(app: AccountingApp, productId: string) {
-  const record = await cardStudioPlanState(app).get({
-    namespace: "card_studio",
-    scopeType: "flow_session",
-    scopeId: productId,
-    stateKey: "plan"
-  });
+async function readCardStudioPlan(readContext: RuntimeReadContext, productId: string) {
+  const record = (await readContext.repos.pluginStateRecords.all()).find((candidate) =>
+    candidate.pluginCode === "ozon" &&
+    candidate.namespace === "card_studio" &&
+    candidate.scopeType === "flow_session" &&
+    candidate.scopeId === productId &&
+    candidate.stateKey === "plan"
+  );
   return record ? { ...record.payload, revision: record.revision } : null;
 }
 

@@ -278,6 +278,7 @@ export interface RuntimeReadContext {
   externalEvents: ExternalEventStore;
   observedStocks: ObservedStockStore;
   syncRuns: SyncRunStore;
+  channelCredentialStatus?(channelId: string): Promise<{ channelId: string; saved: boolean; fields: string[] }>;
   setupMetadata(): {
     organization: AccountingState["organization"];
     accountingPolicy: AccountingState["accountingPolicy"];
@@ -2924,6 +2925,7 @@ export async function openPostgresReadContext(source: Queryable, workspaceId: st
     externalEvents: new PostgresExternalEventStore(source, scope),
     observedStocks: new PostgresObservedStockStore(source, scope),
     syncRuns: new PostgresSyncRunStore(source, scope),
+    channelCredentialStatus: (channelId) => readRuntimeChannelCredentialStatus(source, scope, channelId),
     setupMetadata: () => ({
       organization,
       accountingPolicy,
@@ -2943,6 +2945,27 @@ export function buildPostgresRuntimeRepositories(source: Queryable, workspaceId:
     await saveRuntimeSingleton(source, scope, "accounting_policy", singletons.accountingPolicy as unknown as RuntimeEntity | undefined);
   };
   return repos;
+}
+
+async function readRuntimeChannelCredentialStatus(source: Queryable, workspaceId: string, channelId: string) {
+  const result = await source.query<{ fields: string[] | null }>(
+    `
+      select channel_credential.fields
+      from channel_credential
+      join sales_channel on sales_channel.id = channel_credential.channel_id
+      where channel_credential.workspace_id = $1
+        and sales_channel.workspace_id = $1
+        and sales_channel.public_id = $2
+      limit 1
+    `,
+    [workspaceId, channelId]
+  );
+  const fields = result.rows[0]?.fields;
+  return {
+    channelId,
+    saved: Array.isArray(fields) && fields.length > 0,
+    fields: Array.isArray(fields) ? fields : []
+  };
 }
 
 class PostgresRuntimeCollectionRepo<T> implements CollectionRepo<T> {
