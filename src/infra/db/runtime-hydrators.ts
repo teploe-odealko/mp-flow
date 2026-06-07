@@ -1,4 +1,19 @@
-import type { AccountingPolicy, AuditEvent, ExternalEvent, ObservedStock, SyncRun, Organization } from "../../core/models";
+import type {
+  AccountingPeriod,
+  AccountingPolicy,
+  AuditEvent,
+  CashAccount,
+  ChartAccount,
+  Counterparty,
+  DocumentTypeRegistry,
+  ExternalEvent,
+  IntegrationPlugin,
+  ObservedStock,
+  Product,
+  SyncRun,
+  Warehouse,
+  Organization
+} from "../../core/models";
 
 export const ORGANIZATION_SELECT = `
   organization.public_id as id,
@@ -69,6 +84,305 @@ export function accountingPolicyFromRow(row: AccountingPolicyDbRow): AccountingP
     allowOpenPeriodEdits: row.allow_open_period_edits ?? undefined,
     comment: optionalText(row.comment)
   });
+}
+
+export const ACCOUNTING_PERIOD_SELECT = `
+  accounting_period.public_id as id,
+  accounting_period_organization.public_id as organization_id,
+  accounting_period.label,
+  accounting_period.starts_on,
+  accounting_period.ends_on,
+  accounting_period.status
+`;
+
+export const ACCOUNTING_PERIOD_JOINS = `
+  left join organization accounting_period_organization on accounting_period_organization.id = accounting_period.organization_id
+`;
+
+export interface AccountingPeriodDbRow {
+  id: string;
+  organization_id: string;
+  label: string;
+  starts_on: unknown;
+  ends_on: unknown;
+  status: AccountingPeriod["status"];
+}
+
+export function accountingPeriodFromRow(row: AccountingPeriodDbRow): AccountingPeriod {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    label: row.label,
+    startsOn: dateString(row.starts_on),
+    endsOn: dateString(row.ends_on),
+    status: row.status
+  };
+}
+
+export const CHART_ACCOUNT_SELECT = `
+  chart_account.public_id as id,
+  chart_account_organization.public_id as organization_id,
+  chart_account.code,
+  chart_account.name,
+  chart_account.kind,
+  chart_account.normal_side,
+  chart_account.is_active
+`;
+
+export const CHART_ACCOUNT_JOINS = `
+  left join organization chart_account_organization on chart_account_organization.id = chart_account.organization_id
+`;
+
+export interface ChartAccountDbRow {
+  id: string;
+  organization_id: string;
+  code: string;
+  name: string;
+  kind: ChartAccount["kind"];
+  normal_side: ChartAccount["normalSide"];
+  is_active: boolean;
+}
+
+export function chartAccountFromRow(row: ChartAccountDbRow): ChartAccount {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    code: row.code,
+    name: row.name,
+    kind: row.kind,
+    normalSide: row.normal_side,
+    isActive: row.is_active
+  };
+}
+
+export const DOCUMENT_TYPE_SELECT = `
+  document_type_registry.public_id as code,
+  document_type_registry.module_code,
+  document_type_registry.display_name,
+  document_type_registry.is_posting,
+  document_type_registry.posting_rule_code,
+  document_type_registry.allows_draft,
+  document_type_registry.allows_reversal,
+  document_type_registry.allows_correction
+`;
+
+export interface DocumentTypeDbRow {
+  code: string;
+  module_code: string;
+  display_name: string;
+  is_posting: boolean;
+  posting_rule_code: string | null;
+  allows_draft: boolean;
+  allows_reversal: boolean;
+  allows_correction: boolean;
+}
+
+export function documentTypeFromRow(row: DocumentTypeDbRow): DocumentTypeRegistry {
+  return stripUndefined({
+    code: row.code,
+    moduleCode: row.module_code,
+    displayName: row.display_name,
+    isPosting: row.is_posting,
+    postingRuleCode: optionalText(row.posting_rule_code),
+    allowsDraft: row.allows_draft,
+    allowsReversal: row.allows_reversal,
+    allowsCorrection: row.allows_correction
+  });
+}
+
+export const COUNTERPARTY_SELECT = `
+  counterparty.public_id as id,
+  counterparty_organization.public_id as organization_id,
+  counterparty.name,
+  counterparty.counterparty_type,
+  counterparty.inn,
+  counterparty.country,
+  counterparty.is_active
+`;
+
+export const COUNTERPARTY_JOINS = `
+  left join organization counterparty_organization on counterparty_organization.id = counterparty.organization_id
+`;
+
+export interface CounterpartyDbRow {
+  id: string;
+  organization_id: string;
+  name: string;
+  counterparty_type: Counterparty["counterpartyType"];
+  inn: string | null;
+  country: string | null;
+  is_active: boolean;
+}
+
+export function counterpartyFromRow(row: CounterpartyDbRow): Counterparty {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    name: row.name,
+    counterpartyType: row.counterparty_type,
+    inn: optionalText(row.inn),
+    country: optionalText(row.country),
+    isActive: row.is_active
+  });
+}
+
+export const PRODUCT_SELECT = `
+  product.public_id as id,
+  product_organization.public_id as organization_id,
+  product.sku,
+  product.name,
+  product.unit,
+  product.barcode,
+  product.category,
+  product.brand,
+  product.description,
+  product.weight_grams,
+  product.length_mm,
+  product.width_mm,
+  product.height_mm,
+  product.manufacturer_article,
+  product.comment,
+  product.image_url,
+  product.status,
+  product.created_at
+`;
+
+export const PRODUCT_JOINS = `
+  left join organization product_organization on product_organization.id = product.organization_id
+`;
+
+export interface ProductDbRow {
+  id: string;
+  organization_id: string;
+  sku: string;
+  name: string;
+  unit: string | null;
+  barcode: string | null;
+  category: string | null;
+  brand: string | null;
+  description: string | null;
+  weight_grams: number | null;
+  length_mm: number | null;
+  width_mm: number | null;
+  height_mm: number | null;
+  manufacturer_article: string | null;
+  comment: string | null;
+  image_url: string | null;
+  status: Product["status"];
+  created_at: unknown;
+}
+
+export function productFromRow(row: ProductDbRow): Product {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    sku: row.sku,
+    name: row.name,
+    unit: row.unit ?? "шт",
+    barcode: optionalText(row.barcode),
+    category: optionalText(row.category),
+    brand: optionalText(row.brand),
+    description: optionalText(row.description),
+    weightGrams: optionalNumber(row.weight_grams),
+    lengthMm: optionalNumber(row.length_mm),
+    widthMm: optionalNumber(row.width_mm),
+    heightMm: optionalNumber(row.height_mm),
+    manufacturerArticle: optionalText(row.manufacturer_article),
+    comment: optionalText(row.comment),
+    imageUrl: optionalText(row.image_url),
+    status: row.status,
+    createdAt: dateTimeString(row.created_at)
+  });
+}
+
+export const WAREHOUSE_SELECT = `
+  warehouse.public_id as id,
+  warehouse_organization.public_id as organization_id,
+  warehouse.name,
+  warehouse.warehouse_type,
+  warehouse_channel.public_id as channel_id,
+  warehouse.is_active
+`;
+
+export const WAREHOUSE_JOINS = `
+  left join organization warehouse_organization on warehouse_organization.id = warehouse.organization_id
+  left join sales_channel warehouse_channel on warehouse_channel.id = warehouse.channel_id
+`;
+
+export interface WarehouseDbRow {
+  id: string;
+  organization_id: string;
+  name: string;
+  warehouse_type: Warehouse["warehouseType"];
+  channel_id: string | null;
+  is_active: boolean;
+}
+
+export function warehouseFromRow(row: WarehouseDbRow): Warehouse {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    name: row.name,
+    warehouseType: row.warehouse_type,
+    channelId: optionalText(row.channel_id),
+    isActive: row.is_active
+  });
+}
+
+export const CASH_ACCOUNT_SELECT = `
+  cash_account.public_id as id,
+  cash_account_organization.public_id as organization_id,
+  cash_account.name,
+  cash_account.account_code,
+  cash_account.balance_rub,
+  cash_account.is_active
+`;
+
+export const CASH_ACCOUNT_JOINS = `
+  left join organization cash_account_organization on cash_account_organization.id = cash_account.organization_id
+`;
+
+export interface CashAccountDbRow {
+  id: string;
+  organization_id: string;
+  name: string;
+  account_code: CashAccount["accountCode"];
+  balance_rub: string | number;
+  is_active: boolean;
+}
+
+export function cashAccountFromRow(row: CashAccountDbRow): CashAccount {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    name: row.name,
+    accountCode: row.account_code,
+    balanceRub: Number(row.balance_rub),
+    isActive: row.is_active
+  };
+}
+
+export const INTEGRATION_PLUGIN_SELECT = `
+  integration_plugin.public_id as id,
+  integration_plugin.code,
+  integration_plugin.display_name,
+  integration_plugin.status
+`;
+
+export interface IntegrationPluginDbRow {
+  id: string;
+  code: string;
+  display_name: string;
+  status: IntegrationPlugin["status"];
+}
+
+export function integrationPluginFromRow(row: IntegrationPluginDbRow): IntegrationPlugin {
+  return {
+    id: row.id,
+    code: row.code,
+    displayName: row.display_name,
+    status: row.status
+  };
 }
 
 export const EXTERNAL_EVENT_SELECT = `
@@ -301,6 +615,11 @@ function optionalText(value: unknown): string | undefined {
 function optionalDateTimeString(value: unknown): string | undefined {
   if (value === null || value === undefined) return undefined;
   return dateTimeString(value);
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  if (value === null || value === undefined) return undefined;
+  return Number(value);
 }
 
 function dateTimeString(value: unknown): string {

@@ -12,27 +12,57 @@ import { stableUuid } from "./ids";
 import {
   ACCOUNTING_POLICY_JOINS,
   ACCOUNTING_POLICY_SELECT,
+  ACCOUNTING_PERIOD_JOINS,
+  ACCOUNTING_PERIOD_SELECT,
   AUDIT_EVENT_JOINS,
   AUDIT_EVENT_SELECT,
+  CASH_ACCOUNT_JOINS,
+  CASH_ACCOUNT_SELECT,
+  CHART_ACCOUNT_JOINS,
+  CHART_ACCOUNT_SELECT,
+  COUNTERPARTY_JOINS,
+  COUNTERPARTY_SELECT,
+  DOCUMENT_TYPE_SELECT,
   EXTERNAL_EVENT_JOINS,
   EXTERNAL_EVENT_SELECT,
+  INTEGRATION_PLUGIN_SELECT,
   OBSERVED_STOCK_JOINS,
   OBSERVED_STOCK_SELECT,
   ORGANIZATION_SELECT,
+  PRODUCT_JOINS,
+  PRODUCT_SELECT,
   SYNC_RUN_JOINS,
   SYNC_RUN_SELECT,
+  WAREHOUSE_JOINS,
+  WAREHOUSE_SELECT,
+  accountingPeriodFromRow,
   accountingPolicyFromRow,
   auditEventFromRow,
+  cashAccountFromRow,
+  chartAccountFromRow,
+  counterpartyFromRow,
+  documentTypeFromRow,
   externalEventFromRow,
+  integrationPluginFromRow,
   observedStockFromRow,
   organizationFromRow,
+  productFromRow,
   syncRunFromRow,
+  warehouseFromRow,
+  type AccountingPeriodDbRow,
   type AccountingPolicyDbRow,
   type AuditEventDbRow,
+  type CashAccountDbRow,
+  type ChartAccountDbRow,
+  type CounterpartyDbRow,
+  type DocumentTypeDbRow,
   type ExternalEventDbRow,
+  type IntegrationPluginDbRow,
   type OrganizationDbRow,
   type ObservedStockDbRow,
-  type SyncRunDbRow
+  type ProductDbRow,
+  type SyncRunDbRow,
+  type WarehouseDbRow
 } from "./runtime-hydrators";
 
 export interface RuntimeSession {
@@ -376,9 +406,12 @@ const TABLES: TableSpec[] = [
     label: requiredString(entity.label, "periods.label"),
     starts_on: requiredString(entity.startsOn, "periods.startsOn"),
     ends_on: requiredString(entity.endsOn, "periods.endsOn"),
-    status: requiredString(entity.status, "periods.status"),
-    state_json: entity
-  }), "starts_on, id"),
+    status: requiredString(entity.status, "periods.status")
+  }), "accounting_period.starts_on, accounting_period.id", {
+    select: ACCOUNTING_PERIOD_SELECT,
+    joins: ACCOUNTING_PERIOD_JOINS,
+    hydrate: (row) => accountingPeriodFromRow(row as unknown as AccountingPeriodDbRow) as unknown as RuntimeEntity
+  }),
   spec("chartAccounts", "chart_account", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "chartAccounts.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "chartAccounts.organizationId")),
@@ -386,9 +419,12 @@ const TABLES: TableSpec[] = [
     name: requiredString(entity.name, "chartAccounts.name"),
     kind: requiredString(entity.kind, "chartAccounts.kind"),
     normal_side: requiredString(entity.normalSide, "chartAccounts.normalSide"),
-    is_active: requiredBoolean(entity.isActive, "chartAccounts.isActive"),
-    state_json: entity
-  }), "code"),
+    is_active: requiredBoolean(entity.isActive, "chartAccounts.isActive")
+  }), "chart_account.code", {
+    select: CHART_ACCOUNT_SELECT,
+    joins: CHART_ACCOUNT_JOINS,
+    hydrate: (row) => chartAccountFromRow(row as unknown as ChartAccountDbRow) as unknown as RuntimeEntity
+  }),
   spec("documentTypes", "document_type_registry", ["code"], (entity) => ({
     code: requiredString(entity.code, "documentTypes.code"),
     module_code: requiredString(entity.moduleCode, "documentTypes.moduleCode"),
@@ -397,9 +433,11 @@ const TABLES: TableSpec[] = [
     posting_rule_code: optionalString(entity.postingRuleCode),
     allows_draft: requiredBoolean(entity.allowsDraft, "documentTypes.allowsDraft"),
     allows_reversal: requiredBoolean(entity.allowsReversal, "documentTypes.allowsReversal"),
-    allows_correction: requiredBoolean(entity.allowsCorrection, "documentTypes.allowsCorrection"),
-    state_json: entity
-  }), "code"),
+    allows_correction: requiredBoolean(entity.allowsCorrection, "documentTypes.allowsCorrection")
+  }), "document_type_registry.code", {
+    select: DOCUMENT_TYPE_SELECT,
+    hydrate: (row) => documentTypeFromRow(row as unknown as DocumentTypeDbRow) as unknown as RuntimeEntity
+  }),
   spec("documents", "document", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "documents.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "documents.organizationId")),
@@ -487,9 +525,12 @@ const TABLES: TableSpec[] = [
     counterparty_type: requiredString(entity.counterpartyType, "counterparties.counterpartyType"),
     inn: optionalString(entity.inn),
     country: optionalString(entity.country),
-    is_active: requiredBoolean(entity.isActive, "counterparties.isActive"),
-    state_json: entity
-  }), "name, id"),
+    is_active: requiredBoolean(entity.isActive, "counterparties.isActive")
+  }), "counterparty.name, counterparty.id", {
+    select: COUNTERPARTY_SELECT,
+    joins: COUNTERPARTY_JOINS,
+    hydrate: (row) => counterpartyFromRow(row as unknown as CounterpartyDbRow) as unknown as RuntimeEntity
+  }),
   spec("products", "product", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "products.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "products.organizationId")),
@@ -508,9 +549,12 @@ const TABLES: TableSpec[] = [
     width_mm: optionalNumber(entity.widthMm),
     height_mm: optionalNumber(entity.heightMm),
     manufacturer_article: optionalString(entity.manufacturerArticle),
-    comment: optionalString(entity.comment),
-    state_json: entity
-  }), "sku, id"),
+    comment: optionalString(entity.comment)
+  }), "product.sku, product.id", {
+    select: PRODUCT_SELECT,
+    joins: PRODUCT_JOINS,
+    hydrate: (row) => productFromRow(row as unknown as ProductDbRow) as unknown as RuntimeEntity
+  }),
   spec("productAssets", "product_asset", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "productAssets.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "productAssets.organizationId")),
@@ -530,9 +574,12 @@ const TABLES: TableSpec[] = [
     name: requiredString(entity.name, "warehouses.name"),
     warehouse_type: requiredString(entity.warehouseType, "warehouses.warehouseType"),
     channel_id: optionalUuid(entity.channelId),
-    is_active: requiredBoolean(entity.isActive, "warehouses.isActive"),
-    state_json: entity
-  }), "name, id"),
+    is_active: requiredBoolean(entity.isActive, "warehouses.isActive")
+  }), "warehouse.name, warehouse.id", {
+    select: WAREHOUSE_SELECT,
+    joins: WAREHOUSE_JOINS,
+    hydrate: (row) => warehouseFromRow(row as unknown as WarehouseDbRow) as unknown as RuntimeEntity
+  }),
   spec("stockStates", "stock_state", ["product_id", "warehouse_id"], (entity) => ({
     product_id: entityUuid(requiredString(entity.productId, "stockStates.productId")),
     warehouse_id: entityUuid(requiredString(entity.warehouseId, "stockStates.warehouseId")),
@@ -616,9 +663,12 @@ const TABLES: TableSpec[] = [
     name: requiredString(entity.name, "cashAccounts.name"),
     account_code: requiredString(entity.accountCode, "cashAccounts.accountCode"),
     balance_rub: requiredNumber(entity.balanceRub, "cashAccounts.balanceRub"),
-    is_active: requiredBoolean(entity.isActive, "cashAccounts.isActive"),
-    state_json: entity
-  }), "name, id"),
+    is_active: requiredBoolean(entity.isActive, "cashAccounts.isActive")
+  }), "cash_account.name, cash_account.id", {
+    select: CASH_ACCOUNT_SELECT,
+    joins: CASH_ACCOUNT_JOINS,
+    hydrate: (row) => cashAccountFromRow(row as unknown as CashAccountDbRow) as unknown as RuntimeEntity
+  }),
   spec("payments", "payment", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "payments.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "payments.organizationId")),
@@ -773,9 +823,11 @@ const TABLES: TableSpec[] = [
     id: entityUuid(requiredString(entity.id, "integrationPlugins.id")),
     code: requiredString(entity.code, "integrationPlugins.code"),
     display_name: requiredString(entity.displayName, "integrationPlugins.displayName"),
-    status: requiredString(entity.status, "integrationPlugins.status"),
-    state_json: entity
-  }), "code"),
+    status: requiredString(entity.status, "integrationPlugins.status")
+  }), "integration_plugin.code", {
+    select: INTEGRATION_PLUGIN_SELECT,
+    hydrate: (row) => integrationPluginFromRow(row as unknown as IntegrationPluginDbRow) as unknown as RuntimeEntity
+  }),
   spec("salesChannels", "sales_channel", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "salesChannels.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "salesChannels.organizationId")),
