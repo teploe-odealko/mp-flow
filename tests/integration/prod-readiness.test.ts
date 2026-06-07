@@ -490,6 +490,78 @@ describe("prod-ready contracts", () => {
     }
   });
 
+  it("serves access user writes before snapshot sessions", async () => {
+    const previous = process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED;
+    process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED = "true";
+    resetIds();
+    const app = new AccountingApp();
+    await app.setupDemo();
+    let readContexts = 0;
+    let readSessions = 0;
+    let writeContexts = 0;
+    let writeSessions = 0;
+    const api = createApi(app, {
+      persistence: {
+        async openReadContext() {
+          readContexts += 1;
+          return {
+            repos: app.repos,
+            externalEvents: app.externalEvents,
+            observedStocks: app.observedStocks,
+            syncRuns: app.syncRuns,
+            setupMetadata: () => app.setupMetadata()
+          };
+        },
+        async runWriteContext(_workspaceId, handler) {
+          writeContexts += 1;
+          return await handler({
+            repos: app.repos,
+            externalEvents: app.externalEvents,
+            observedStocks: app.observedStocks,
+            syncRuns: app.syncRuns,
+            setupMetadata: () => app.setupMetadata()
+          });
+        },
+        async openReadSession() {
+          readSessions += 1;
+          return { app, nextId: 1, close: async () => undefined };
+        },
+        async openWriteSession() {
+          writeSessions += 1;
+          return { app, nextId: 1, commit: async () => undefined, rollback: async () => undefined, close: async () => undefined };
+        }
+      }
+    });
+
+    try {
+      const user = await post<any>(api, "/api/settings/users/invite", {
+        email: "access-user@example.test",
+        name: "Access User",
+        roleCode: "accountant"
+      });
+      const roleChange = await patch<any>(api, `/api/settings/users/${user.id}/role`, { roleCode: "viewer" });
+      const resent = await post<any>(api, `/api/settings/users/${user.id}/resend`);
+      const disabled = await post<any>(api, `/api/settings/users/${user.id}/disable`);
+      const users = await get<any>(api, "/api/settings/users");
+
+      expect(user.status).toBe("invited");
+      expect(roleChange.role.code).toBe("viewer");
+      expect(resent.status).toBe("invited");
+      expect(disabled.status).toBe("disabled");
+      expect(users.users).toContainEqual(expect.objectContaining({ id: user.id, roleCode: "viewer", status: "disabled" }));
+      expect(readContexts).toBe(1);
+      expect(readSessions).toBe(0);
+      expect(writeContexts).toBe(4);
+      expect(writeSessions).toBe(0);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED;
+      } else {
+        process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED = previous;
+      }
+    }
+  });
+
   it("authenticates MCP keys through persistence without app sessions", async () => {
     resetIds();
     let authenticateCalls = 0;

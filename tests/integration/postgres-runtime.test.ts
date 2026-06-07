@@ -77,9 +77,27 @@ describePostgres("postgres runtime store", () => {
 
     const store = new PostgresRuntimeStore(new Pool({ connectionString: connectionString! }), "postgres-runtime-test-secret");
     const api = createApi(new AccountingApp(), { persistence: store });
+    const previousAccess = process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED;
+    process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED = "true";
 
     await request(api, "POST", "/api/setup", { displayName: "Postgres Runtime", accountingStartDate: "2026-01-01" });
     const updatedOrganization = await request<any>(api, "PATCH", "/api/organization", { displayName: "Postgres Runtime Updated", inn: "7700000000" });
+    let invitedUser: any;
+    let updatedUserRole: any;
+    let resentUserInvite: any;
+    let disabledUser: any;
+    try {
+      invitedUser = await request<any>(api, "POST", "/api/settings/users/invite", { email: "pg-access@example.test", name: "PG Access", roleCode: "accountant" });
+      updatedUserRole = await request<any>(api, "PATCH", `/api/settings/users/${invitedUser.id}/role`, { roleCode: "viewer" });
+      resentUserInvite = await request<any>(api, "POST", `/api/settings/users/${invitedUser.id}/resend`);
+      disabledUser = await request<any>(api, "POST", `/api/settings/users/${invitedUser.id}/disable`);
+    } finally {
+      if (previousAccess === undefined) {
+        delete process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED;
+      } else {
+        process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED = previousAccess;
+      }
+    }
     const product = await request<any>(api, "POST", "/api/products", { sku: "PG-001", name: "Postgres товар" });
     const serviceWarehouse = await request<any>(api, "POST", "/api/warehouses", { name: "PG service warehouse", warehouseType: "own" });
     const serviceCounterparty = await request<any>(api, "POST", "/api/counterparties", { name: "PG service supplier", counterpartyType: "supplier", country: "CN" });
@@ -151,6 +169,10 @@ describePostgres("postgres runtime store", () => {
         "select display_name, inn, public_id from organization where public_id = $1",
         [updatedOrganization.id]
       );
+      const userRows = await inspectPool.query<{ email: string; name: string; role_code: string; status: string; invited_at: Date | null }>(
+        "select email, name, role_code, status, invited_at from user_account where public_id = $1",
+        [invitedUser.id]
+      );
       const productRows = await inspectPool.query<{ image_url: string | null }>(
         "select image_url from product where public_id = $1",
         [product.id]
@@ -200,6 +222,12 @@ describePostgres("postgres runtime store", () => {
       expect(products.rows).toContainEqual({ sku: "PG-001", public_id: product.id });
       expect(updatedOrganization).toEqual(expect.objectContaining({ displayName: "Postgres Runtime Updated", inn: "7700000000" }));
       expect(organizationRows.rows[0]).toEqual({ display_name: "Postgres Runtime Updated", inn: "7700000000", public_id: updatedOrganization.id });
+      expect(invitedUser).toEqual(expect.objectContaining({ email: "pg-access@example.test", roleCode: "accountant", status: "invited" }));
+      expect(updatedUserRole.role).toEqual(expect.objectContaining({ code: "viewer" }));
+      expect(resentUserInvite).toEqual(expect.objectContaining({ id: invitedUser.id, status: "invited" }));
+      expect(disabledUser).toEqual(expect.objectContaining({ id: invitedUser.id, roleCode: "viewer", status: "disabled" }));
+      expect(userRows.rows[0]).toEqual(expect.objectContaining({ email: "pg-access@example.test", name: "PG Access", role_code: "viewer", status: "disabled" }));
+      expect(userRows.rows[0]?.invited_at).toBeTruthy();
       expect(productImage).toEqual({ id: `${product.id}:main`, productId: product.id, url: "https://example.test/pg-product.jpg", sortOrder: 0 });
       expect(productRows.rows[0]?.image_url).toBe("https://example.test/pg-product.jpg");
       expect(productImageAudit.rows).toContainEqual({ entity_public_id: product.id, event_type: "image_update" });

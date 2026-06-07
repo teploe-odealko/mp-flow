@@ -218,6 +218,13 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   summary через `RuntimeReadContext`, клонируя вычисленные статусы/payload без `upsert`. Write/control
   endpoints онбординга (`import`, `match-products`, `patch item`, `review`, `create-opening-balances`)
   остаются в session-зоне до следующего транзакционного слоя.
+- ✅ User-write endpoints управления доступами сняты с session middleware:
+  `/api/settings/users/invite`, `/api/settings/users/:id/role`,
+  `/api/settings/users/:id/disable`, `/api/settings/users/:id/resend` обслуживаются
+  `src/backend/services/access-management-service.ts` через `RuntimeWriteContext`.
+  Контроллеры больше не пишут через request-scoped `AccountingApp`; prod-readiness фиксирует
+  `writeSessions = 0`, а Postgres runtime проверяет запись в нормализованной таблице
+  `user_account`.
 - ✅ Начат перенос write/control на обычные сервисы без `AccountingApp` session: добавлен
   `RuntimeWriteContext` и `PostgresRuntimeStore.runWriteContext`, который открывает транзакцию,
   отдаёт сервису `repos + typed stores`, сохраняет `next_id` и коммитит без request-scoped app facade.

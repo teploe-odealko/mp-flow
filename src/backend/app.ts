@@ -19,6 +19,7 @@ import { initHttpMetrics, metricsMiddleware, renderMetrics } from "./metrics";
 import { captureException } from "./observability";
 import { getPool } from "./db/pool";
 import { ExternalEventRepository } from "./repositories/external-event-repository";
+import { disableUser, inviteUser, resendUserInvite, updateUserRole } from "./services/access-management-service";
 import { onboardingProjectDetailsFor } from "./services/onboarding-project-service";
 import { updateOrganization } from "./services/organization-service";
 import { confirmProductAsset, createProductAsset, deleteProductAsset, updateProductAsset } from "./services/product-asset-service";
@@ -1717,6 +1718,24 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
     return c.json({ ok: true, data: (await (await readContextFor(c)).repos.agentTokens.all()).map(publicAgentToken) });
   });
+  api.post("/api/settings/users/invite", async (c) => {
+    if (!accessManagementEnabled()) return accessManagementDisabled(c);
+    const body = userInviteSchema.parse(await c.req.json());
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => inviteUser(writeContext, body)) });
+  });
+  api.patch("/api/settings/users/:id/role", async (c) => {
+    if (!accessManagementEnabled()) return accessManagementDisabled(c);
+    const body = userRoleSchema.parse(await c.req.json());
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => updateUserRole(writeContext, c.req.param("id"), body.roleCode)) });
+  });
+  api.post("/api/settings/users/:id/disable", async (c) => {
+    if (!accessManagementEnabled()) return accessManagementDisabled(c);
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => disableUser(writeContext, c.req.param("id"))) });
+  });
+  api.post("/api/settings/users/:id/resend", async (c) => {
+    if (!accessManagementEnabled()) return accessManagementDisabled(c);
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => resendUserInvite(writeContext, c.req.param("id"))) });
+  });
   api.get("/api/meta/navigation", (c) => c.json({ ok: true, data: navigationMeta }));
   api.get("/api/procurement/receipts/:id/channel-dispatch/state", async (c) => {
     const channelId = c.req.query("channelId");
@@ -2925,57 +2944,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     await scopedApp.repos.agentTokens.upsert(token);
     return c.json({ ok: true, data: publicAgentToken(token) });
   });
-  api.post("/api/settings/users/invite", async (c) => {
-    if (!accessManagementEnabled()) return accessManagementDisabled(c);
-    const body = userInviteSchema.parse(await c.req.json());
-    const user = {
-      id: id("user"),
-      organizationId: scopedApp.currentOrgId(),
-      email: body.email,
-      name: body.name ?? body.email,
-      roleCode: body.roleCode ?? "operator",
-      status: "invited" as const,
-      invitedAt: nowIso()
-    };
-    await scopedApp.repos.users.add(user);
-    return c.json({ ok: true, data: user });
-  });
-  api.patch("/api/settings/users/:id/role", async (c) => {
-    if (!accessManagementEnabled()) return accessManagementDisabled(c);
-    const body = z.object({ roleCode: z.enum(["owner", "accountant", "operator", "viewer"]) }).parse(await c.req.json());
-    const users = await scopedApp.repos.users.all();
-    const user = users.find((candidate) => candidate.id === c.req.param("id"));
-    if (!user) throw new DomainError("user_not_found", "Пользователь не найден");
-    const activeOwners = users.filter((candidate) => candidate.status !== "disabled" && candidate.roleCode === "owner");
-    if (user.roleCode === "owner" && body.roleCode !== "owner" && activeOwners.length <= 1) {
-      throw new DomainError("last_admin_required", "Нельзя снять роль владельца у последнего администратора");
-    }
-    user.roleCode = body.roleCode;
-    await scopedApp.repos.users.upsert(user);
-    return c.json({ ok: true, data: { user, role: (await scopedApp.repos.roles.all()).find((role) => role.code === body.roleCode) } });
-  });
-  api.post("/api/settings/users/:id/disable", async (c) => {
-    if (!accessManagementEnabled()) return accessManagementDisabled(c);
-    const users = await scopedApp.repos.users.all();
-    const user = users.find((candidate) => candidate.id === c.req.param("id"));
-    if (!user) throw new DomainError("user_not_found", "Пользователь не найден");
-    const activeOwners = users.filter((candidate) => candidate.status !== "disabled" && candidate.roleCode === "owner");
-    if (user.roleCode === "owner" && activeOwners.length <= 1) {
-      throw new DomainError("last_admin_required", "Нельзя отключить последнего администратора");
-    }
-    user.status = "disabled";
-    await scopedApp.repos.users.upsert(user);
-    return c.json({ ok: true, data: user });
-  });
-  api.post("/api/settings/users/:id/resend", async (c) => {
-    if (!accessManagementEnabled()) return accessManagementDisabled(c);
-    const user = await scopedApp.repos.users.getById(c.req.param("id"));
-    if (!user) throw new DomainError("user_not_found", "Пользователь не найден");
-    user.status = "invited";
-    user.invitedAt = nowIso();
-    await scopedApp.repos.users.upsert(user);
-    return c.json({ ok: true, data: user });
-  });
   api.post("/api/agent-tokens", async (c) => {
     if (!accessManagementEnabled()) return accessManagementDisabled(c);
     const body = agentTokenCreateSchema.parse(await c.req.json());
@@ -4131,6 +4099,7 @@ const backfillImportSchema = z.object({
   syncRunId: z.string().optional()
 });
 const userInviteSchema = z.object({ email: z.string().email(), name: z.string().optional(), roleCode: z.enum(["owner", "accountant", "operator", "viewer"]).optional() });
+const userRoleSchema = z.object({ roleCode: z.enum(["owner", "accountant", "operator", "viewer"]) });
 
 const navigationMeta = [
   { label: "Главная", path: "/", section: "home" },
