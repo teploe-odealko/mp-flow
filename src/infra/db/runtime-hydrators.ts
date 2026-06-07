@@ -5,9 +5,15 @@ import type {
   CashAccount,
   ChartAccount,
   Counterparty,
+  Document,
+  DocumentLine,
+  DocumentLink,
+  DocumentVersion,
   DocumentTypeRegistry,
   ExternalEvent,
   IntegrationPlugin,
+  JournalEntry,
+  JournalLine,
   ObservedStock,
   Product,
   SyncRun,
@@ -382,6 +388,236 @@ export function integrationPluginFromRow(row: IntegrationPluginDbRow): Integrati
     code: row.code,
     displayName: row.display_name,
     status: row.status
+  };
+}
+
+export const DOCUMENT_SELECT = `
+  document.public_id as id,
+  document_organization.public_id as organization_id,
+  document.document_type,
+  document.number,
+  document.status,
+  document.accounting_date,
+  document.source,
+  document.amount_rub,
+  document.title,
+  document.comment,
+  document_corrected_from.public_id as corrected_from_document_id,
+  document.created_at,
+  document.posted_at,
+  document.cancelled_at
+`;
+
+export const DOCUMENT_JOINS = `
+  left join organization document_organization on document_organization.id = document.organization_id
+  left join document document_corrected_from on document_corrected_from.id = document.corrected_from_document_id
+`;
+
+export interface DocumentDbRow {
+  id: string;
+  organization_id: string;
+  document_type: string;
+  number: string;
+  status: Document["status"];
+  accounting_date: unknown;
+  source: Document["source"];
+  amount_rub: string | number;
+  title: string;
+  comment: string | null;
+  corrected_from_document_id: string | null;
+  created_at: unknown;
+  posted_at: unknown;
+  cancelled_at: unknown;
+}
+
+export function documentFromRow(row: DocumentDbRow): Document {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    documentType: row.document_type,
+    number: row.number,
+    status: row.status,
+    accountingDate: dateString(row.accounting_date),
+    source: row.source,
+    amountRub: Number(row.amount_rub),
+    title: row.title,
+    comment: optionalText(row.comment),
+    correctedFromDocumentId: optionalText(row.corrected_from_document_id),
+    createdAt: dateTimeString(row.created_at),
+    postedAt: optionalDateTimeString(row.posted_at),
+    cancelledAt: optionalDateTimeString(row.cancelled_at)
+  });
+}
+
+export const DOCUMENT_LINE_SELECT = `
+  document_line.public_id as id,
+  document_line_document.public_id as document_id,
+  document_line.line_no,
+  document_line.line_type,
+  document_line.qty,
+  document_line.amount_rub,
+  document_line.payload
+`;
+
+export const DOCUMENT_LINE_JOINS = `
+  left join document document_line_document on document_line_document.id = document_line.document_id
+`;
+
+export interface DocumentLineDbRow {
+  id: string;
+  document_id: string;
+  line_no: number;
+  line_type: string;
+  qty: string | number | null;
+  amount_rub: string | number | null;
+  payload: Record<string, unknown>;
+}
+
+export function documentLineFromRow(row: DocumentLineDbRow): DocumentLine {
+  return stripUndefined({
+    id: row.id,
+    documentId: row.document_id,
+    lineNo: Number(row.line_no),
+    lineType: row.line_type,
+    qty: optionalNumber(row.qty),
+    amountRub: optionalNumber(row.amount_rub),
+    payload: row.payload ?? {}
+  });
+}
+
+export const DOCUMENT_VERSION_SELECT = `
+  document_version.public_id as id,
+  document_version_document.public_id as document_id,
+  document_version.version_no,
+  document_version.snapshot,
+  document_version.reason,
+  document_version.created_at
+`;
+
+export const DOCUMENT_VERSION_JOINS = `
+  left join document document_version_document on document_version_document.id = document_version.document_id
+`;
+
+export interface DocumentVersionDbRow {
+  id: string;
+  document_id: string;
+  version_no: number;
+  snapshot: unknown;
+  reason: string;
+  created_at: unknown;
+}
+
+export function documentVersionFromRow(row: DocumentVersionDbRow): DocumentVersion {
+  return {
+    id: row.id,
+    documentId: row.document_id,
+    versionNo: Number(row.version_no),
+    snapshot: row.snapshot,
+    reason: row.reason,
+    createdAt: dateTimeString(row.created_at)
+  };
+}
+
+export const DOCUMENT_LINK_SELECT = `
+  document_link.public_id as id,
+  document_link_organization.public_id as organization_id,
+  document_link_from.public_id as from_document_id,
+  document_link_to.public_id as to_document_id,
+  document_link.link_type
+`;
+
+export const DOCUMENT_LINK_JOINS = `
+  left join organization document_link_organization on document_link_organization.id = document_link.organization_id
+  left join document document_link_from on document_link_from.id = document_link.from_document_id
+  left join document document_link_to on document_link_to.id = document_link.to_document_id
+`;
+
+export interface DocumentLinkDbRow {
+  id: string;
+  organization_id: string;
+  from_document_id: string;
+  to_document_id: string;
+  link_type: string;
+}
+
+export function documentLinkFromRow(row: DocumentLinkDbRow): DocumentLink {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    fromDocumentId: row.from_document_id,
+    toDocumentId: row.to_document_id,
+    linkType: row.link_type
+  };
+}
+
+export const JOURNAL_ENTRY_SELECT = `
+  journal_entry.public_id as id,
+  journal_entry_organization.public_id as organization_id,
+  journal_entry_document.public_id as document_id,
+  journal_entry.accounting_date,
+  journal_entry.memo,
+  journal_entry_reversal.public_id as reversal_of_entry_id,
+  journal_entry.created_at
+`;
+
+export const JOURNAL_ENTRY_JOINS = `
+  left join organization journal_entry_organization on journal_entry_organization.id = journal_entry.organization_id
+  left join document journal_entry_document on journal_entry_document.id = journal_entry.document_id
+  left join journal_entry journal_entry_reversal on journal_entry_reversal.id = journal_entry.reversal_of_entry_id
+`;
+
+export interface JournalEntryDbRow {
+  id: string;
+  organization_id: string;
+  document_id: string;
+  accounting_date: unknown;
+  memo: string;
+  reversal_of_entry_id: string | null;
+  created_at: unknown;
+}
+
+export function journalEntryFromRow(row: JournalEntryDbRow): JournalEntry {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    documentId: row.document_id,
+    accountingDate: dateString(row.accounting_date),
+    memo: row.memo,
+    reversalOfEntryId: optionalText(row.reversal_of_entry_id),
+    createdAt: dateTimeString(row.created_at)
+  });
+}
+
+export const JOURNAL_LINE_SELECT = `
+  journal_line.public_id as id,
+  journal_line_entry.public_id as journal_entry_id,
+  journal_line.account_code,
+  journal_line.debit,
+  journal_line.credit,
+  journal_line.memo
+`;
+
+export const JOURNAL_LINE_JOINS = `
+  left join journal_entry journal_line_entry on journal_line_entry.id = journal_line.journal_entry_id
+`;
+
+export interface JournalLineDbRow {
+  id: string;
+  journal_entry_id: string;
+  account_code: string;
+  debit: string | number;
+  credit: string | number;
+  memo: string;
+}
+
+export function journalLineFromRow(row: JournalLineDbRow): JournalLine {
+  return {
+    id: row.id,
+    journalEntryId: row.journal_entry_id,
+    accountCode: row.account_code,
+    debit: Number(row.debit),
+    credit: Number(row.credit),
+    memo: row.memo
   };
 }
 

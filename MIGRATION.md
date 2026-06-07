@@ -199,6 +199,12 @@ typed columns и `public_id` join для `organizationId`. Добавлены/з
 и `public_id` joins, запись нового `state_json` остановлена. Текущий остаток `state_json: entity` —
 49 таблиц.
 
+### ✅ Typed hydrate для документов и проводок
+На typed specs переведены `documents`, `documentLines`, `documentVersions`, `documentLinks`,
+`journalEntries`, `journalLines`: ссылки (`documentId`, `organizationId`, reversal/correction links)
+восстанавливаются через `public_id` joins, суммы и даты — из typed columns. Текущий остаток
+`state_json: entity` — 43 таблицы.
+
 ### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
 Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/
 addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocumentSummary(x))` — хелперы каскадно

@@ -22,10 +22,22 @@ import {
   CHART_ACCOUNT_SELECT,
   COUNTERPARTY_JOINS,
   COUNTERPARTY_SELECT,
+  DOCUMENT_JOINS,
+  DOCUMENT_LINE_JOINS,
+  DOCUMENT_LINE_SELECT,
+  DOCUMENT_LINK_JOINS,
+  DOCUMENT_LINK_SELECT,
   DOCUMENT_TYPE_SELECT,
+  DOCUMENT_SELECT,
+  DOCUMENT_VERSION_JOINS,
+  DOCUMENT_VERSION_SELECT,
   EXTERNAL_EVENT_JOINS,
   EXTERNAL_EVENT_SELECT,
   INTEGRATION_PLUGIN_SELECT,
+  JOURNAL_ENTRY_JOINS,
+  JOURNAL_ENTRY_SELECT,
+  JOURNAL_LINE_JOINS,
+  JOURNAL_LINE_SELECT,
   OBSERVED_STOCK_JOINS,
   OBSERVED_STOCK_SELECT,
   ORGANIZATION_SELECT,
@@ -42,8 +54,14 @@ import {
   chartAccountFromRow,
   counterpartyFromRow,
   documentTypeFromRow,
+  documentFromRow,
+  documentLineFromRow,
+  documentLinkFromRow,
+  documentVersionFromRow,
   externalEventFromRow,
   integrationPluginFromRow,
+  journalEntryFromRow,
+  journalLineFromRow,
   observedStockFromRow,
   organizationFromRow,
   productFromRow,
@@ -56,8 +74,14 @@ import {
   type ChartAccountDbRow,
   type CounterpartyDbRow,
   type DocumentTypeDbRow,
+  type DocumentDbRow,
+  type DocumentLineDbRow,
+  type DocumentLinkDbRow,
+  type DocumentVersionDbRow,
   type ExternalEventDbRow,
   type IntegrationPluginDbRow,
+  type JournalEntryDbRow,
+  type JournalLineDbRow,
   type OrganizationDbRow,
   type ObservedStockDbRow,
   type ProductDbRow,
@@ -453,8 +477,11 @@ const TABLES: TableSpec[] = [
     created_at: requiredString(entity.createdAt, "documents.createdAt"),
     posted_at: optionalString(entity.postedAt),
     cancelled_at: optionalString(entity.cancelledAt),
-    state_json: entity
-  }), "accounting_date, id"),
+  }), "document.accounting_date, document.id", {
+    select: DOCUMENT_SELECT,
+    joins: DOCUMENT_JOINS,
+    hydrate: (row) => documentFromRow(row as unknown as DocumentDbRow) as unknown as RuntimeEntity
+  }),
   spec("documentLines", "document_line", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "documentLines.id")),
     document_id: entityUuid(requiredString(entity.documentId, "documentLines.documentId")),
@@ -462,26 +489,35 @@ const TABLES: TableSpec[] = [
     line_type: requiredString(entity.lineType, "documentLines.lineType"),
     qty: optionalNumber(entity.qty),
     amount_rub: optionalNumber(entity.amountRub),
-    payload: entity.payload ?? {},
-    state_json: entity
-  }), "document_id, line_no"),
+    payload: entity.payload ?? {}
+  }), "document_line.document_id, document_line.line_no", {
+    select: DOCUMENT_LINE_SELECT,
+    joins: DOCUMENT_LINE_JOINS,
+    hydrate: (row) => documentLineFromRow(row as unknown as DocumentLineDbRow) as unknown as RuntimeEntity
+  }),
   spec("documentVersions", "document_version", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "documentVersions.id")),
     document_id: entityUuid(requiredString(entity.documentId, "documentVersions.documentId")),
     version_no: requiredNumber(entity.versionNo, "documentVersions.versionNo"),
     snapshot: entity.snapshot ?? {},
     reason: requiredString(entity.reason, "documentVersions.reason"),
-    created_at: requiredString(entity.createdAt, "documentVersions.createdAt"),
-    state_json: entity
-  }), "document_id, version_no"),
+    created_at: requiredString(entity.createdAt, "documentVersions.createdAt")
+  }), "document_version.document_id, document_version.version_no", {
+    select: DOCUMENT_VERSION_SELECT,
+    joins: DOCUMENT_VERSION_JOINS,
+    hydrate: (row) => documentVersionFromRow(row as unknown as DocumentVersionDbRow) as unknown as RuntimeEntity
+  }),
   spec("documentLinks", "document_link", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "documentLinks.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "documentLinks.organizationId")),
     from_document_id: entityUuid(requiredString(entity.fromDocumentId, "documentLinks.fromDocumentId")),
     to_document_id: entityUuid(requiredString(entity.toDocumentId, "documentLinks.toDocumentId")),
-    link_type: requiredString(entity.linkType, "documentLinks.linkType"),
-    state_json: entity
-  }), "id"),
+    link_type: requiredString(entity.linkType, "documentLinks.linkType")
+  }), "document_link.id", {
+    select: DOCUMENT_LINK_SELECT,
+    joins: DOCUMENT_LINK_JOINS,
+    hydrate: (row) => documentLinkFromRow(row as unknown as DocumentLinkDbRow) as unknown as RuntimeEntity
+  }),
   spec("journalEntries", "journal_entry", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "journalEntries.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "journalEntries.organizationId")),
@@ -489,18 +525,24 @@ const TABLES: TableSpec[] = [
     accounting_date: requiredString(entity.accountingDate, "journalEntries.accountingDate"),
     memo: requiredString(entity.memo, "journalEntries.memo"),
     reversal_of_entry_id: optionalUuid(entity.reversalOfEntryId),
-    created_at: requiredString(entity.createdAt, "journalEntries.createdAt"),
-    state_json: entity
-  }), "accounting_date, id"),
+    created_at: requiredString(entity.createdAt, "journalEntries.createdAt")
+  }), "journal_entry.accounting_date, journal_entry.id", {
+    select: JOURNAL_ENTRY_SELECT,
+    joins: JOURNAL_ENTRY_JOINS,
+    hydrate: (row) => journalEntryFromRow(row as unknown as JournalEntryDbRow) as unknown as RuntimeEntity
+  }),
   spec("journalLines", "journal_line", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "journalLines.id")),
     journal_entry_id: entityUuid(requiredString(entity.journalEntryId, "journalLines.journalEntryId")),
     account_code: requiredString(entity.accountCode, "journalLines.accountCode"),
     debit: requiredNumber(entity.debit, "journalLines.debit"),
     credit: requiredNumber(entity.credit, "journalLines.credit"),
-    memo: requiredString(entity.memo, "journalLines.memo"),
-    state_json: entity
-  }), "journal_entry_id, id"),
+    memo: requiredString(entity.memo, "journalLines.memo")
+  }), "journal_line.journal_entry_id, journal_line.id", {
+    select: JOURNAL_LINE_SELECT,
+    joins: JOURNAL_LINE_JOINS,
+    hydrate: (row) => journalLineFromRow(row as unknown as JournalLineDbRow) as unknown as RuntimeEntity
+  }),
   spec("auditEvents", "audit_event", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "auditEvents.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "auditEvents.organizationId")),
