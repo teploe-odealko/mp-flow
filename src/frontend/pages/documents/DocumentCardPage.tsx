@@ -11,7 +11,6 @@ import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { DocumentStatusBadge } from "@/components/status-badge";
-import { useCollection } from "@/lib/use-collection";
 import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from "@/api";
 import { date, dateTime, rub } from "@/lib/format";
 import { cn } from "@/lib/cn";
@@ -36,29 +35,43 @@ type BlockedActionState = {
   descendants: DocumentDescendant[];
 };
 
+interface DocumentCardPayload {
+  document?: any;
+  lines: any[];
+  links: any[];
+  journalEntries: any[];
+  journalLines: any[];
+  accounts: any[];
+  periods: any[];
+  sourceEntity: { to: string; label: string } | null;
+  auditEvents: any[];
+}
+
 export function DocumentCardPage() {
   const { id } = useParams();
-  const state = { documents: useCollection<any[]>("documents") ?? [], documentLines: useCollection<any[]>("documentLines") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], journalLines: useCollection<any[]>("journalLines") ?? [], chartAccounts: useCollection<any[]>("chartAccounts") ?? [], periods: useCollection<any[]>("periods") ?? [], sales: useCollection<any[]>("sales") ?? [], salesReturns: useCollection<any[]>("salesReturns") ?? [], stockTransfers: useCollection<any[]>("stockTransfers") ?? [], channelFinanceEvents: useCollection<any[]>("channelFinanceEvents") ?? [] };
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
   const [blockedAction, setBlockedAction] = useState<BlockedActionState | null>(null);
 
-  const doc = (state.documents ?? []).find((d: any) => d.id === id);
-  const docLines = (state.documentLines ?? []).filter((l: any) => l.documentId === id);
-  const entries = (state.journalEntries ?? []).filter((e: any) => e.documentId === id);
-  const journalLines = state.journalLines ?? [];
-  const accounts = state.chartAccounts ?? [];
+  const cardQuery = useQuery({
+    queryKey: ["document-card", id],
+    queryFn: () => apiGet<DocumentCardPayload>(`/api/documents/${id}`),
+    enabled: Boolean(id)
+  });
+  const doc = cardQuery.data?.document;
+  const docLines = cardQuery.data?.lines ?? [];
+  const links = cardQuery.data?.links ?? [];
+  const entries = cardQuery.data?.journalEntries ?? [];
+  const journalLines = cardQuery.data?.journalLines ?? [];
+  const accounts = cardQuery.data?.accounts ?? [];
+  const periods = cardQuery.data?.periods ?? [];
+  const sourceEntity = cardQuery.data?.sourceEntity ?? null;
 
   const historyQuery = useQuery({
     queryKey: ["document-history", id],
     queryFn: () => apiGet<any>(`/api/documents/${id}/history`),
-    enabled: Boolean(id)
-  });
-  const linksQuery = useQuery({
-    queryKey: ["document-links", id],
-    queryFn: () => apiGet<any>(`/api/documents/${id}/links`),
     enabled: Boolean(id)
   });
   const descendantsQuery = useQuery({
@@ -86,36 +99,41 @@ export function DocumentCardPage() {
 
   const post = useMutation({
     mutationFn: () => apiPost(`/api/documents/${id}/post`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["document-card", id] });
+      void queryClient.invalidateQueries({ queryKey: ["documents-workspace"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    }
   });
   const remove = useMutation({
     mutationFn: () => apiDelete(`/api/documents/${id}`),
     onError: (error) => openBlockedActionFromError(error, "удалить"),
     onSuccess: () => {
-      queryClient.invalidateQueries();
+      void queryClient.invalidateQueries({ queryKey: ["documents-workspace"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       navigate(returnTo);
     }
   });
 
-  const periods = state.periods ?? [];
   const period = useMemo(
     () => periods.find((p: any) => doc && p.startsOn <= doc.accountingDate && p.endsOn >= doc.accountingDate),
     [periods, doc]
   );
   const returnTo = (location.state as { returnTo?: string } | undefined)?.returnTo ?? "/documents";
   const actionError = remove.error ?? post.error;
-  const sourceEntity = useMemo(() => {
-    if (!id) return null;
-    const sale = (state.sales ?? []).find((candidate: any) => candidate.documentId === id || candidate.financialDocumentId === id);
-    if (sale) return { to: `/sales/${sale.id}`, label: "Открыть продажу" };
-    const salesReturn = (state.salesReturns ?? []).find((candidate: any) => candidate.documentId === id);
-    if (salesReturn) return { to: `/returns/${salesReturn.id}`, label: "Открыть возврат" };
-    const transfer = (state.stockTransfers ?? []).find((candidate: any) => candidate.documentId === id);
-    if (transfer) return { to: `/inventory/transfers/${transfer.id}`, label: "Открыть перемещение" };
-    const financeEvent = (state.channelFinanceEvents ?? []).find((candidate: any) => candidate.documentId === id);
-    if (financeEvent) return { to: `/integrations/finance-events/${financeEvent.id}`, label: "Открыть финансовую операцию" };
-    return null;
-  }, [id, state.channelFinanceEvents, state.sales, state.salesReturns, state.stockTransfers]);
+
+  if (cardQuery.isLoading) {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <PageHeader title="Документ" breadcrumbs={[{ label: "Документы", to: "/documents" }]} />
+        <Card>
+          <CardContent className="py-10 text-sm text-[var(--color-muted-foreground)]">
+            Загружаем документ...
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (!doc) {
     return (
@@ -314,7 +332,7 @@ export function DocumentCardPage() {
           <TabsContent value="links">
             <Card>
               <CardContent className="p-0">
-                {(linksQuery.data?.length ?? 0) === 0 ? (
+                {links.length === 0 ? (
                   <EmptyState icon={<Link2 size={20} />} title="Связанных документов нет" />
                 ) : (
                   <Table>
@@ -325,7 +343,7 @@ export function DocumentCardPage() {
                       </TR>
                     </THead>
                     <TBody>
-                      {(linksQuery.data ?? []).map((l: any) => (
+                      {links.map((l: any) => (
                         <TR key={l.id} interactive onClick={() => navigate(`/documents/${l.toDocumentId === id ? l.fromDocumentId : l.toDocumentId}`)}>
                           <TD muted><span className="text-xs">{l.linkType}</span></TD>
                           <TD>{l.toDocumentId === id ? l.fromDocumentId : l.toDocumentId}</TD>
@@ -533,7 +551,10 @@ function EditDraftDialog({ open, onClose, document, disabled }: { open: boolean;
   const mutation = useMutation({
     mutationFn: () => apiPatch(`/api/documents/${document.id}`, { accountingDate, title, comment, changeReason: "Редактирование черновика" }),
     onSuccess: () => {
-      queryClient.invalidateQueries();
+      void queryClient.invalidateQueries({ queryKey: ["document-card", document.id] });
+      void queryClient.invalidateQueries({ queryKey: ["document-history", document.id] });
+      void queryClient.invalidateQueries({ queryKey: ["documents-workspace"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       onClose();
     }
   });

@@ -79,9 +79,19 @@ describePostgres("postgres runtime store", () => {
       since: "2026-01-01",
       credentials: { clientId: "pg-client", apiKey: "pg-key" }
     });
+    const note = await request<any>(api, "POST", "/api/documents", {
+      documentType: "accounting_note",
+      title: "Postgres заметка",
+      accountingDate: "2026-01-15",
+      comment: "Контракт documents workspace",
+      source: "manual",
+      lines: [{ lineType: "note_line", payload: { description: "Проверка DTO" } }]
+    });
     const dashboard = await request<any>(api, "GET", "/api/dashboard");
     const reports = await request<any>(api, "GET", "/api/reports");
     const reportWorkspace = await request<any>(api, "GET", "/api/reports/workspace?dateFrom=2026-01-01&dateTo=2026-12-31&balanceDate=2026-12-31");
+    const documentsWorkspace = await request<any>(api, "GET", "/api/documents/workspace");
+    const documentDetail = await request<any>(api, "GET", `/api/documents/${note.id}`);
     const productListWorkspace = await request<any>(api, "GET", "/api/products/workspace");
     const productChannelMapping = await request<any>(api, "GET", "/api/products/channel-mapping");
     const productWorkspace = await request<any>(api, "GET", `/api/products/${product.id}/workspace`);
@@ -108,6 +118,19 @@ describePostgres("postgres runtime store", () => {
       expect(products.rows).toContainEqual({ sku: "PG-001", public_id: product.id });
       expect(dashboard.configured).toBe(true);
       expect(dashboard.counters.products).toBe(1);
+      expect(documentsWorkspace.documents).toContainEqual(expect.objectContaining({
+        id: note.id,
+        title: "Postgres заметка",
+        entryCount: expect.any(Number),
+        journalLineCount: expect.any(Number),
+        linkCount: expect.any(Number)
+      }));
+      expect(documentsWorkspace.periods.length).toBeGreaterThan(0);
+      expect(documentDetail.document).toEqual(expect.objectContaining({ id: note.id, title: "Postgres заметка" }));
+      expect(documentDetail.lines).toContainEqual(expect.objectContaining({ documentId: note.id, lineType: "note_line" }));
+      expect(documentDetail.journalEntries).toEqual(expect.any(Array));
+      expect(documentDetail.journalLines).toEqual(expect.any(Array));
+      expect(documentDetail.accounts).toEqual(expect.any(Array));
       expect(reportWorkspace.productOptions).toContainEqual(expect.objectContaining({ id: product.id, sku: "PG-001" }));
       expect(productListWorkspace.products).toContainEqual(expect.objectContaining({ id: product.id, sku: "PG-001" }));
       expect(productListWorkspace.stockStates).toEqual(expect.any(Array));

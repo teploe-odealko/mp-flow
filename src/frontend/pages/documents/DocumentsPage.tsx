@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, FileText, Plus, Search } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,19 +13,24 @@ import { Pagination } from "@/components/ui/pagination";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { DocumentStatusBadge } from "@/components/status-badge";
 import { useAppState } from "@/lib/use-app-state";
-import { useCollection } from "@/lib/use-collection";
 import { date, rub, dateTime } from "@/lib/format";
-import { apiPost } from "@/api";
+import { apiGet, apiPost } from "@/api";
 import { EmptyState } from "@/components/ui/empty-state";
 import { paginateRows } from "@/lib/pagination";
 
+interface DocumentsWorkspacePayload {
+  documents: any[];
+  periods: any[];
+}
+
 export function DocumentsPage() {
   const { workingPeriodId } = useAppState();
-  const docs = useCollection<any[]>("documents") ?? [];
-  const lines = useCollection<any[]>("journalLines") ?? [];
-  const entries = useCollection<any[]>("journalEntries") ?? [];
-  const links = useCollection<any[]>("documentLinks") ?? [];
-  const periods = useCollection<any[]>("periods") ?? [];
+  const workspaceQuery = useQuery({
+    queryKey: ["documents-workspace"],
+    queryFn: () => apiGet<DocumentsWorkspacePayload>("/api/documents/workspace")
+  });
+  const docs = workspaceQuery.data?.documents ?? [];
+  const periods = workspaceQuery.data?.periods ?? [];
   const [params, setParams] = useSearchParams();
 
   const [search, setSearch] = useState("");
@@ -61,13 +66,10 @@ export function DocumentsPage() {
         if (status && d.status !== status) return false;
         if (docType && d.documentType !== docType) return false;
         if (source && d.source !== source) return false;
-        if (withPostings) {
-          const hasEntry = entries.some((e: any) => e.documentId === d.id);
-          if (!hasEntry) return false;
-        }
+        if (withPostings && Number(d.entryCount ?? 0) === 0) return false;
         return true;
       });
-  }, [docs, search, periodId, status, docType, source, withPostings, periods, entries]);
+  }, [docs, search, periodId, status, docType, source, withPostings, periods]);
 
   const docTypes = Array.from(new Set(docs.map((d: any) => d.documentType as string)));
   const paged = useMemo(() => paginateRows<any>(filtered, page, pageSize), [filtered, page, pageSize]);
@@ -178,9 +180,9 @@ export function DocumentsPage() {
                     </TR>
                   )}
                   {paged.map((doc: any) => {
-                    const entryCount = entries.filter((e: any) => e.documentId === doc.id).length;
-                    const lineCount = lines.filter((l: any) => entries.some((e: any) => e.id === l.journalEntryId && e.documentId === doc.id)).length;
-                    const linkCount = links.filter((l: any) => l.fromDocumentId === doc.id || l.toDocumentId === doc.id).length;
+                    const entryCount = Number(doc.entryCount ?? 0);
+                    const lineCount = Number(doc.journalLineCount ?? 0);
+                    const linkCount = Number(doc.linkCount ?? 0);
                     return (
                       <TR key={doc.id} interactive selected={doc.id === selectedDoc?.id} onClick={() => setSelectedId(doc.id)}>
                         <TD><input type="checkbox" aria-label={`Выбрать документ ${doc.number}`} /></TD>
@@ -229,8 +231,8 @@ export function DocumentsPage() {
             {selectedDoc ? (
               <DocumentPreview
                 document={selectedDoc}
-                entryCount={entries.filter((entry: any) => entry.documentId === selectedDoc.id).length}
-                linkCount={links.filter((link: any) => link.fromDocumentId === selectedDoc.id || link.toDocumentId === selectedDoc.id).length}
+                entryCount={Number(selectedDoc.entryCount ?? 0)}
+                linkCount={Number(selectedDoc.linkCount ?? 0)}
               />
             ) : (
               <EmptyState icon={<Eye size={20} />} title="Выберите документ" description="Справа появится быстрый preview без перехода в карточку." />
@@ -274,7 +276,8 @@ function CreateNoteDialog({ open, onClose }: { open: boolean; onClose: () => voi
         post: postNow
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries();
+      void queryClient.invalidateQueries({ queryKey: ["documents-workspace"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       onClose();
       setComment("");
       setRows([""]);
@@ -341,7 +344,11 @@ function DocumentPreview({ document, entryCount, linkCount }: { document: any; e
   const queryClient = useQueryClient();
   const post = useMutation({
     mutationFn: () => apiPost(`/api/documents/${document.id}/post`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["documents-workspace"] });
+      void queryClient.invalidateQueries({ queryKey: ["document-card", document.id] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    }
   });
   return (
     <div className="flex flex-col gap-3">

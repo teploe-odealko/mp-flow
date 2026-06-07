@@ -378,12 +378,81 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   };
   const documentPayloadFor = async (c: Context, id: string) => {
     const readModelApp = await readModelAppFor(c);
+    const [document, lines, links, entries, journalLines, accounts, periods, sales, salesReturns, stockTransfers, channelFinanceEvents, auditEvents] = await Promise.all([
+      readModelApp.repos.documents.getById(id),
+      readModelApp.repos.documentLines.all(),
+      readModelApp.repos.documentLinks.all(),
+      readModelApp.repos.journalEntries.all(),
+      readModelApp.repos.journalLines.all(),
+      readModelApp.repos.chartAccounts.all(),
+      readModelApp.repos.periods.all(),
+      readModelApp.repos.sales.all(),
+      readModelApp.repos.salesReturns.all(),
+      readModelApp.repos.stockTransfers.all(),
+      readModelApp.repos.channelFinanceEvents.all(),
+      readModelApp.repos.auditEvents.all()
+    ]);
+    const sourceEntity = (() => {
+      const sale = sales.find((candidate) => candidate.documentId === id || candidate.financialDocumentId === id);
+      if (sale) return { to: `/sales/${sale.id}`, label: "Открыть продажу" };
+      const salesReturn = salesReturns.find((candidate) => candidate.documentId === id);
+      if (salesReturn) return { to: `/returns/${salesReturn.id}`, label: "Открыть возврат" };
+      const transfer = stockTransfers.find((candidate) => candidate.documentId === id);
+      if (transfer) return { to: `/inventory/transfers/${transfer.id}`, label: "Открыть перемещение" };
+      const financeEvent = channelFinanceEvents.find((candidate) => candidate.documentId === id);
+      if (financeEvent) return { to: `/integrations/finance-events/${financeEvent.id}`, label: "Открыть финансовую операцию" };
+      return null;
+    })();
+    const documentEntries = entries.filter((entry) => entry.documentId === id);
+    const documentEntryIds = new Set(documentEntries.map((entry) => entry.id));
+    const documentJournalLines = journalLines.filter((line) => documentEntryIds.has(line.journalEntryId));
+    const documentAccountCodes = new Set(documentJournalLines.map((line) => line.accountCode));
     return {
-      document: await readModelApp.repos.documents.getById(id),
-      lines: (await readModelApp.repos.documentLines.all()).filter((line) => line.documentId === id),
-      links: (await readModelApp.repos.documentLinks.all()).filter((link) => link.fromDocumentId === id || link.toDocumentId === id),
-      journalEntries: (await readModelApp.repos.journalEntries.all()).filter((entry) => entry.documentId === id),
-      auditEvents: (await readModelApp.repos.auditEvents.all()).filter((event) => event.entityId === id)
+      document,
+      lines: lines.filter((line) => line.documentId === id),
+      links: links.filter((link) => link.fromDocumentId === id || link.toDocumentId === id),
+      journalEntries: documentEntries,
+      journalLines: documentJournalLines,
+      accounts: accounts.filter((account) => documentAccountCodes.has(account.code)),
+      periods,
+      sourceEntity,
+      auditEvents: auditEvents.filter((event) => event.entityId === id)
+    };
+  };
+  const documentsWorkspaceFor = async (c: Context) => {
+    const readModelApp = await readModelAppFor(c);
+    const [documents, journalLines, journalEntries, documentLinks, periods] = await Promise.all([
+      readModelApp.repos.documents.all(),
+      readModelApp.repos.journalLines.all(),
+      readModelApp.repos.journalEntries.all(),
+      readModelApp.repos.documentLinks.all(),
+      readModelApp.repos.periods.all()
+    ]);
+    const entryDocumentById = new Map(journalEntries.map((entry) => [entry.id, entry.documentId]));
+    const entryCountByDocument = new Map<string, number>();
+    const lineCountByDocument = new Map<string, number>();
+    const linkCountByDocument = new Map<string, number>();
+
+    for (const entry of journalEntries) {
+      entryCountByDocument.set(entry.documentId, (entryCountByDocument.get(entry.documentId) ?? 0) + 1);
+    }
+    for (const line of journalLines) {
+      const documentId = entryDocumentById.get(line.journalEntryId);
+      if (documentId) lineCountByDocument.set(documentId, (lineCountByDocument.get(documentId) ?? 0) + 1);
+    }
+    for (const link of documentLinks) {
+      linkCountByDocument.set(link.fromDocumentId, (linkCountByDocument.get(link.fromDocumentId) ?? 0) + 1);
+      linkCountByDocument.set(link.toDocumentId, (linkCountByDocument.get(link.toDocumentId) ?? 0) + 1);
+    }
+
+    return {
+      documents: documents.map((document) => ({
+        ...document,
+        entryCount: entryCountByDocument.get(document.id) ?? 0,
+        journalLineCount: lineCountByDocument.get(document.id) ?? 0,
+        linkCount: linkCountByDocument.get(document.id) ?? 0
+      })),
+      periods
     };
   };
   const studioViewFor = async (readModelApp: AccountingApp, productId: string) => {
@@ -516,6 +585,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/ledger", async (c) => c.json({ ok: true, data: await ledgerBalancesFor(c) }));
   api.get("/api/accounting/ledger", async (c) => c.json({ ok: true, data: await ledgerBalancesFor(c) }));
   api.get("/api/documents", async (c) => c.json({ ok: true, data: await collectionFor(c, "documents") }));
+  api.get("/api/documents/workspace", async (c) => c.json({ ok: true, data: await documentsWorkspaceFor(c) }));
   api.get("/api/products", async (c) => c.json({ ok: true, data: await collectionFor(c, "products") }));
   api.get("/api/products/workspace", async (c) => c.json({ ok: true, data: await productListWorkspaceFor(c) }));
   api.get("/api/products/channel-mapping", async (c) => c.json({ ok: true, data: await productChannelMappingFor(c) }));

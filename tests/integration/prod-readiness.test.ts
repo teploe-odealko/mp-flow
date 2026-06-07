@@ -191,6 +191,7 @@ describe("prod-ready contracts", () => {
     const sale = app.state.sales[0];
     const financeEvent = app.state.channelFinanceEvents[0];
     const payout = app.state.payouts[0];
+    const documentsWorkspace = await get<any>(api, "/api/documents/workspace");
     const documentDetail = await get<any>(api, `/api/documents/${document.id}`);
     const documentDescendants = await get<any[]>(api, `/api/documents/${document.id}/descendants`);
     const orderDetail = await get<any>(api, `/api/procurement/purchase-orders/${purchaseOrder.id}`);
@@ -237,7 +238,18 @@ describe("prod-ready contracts", () => {
     expect(syncRuns).toEqual(expect.any(Array));
     expect(observedStocks).toEqual(expect.any(Array));
     expect(auditEvents.length).toBeGreaterThan(0);
+    expect(documentsWorkspace.documents).toContainEqual(expect.objectContaining({
+      id: document.id,
+      entryCount: expect.any(Number),
+      journalLineCount: expect.any(Number),
+      linkCount: expect.any(Number)
+    }));
+    expect(documentsWorkspace.periods).toEqual(expect.any(Array));
     expect(documentDetail.document.id).toBe(document.id);
+    expect(documentDetail.journalEntries).toEqual(expect.any(Array));
+    expect(documentDetail.journalLines).toEqual(expect.any(Array));
+    expect(documentDetail.accounts).toEqual(expect.any(Array));
+    expect(documentDetail.periods).toEqual(expect.any(Array));
     expect(documentDescendants).toEqual(expect.any(Array));
     expect(orderDetail.order.id).toBe(purchaseOrder.id);
     expect(orderPayments.length).toBeGreaterThan(0);

@@ -104,10 +104,14 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   без чтения `users`, `ControlsWorkspace` → `/api/controls/workspace`.
   В `src/frontend/pages/setup`, `src/frontend/pages/access`, `src/frontend/pages/controls` больше нет
   `useCollection` и глобального `queryClient.invalidateQueries()`.
-- ⚠️ Фактический текущий остаток фронта: `useCollection` ещё есть в channel/documents/finance/
+- ✅ Documents pages сняты с generic collections:
+  `DocumentsPage` → `/api/documents/workspace` с серверными агрегатами `entryCount`/
+  `journalLineCount`/`linkCount`, `DocumentCardPage` → `/api/documents/:id` с карточечным payload.
+  В `src/frontend/pages/documents` больше нет `useCollection` и глобального `queryClient.invalidateQueries()`.
+- ⚠️ Фактический текущий остаток фронта: `useCollection` ещё есть в channel/finance/
   procurement/inventory/sales/expenses/money/onboarding pages:
-  `ChannelDetailPage`, `ChannelsPages`, `DocumentCardPage`, `DocumentsPage`, `ExpensesPages`,
-  `FinanceWorkspace`, `InventoryWorkspace`, `inventory/forms`, `MoneyPages`, `OnboardingPages`,
+  `ChannelDetailPage`, `ChannelsPages`, `ExpensesPages`, `FinanceWorkspace`,
+  `InventoryWorkspace`, `inventory/forms`, `MoneyPages`, `OnboardingPages`,
   `ProcurementWorkspace`, `PurchaseOrderCardPage`, `procurement/forms`, `SalesPages`.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
