@@ -497,6 +497,10 @@ alter table product add column if not exists width_mm integer;
 alter table product add column if not exists height_mm integer;
 alter table product add column if not exists manufacturer_article text;
 alter table product add column if not exists comment text;
+alter table sales_channel add column if not exists enabled_streams text[];
+alter table sales_channel add column if not exists last_checked_at timestamptz;
+alter table sales_channel add column if not exists last_error text;
+alter table sales_channel add column if not exists last_sync_at timestamptz;
 alter table backfill_project add column if not exists created_at timestamptz not null default now();
 alter table organization add column if not exists state_json jsonb not null default '{}'::jsonb;
 alter table accounting_policy add column if not exists state_json jsonb not null default '{}'::jsonb;
@@ -604,6 +608,15 @@ update sync_run
       summary = case when state_json ? 'summary' then state_json->'summary' else summary end,
       stream_runs = case when state_json ? 'streamRuns' then state_json->'streamRuns' else stream_runs end,
       last_error = nullif(state_json->>'lastError', '')
+  where state_json <> '{}'::jsonb;
+update sales_channel
+  set enabled_streams = case when jsonb_typeof(state_json->'enabledStreams') = 'array'
+        then array(select jsonb_array_elements_text(state_json->'enabledStreams'))
+        else enabled_streams
+      end,
+      last_checked_at = case when nullif(state_json->>'lastCheckedAt', '') is not null then (state_json->>'lastCheckedAt')::timestamptz else last_checked_at end,
+      last_error = nullif(state_json->>'lastError', ''),
+      last_sync_at = case when nullif(state_json->>'lastSyncAt', '') is not null then (state_json->>'lastSyncAt')::timestamptz else last_sync_at end
   where state_json <> '{}'::jsonb;
 
 do $$

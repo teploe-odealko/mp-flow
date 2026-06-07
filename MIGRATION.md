@@ -227,6 +227,11 @@ counterparty/channel/order references восстанавливаются чер�
 `channelAgentPermissions`. Для них схема уже покрывала доменную модель, поэтому миграция ограничилась
 typed read/write без `state_json`. Текущий остаток `state_json: entity` — 19 таблиц.
 
+### ✅ Typed hydrate для marketplace mapping
+На typed specs переведены `salesChannels`, `externalProducts`, `productExternalLinks`. Для `sales_channel`
+добавлены typed колонки `enabled_streams`, `last_checked_at`, `last_error`, `last_sync_at` с backfill из
+legacy `state_json`. Текущий остаток `state_json: entity` — 16 таблиц.
+
 ### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
 Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/
 addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocumentSummary(x))` — хелперы каскадно

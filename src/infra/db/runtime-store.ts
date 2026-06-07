@@ -41,6 +41,8 @@ import {
   DOCUMENT_VERSION_SELECT,
   EXTERNAL_EVENT_JOINS,
   EXTERNAL_EVENT_SELECT,
+  EXTERNAL_PRODUCT_JOINS,
+  EXTERNAL_PRODUCT_SELECT,
   EXPENSE_CATEGORY_JOINS,
   EXPENSE_CATEGORY_SELECT,
   GOODS_RECEIPT_JOINS,
@@ -67,6 +69,8 @@ import {
   PROCUREMENT_COST_LINE_JOINS,
   PROCUREMENT_COST_LINE_SELECT,
   PROCUREMENT_COST_SELECT,
+  PRODUCT_EXTERNAL_LINK_JOINS,
+  PRODUCT_EXTERNAL_LINK_SELECT,
   RECALCULATION_JOB_JOINS,
   RECALCULATION_JOB_SELECT,
   REPORT_SNAPSHOT_JOINS,
@@ -91,6 +95,8 @@ import {
   SUPPLIER_CLAIM_SELECT,
   ROLE_JOINS,
   ROLE_SELECT,
+  SALES_CHANNEL_JOINS,
+  SALES_CHANNEL_SELECT,
   SYNC_RUN_JOINS,
   SYNC_RUN_SELECT,
   WAREHOUSE_JOINS,
@@ -111,6 +117,7 @@ import {
   documentLinkFromRow,
   documentVersionFromRow,
   externalEventFromRow,
+  externalProductFromRow,
   expenseCategoryFromRow,
   goodsReceiptFromRow,
   goodsReceiptLineFromRow,
@@ -125,6 +132,7 @@ import {
   pluginStateRecordFromRow,
   procurementCostFromRow,
   procurementCostLineFromRow,
+  productExternalLinkFromRow,
   recalculationJobFromRow,
   reportSnapshotFromRow,
   productFromRow,
@@ -137,6 +145,7 @@ import {
   stocktakeLineFromRow,
   supplierClaimFromRow,
   roleFromRow,
+  salesChannelFromRow,
   syncRunFromRow,
   warehouseFromRow,
   type AccountingPeriodDbRow,
@@ -155,6 +164,7 @@ import {
   type DocumentLinkDbRow,
   type DocumentVersionDbRow,
   type ExternalEventDbRow,
+  type ExternalProductDbRow,
   type ExpenseCategoryDbRow,
   type GoodsReceiptDbRow,
   type GoodsReceiptLineDbRow,
@@ -168,6 +178,7 @@ import {
   type PluginStateRecordDbRow,
   type ProcurementCostDbRow,
   type ProcurementCostLineDbRow,
+  type ProductExternalLinkDbRow,
   type RecalculationJobDbRow,
   type ReportSnapshotDbRow,
   type ObservedStockDbRow,
@@ -181,6 +192,7 @@ import {
   type StocktakeLineDbRow,
   type SupplierClaimDbRow,
   type RoleDbRow,
+  type SalesChannelDbRow,
   type SyncRunDbRow,
   type WarehouseDbRow
 } from "./runtime-hydrators";
@@ -1022,8 +1034,15 @@ const TABLES: TableSpec[] = [
     sales_point_warehouse_id: entityUuid(requiredString(entity.salesPointWarehouseId, "salesChannels.salesPointWarehouseId")),
     clearing_account_code: requiredString(entity.clearingAccountCode, "salesChannels.clearingAccountCode"),
     status: requiredString(entity.status, "salesChannels.status"),
-    state_json: entity
-  }), "name, id"),
+    enabled_streams: Array.isArray(entity.enabledStreams) ? entity.enabledStreams : null,
+    last_checked_at: optionalString(entity.lastCheckedAt),
+    last_error: optionalString(entity.lastError),
+    last_sync_at: optionalString(entity.lastSyncAt)
+  }), "sales_channel.name, sales_channel.id", {
+    select: SALES_CHANNEL_SELECT,
+    joins: SALES_CHANNEL_JOINS,
+    hydrate: (row) => salesChannelFromRow(row as unknown as SalesChannelDbRow) as unknown as RuntimeEntity
+  }),
   spec("externalProducts", "external_product", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "externalProducts.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "externalProducts.organizationId")),
@@ -1031,18 +1050,24 @@ const TABLES: TableSpec[] = [
     external_sku: requiredString(entity.externalSku, "externalProducts.externalSku"),
     external_name: requiredString(entity.externalName, "externalProducts.externalName"),
     image_url: optionalString(entity.imageUrl),
-    status: requiredString(entity.status, "externalProducts.status"),
-    state_json: entity
-  }), "external_sku, id"),
+    status: requiredString(entity.status, "externalProducts.status")
+  }), "external_product.external_sku, external_product.id", {
+    select: EXTERNAL_PRODUCT_SELECT,
+    joins: EXTERNAL_PRODUCT_JOINS,
+    hydrate: (row) => externalProductFromRow(row as unknown as ExternalProductDbRow) as unknown as RuntimeEntity
+  }),
   spec("productExternalLinks", "product_external_link", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "productExternalLinks.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "productExternalLinks.organizationId")),
     product_id: entityUuid(requiredString(entity.productId, "productExternalLinks.productId")),
     external_product_id: entityUuid(requiredString(entity.externalProductId, "productExternalLinks.externalProductId")),
     channel_id: entityUuid(requiredString(entity.channelId, "productExternalLinks.channelId")),
-    status: requiredString(entity.status, "productExternalLinks.status"),
-    state_json: entity
-  }), "id"),
+    status: requiredString(entity.status, "productExternalLinks.status")
+  }), "product_external_link.id", {
+    select: PRODUCT_EXTERNAL_LINK_SELECT,
+    joins: PRODUCT_EXTERNAL_LINK_JOINS,
+    hydrate: (row) => productExternalLinkFromRow(row as unknown as ProductExternalLinkDbRow) as unknown as RuntimeEntity
+  }),
   spec("syncRuns", "sync_run", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "syncRuns.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "syncRuns.organizationId")),

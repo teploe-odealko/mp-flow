@@ -15,6 +15,7 @@ import type {
   DocumentVersion,
   DocumentTypeRegistry,
   ExternalEvent,
+  ExternalProduct,
   ExpenseCategory,
   IntegrationPlugin,
   JournalEntry,
@@ -25,11 +26,13 @@ import type {
   PluginStateRecord,
   ProcurementCost,
   ProcurementCostLine,
+  ProductExternalLink,
   PurchaseOrder,
   PurchaseOrderLine,
   RecalculationJob,
   ReportSnapshot,
   Role,
+  SalesChannel,
   SettlementEntry,
   GoodsReceipt,
   GoodsReceiptLine,
@@ -411,6 +414,132 @@ export function integrationPluginFromRow(row: IntegrationPluginDbRow): Integrati
     id: row.id,
     code: row.code,
     displayName: row.display_name,
+    status: row.status
+  };
+}
+
+export const SALES_CHANNEL_SELECT = `
+  sales_channel.public_id as id,
+  sales_channel_organization.public_id as organization_id,
+  sales_channel.name,
+  sales_channel.channel_type,
+  sales_channel_plugin.public_id as plugin_id,
+  sales_channel_warehouse.public_id as sales_point_warehouse_id,
+  sales_channel.clearing_account_code,
+  sales_channel.status,
+  sales_channel.enabled_streams,
+  sales_channel.last_checked_at,
+  sales_channel.last_error,
+  sales_channel.last_sync_at
+`;
+
+export const SALES_CHANNEL_JOINS = `
+  left join organization sales_channel_organization on sales_channel_organization.id = sales_channel.organization_id
+  left join integration_plugin sales_channel_plugin on sales_channel_plugin.id = sales_channel.plugin_id
+  left join warehouse sales_channel_warehouse on sales_channel_warehouse.id = sales_channel.sales_point_warehouse_id
+`;
+
+export interface SalesChannelDbRow {
+  id: string;
+  organization_id: string;
+  name: string;
+  channel_type: SalesChannel["channelType"];
+  plugin_id: string | null;
+  sales_point_warehouse_id: string;
+  clearing_account_code: SalesChannel["clearingAccountCode"];
+  status: SalesChannel["status"];
+  enabled_streams: SalesChannel["enabledStreams"] | null;
+  last_checked_at: unknown;
+  last_error: string | null;
+  last_sync_at: unknown;
+}
+
+export function salesChannelFromRow(row: SalesChannelDbRow): SalesChannel {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    name: row.name,
+    channelType: row.channel_type,
+    pluginId: optionalText(row.plugin_id),
+    salesPointWarehouseId: row.sales_point_warehouse_id,
+    clearingAccountCode: row.clearing_account_code,
+    status: row.status,
+    enabledStreams: row.enabled_streams ?? undefined,
+    lastCheckedAt: optionalDateTimeString(row.last_checked_at),
+    lastError: optionalText(row.last_error),
+    lastSyncAt: optionalDateTimeString(row.last_sync_at)
+  });
+}
+
+export const EXTERNAL_PRODUCT_SELECT = `
+  external_product.public_id as id,
+  external_product_organization.public_id as organization_id,
+  external_product_channel.public_id as channel_id,
+  external_product.external_sku,
+  external_product.external_name,
+  external_product.image_url,
+  external_product.status
+`;
+
+export const EXTERNAL_PRODUCT_JOINS = `
+  left join organization external_product_organization on external_product_organization.id = external_product.organization_id
+  left join sales_channel external_product_channel on external_product_channel.id = external_product.channel_id
+`;
+
+export interface ExternalProductDbRow {
+  id: string;
+  organization_id: string;
+  channel_id: string;
+  external_sku: string;
+  external_name: string;
+  image_url: string | null;
+  status: ExternalProduct["status"];
+}
+
+export function externalProductFromRow(row: ExternalProductDbRow): ExternalProduct {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    channelId: row.channel_id,
+    externalSku: row.external_sku,
+    externalName: row.external_name,
+    imageUrl: optionalText(row.image_url),
+    status: row.status
+  });
+}
+
+export const PRODUCT_EXTERNAL_LINK_SELECT = `
+  product_external_link.public_id as id,
+  product_external_link_organization.public_id as organization_id,
+  product_external_link_product.public_id as product_id,
+  product_external_link_external_product.public_id as external_product_id,
+  product_external_link_channel.public_id as channel_id,
+  product_external_link.status
+`;
+
+export const PRODUCT_EXTERNAL_LINK_JOINS = `
+  left join organization product_external_link_organization on product_external_link_organization.id = product_external_link.organization_id
+  left join product product_external_link_product on product_external_link_product.id = product_external_link.product_id
+  left join external_product product_external_link_external_product on product_external_link_external_product.id = product_external_link.external_product_id
+  left join sales_channel product_external_link_channel on product_external_link_channel.id = product_external_link.channel_id
+`;
+
+export interface ProductExternalLinkDbRow {
+  id: string;
+  organization_id: string;
+  product_id: string;
+  external_product_id: string;
+  channel_id: string;
+  status: ProductExternalLink["status"];
+}
+
+export function productExternalLinkFromRow(row: ProductExternalLinkDbRow): ProductExternalLink {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    productId: row.product_id,
+    externalProductId: row.external_product_id,
+    channelId: row.channel_id,
     status: row.status
   };
 }
