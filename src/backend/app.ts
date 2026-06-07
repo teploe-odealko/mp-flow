@@ -6,7 +6,7 @@ import { z } from "zod";
 import { AccountingApp } from "../core/accounting-app";
 import type { AgentToken, ChannelFinanceEvent, ChannelStreamCode, ExternalEvent, Payout, Sale, SalesChannel, SalesReturn, SyncRun } from "../core/models";
 import { DomainError, id, nowIso, runWithIdSequence } from "../core/utils";
-import { openPostgresReadModelApp, readRuntimeCollection, readRuntimeLedgerBalances, readRuntimeReports, type RuntimePersistence } from "../infra/db/runtime-store";
+import { openPostgresReadModelApp, readRuntimeCollection, readRuntimeDashboard, readRuntimeLedgerBalances, readRuntimeReports, type RuntimePersistence } from "../infra/db/runtime-store";
 import { pluginRegistry } from "../plugins/registry";
 import { createPluginSecretApi, createPluginStateApi, pluginStateKey } from "../plugins/runtime";
 import { buildMediaKey, createPresignedUpload, headObject, isAllowedImageType, isStorageConfigured } from "../infra/storage/s3";
@@ -213,6 +213,12 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (postgresBacked()) return await readRuntimeReports(getPool(), workspaceId);
     return await (await readModelAppFor(c)).reports();
   };
+  const dashboardFor = async (c: Context): Promise<any> => {
+    const workspaceId = eventsWorkspaceId(c);
+    if (options.persistence?.readDashboard) return await options.persistence.readDashboard(workspaceId);
+    if (postgresBacked()) return await readRuntimeDashboard(getPool(), workspaceId);
+    return await (await readModelAppFor(c)).dashboard();
+  };
   const ledgerBalancesFor = async (c: Context): Promise<Record<string, { debit: number; credit: number }>> => {
     const workspaceId = eventsWorkspaceId(c);
     if (options.persistence?.readLedgerBalances) return await options.persistence.readLedgerBalances(workspaceId);
@@ -387,7 +393,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
 
   api.get("/api/dashboard", async (c) => {
-    return c.json({ ok: true, data: await (await readModelAppFor(c)).dashboard() });
+    return c.json({ ok: true, data: await dashboardFor(c) });
   });
   api.get("/api/reports", async (c) => c.json({ ok: true, data: await reportsFor(c) }));
   api.get("/api/reports/profit-and-loss", async (c) => c.json({ ok: true, data: (await reportsFor(c)).pnl }));
@@ -2352,8 +2358,8 @@ async function collectionPayload(
   name: string,
   options: { loadAuditEvents: () => Promise<unknown[]> }
 ): Promise<unknown> {
-  if (name === "organization") return (await app.setupSnapshot()).organization;
-  if (name === "accountingPolicy") return (await app.setupSnapshot()).accountingPolicy;
+  if (name === "organization") return app.state.organization;
+  if (name === "accountingPolicy") return app.state.accountingPolicy;
   if (name === "auditEvents") return await options.loadAuditEvents();
   if (name === "externalEvents") return await app.externalEvents.list();
   if (name === "observedStocks") return await app.observedStocks.list();

@@ -4,8 +4,7 @@ let pool: Pool | undefined;
 
 /**
  * Общий пул подключений к Postgres для классического слоя (repositories/services).
- * Старый snapshot-store пока держит свой пул — оба указывают на одну БД (DATABASE_URL).
- * После переезда останется только этот пул.
+ * Используется прямыми read repositories/services и Postgres runtime.
  */
 export function getPool(): Pool {
   if (!pool) {

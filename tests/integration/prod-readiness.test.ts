@@ -106,6 +106,7 @@ describe("prod-ready contracts", () => {
     const app = new AccountingApp();
     await app.setupDemo();
     let collectionReads = 0;
+    let dashboardReads = 0;
     let readModelApps = 0;
     let readSessions = 0;
     const api = createApi(app, {
@@ -116,6 +117,10 @@ describe("prod-ready contracts", () => {
           if (name === "accountingPolicy") return { found: true, data: app.state.accountingPolicy };
           const data = (app.state as unknown as Record<string, unknown>)[name];
           return data === undefined ? { found: false } : { found: true, data };
+        },
+        async readDashboard() {
+          dashboardReads += 1;
+          return await app.dashboard();
         },
         async openReadModelApp() {
           readModelApps += 1;
@@ -217,6 +222,7 @@ describe("prod-ready contracts", () => {
     expect(settingsUsersResponse.status).toBe(404);
     expect(agentTokensResponse.status).toBe(404);
     expect(collectionReads).toBe(1);
+    expect(dashboardReads).toBe(1);
     expect(readModelApps).toBeGreaterThan(6);
     expect(readSessions).toBe(0);
   });

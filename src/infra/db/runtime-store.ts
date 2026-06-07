@@ -274,6 +274,7 @@ export type RuntimeLedgerBalances = Record<string, { debit: number; credit: numb
 export interface RuntimePersistence {
   save?(app: AccountingApp, workspaceId?: string): Promise<void>;
   readCollection?(workspaceId: string | undefined, name: string): Promise<{ found: boolean; data?: unknown }>;
+  readDashboard?(workspaceId?: string): Promise<unknown>;
   readReports?(workspaceId?: string): Promise<unknown>;
   readLedgerBalances?(workspaceId?: string): Promise<RuntimeLedgerBalances>;
   openReadModelApp?(workspaceId?: string): Promise<AccountingApp>;
@@ -1882,6 +1883,11 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     return await readRuntimeCollection(this.pool, normalizeWorkspaceId(workspaceId), name);
   }
 
+  async readDashboard(workspaceId = DEFAULT_WORKSPACE_ID): Promise<unknown> {
+    await this.init();
+    return await readRuntimeDashboard(this.pool, normalizeWorkspaceId(workspaceId));
+  }
+
   async readReports(workspaceId = DEFAULT_WORKSPACE_ID): Promise<unknown> {
     await this.init();
     return await readRuntimeReports(this.pool, normalizeWorkspaceId(workspaceId));
@@ -2551,6 +2557,44 @@ export async function readRuntimeLedgerBalances(source: Queryable, workspaceId: 
     };
     return acc;
   }, {});
+}
+
+export async function readRuntimeDashboard(source: Queryable, workspaceId: string | undefined) {
+  const scope = normalizeWorkspaceId(workspaceId);
+  const [
+    organization,
+    accountingPolicy,
+    periods,
+    products,
+    documents,
+    inventoryLots,
+    correctionCases,
+    balances
+  ] = await Promise.all([
+    readRuntimeSingleton(source, scope, "organization"),
+    readRuntimeSingleton(source, scope, "accounting_policy"),
+    readCollectionData<RuntimeEntity>(source, scope, "periods"),
+    readCollectionData<RuntimeEntity>(source, scope, "products"),
+    readCollectionData<RuntimeEntity>(source, scope, "documents"),
+    readCollectionData<RuntimeEntity>(source, scope, "inventoryLots"),
+    readCollectionData<RuntimeEntity>(source, scope, "correctionCases"),
+    readRuntimeLedgerBalances(source, scope)
+  ]);
+
+  return {
+    organization,
+    configured: Boolean(organization),
+    policy: accountingPolicy,
+    currentPeriod: periods.find((period) => period.status === "open"),
+    counters: {
+      products: products.length,
+      documents: documents.length,
+      postedDocuments: documents.filter((document) => document.status === "posted").length,
+      inventoryLots: inventoryLots.filter((lot) => Number(lot.qtyRemaining ?? 0) > 0).length,
+      openCorrections: correctionCases.filter((correction) => correction.status !== "applied").length
+    },
+    balances
+  };
 }
 
 export async function readRuntimeReports(source: Queryable, workspaceId: string | undefined) {

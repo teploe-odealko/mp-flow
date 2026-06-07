@@ -283,6 +283,12 @@ Postgres runtime создаёт только metadata и ждёт обычный
 набора `useCollection(...)`; следующий срез — перевести экран на серверные report DTO вместо клиентского
 перебора коллекций.
 
+### ✅ Backend dashboard API снят с `AccountingApp.dashboard()`
+`/api/dashboard` в Postgres-runtime теперь обслуживается через `readRuntimeDashboard()`:
+singleton `organization/accountingPolicy`, counters, current period и ledger balances читаются из typed
+Postgres read-model без создания `AccountingApp`. `RuntimePersistence` получил `readDashboard`, а
+prod-readiness фиксирует, что dashboard больше не открывает request-scoped snapshot/read session.
+
 ### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
 Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/
 addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocumentSummary(x))` — хелперы каскадно
