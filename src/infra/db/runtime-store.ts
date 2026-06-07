@@ -33,6 +33,10 @@ import {
   DOCUMENT_VERSION_SELECT,
   EXTERNAL_EVENT_JOINS,
   EXTERNAL_EVENT_SELECT,
+  GOODS_RECEIPT_JOINS,
+  GOODS_RECEIPT_LINE_JOINS,
+  GOODS_RECEIPT_LINE_SELECT,
+  GOODS_RECEIPT_SELECT,
   INTEGRATION_PLUGIN_SELECT,
   JOURNAL_ENTRY_JOINS,
   JOURNAL_ENTRY_SELECT,
@@ -45,10 +49,24 @@ import {
   PAYMENT_ALLOCATION_SELECT,
   PAYMENT_JOINS,
   PAYMENT_SELECT,
+  PROCUREMENT_COST_JOINS,
+  PROCUREMENT_COST_LINE_JOINS,
+  PROCUREMENT_COST_LINE_SELECT,
+  PROCUREMENT_COST_SELECT,
   PRODUCT_JOINS,
   PRODUCT_SELECT,
+  PURCHASE_ORDER_JOINS,
+  PURCHASE_ORDER_LINE_JOINS,
+  PURCHASE_ORDER_LINE_SELECT,
+  PURCHASE_ORDER_SELECT,
   SETTLEMENT_ENTRY_JOINS,
   SETTLEMENT_ENTRY_SELECT,
+  SHORTAGE_RESOLUTION_JOINS,
+  SHORTAGE_RESOLUTION_LINE_JOINS,
+  SHORTAGE_RESOLUTION_LINE_SELECT,
+  SHORTAGE_RESOLUTION_SELECT,
+  SUPPLIER_CLAIM_JOINS,
+  SUPPLIER_CLAIM_SELECT,
   SYNC_RUN_JOINS,
   SYNC_RUN_SELECT,
   WAREHOUSE_JOINS,
@@ -65,6 +83,8 @@ import {
   documentLinkFromRow,
   documentVersionFromRow,
   externalEventFromRow,
+  goodsReceiptFromRow,
+  goodsReceiptLineFromRow,
   integrationPluginFromRow,
   journalEntryFromRow,
   journalLineFromRow,
@@ -72,8 +92,15 @@ import {
   organizationFromRow,
   paymentAllocationFromRow,
   paymentFromRow,
+  procurementCostFromRow,
+  procurementCostLineFromRow,
   productFromRow,
+  purchaseOrderFromRow,
+  purchaseOrderLineFromRow,
   settlementEntryFromRow,
+  shortageResolutionFromRow,
+  shortageResolutionLineFromRow,
+  supplierClaimFromRow,
   syncRunFromRow,
   warehouseFromRow,
   type AccountingPeriodDbRow,
@@ -88,15 +115,24 @@ import {
   type DocumentLinkDbRow,
   type DocumentVersionDbRow,
   type ExternalEventDbRow,
+  type GoodsReceiptDbRow,
+  type GoodsReceiptLineDbRow,
   type IntegrationPluginDbRow,
   type JournalEntryDbRow,
   type JournalLineDbRow,
   type OrganizationDbRow,
   type PaymentAllocationDbRow,
   type PaymentDbRow,
+  type ProcurementCostDbRow,
+  type ProcurementCostLineDbRow,
   type ObservedStockDbRow,
   type ProductDbRow,
+  type PurchaseOrderDbRow,
+  type PurchaseOrderLineDbRow,
   type SettlementEntryDbRow,
+  type ShortageResolutionDbRow,
+  type ShortageResolutionLineDbRow,
+  type SupplierClaimDbRow,
   type SyncRunDbRow,
   type WarehouseDbRow
 } from "./runtime-hydrators";
@@ -366,6 +402,13 @@ const SCHEMA_ALTERS = `
   alter table plugin_secret_record add column if not exists created_at timestamptz not null default now();
   alter table plugin_secret_record add column if not exists updated_at timestamptz not null default now();
   alter table procurement_cost add column if not exists allocation_basis text;
+  alter table procurement_cost add column if not exists pending_allocation boolean;
+  update procurement_cost
+    set pending_allocation = case
+      when state_json ? 'pendingAllocation' then (state_json->>'pendingAllocation')::boolean
+      else pending_allocation
+    end
+    where state_json <> '{}'::jsonb;
   alter table procurement_cost_line add column if not exists lot_id uuid references inventory_lot(id);
   alter table procurement_cost_line add column if not exists warehouse_id uuid references warehouse(id);
   alter table procurement_cost_line add column if not exists basis_value numeric(18,6);
@@ -697,9 +740,12 @@ const TABLES: TableSpec[] = [
     expected_dispatch_date: optionalString(entity.expectedDispatchDate),
     tracking_ref: optionalString(entity.trackingRef),
     expected_arrival_date: optionalString(entity.expectedArrivalDate),
-    comment: optionalString(entity.comment),
-    state_json: entity
-  }), "ordered_at, id"),
+    comment: optionalString(entity.comment)
+  }), "purchase_order.ordered_at, purchase_order.id", {
+    select: PURCHASE_ORDER_SELECT,
+    joins: PURCHASE_ORDER_JOINS,
+    hydrate: (row) => purchaseOrderFromRow(row as unknown as PurchaseOrderDbRow) as unknown as RuntimeEntity
+  }),
   spec("purchaseOrderLines", "purchase_order_line", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "purchaseOrderLines.id")),
     purchase_order_id: entityUuid(requiredString(entity.purchaseOrderId, "purchaseOrderLines.purchaseOrderId")),
@@ -708,9 +754,12 @@ const TABLES: TableSpec[] = [
     qty_ordered: requiredNumber(entity.qtyOrdered, "purchaseOrderLines.qtyOrdered"),
     supplier_unit_price: requiredNumber(entity.supplierUnitPrice, "purchaseOrderLines.supplierUnitPrice"),
     supplier_amount: requiredNumber(entity.supplierAmount, "purchaseOrderLines.supplierAmount"),
-    line_note: optionalString(entity.lineNote),
-    state_json: entity
-  }), "purchase_order_id, line_no"),
+    line_note: optionalString(entity.lineNote)
+  }), "purchase_order_line.purchase_order_id, purchase_order_line.line_no", {
+    select: PURCHASE_ORDER_LINE_SELECT,
+    joins: PURCHASE_ORDER_LINE_JOINS,
+    hydrate: (row) => purchaseOrderLineFromRow(row as unknown as PurchaseOrderLineDbRow) as unknown as RuntimeEntity
+  }),
   spec("cashAccounts", "cash_account", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "cashAccounts.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "cashAccounts.organizationId")),
@@ -777,9 +826,12 @@ const TABLES: TableSpec[] = [
     goods_cost_rub_total: requiredNumber(entity.goodsCostRubTotal, "goodsReceipts.goodsCostRubTotal"),
     goods_cost_source: requiredString(entity.goodsCostSource, "goodsReceipts.goodsCostSource"),
     suggested_goods_cost_rub: requiredNumber(entity.suggestedGoodsCostRub, "goodsReceipts.suggestedGoodsCostRub"),
-    manual_cost_reason: optionalString(entity.manualCostReason),
-    state_json: entity
-  }), "receipt_date, id"),
+    manual_cost_reason: optionalString(entity.manualCostReason)
+  }), "goods_receipt.receipt_date, goods_receipt.id", {
+    select: GOODS_RECEIPT_SELECT,
+    joins: GOODS_RECEIPT_JOINS,
+    hydrate: (row) => goodsReceiptFromRow(row as unknown as GoodsReceiptDbRow) as unknown as RuntimeEntity
+  }),
   spec("goodsReceiptLines", "goods_receipt_line", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "goodsReceiptLines.id")),
     goods_receipt_id: entityUuid(requiredString(entity.goodsReceiptId, "goodsReceiptLines.goodsReceiptId")),
@@ -788,9 +840,12 @@ const TABLES: TableSpec[] = [
     qty_received: requiredNumber(entity.qtyReceived, "goodsReceiptLines.qtyReceived"),
     supplier_amount_basis: requiredNumber(entity.supplierAmountBasis, "goodsReceiptLines.supplierAmountBasis"),
     allocated_goods_cost_rub: requiredNumber(entity.allocatedGoodsCostRub, "goodsReceiptLines.allocatedGoodsCostRub"),
-    unit_cost_rub: requiredNumber(entity.unitCostRub, "goodsReceiptLines.unitCostRub"),
-    state_json: entity
-  }), "goods_receipt_id, id"),
+    unit_cost_rub: requiredNumber(entity.unitCostRub, "goodsReceiptLines.unitCostRub")
+  }), "goods_receipt_line.goods_receipt_id, goods_receipt_line.id", {
+    select: GOODS_RECEIPT_LINE_SELECT,
+    joins: GOODS_RECEIPT_LINE_JOINS,
+    hydrate: (row) => goodsReceiptLineFromRow(row as unknown as GoodsReceiptLineDbRow) as unknown as RuntimeEntity
+  }),
   spec("procurementCosts", "procurement_cost", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "procurementCosts.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "procurementCosts.organizationId")),
@@ -803,8 +858,12 @@ const TABLES: TableSpec[] = [
     amount_rub: requiredNumber(entity.amountRub, "procurementCosts.amountRub"),
     paid_immediately: requiredBoolean(entity.paidImmediately, "procurementCosts.paidImmediately"),
     comment: optionalString(entity.comment),
-    state_json: entity
-  }), "cost_date, id"),
+    pending_allocation: typeof entity.pendingAllocation === "boolean" ? entity.pendingAllocation : null
+  }), "procurement_cost.cost_date, procurement_cost.id", {
+    select: PROCUREMENT_COST_SELECT,
+    joins: PROCUREMENT_COST_JOINS,
+    hydrate: (row) => procurementCostFromRow(row as unknown as ProcurementCostDbRow) as unknown as RuntimeEntity
+  }),
   spec("procurementCostLines", "procurement_cost_line", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "procurementCostLines.id")),
     procurement_cost_id: entityUuid(requiredString(entity.procurementCostId, "procurementCostLines.procurementCostId")),
@@ -817,9 +876,12 @@ const TABLES: TableSpec[] = [
     qty_sold: optionalNumber(entity.qtySold),
     allocated_amount_rub: requiredNumber(entity.allocatedAmountRub, "procurementCostLines.allocatedAmountRub"),
     remaining_inventory_amount_rub: requiredNumber(entity.remainingInventoryAmountRub, "procurementCostLines.remainingInventoryAmountRub"),
-    sold_cost_amount_rub: requiredNumber(entity.soldCostAmountRub, "procurementCostLines.soldCostAmountRub"),
-    state_json: entity
-  }), "procurement_cost_id, id"),
+    sold_cost_amount_rub: requiredNumber(entity.soldCostAmountRub, "procurementCostLines.soldCostAmountRub")
+  }), "procurement_cost_line.procurement_cost_id, procurement_cost_line.id", {
+    select: PROCUREMENT_COST_LINE_SELECT,
+    joins: PROCUREMENT_COST_LINE_JOINS,
+    hydrate: (row) => procurementCostLineFromRow(row as unknown as ProcurementCostLineDbRow) as unknown as RuntimeEntity
+  }),
   spec("shortageResolutions", "shortage_resolution", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "shortageResolutions.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "shortageResolutions.organizationId")),
@@ -827,9 +889,12 @@ const TABLES: TableSpec[] = [
     purchase_order_id: entityUuid(requiredString(entity.purchaseOrderId, "shortageResolutions.purchaseOrderId")),
     status: requiredString(entity.status, "shortageResolutions.status"),
     reason: requiredString(entity.reason, "shortageResolutions.reason"),
-    resolved_at: requiredString(entity.resolvedAt, "shortageResolutions.resolvedAt"),
-    state_json: entity
-  }), "resolved_at, id"),
+    resolved_at: requiredString(entity.resolvedAt, "shortageResolutions.resolvedAt")
+  }), "shortage_resolution.resolved_at, shortage_resolution.id", {
+    select: SHORTAGE_RESOLUTION_SELECT,
+    joins: SHORTAGE_RESOLUTION_JOINS,
+    hydrate: (row) => shortageResolutionFromRow(row as unknown as ShortageResolutionDbRow) as unknown as RuntimeEntity
+  }),
   spec("shortageResolutionLines", "shortage_resolution_line", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "shortageResolutionLines.id")),
     shortage_resolution_id: entityUuid(requiredString(entity.shortageResolutionId, "shortageResolutionLines.shortageResolutionId")),
@@ -837,18 +902,24 @@ const TABLES: TableSpec[] = [
     product_id: entityUuid(requiredString(entity.productId, "shortageResolutionLines.productId")),
     qty_shortage: requiredNumber(entity.qtyShortage, "shortageResolutionLines.qtyShortage"),
     paid_share_rub: requiredNumber(entity.paidShareRub, "shortageResolutionLines.paidShareRub"),
-    action: requiredString(entity.action, "shortageResolutionLines.action"),
-    state_json: entity
-  }), "shortage_resolution_id, id"),
+    action: requiredString(entity.action, "shortageResolutionLines.action")
+  }), "shortage_resolution_line.shortage_resolution_id, shortage_resolution_line.id", {
+    select: SHORTAGE_RESOLUTION_LINE_SELECT,
+    joins: SHORTAGE_RESOLUTION_LINE_JOINS,
+    hydrate: (row) => shortageResolutionLineFromRow(row as unknown as ShortageResolutionLineDbRow) as unknown as RuntimeEntity
+  }),
   spec("supplierClaims", "supplier_claim", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "supplierClaims.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "supplierClaims.organizationId")),
     shortage_resolution_line_id: entityUuid(requiredString(entity.shortageResolutionLineId, "supplierClaims.shortageResolutionLineId")),
     supplier_id: entityUuid(requiredString(entity.supplierId, "supplierClaims.supplierId")),
     amount_rub: requiredNumber(entity.amountRub, "supplierClaims.amountRub"),
-    status: requiredString(entity.status, "supplierClaims.status"),
-    state_json: entity
-  }), "id"),
+    status: requiredString(entity.status, "supplierClaims.status")
+  }), "supplier_claim.id", {
+    select: SUPPLIER_CLAIM_SELECT,
+    joins: SUPPLIER_CLAIM_JOINS,
+    hydrate: (row) => supplierClaimFromRow(row as unknown as SupplierClaimDbRow) as unknown as RuntimeEntity
+  }),
   spec("stockTransfers", "stock_transfer", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "stockTransfers.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "stockTransfers.organizationId")),

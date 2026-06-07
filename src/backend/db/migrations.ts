@@ -178,5 +178,18 @@ export const migrations: Migration[] = [
             comment = nullif(state_json->>'comment', '')
         where state_json <> '{}'::jsonb;
     `
+  },
+  {
+    id: "0007",
+    name: "procurement_typed_hydrate_columns",
+    sql: `
+      alter table procurement_cost add column if not exists pending_allocation boolean;
+      update procurement_cost
+        set pending_allocation = case
+          when state_json ? 'pendingAllocation' then (state_json->>'pendingAllocation')::boolean
+          else pending_allocation
+        end
+        where state_json <> '{}'::jsonb;
+    `
   }
 ];

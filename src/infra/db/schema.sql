@@ -367,7 +367,7 @@ create table if not exists goods_receipt_line (
 );
 
 -- Later-step business tables keep strong document FKs and compact typed columns.
-create table if not exists procurement_cost (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), document_id uuid not null references document(id), purchase_order_id uuid references purchase_order(id), cost_type text not null, status text not null, cost_date date not null, amount_rub numeric(18,2) not null, paid_immediately boolean not null, comment text);
+create table if not exists procurement_cost (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), document_id uuid not null references document(id), purchase_order_id uuid references purchase_order(id), cost_type text not null, status text not null, cost_date date not null, amount_rub numeric(18,2) not null, paid_immediately boolean not null, comment text, pending_allocation boolean);
 create table if not exists procurement_cost_line (id uuid primary key default gen_random_uuid(), procurement_cost_id uuid not null references procurement_cost(id), product_id uuid not null references product(id), allocated_amount_rub numeric(18,2) not null, remaining_inventory_amount_rub numeric(18,2) not null, sold_cost_amount_rub numeric(18,2) not null);
 create table if not exists shortage_resolution (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), document_id uuid not null references document(id), purchase_order_id uuid not null references purchase_order(id), status text not null, reason text not null, resolved_at date not null);
 create table if not exists shortage_resolution_line (id uuid primary key default gen_random_uuid(), shortage_resolution_id uuid not null references shortage_resolution(id), purchase_order_line_id uuid not null references purchase_order_line(id), product_id uuid not null references product(id), qty_shortage numeric(18,4) not null, paid_share_rub numeric(18,2) not null, action text not null);
@@ -481,6 +481,7 @@ alter table sync_run add column if not exists summary jsonb;
 alter table sync_run add column if not exists stream_runs jsonb;
 alter table sync_run add column if not exists last_error text;
 alter table procurement_cost add column if not exists allocation_basis text;
+alter table procurement_cost add column if not exists pending_allocation boolean;
 alter table procurement_cost_line add column if not exists lot_id uuid references inventory_lot(id);
 alter table procurement_cost_line add column if not exists warehouse_id uuid references warehouse(id);
 alter table procurement_cost_line add column if not exists basis_value numeric(18,6);
@@ -574,6 +575,12 @@ update accounting_policy
         else allow_open_period_edits
       end,
       comment = nullif(state_json->>'comment', '')
+  where state_json <> '{}'::jsonb;
+update procurement_cost
+  set pending_allocation = case
+    when state_json ? 'pendingAllocation' then (state_json->>'pendingAllocation')::boolean
+    else pending_allocation
+  end
   where state_json <> '{}'::jsonb;
 update external_event
   set created_at = coalesce(nullif(state_json->>'createdAt', '')::timestamptz, created_at),

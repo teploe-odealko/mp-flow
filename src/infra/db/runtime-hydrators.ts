@@ -16,7 +16,16 @@ import type {
   JournalLine,
   Payment,
   PaymentAllocation,
+  ProcurementCost,
+  ProcurementCostLine,
+  PurchaseOrder,
+  PurchaseOrderLine,
   SettlementEntry,
+  GoodsReceipt,
+  GoodsReceiptLine,
+  ShortageResolution,
+  ShortageResolutionLine,
+  SupplierClaim,
   ObservedStock,
   Product,
   SyncRun,
@@ -752,6 +761,416 @@ export function settlementEntryFromRow(row: SettlementEntryDbRow): SettlementEnt
   });
 }
 
+export const PURCHASE_ORDER_SELECT = `
+  purchase_order.public_id as id,
+  purchase_order_organization.public_id as organization_id,
+  purchase_order_document.public_id as document_id,
+  purchase_order_supplier.public_id as supplier_id,
+  purchase_order_destination_warehouse.public_id as destination_warehouse_id,
+  purchase_order.supplier_currency,
+  purchase_order.status,
+  purchase_order.ordered_at,
+  purchase_order.total_supplier_amount,
+  purchase_order.total_qty,
+  purchase_order.expected_dispatch_date,
+  purchase_order.tracking_ref,
+  purchase_order.expected_arrival_date,
+  purchase_order.comment
+`;
+
+export const PURCHASE_ORDER_JOINS = `
+  left join organization purchase_order_organization on purchase_order_organization.id = purchase_order.organization_id
+  left join document purchase_order_document on purchase_order_document.id = purchase_order.document_id
+  left join counterparty purchase_order_supplier on purchase_order_supplier.id = purchase_order.supplier_id
+  left join warehouse purchase_order_destination_warehouse on purchase_order_destination_warehouse.id = purchase_order.destination_warehouse_id
+`;
+
+export interface PurchaseOrderDbRow {
+  id: string;
+  organization_id: string;
+  document_id: string;
+  supplier_id: string;
+  destination_warehouse_id: string;
+  supplier_currency: PurchaseOrder["supplierCurrency"];
+  status: PurchaseOrder["status"];
+  ordered_at: unknown;
+  total_supplier_amount: string | number;
+  total_qty: string | number;
+  expected_dispatch_date: unknown;
+  tracking_ref: string | null;
+  expected_arrival_date: unknown;
+  comment: string | null;
+}
+
+export function purchaseOrderFromRow(row: PurchaseOrderDbRow): PurchaseOrder {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    documentId: row.document_id,
+    supplierId: row.supplier_id,
+    destinationWarehouseId: row.destination_warehouse_id,
+    supplierCurrency: row.supplier_currency,
+    status: row.status,
+    orderedAt: dateString(row.ordered_at),
+    totalSupplierAmount: Number(row.total_supplier_amount),
+    totalQty: Number(row.total_qty),
+    expectedDispatchDate: optionalDateString(row.expected_dispatch_date),
+    trackingRef: optionalText(row.tracking_ref),
+    expectedArrivalDate: optionalDateString(row.expected_arrival_date),
+    comment: optionalText(row.comment)
+  });
+}
+
+export const PURCHASE_ORDER_LINE_SELECT = `
+  purchase_order_line.public_id as id,
+  purchase_order_line_order.public_id as purchase_order_id,
+  purchase_order_line_product.public_id as product_id,
+  purchase_order_line.line_no,
+  purchase_order_line.qty_ordered,
+  purchase_order_line.supplier_unit_price,
+  purchase_order_line.supplier_amount,
+  purchase_order_line.line_note
+`;
+
+export const PURCHASE_ORDER_LINE_JOINS = `
+  left join purchase_order purchase_order_line_order on purchase_order_line_order.id = purchase_order_line.purchase_order_id
+  left join product purchase_order_line_product on purchase_order_line_product.id = purchase_order_line.product_id
+`;
+
+export interface PurchaseOrderLineDbRow {
+  id: string;
+  purchase_order_id: string;
+  product_id: string;
+  line_no: number;
+  qty_ordered: string | number;
+  supplier_unit_price: string | number;
+  supplier_amount: string | number;
+  line_note: string | null;
+}
+
+export function purchaseOrderLineFromRow(row: PurchaseOrderLineDbRow): PurchaseOrderLine {
+  return stripUndefined({
+    id: row.id,
+    purchaseOrderId: row.purchase_order_id,
+    productId: row.product_id,
+    lineNo: Number(row.line_no),
+    qtyOrdered: Number(row.qty_ordered),
+    supplierUnitPrice: Number(row.supplier_unit_price),
+    supplierAmount: Number(row.supplier_amount),
+    lineNote: optionalText(row.line_note)
+  });
+}
+
+export const GOODS_RECEIPT_SELECT = `
+  goods_receipt.public_id as id,
+  goods_receipt_organization.public_id as organization_id,
+  goods_receipt_document.public_id as document_id,
+  goods_receipt_purchase_order.public_id as purchase_order_id,
+  goods_receipt_warehouse.public_id as warehouse_id,
+  goods_receipt.receipt_date,
+  goods_receipt.status,
+  goods_receipt.goods_cost_rub_total,
+  goods_receipt.goods_cost_source,
+  goods_receipt.suggested_goods_cost_rub,
+  goods_receipt.manual_cost_reason
+`;
+
+export const GOODS_RECEIPT_JOINS = `
+  left join organization goods_receipt_organization on goods_receipt_organization.id = goods_receipt.organization_id
+  left join document goods_receipt_document on goods_receipt_document.id = goods_receipt.document_id
+  left join purchase_order goods_receipt_purchase_order on goods_receipt_purchase_order.id = goods_receipt.purchase_order_id
+  left join warehouse goods_receipt_warehouse on goods_receipt_warehouse.id = goods_receipt.warehouse_id
+`;
+
+export interface GoodsReceiptDbRow {
+  id: string;
+  organization_id: string;
+  document_id: string;
+  purchase_order_id: string;
+  warehouse_id: string;
+  receipt_date: unknown;
+  status: GoodsReceipt["status"];
+  goods_cost_rub_total: string | number;
+  goods_cost_source: GoodsReceipt["goodsCostSource"];
+  suggested_goods_cost_rub: string | number;
+  manual_cost_reason: string | null;
+}
+
+export function goodsReceiptFromRow(row: GoodsReceiptDbRow): GoodsReceipt {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    documentId: row.document_id,
+    purchaseOrderId: row.purchase_order_id,
+    warehouseId: row.warehouse_id,
+    receiptDate: dateString(row.receipt_date),
+    status: row.status,
+    goodsCostRubTotal: Number(row.goods_cost_rub_total),
+    goodsCostSource: row.goods_cost_source,
+    suggestedGoodsCostRub: Number(row.suggested_goods_cost_rub),
+    manualCostReason: optionalText(row.manual_cost_reason)
+  });
+}
+
+export const GOODS_RECEIPT_LINE_SELECT = `
+  goods_receipt_line.public_id as id,
+  goods_receipt_line_receipt.public_id as goods_receipt_id,
+  goods_receipt_line_order_line.public_id as purchase_order_line_id,
+  goods_receipt_line_product.public_id as product_id,
+  goods_receipt_line.qty_received,
+  goods_receipt_line.supplier_amount_basis,
+  goods_receipt_line.allocated_goods_cost_rub,
+  goods_receipt_line.unit_cost_rub
+`;
+
+export const GOODS_RECEIPT_LINE_JOINS = `
+  left join goods_receipt goods_receipt_line_receipt on goods_receipt_line_receipt.id = goods_receipt_line.goods_receipt_id
+  left join purchase_order_line goods_receipt_line_order_line on goods_receipt_line_order_line.id = goods_receipt_line.purchase_order_line_id
+  left join product goods_receipt_line_product on goods_receipt_line_product.id = goods_receipt_line.product_id
+`;
+
+export interface GoodsReceiptLineDbRow {
+  id: string;
+  goods_receipt_id: string;
+  purchase_order_line_id: string;
+  product_id: string;
+  qty_received: string | number;
+  supplier_amount_basis: string | number;
+  allocated_goods_cost_rub: string | number;
+  unit_cost_rub: string | number;
+}
+
+export function goodsReceiptLineFromRow(row: GoodsReceiptLineDbRow): GoodsReceiptLine {
+  return {
+    id: row.id,
+    goodsReceiptId: row.goods_receipt_id,
+    purchaseOrderLineId: row.purchase_order_line_id,
+    productId: row.product_id,
+    qtyReceived: Number(row.qty_received),
+    supplierAmountBasis: Number(row.supplier_amount_basis),
+    allocatedGoodsCostRub: Number(row.allocated_goods_cost_rub),
+    unitCostRub: Number(row.unit_cost_rub)
+  };
+}
+
+export const PROCUREMENT_COST_SELECT = `
+  procurement_cost.public_id as id,
+  procurement_cost_organization.public_id as organization_id,
+  procurement_cost_document.public_id as document_id,
+  procurement_cost_purchase_order.public_id as purchase_order_id,
+  procurement_cost.cost_type,
+  procurement_cost.allocation_basis,
+  procurement_cost.status,
+  procurement_cost.cost_date,
+  procurement_cost.amount_rub,
+  procurement_cost.paid_immediately,
+  procurement_cost.comment,
+  procurement_cost.pending_allocation
+`;
+
+export const PROCUREMENT_COST_JOINS = `
+  left join organization procurement_cost_organization on procurement_cost_organization.id = procurement_cost.organization_id
+  left join document procurement_cost_document on procurement_cost_document.id = procurement_cost.document_id
+  left join purchase_order procurement_cost_purchase_order on procurement_cost_purchase_order.id = procurement_cost.purchase_order_id
+`;
+
+export interface ProcurementCostDbRow {
+  id: string;
+  organization_id: string;
+  document_id: string;
+  purchase_order_id: string | null;
+  cost_type: ProcurementCost["costType"];
+  allocation_basis: ProcurementCost["allocationBasis"];
+  status: ProcurementCost["status"];
+  cost_date: unknown;
+  amount_rub: string | number;
+  paid_immediately: boolean;
+  comment: string | null;
+  pending_allocation: boolean | null;
+}
+
+export function procurementCostFromRow(row: ProcurementCostDbRow): ProcurementCost {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    documentId: row.document_id,
+    purchaseOrderId: optionalText(row.purchase_order_id),
+    costType: row.cost_type,
+    allocationBasis: row.allocation_basis,
+    status: row.status,
+    costDate: dateString(row.cost_date),
+    amountRub: Number(row.amount_rub),
+    paidImmediately: row.paid_immediately,
+    comment: optionalText(row.comment),
+    pendingAllocation: row.pending_allocation ?? undefined
+  });
+}
+
+export const PROCUREMENT_COST_LINE_SELECT = `
+  procurement_cost_line.public_id as id,
+  procurement_cost_line_cost.public_id as procurement_cost_id,
+  procurement_cost_line_product.public_id as product_id,
+  procurement_cost_line_lot.public_id as lot_id,
+  procurement_cost_line_warehouse.public_id as warehouse_id,
+  procurement_cost_line.basis_value,
+  procurement_cost_line.qty_initial,
+  procurement_cost_line.qty_remaining,
+  procurement_cost_line.qty_sold,
+  procurement_cost_line.allocated_amount_rub,
+  procurement_cost_line.remaining_inventory_amount_rub,
+  procurement_cost_line.sold_cost_amount_rub
+`;
+
+export const PROCUREMENT_COST_LINE_JOINS = `
+  left join procurement_cost procurement_cost_line_cost on procurement_cost_line_cost.id = procurement_cost_line.procurement_cost_id
+  left join product procurement_cost_line_product on procurement_cost_line_product.id = procurement_cost_line.product_id
+  left join inventory_lot procurement_cost_line_lot on procurement_cost_line_lot.id = procurement_cost_line.lot_id
+  left join warehouse procurement_cost_line_warehouse on procurement_cost_line_warehouse.id = procurement_cost_line.warehouse_id
+`;
+
+export interface ProcurementCostLineDbRow {
+  id: string;
+  procurement_cost_id: string;
+  product_id: string;
+  lot_id: string | null;
+  warehouse_id: string | null;
+  basis_value: string | number | null;
+  qty_initial: string | number | null;
+  qty_remaining: string | number | null;
+  qty_sold: string | number | null;
+  allocated_amount_rub: string | number;
+  remaining_inventory_amount_rub: string | number;
+  sold_cost_amount_rub: string | number;
+}
+
+export function procurementCostLineFromRow(row: ProcurementCostLineDbRow): ProcurementCostLine {
+  return stripUndefined({
+    id: row.id,
+    procurementCostId: row.procurement_cost_id,
+    productId: row.product_id,
+    lotId: optionalText(row.lot_id),
+    warehouseId: optionalText(row.warehouse_id),
+    basisValue: optionalNumber(row.basis_value),
+    qtyInitial: optionalNumber(row.qty_initial),
+    qtyRemaining: optionalNumber(row.qty_remaining),
+    qtySold: optionalNumber(row.qty_sold),
+    allocatedAmountRub: Number(row.allocated_amount_rub),
+    remainingInventoryAmountRub: Number(row.remaining_inventory_amount_rub),
+    soldCostAmountRub: Number(row.sold_cost_amount_rub)
+  });
+}
+
+export const SHORTAGE_RESOLUTION_SELECT = `
+  shortage_resolution.public_id as id,
+  shortage_resolution_organization.public_id as organization_id,
+  shortage_resolution_document.public_id as document_id,
+  shortage_resolution_purchase_order.public_id as purchase_order_id,
+  shortage_resolution.status,
+  shortage_resolution.reason,
+  shortage_resolution.resolved_at
+`;
+
+export const SHORTAGE_RESOLUTION_JOINS = `
+  left join organization shortage_resolution_organization on shortage_resolution_organization.id = shortage_resolution.organization_id
+  left join document shortage_resolution_document on shortage_resolution_document.id = shortage_resolution.document_id
+  left join purchase_order shortage_resolution_purchase_order on shortage_resolution_purchase_order.id = shortage_resolution.purchase_order_id
+`;
+
+export interface ShortageResolutionDbRow {
+  id: string;
+  organization_id: string;
+  document_id: string;
+  purchase_order_id: string;
+  status: ShortageResolution["status"];
+  reason: string;
+  resolved_at: unknown;
+}
+
+export function shortageResolutionFromRow(row: ShortageResolutionDbRow): ShortageResolution {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    documentId: row.document_id,
+    purchaseOrderId: row.purchase_order_id,
+    status: row.status,
+    reason: row.reason,
+    resolvedAt: dateString(row.resolved_at)
+  };
+}
+
+export const SHORTAGE_RESOLUTION_LINE_SELECT = `
+  shortage_resolution_line.public_id as id,
+  shortage_resolution_line_resolution.public_id as shortage_resolution_id,
+  shortage_resolution_line_order_line.public_id as purchase_order_line_id,
+  shortage_resolution_line_product.public_id as product_id,
+  shortage_resolution_line.qty_shortage,
+  shortage_resolution_line.paid_share_rub,
+  shortage_resolution_line.action
+`;
+
+export const SHORTAGE_RESOLUTION_LINE_JOINS = `
+  left join shortage_resolution shortage_resolution_line_resolution on shortage_resolution_line_resolution.id = shortage_resolution_line.shortage_resolution_id
+  left join purchase_order_line shortage_resolution_line_order_line on shortage_resolution_line_order_line.id = shortage_resolution_line.purchase_order_line_id
+  left join product shortage_resolution_line_product on shortage_resolution_line_product.id = shortage_resolution_line.product_id
+`;
+
+export interface ShortageResolutionLineDbRow {
+  id: string;
+  shortage_resolution_id: string;
+  purchase_order_line_id: string;
+  product_id: string;
+  qty_shortage: string | number;
+  paid_share_rub: string | number;
+  action: ShortageResolutionLine["action"];
+}
+
+export function shortageResolutionLineFromRow(row: ShortageResolutionLineDbRow): ShortageResolutionLine {
+  return {
+    id: row.id,
+    shortageResolutionId: row.shortage_resolution_id,
+    purchaseOrderLineId: row.purchase_order_line_id,
+    productId: row.product_id,
+    qtyShortage: Number(row.qty_shortage),
+    paidShareRub: Number(row.paid_share_rub),
+    action: row.action
+  };
+}
+
+export const SUPPLIER_CLAIM_SELECT = `
+  supplier_claim.public_id as id,
+  supplier_claim_organization.public_id as organization_id,
+  supplier_claim_shortage_line.public_id as shortage_resolution_line_id,
+  supplier_claim_supplier.public_id as supplier_id,
+  supplier_claim.amount_rub,
+  supplier_claim.status
+`;
+
+export const SUPPLIER_CLAIM_JOINS = `
+  left join organization supplier_claim_organization on supplier_claim_organization.id = supplier_claim.organization_id
+  left join shortage_resolution_line supplier_claim_shortage_line on supplier_claim_shortage_line.id = supplier_claim.shortage_resolution_line_id
+  left join counterparty supplier_claim_supplier on supplier_claim_supplier.id = supplier_claim.supplier_id
+`;
+
+export interface SupplierClaimDbRow {
+  id: string;
+  organization_id: string;
+  shortage_resolution_line_id: string;
+  supplier_id: string;
+  amount_rub: string | number;
+  status: SupplierClaim["status"];
+}
+
+export function supplierClaimFromRow(row: SupplierClaimDbRow): SupplierClaim {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    shortageResolutionLineId: row.shortage_resolution_line_id,
+    supplierId: row.supplier_id,
+    amountRub: Number(row.amount_rub),
+    status: row.status
+  };
+}
+
 export const EXTERNAL_EVENT_SELECT = `
   external_event.public_id as id,
   external_event_organization.public_id as organization_id,
@@ -982,6 +1401,11 @@ function optionalText(value: unknown): string | undefined {
 function optionalDateTimeString(value: unknown): string | undefined {
   if (value === null || value === undefined) return undefined;
   return dateTimeString(value);
+}
+
+function optionalDateString(value: unknown): string | undefined {
+  if (value === null || value === undefined) return undefined;
+  return dateString(value);
 }
 
 function optionalNumber(value: unknown): number | undefined {
