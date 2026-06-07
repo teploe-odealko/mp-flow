@@ -1122,6 +1122,112 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     );
     return record ? { ...record, payload: structuredClone(record.payload) } : null;
   };
+  const receiptDispatchContextFor = async (readContext: RuntimeReadContext, receiptId: string, channelId?: string) => {
+    const [
+      receipts,
+      documents,
+      warehouses,
+      salesChannels,
+      products,
+      productExternalLinks,
+      externalProducts,
+      goodsReceiptLines,
+      stockTransfers,
+      stockTransferLines,
+      inventoryLots
+    ] = await Promise.all([
+      readContext.repos.goodsReceipts.all(),
+      readContext.repos.documents.all(),
+      readContext.repos.warehouses.all(),
+      readContext.repos.salesChannels.all(),
+      readContext.repos.products.all(),
+      readContext.repos.productExternalLinks.all(),
+      readContext.repos.externalProducts.all(),
+      readContext.repos.goodsReceiptLines.all(),
+      readContext.repos.stockTransfers.all(),
+      readContext.repos.stockTransferLines.all(),
+      readContext.repos.inventoryLots.all()
+    ]);
+    const mustFind = <T extends { id: string }>(items: T[], idValue: string, code: string): T => {
+      const item = items.find((candidate) => candidate.id === idValue);
+      if (!item) throw new DomainError(code, `Не найдена запись ${idValue}`);
+      return item;
+    };
+    const receipt = mustFind(receipts, receiptId, "receipt_not_found");
+    const document = mustFind(documents, receipt.documentId, "document_not_found");
+    if (receipt.status !== "posted" || document.status !== "posted") {
+      throw new DomainError("receipt_not_posted", "Отправка в канал доступна только после проведения приемки");
+    }
+    const sourceWarehouse = mustFind(warehouses, receipt.warehouseId, "warehouse_not_found");
+    const channels = salesChannels.filter((candidate) => candidate.channelType === "marketplace" && candidate.status !== "disabled");
+    const channel = channelId ? mustFind(channels, channelId, "channel_not_found") : undefined;
+    const salesPointWarehouse = channel
+      ? warehouses.find((warehouse) => warehouse.id === channel.salesPointWarehouseId)
+      : undefined;
+    const postedTransferIds = new Set(
+      stockTransfers
+        .filter((transfer) =>
+          transfer.status === "posted" &&
+          documents.find((candidate) => candidate.id === transfer.documentId)?.status === "posted" &&
+          (!channel?.id || transfer.channelId === channel.id)
+        )
+        .map((transfer) => transfer.id)
+    );
+    const lines = goodsReceiptLines
+      .filter((line) => line.goodsReceiptId === receipt.id)
+      .map((line) => {
+        const product = mustFind(products, line.productId, "product_not_found");
+        const externalLinks = channel
+          ? productExternalLinks.filter((link) => link.productId === line.productId && link.channelId === channel.id && link.status === "active")
+          : [];
+        const linkedExternalProducts = externalLinks
+          .map((link) => externalProducts.find((candidate) => candidate.id === link.externalProductId))
+          .filter(Boolean);
+        return {
+          goodsReceiptLineId: line.id,
+          purchaseOrderLineId: line.purchaseOrderLineId,
+          productId: line.productId,
+          productSku: product.sku,
+          productName: product.name,
+          qtyReceived: line.qtyReceived,
+          qtyAvailableToDispatch: round4(
+            inventoryLots
+              .filter((lot) =>
+                lot.sourceLineId === line.id &&
+                lot.status !== "reversed" &&
+                lot.qtyRemaining > 0 &&
+                lot.warehouseId === receipt.warehouseId &&
+                (lot.stockStateCode ?? "sellable") === "sellable"
+              )
+              .reduce((sum, lot) => sum + lot.qtyRemaining, 0)
+          ),
+          qtyAlreadyDispatched: round4(
+            stockTransferLines
+              .filter((transferLine) => transferLine.sourceGoodsReceiptLineId === line.id && postedTransferIds.has(transferLine.stockTransferId))
+              .reduce((sum, transferLine) => sum + transferLine.qty, 0)
+          ),
+          unitCostRub: line.unitCostRub,
+          allocatedGoodsCostRub: line.allocatedGoodsCostRub,
+          weightGrams: product.weightGrams,
+          lengthMm: product.lengthMm,
+          widthMm: product.widthMm,
+          heightMm: product.heightMm,
+          externalOfferIds: linkedExternalProducts.map((candidate) => String(candidate?.externalSku ?? "")).filter(Boolean)
+        };
+      });
+    const installedPlugin = channel?.pluginId ? await readContext.repos.integrationPlugins.getById(channel.pluginId) : undefined;
+    const plugin = installedPlugin ? pluginRegistry.get(installedPlugin.code) : undefined;
+    return {
+      receipt,
+      document,
+      sourceWarehouse,
+      channel,
+      salesPointWarehouse,
+      channels,
+      lines,
+      plugin: plugin ? serializePluginMeta(plugin) : null
+    };
+  };
   const studioViewFor = async (readContext: RuntimeReadContext, productId: string) => {
     const product = await readContext.repos.products.getById(productId);
     if (!product) throw new DomainError("product_not_found", "Товар не найден");
@@ -1475,6 +1581,9 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     if (!channelId) throw new DomainError("channel_required", "Выберите канал продаж");
     return c.json({ ok: true, data: await channelDispatchStateFor(await readContextFor(c), c.req.param("id"), channelId) });
   });
+  api.get("/api/procurement/receipts/:id/dispatch-context", async (c) => {
+    return c.json({ ok: true, data: await receiptDispatchContextFor(await readContextFor(c), c.req.param("id"), c.req.query("channelId")) });
+  });
 
   api.use("/api/*", async (c, next) => {
     const authUser = c.get("authUser") as PublicAuthUser | undefined;
@@ -1733,12 +1842,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.post("/api/procurement/receipts/:id/post", async (c) => c.json({ ok: true, data: await scopedApp.postGoodsReceipt(c.req.param("id")) }));
   api.get("/api/procurement/receipts/:id/delete-preview", async (c) => c.json({ ok: true, data: await scopedApp.goodsReceiptRollbackPreview(c.req.param("id")) }));
   api.delete("/api/procurement/receipts/:id", async (c) => c.json({ ok: true, data: await scopedApp.deleteGoodsReceipt(c.req.param("id")) }));
-  api.get("/api/procurement/receipts/:id/dispatch-context", async (c) => {
-    const channelId = c.req.query("channelId");
-    const context = await scopedApp.receiptDispatchContext(c.req.param("id"), channelId);
-    const plugin = context.channel ? await resolveChannelPlugin(scopedApp, context.channel) : undefined;
-    return c.json({ ok: true, data: { ...context, plugin: plugin ? serializePluginMeta(plugin) : null } });
-  });
   api.post("/api/procurement/receipts/:id/channel-dispatch/basic", async (c) => {
     const receiptId = c.req.param("id");
     const body = channelDispatchBasicSchema.parse(await c.req.json());

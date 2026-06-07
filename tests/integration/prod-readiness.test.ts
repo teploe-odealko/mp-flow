@@ -226,6 +226,7 @@ describe("prod-ready contracts", () => {
     const recalculationJobs = await get<any[]>(api, "/api/recalculation-jobs");
     const navigation = await get<any[]>(api, "/api/meta/navigation");
     const dispatchState = await get<any>(api, `/api/procurement/receipts/${receipt.id}/channel-dispatch/state?channelId=${channel?.id}`);
+    const dispatchContext = await get<any>(api, `/api/procurement/receipts/${receipt.id}/dispatch-context?channelId=${channel?.id}`);
     const mcpConfig = await get<any>(api, "/api/mcp/config");
     const productListWorkspace = await get<any>(api, "/api/products/workspace");
     const productChannelMapping = await get<any>(api, "/api/products/channel-mapping");
@@ -290,6 +291,10 @@ describe("prod-ready contracts", () => {
     expect(recalculationJobs).toEqual(expect.any(Array));
     expect(navigation.length).toBeGreaterThan(0);
     expect(dispatchState).toBeNull();
+    expect(dispatchContext.receipt.id).toBe(receipt.id);
+    expect(dispatchContext.channel.id).toBe(channel?.id);
+    expect(dispatchContext.plugin?.code).toBe("ozon");
+    expect(dispatchContext.lines).toEqual(expect.any(Array));
     expect(mcpConfig.tools.length).toBeGreaterThan(0);
     expect(productListWorkspace.products).toEqual(expect.any(Array));
     expect(productChannelMapping.products).toEqual(expect.any(Array));
