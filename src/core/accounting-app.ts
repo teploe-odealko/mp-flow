@@ -2425,7 +2425,7 @@ export class AccountingApp {
       throw new DomainError("sale_has_payouts", "Нельзя удалить продажу, которая уже вошла в выплату маркетплейса");
     }
 
-    const resetExternalEventIds = this.saleResetExternalEventIds(sale, linkedFinanceEvents);
+    const resetExternalEventIds = await this.saleResetExternalEventIds(sale, linkedFinanceEvents);
 
     const deletion = await this.deleteChannelFacts({
       sales: [sale],
@@ -2454,18 +2454,18 @@ export class AccountingApp {
       blockers.push({
         code: "sale_has_returns",
         message: "Сначала удалите возвраты по этой продаже",
-        relatedDocuments: linkedReturns
-          .map((salesReturn) => this.findRollbackDocumentSummary(salesReturn.documentId))
-          .filter((item): item is RollbackRelatedDocumentSummary => Boolean(item))
+        relatedDocuments: (await Promise.all(
+          linkedReturns.map((salesReturn) => this.findRollbackDocumentSummary(salesReturn.documentId))
+        )).filter((item): item is RollbackRelatedDocumentSummary => Boolean(item))
       });
     }
     if (sharedFinanceEvents.length > 0) {
       blockers.push({
         code: "sale_has_shared_finance_events",
         message: "Сначала удалите распределенные финансовые операции, которые относятся сразу к нескольким продажам",
-        relatedDocuments: sharedFinanceEvents
-          .map((event) => this.findRollbackDocumentSummary(event.documentId))
-          .filter((item): item is RollbackRelatedDocumentSummary => Boolean(item))
+        relatedDocuments: (await Promise.all(
+          sharedFinanceEvents.map((event) => this.findRollbackDocumentSummary(event.documentId))
+        )).filter((item): item is RollbackRelatedDocumentSummary => Boolean(item))
       });
     }
     if (blockedByPayout) {
@@ -2475,7 +2475,7 @@ export class AccountingApp {
       });
     }
 
-    const resetExternalEventIds = this.saleResetExternalEventIds(sale, linkedFinanceEvents);
+    const resetExternalEventIds = await this.saleResetExternalEventIds(sale, linkedFinanceEvents);
     const removableDocumentIds = new Set<ID>([
       sale.documentId,
       ...linkedFinanceEvents.map((event) => event.documentId),
@@ -2552,7 +2552,7 @@ export class AccountingApp {
     const transfer = this.mustFind(await this.repos.stockTransfers.all(), transferId, "transfer_not_found");
     const document = this.mustFind(await this.repos.documents.all(), transfer.documentId, "document_not_found");
     const descendants = await this.documentDescendants(document.id);
-    const downstreamDocuments = this.inventoryUsageDocuments(document.id);
+    const downstreamDocuments = await this.inventoryUsageDocuments(document.id);
     const blockers: EntityRollbackBlockerSummary[] = [];
     if (descendants.length > 0) {
       blockers.push({
@@ -2622,7 +2622,7 @@ export class AccountingApp {
     const transfer = this.mustFind(await this.repos.stockTransfers.all(), transferId, "transfer_not_found");
     const document = this.mustFind(await this.repos.documents.all(), transfer.documentId, "document_not_found");
     await this.assertDocumentHasNoDescendants(document.id, "Нельзя удалить перемещение, пока от него зависят другие документы");
-    const downstreamDocuments = this.inventoryUsageDocuments(document.id);
+    const downstreamDocuments = await this.inventoryUsageDocuments(document.id);
     if (downstreamDocuments.length > 0) {
       throw new DomainError(
         "stock_transfer_has_downstream_usage",
@@ -2724,7 +2724,9 @@ export class AccountingApp {
         blockers.push({
           code: "payment_consumed_by_receipt",
           message: "Нельзя удалить оплату: по заказу уже проведена приёмка, которая зачла этот аванс. Сначала удалите приёмку.",
-          relatedDocuments: postedReceipts.map((receipt) => this.findRollbackDocumentSummary(receipt.documentId)).filter((item): item is RollbackRelatedDocumentSummary => Boolean(item))
+          relatedDocuments: (await Promise.all(
+            postedReceipts.map((receipt) => this.findRollbackDocumentSummary(receipt.documentId))
+          )).filter((item): item is RollbackRelatedDocumentSummary => Boolean(item))
         });
       }
     }
@@ -2784,7 +2786,7 @@ export class AccountingApp {
     const lotIds = new Set(lots.map((lot) => lot.id));
     const blockers: EntityRollbackBlockerSummary[] = [];
     const descendants = await this.documentDescendants(document.id);
-    const downstream = this.inventoryUsageDocuments(document.id);
+    const downstream = await this.inventoryUsageDocuments(document.id);
     if (downstream.length > 0) {
       blockers.push({
         code: "goods_receipt_has_downstream_usage",
@@ -2804,7 +2806,9 @@ export class AccountingApp {
       blockers.push({
         code: "goods_receipt_has_procurement_costs",
         message: "Сначала удалите расходы закупки, отнесённые на партии этой приёмки",
-        relatedDocuments: costDocuments.map((documentId) => this.findRollbackDocumentSummary(documentId)).filter((item): item is RollbackRelatedDocumentSummary => Boolean(item))
+        relatedDocuments: (await Promise.all(
+          costDocuments.map((documentId) => this.findRollbackDocumentSummary(documentId))
+        )).filter((item): item is RollbackRelatedDocumentSummary => Boolean(item))
       });
     }
     if (descendants.length > 0) {
@@ -3802,46 +3806,46 @@ export class AccountingApp {
     );
   }
 
-  private documentTypeDisplayName(documentType: string) {
-    return this.state.documentTypes.find((candidate) => candidate.code === documentType)?.displayName ?? documentType;
+  private async documentTypeDisplayName(documentType: string) {
+    return (await this.repos.documentTypes.all()).find((candidate) => candidate.code === documentType)?.displayName ?? documentType;
   }
 
-  private findRollbackDocumentSummary(documentId: ID): RollbackRelatedDocumentSummary | undefined {
-    const document = this.state.documents.find((candidate) => candidate.id === documentId);
+  private async findRollbackDocumentSummary(documentId: ID): Promise<RollbackRelatedDocumentSummary | undefined> {
+    const document = (await this.repos.documents.all()).find((candidate) => candidate.id === documentId);
     if (!document) return undefined;
     return {
       documentId: document.id,
       number: document.number,
       title: document.title,
       documentType: document.documentType,
-      documentTypeName: this.documentTypeDisplayName(document.documentType),
+      documentTypeName: await this.documentTypeDisplayName(document.documentType),
       status: document.status,
       accountingDate: document.accountingDate
     };
   }
 
-  private saleResetExternalEventIds(sale: Sale, linkedFinanceEvents: ChannelFinanceEvent[]): Set<ID> {
+  private async saleResetExternalEventIds(sale: Sale, linkedFinanceEvents: ChannelFinanceEvent[]): Promise<Set<ID>> {
     const resetExternalEventIds = new Set<ID>();
     if (sale.externalEventId) resetExternalEventIds.add(sale.externalEventId);
     linkedFinanceEvents.forEach((event) => {
       if (event.externalEventId) resetExternalEventIds.add(event.externalEventId);
     });
     if (sale.financialDocumentId) {
-      this.state.externalEvents
+      (await this.externalEvents.list())
         .filter((event) => event.materializedDocumentId === sale.financialDocumentId)
         .forEach((event) => resetExternalEventIds.add(event.id));
     }
     return resetExternalEventIds;
   }
 
-  private inventoryUsageDocuments(sourceDocumentId: ID): RollbackRelatedDocumentSummary[] {
+  private async inventoryUsageDocuments(sourceDocumentId: ID): Promise<RollbackRelatedDocumentSummary[]> {
     const outboundDocumentIds = new Set(
-      this.state.costApplications
+      (await this.repos.costApplications.all())
         .filter((application) => application.sourceDocumentId === sourceDocumentId && application.outboundDocumentId !== sourceDocumentId)
         .map((application) => application.outboundDocumentId)
     );
-    return [...outboundDocumentIds]
-      .map((documentId) => this.findRollbackDocumentSummary(documentId))
+    return (await Promise.all([...outboundDocumentIds]
+      .map((documentId) => this.findRollbackDocumentSummary(documentId))))
       .filter((item): item is RollbackRelatedDocumentSummary => Boolean(item))
       .sort((left, right) =>
         left.accountingDate.localeCompare(right.accountingDate) ||
@@ -3856,15 +3860,15 @@ export class AccountingApp {
   }
 
   async applyProcurementCostCorrection(input: { procurementCostId: ID; newAmountRub: number; reason: string }) {
-    const cost = this.mustFind(this.state.procurementCosts, input.procurementCostId, "procurement_cost_not_found");
+    const cost = this.mustFind(await this.repos.procurementCosts.all(), input.procurementCostId, "procurement_cost_not_found");
     const nextAmountRub = round2(input.newAmountRub);
     assertNonNegative(nextAmountRub, "Сумма расхода не может быть отрицательной");
     const accountingDelta = round2(nextAmountRub - cost.amountRub);
-    const sourceDocument = this.mustFind(this.state.documents, cost.documentId, "document_not_found");
+    const sourceDocument = this.mustFind(await this.repos.documents.all(), cost.documentId, "document_not_found");
     const beforeCost = { ...cost };
     const beforeDocument = { ...sourceDocument };
     const currentLines = (await this.repos.procurementCostLines.all()).filter((line) => line.procurementCostId === cost.id);
-    const nextLines = this.reallocateProcurementCostLines(currentLines, nextAmountRub);
+    const nextLines = await this.reallocateProcurementCostLines(currentLines, nextAmountRub);
     const currentLineAmountRub = round2(currentLines.reduce((sum, line) => sum + Number(line.allocatedAmountRub ?? 0), 0));
     const allocationDelta = round2(nextAmountRub - currentLineAmountRub);
     if (accountingDelta !== 0 && allocationDelta !== accountingDelta) {
@@ -3878,7 +3882,7 @@ export class AccountingApp {
       afterAmountRub: nextAmountRub,
       delta: accountingDelta
     });
-    this.state.documentVersions.push({
+    await this.repos.documentVersions.add({
       id: id("doc_version"),
       documentId: sourceDocument.id,
       versionNo: (await this.repos.documentVersions.all()).filter((version) => version.documentId === sourceDocument.id).length + 1,
@@ -3888,22 +3892,25 @@ export class AccountingApp {
     });
     const inventoryDeltasByAccount = new Map<string, number>();
     let soldCostDeltaRub = 0;
+    const inventoryLots = await this.repos.inventoryLots.all();
+    const warehouses = await this.repos.warehouses.all();
     for (const [index, line] of currentLines.entries()) {
       const nextLine = nextLines[index];
       const allocatedDelta = round2(nextLine.allocatedAmountRub - Number(line.allocatedAmountRub ?? 0));
       const remainingDelta = round2(nextLine.remainingInventoryAmountRub - Number(line.remainingInventoryAmountRub ?? 0));
       const soldDelta = round2(nextLine.soldCostAmountRub - Number(line.soldCostAmountRub ?? 0));
-      const lot = line.lotId ? this.state.inventoryLots.find((candidate) => candidate.id === line.lotId) : undefined;
+      const lot = line.lotId ? inventoryLots.find((candidate) => candidate.id === line.lotId) : undefined;
       if (lot) {
         lot.costInitialRub = round2(lot.costInitialRub + allocatedDelta);
         if (remainingDelta !== 0) {
           lot.costRemainingRub = round2(Math.max(0, lot.costRemainingRub + remainingDelta));
           lot.unitCostRub = lot.qtyRemaining > 0 ? round6(lot.costRemainingRub / lot.qtyRemaining) : 0;
           await this.addStockState(lot.productId, lot.warehouseId, 0, remainingDelta, lot.stockStateCode);
-          const warehouse = this.mustFind(this.state.warehouses, lot.warehouseId, "warehouse_not_found");
+          const warehouse = this.mustFind(warehouses, lot.warehouseId, "warehouse_not_found");
           const accountCode = accountForWarehouse(warehouse);
           inventoryDeltasByAccount.set(accountCode, round2((inventoryDeltasByAccount.get(accountCode) ?? 0) + remainingDelta));
         }
+        await this.repos.inventoryLots.upsert(lot);
       }
       soldCostDeltaRub = round2(soldCostDeltaRub + soldDelta);
       line.basisValue = nextLine.basisValue;
@@ -3913,11 +3920,14 @@ export class AccountingApp {
       line.allocatedAmountRub = nextLine.allocatedAmountRub;
       line.remainingInventoryAmountRub = nextLine.remainingInventoryAmountRub;
       line.soldCostAmountRub = nextLine.soldCostAmountRub;
+      await this.repos.procurementCostLines.upsert(line);
     }
-    this.syncProcurementCostDocumentLines(sourceDocument.id, currentLines);
+    await this.syncProcurementCostDocumentLines(sourceDocument.id, currentLines);
     sourceDocument.amountRub = nextAmountRub;
-    this.syncProcurementCostPayment(cost, nextAmountRub);
+    await this.syncProcurementCostPayment(cost, nextAmountRub);
     cost.amountRub = nextAmountRub;
+    await this.repos.procurementCosts.upsert(cost);
+    await this.repos.documents.upsert(sourceDocument);
 
     if (accountingDelta !== 0) {
       const document = await this.createDocument({
@@ -3949,13 +3959,14 @@ export class AccountingApp {
     }
     correction.status = "applied";
     correction.appliedAt = nowIso();
+    await this.repos.correctionCases.upsert(correction);
     this.audit("procurement_cost", cost.id, "correct", beforeCost, cost, input.reason);
     this.audit("document", sourceDocument.id, "correct", beforeDocument, sourceDocument, input.reason);
     this.queueRecalculation("inventory_cost", { procurementCostId: cost.id });
     return correction;
   }
 
-  private reallocateProcurementCostLines(lines: ProcurementCostLine[], targetAmountRub: number) {
+  private async reallocateProcurementCostLines(lines: ProcurementCostLine[], targetAmountRub: number) {
     if (lines.length === 0) {
       if (targetAmountRub > 0) {
         throw new DomainError("procurement_cost_no_lines", "Нет строк распределения расхода");
@@ -3985,6 +3996,7 @@ export class AccountingApp {
     let allocatedTotal = 0;
     let remainingTotal = 0;
     let soldTotal = 0;
+    const inventoryLots = await this.repos.inventoryLots.all();
     const nextLines = lines.map((line, index) => {
       const isLast = index === lines.length - 1;
       const allocatedAmountRub = isLast
@@ -3992,7 +4004,7 @@ export class AccountingApp {
         : round2((targetAmountRub * basisValues[index]) / totalBasis);
       allocatedTotal = round2(allocatedTotal + allocatedAmountRub);
 
-      const lot = line.lotId ? this.state.inventoryLots.find((candidate) => candidate.id === line.lotId) : undefined;
+      const lot = line.lotId ? inventoryLots.find((candidate) => candidate.id === line.lotId) : undefined;
       const qtyInitial = round4(Math.max(0, Number(lot?.qtyInitial ?? line.qtyInitial ?? 0)));
       const qtyRemaining = round4(Math.max(0, Number(lot?.qtyRemaining ?? line.qtyRemaining ?? 0)));
       const qtySold = round4(Math.max(0, qtyInitial - qtyRemaining));
@@ -4032,13 +4044,15 @@ export class AccountingApp {
     return nextLines;
   }
 
-  private syncProcurementCostDocumentLines(documentId: ID, lines: ProcurementCostLine[]) {
-    const documentLines = this.state.documentLines
+  private async syncProcurementCostDocumentLines(documentId: ID, lines: ProcurementCostLine[]) {
+    const allDocumentLines = await this.repos.documentLines.all();
+    const documentLines = allDocumentLines
       .filter((line) => line.documentId === documentId && line.lineType === "procurement_cost_line")
       .sort((left, right) => left.lineNo - right.lineNo);
     const usedLineIds = new Set<ID>();
+    let nextLineNo = allDocumentLines.filter((candidate) => candidate.documentId === documentId).length + 1;
 
-    lines.forEach((line, index) => {
+    for (const [index, line] of lines.entries()) {
       const findMatchingLine = () => documentLines.find((documentLine) => {
         if (usedLineIds.has(documentLine.id)) return false;
         const payload = documentLine.payload ?? {};
@@ -4048,10 +4062,10 @@ export class AccountingApp {
 
       const documentLine = findMatchingLine();
       if (!documentLine) {
-        this.state.documentLines.push({
+        const createdLine: DocumentLine = {
           id: id("doc_line"),
           documentId,
-          lineNo: this.state.documentLines.filter((candidate) => candidate.documentId === documentId).length + 1,
+          lineNo: nextLineNo++,
           lineType: "procurement_cost_line",
           amountRub: line.allocatedAmountRub,
           payload: {
@@ -4061,8 +4075,10 @@ export class AccountingApp {
             remainingInventoryAmountRub: line.remainingInventoryAmountRub,
             soldCostAmountRub: line.soldCostAmountRub
           }
-        });
-        return;
+        };
+        await this.repos.documentLines.add(createdLine);
+        allDocumentLines.push(createdLine);
+        continue;
       }
 
       usedLineIds.add(documentLine.id);
@@ -4075,12 +4091,13 @@ export class AccountingApp {
         remainingInventoryAmountRub: line.remainingInventoryAmountRub,
         soldCostAmountRub: line.soldCostAmountRub
       };
-    });
+      await this.repos.documentLines.upsert(documentLine);
+    }
   }
 
-  private syncProcurementCostPayment(cost: ProcurementCost, nextAmountRub: number) {
+  private async syncProcurementCostPayment(cost: ProcurementCost, nextAmountRub: number) {
     if (!cost.paidImmediately) return;
-    const payment = this.state.payments.find((candidate) =>
+    const payment = (await this.repos.payments.all()).find((candidate) =>
       candidate.documentId === cost.documentId &&
       candidate.paymentType === "procurement_cost_payment"
     );
@@ -4090,20 +4107,23 @@ export class AccountingApp {
     if (delta === 0) return;
     const beforePayment = { ...payment };
     payment.amountRub = nextAmountRub;
-    this.state.paymentAllocations
-      .filter((allocation) =>
-        allocation.paymentId === payment.id &&
-        allocation.documentId === cost.documentId &&
-        allocation.allocationPurpose === "procurement_cost"
+    for (const allocation of (await this.repos.paymentAllocations.all())
+      .filter((candidate) =>
+        candidate.paymentId === payment.id &&
+        candidate.documentId === cost.documentId &&
+        candidate.allocationPurpose === "procurement_cost"
       )
-      .forEach((allocation) => {
-        allocation.amountRub = nextAmountRub;
-      });
-    const cashAccount = this.state.cashAccounts.find((account) => account.id === payment.cashAccountId);
+    ) {
+      allocation.amountRub = nextAmountRub;
+      await this.repos.paymentAllocations.upsert(allocation);
+    }
+    const cashAccount = (await this.repos.cashAccounts.all()).find((account) => account.id === payment.cashAccountId);
     if (cashAccount) {
       const direction = payment.paymentDirection === "incoming" ? 1 : -1;
       cashAccount.balanceRub = round2(cashAccount.balanceRub + direction * delta);
+      await this.repos.cashAccounts.upsert(cashAccount);
     }
+    await this.repos.payments.upsert(payment);
     this.audit("payment", payment.id, "correct", beforePayment, payment, "Исправление расхода закупки");
   }
 
@@ -4113,13 +4133,13 @@ export class AccountingApp {
     newQtyReceived: number;
     reason: string;
   }) {
-    const receipt = this.mustFind(this.state.goodsReceipts, input.goodsReceiptId, "receipt_not_found");
+    const receipt = this.mustFind(await this.repos.goodsReceipts.all(), input.goodsReceiptId, "receipt_not_found");
     const receiptLine = (await this.repos.goodsReceiptLines.all()).find((line) => line.goodsReceiptId === receipt.id && line.purchaseOrderLineId === input.purchaseOrderLineId);
     if (!receiptLine) throw new DomainError("receipt_line_not_found", "Строка приемки не найдена");
     if (input.newQtyReceived >= receiptLine.qtyReceived) {
       throw new DomainError("unsupported_correction", "Этот метод предназначен для уменьшения приемки");
     }
-    const sourceDocument = this.mustFind(this.state.documents, receipt.documentId, "document_not_found");
+    const sourceDocument = this.mustFind(await this.repos.documents.all(), receipt.documentId, "document_not_found");
     const qtyDelta = round4(receiptLine.qtyReceived - input.newQtyReceived);
     const amountDelta = round2(receiptLine.unitCostRub * qtyDelta);
     const correction = this.createCorrectionCase(sourceDocument.id, "open_period_edit", input.reason, {
@@ -4158,8 +4178,11 @@ export class AccountingApp {
     receiptLine.allocatedGoodsCostRub = round2(receiptLine.allocatedGoodsCostRub - amountDelta);
     receiptLine.unitCostRub = round6(receiptLine.allocatedGoodsCostRub / receiptLine.qtyReceived);
     receipt.goodsCostRubTotal = round2(receipt.goodsCostRubTotal - amountDelta);
+    await this.repos.goodsReceiptLines.upsert(receiptLine);
+    await this.repos.goodsReceipts.upsert(receipt);
     correction.status = "applied";
     correction.appliedAt = nowIso();
+    await this.repos.correctionCases.upsert(correction);
     this.queueRecalculation("inventory_cost", { goodsReceiptId: receipt.id });
     return correction;
   }
@@ -4301,8 +4324,8 @@ export class AccountingApp {
       source: input.source,
       comment: input.comment
     });
-    (input.lines ?? []).forEach((line, index) => {
-      this.state.documentLines.push({
+    for (const [index, line] of (input.lines ?? []).entries()) {
+      await this.repos.documentLines.add({
         id: id("doc_line"),
         documentId: document.id,
         lineNo: index + 1,
@@ -4311,7 +4334,7 @@ export class AccountingApp {
         amountRub: line.amountRub,
         payload: line.payload ?? {}
       });
-    });
+    }
     if (input.post) {
       await this.postExistingDocument(document.id, input.journalLines);
     }
@@ -4326,7 +4349,7 @@ export class AccountingApp {
     lines?: Array<{ lineType?: string; qty?: number; amountRub?: number; payload?: Record<string, unknown> }>;
     changeReason?: string;
   }): Promise<Document> {
-    const document = this.mustFind(this.state.documents, documentId, "document_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), documentId, "document_not_found");
     if (document.status !== "draft") {
       throw new DomainError("document_not_editable", "Проведенный документ меняется только через исправление");
     }
@@ -4342,8 +4365,8 @@ export class AccountingApp {
     if (patch.comment !== undefined) document.comment = patch.comment;
     if (patch.lines) {
       await this.repos.documentLines.replaceAll((await this.repos.documentLines.all()).filter((line) => line.documentId !== document.id));
-      patch.lines.forEach((line, index) => {
-        this.state.documentLines.push({
+      for (const [index, line] of patch.lines.entries()) {
+        await this.repos.documentLines.add({
           id: id("doc_line"),
           documentId: document.id,
           lineNo: index + 1,
@@ -4352,9 +4375,9 @@ export class AccountingApp {
           amountRub: line.amountRub,
           payload: line.payload ?? {}
         });
-      });
+      }
     }
-    this.state.documentVersions.push({
+    await this.repos.documentVersions.add({
       id: id("doc_version"),
       documentId: document.id,
       versionNo: (await this.repos.documentVersions.all()).filter((version) => version.documentId === document.id).length + 1,
@@ -4362,12 +4385,13 @@ export class AccountingApp {
       reason: patch.changeReason ?? "Редактирование черновика",
       createdAt: nowIso()
     });
+    await this.repos.documents.upsert(document);
     this.audit("document", document.id, "update", before.document, document, patch.changeReason);
     return document;
   }
 
   async postExistingDocument(documentId: ID, journalLines?: JournalLineInput[]) {
-    const document = this.mustFind(this.state.documents, documentId, "document_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), documentId, "document_not_found");
     if (document.status === "posted") {
       return { document, entry: (await this.repos.journalEntries.all()).find((entry) => entry.documentId === document.id) };
     }
@@ -4380,6 +4404,7 @@ export class AccountingApp {
     if (!registry.isPosting) {
       document.status = "posted";
       document.postedAt = nowIso();
+      await this.repos.documents.upsert(document);
       this.audit("document", document.id, "post", undefined, document, "Документ без проводок");
       return { document };
     }
@@ -4390,7 +4415,7 @@ export class AccountingApp {
   }
 
   async deleteDraftDocument(documentId: ID): Promise<Document> {
-    const document = this.mustFind(this.state.documents, documentId, "document_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), documentId, "document_not_found");
     if (document.status !== "draft") {
       throw new DomainError("document_delete_not_allowed", "Удалять можно только черновики без проведённых последствий");
     }
@@ -4466,8 +4491,8 @@ export class AccountingApp {
         const payout = (await this.repos.payouts.all()).find((candidate) => candidate.documentId === document.id);
         if (!payout) break;
         if (payout.paymentId) {
-          const payment = this.mustFind(this.state.payments, payout.paymentId, "payment_not_found");
-          const paymentDocument = this.mustFind(this.state.documents, payment.documentId, "document_not_found");
+          const payment = this.mustFind(await this.repos.payments.all(), payout.paymentId, "payment_not_found");
+          const paymentDocument = this.mustFind(await this.repos.documents.all(), payment.documentId, "document_not_found");
           if (paymentDocument.status !== "draft") {
             throw new DomainError("document_delete_not_allowed", "Удалять можно только черновики без проведённых последствий");
           }
@@ -4479,12 +4504,15 @@ export class AccountingApp {
           await this.repos.documentVersions.replaceAll((await this.repos.documentVersions.all()).filter((version) => version.documentId !== payment.documentId));
           await this.repos.documents.replaceAll((await this.repos.documents.all()).filter((candidate) => candidate.id !== payment.documentId));
         }
-        this.state.payoutLines
+        for (const line of (await this.repos.payoutLines.all())
           .filter((line) => line.payoutId === payout.id && line.sourceType === "finance_event" && line.sourceId)
-          .forEach((line) => {
-            const financeEvent = this.state.channelFinanceEvents.find((candidate) => candidate.id === line.sourceId);
-            if (financeEvent?.payoutId === payout.id) financeEvent.payoutId = undefined;
-          });
+        ) {
+          const financeEvent = (await this.repos.channelFinanceEvents.all()).find((candidate) => candidate.id === line.sourceId);
+          if (financeEvent?.payoutId === payout.id) {
+            financeEvent.payoutId = undefined;
+            await this.repos.channelFinanceEvents.upsert(financeEvent);
+          }
+        }
         if (payout.externalEventId) {
           this.bufferExternalEventUpdate(payout.externalEventId, {
             materializedDocumentId: undefined,
@@ -4526,11 +4554,11 @@ export class AccountingApp {
   }
 
   async applyDocumentCorrection(documentId: ID, patch: Record<string, unknown>, reason = "Исправление документа") {
-    const document = this.mustFind(this.state.documents, documentId, "document_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), documentId, "document_not_found");
     await this.assertDocumentHasNoDescendants(document.id, "Нельзя изменить документ, пока от него зависят другие документы");
     const before = { ...document };
     const correction = this.createCorrectionCase(document.id, "open_period_edit", reason, { patch });
-    this.state.documentVersions.push({
+    await this.repos.documentVersions.add({
       id: id("doc_version"),
       documentId: document.id,
       versionNo: (await this.repos.documentVersions.all()).filter((version) => version.documentId === document.id).length + 1,
@@ -4553,6 +4581,7 @@ export class AccountingApp {
       });
       correction.impactSummary = { ...correction.impactSummary, correctionDocumentId: correctionDocument.id };
     }
+    await this.repos.documents.upsert(document);
     correction.status = "applied";
     correction.appliedAt = nowIso();
     this.audit("document", document.id, "correct", before, document, reason);

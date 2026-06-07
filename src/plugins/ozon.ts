@@ -200,7 +200,7 @@ export const ozonPlugin: MarketplacePlugin = {
 };
 
 async function syncRealOzon({ app, channelId, syncRunId, since, credentials, streams, autoLinkProducts }: SyncContext): Promise<SyncResult> {
-  const channel = app.state.salesChannels.find((candidate) => candidate.id === channelId);
+  const channel = await app.repos.salesChannels.getById(channelId);
   const startedAt = parseSince(since, channel?.lastSyncAt);
   const finishedAt = new Date();
   const stats = { products: 0, events: 0, stocks: 0, sales: 0, returns: 0, finance_events: 0, payouts: 0 };
@@ -320,10 +320,11 @@ async function checkOzonAccess(credentials: PluginCredentials): Promise<{ ok: tr
 }
 
 async function ensureInternalProduct(app: SyncContext["app"], externalProduct: ExternalProduct, productInfo: OzonProductInfo): Promise<Product> {
-  const existingLink = app.state.productExternalLinks.find((link) => link.externalProductId === externalProduct.id && link.status === "active");
-  const byLink = existingLink ? app.state.products.find((product) => product.id === existingLink.productId) : undefined;
+  const existingLink = (await app.repos.productExternalLinks.all()).find((link) => link.externalProductId === externalProduct.id && link.status === "active");
+  const products = await app.repos.products.all();
+  const byLink = existingLink ? products.find((product) => product.id === existingLink.productId) : undefined;
   const offerId = normalizeSku(productInfo.offer_id || externalProduct.externalSku);
-  const product = byLink ?? findInternalProduct(app.state.products, offerId, productInfo);
+  const product = byLink ?? findInternalProduct(products, offerId, productInfo);
   const patch = productInputFromOzon(productInfo, externalProduct.externalSku);
   if (product) {
     await app.updateProduct(product.id, {
@@ -496,11 +497,12 @@ async function ozonRequest<T>(credentials: PluginCredentials, path: string, body
 
 async function ensureExternalProduct(app: SyncContext["app"], channelId: ID, productInfo: OzonProductInfo): Promise<ExternalProduct> {
   const externalSku = normalizeSku(productInfo.offer_id) || String(productInfo.sku ?? productInfo.id ?? "unknown");
-  const existing = app.state.externalProducts.find((product) => product.channelId === channelId && product.externalSku === externalSku);
+  const existing = (await app.repos.externalProducts.all()).find((product) => product.channelId === channelId && product.externalSku === externalSku);
   if (existing) {
     existing.externalName = productInfo.name ?? existing.externalName;
     existing.imageUrl = firstImage(productInfo) ?? existing.imageUrl;
     existing.status = "active";
+    await app.repos.externalProducts.upsert(existing);
     return existing;
   }
   return await app.createExternalProduct({
@@ -787,11 +789,11 @@ function isDemoCredentials(credentials?: PluginCredentials) {
 
 async function syncDemo({ app, channelId, syncRunId, streams, autoLinkProducts }: SyncContext): Promise<SyncResult> {
   const wantStream = (code: string) => !streams || streams.length === 0 || streams.includes(code as any);
-  const product = app.state.products[0];
+  const product = (await app.repos.products.all())[0];
   if (!product) {
     return { pluginCode: "ozon", channelId, status: "completed", stats: { products: 0, events: 0, stocks: 0, sales: 0, finance_events: 0, payouts: 0 }, errors: [] };
   }
-  const existing = app.state.externalProducts.find((candidate) => candidate.channelId === channelId && candidate.externalSku === `OZON-${product.sku}`);
+  const existing = (await app.repos.externalProducts.all()).find((candidate) => candidate.channelId === channelId && candidate.externalSku === `OZON-${product.sku}`);
   const external = existing ?? await app.createExternalProduct({
     channelId,
     externalSku: `OZON-${product.sku}`,
@@ -799,7 +801,7 @@ async function syncDemo({ app, channelId, syncRunId, streams, autoLinkProducts }
   });
   // Onboarding import passes autoLinkProducts:false — observe the card/stock but leave mapping
   // to an explicit user decision. Ongoing syncs (undefined/true) keep auto-linking.
-  if (autoLinkProducts !== false && !app.state.productExternalLinks.some((link) => link.externalProductId === external.id && link.productId === product.id && link.status === "active")) {
+  if (autoLinkProducts !== false && !(await app.repos.productExternalLinks.all()).some((link) => link.externalProductId === external.id && link.productId === product.id && link.status === "active")) {
     await app.linkExternalProduct({ externalProductId: external.id, productId: product.id });
   }
   await app.recordObservedStock({

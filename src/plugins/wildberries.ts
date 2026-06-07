@@ -11,7 +11,8 @@ export const wildberriesPlugin: MarketplacePlugin = {
     return { ok: true };
   },
   async sync({ app, channelId }) {
-    const product = app.state.products[1] ?? app.state.products[0];
+    const products = await app.repos.products.all();
+    const product = products[1] ?? products[0];
     if (!product) {
       return { pluginCode: "wildberries", channelId, status: "completed", stats: { products: 0, events: 0, stocks: 0 }, errors: [] };
     }
