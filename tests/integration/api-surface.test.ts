@@ -53,6 +53,8 @@ describe("MPFlow api surface", () => {
     const { app, api } = makeApi();
     await app.setupDemo();
     const demoOrder = (await app.repos.purchaseOrders.all())[0];
+    const demoChannel = (await app.repos.salesChannels.all())[0];
+    const demoFinanceEvent = (await app.repos.channelFinanceEvents.all())[0];
 
     const readModels = await Promise.all([
       get<{ configured: boolean; counters: { products: number; documents: number } }>(api, "/api/dashboard"),
@@ -72,6 +74,11 @@ describe("MPFlow api surface", () => {
       get<{ cashAccounts: unknown[]; payments: unknown[]; allocations: unknown[] }>(api, "/api/money/payments"),
       get<{ cashAccounts: unknown[]; payments: unknown[]; documents: unknown[]; operatingExpenses: unknown[]; payouts: unknown[] }>(api, "/api/finance/workspace"),
       get<{ plugins: unknown[]; channels: unknown[] }>(api, "/api/channels"),
+      get<{ plugins: unknown[]; channels: unknown[]; warehouses: unknown[] }>(api, "/api/channels/workspace"),
+      get<{ channel: any; warehouses: unknown[]; backfillProjects: unknown[]; syncRuns: unknown[]; counts: { externalProducts: number; observedStocks: number; externalEvents: number; sales: number; payouts: number } }>(api, `/api/integrations/channels/${demoChannel.id}`),
+      get<{ channels: unknown[]; externalProducts: unknown[]; products: unknown[]; documents: unknown[]; events: unknown[]; observedStocks: unknown[] }>(api, "/api/integrations/inbox/workspace"),
+      get<{ channel: any; events: unknown[]; sales: unknown[]; salesReturns: unknown[]; payouts: unknown[]; documents: unknown[]; externalEvents: unknown[] }>(api, `/api/integrations/channels/${demoChannel.id}/finance/workspace`),
+      get<{ event: any; channel: any; sales: unknown[]; salesReturns: unknown[]; payouts: unknown[]; documents: unknown[]; externalEvent: unknown | null }>(api, `/api/integrations/finance-events/${demoFinanceEvent.id}/workspace`),
       get<{ externalProducts: unknown[]; links: unknown[]; products: unknown[]; channels: unknown[] }>(api, "/api/products/channel-mapping"),
       get<unknown[]>(api, "/api/integrations/events"),
       get<{ sales: unknown[]; lines: unknown[] }>(api, "/api/sales"),
@@ -82,7 +89,7 @@ describe("MPFlow api surface", () => {
       get<unknown[]>(api, "/api/controls/audit-events")
     ]);
 
-    const [dashboard, setup, accounts, journal, ledger, documents, products, inventory, inventoryWorkspace, purchaseOrders, procurementWorkspace, procurementFormsWorkspace, purchaseOrderCard, purchaseOrderFormsWorkspace, money, financeWorkspace, channels, mapping, events, sales, returns, payouts, expenses, corrections, auditEvents] = readModels;
+    const [dashboard, setup, accounts, journal, ledger, documents, products, inventory, inventoryWorkspace, purchaseOrders, procurementWorkspace, procurementFormsWorkspace, purchaseOrderCard, purchaseOrderFormsWorkspace, money, financeWorkspace, channels, channelsWorkspace, channelDetail, inboxWorkspace, channelFinanceWorkspace, financeEventWorkspace, mapping, events, sales, returns, payouts, expenses, corrections, auditEvents] = readModels;
     expect(dashboard.configured).toBe(true);
     expect(dashboard.counters.products).toBeGreaterThan(0);
     expect(dashboard.counters.documents).toBeGreaterThan(0);
@@ -147,6 +154,27 @@ describe("MPFlow api surface", () => {
     expect(financeWorkspace.payments.length).toBeGreaterThan(0);
     expect(channels.plugins.length).toBeGreaterThan(0);
     expect(channels.channels.length).toBe(1);
+    expect(channelsWorkspace.plugins.length).toBeGreaterThan(0);
+    expect(channelsWorkspace.channels.length).toBe(1);
+    expect(channelsWorkspace.warehouses.length).toBeGreaterThan(0);
+    expect(channelDetail.channel.id).toBe(demoChannel.id);
+    expect(channelDetail.warehouses.length).toBeGreaterThan(0);
+    expect(channelDetail.backfillProjects).toEqual(expect.any(Array));
+    expect(channelDetail.syncRuns).toEqual(expect.any(Array));
+    expect(channelDetail.counts.sales).toBeGreaterThan(0);
+    expect(inboxWorkspace.channels.length).toBe(1);
+    expect(inboxWorkspace.products.length).toBe(2);
+    expect(inboxWorkspace.documents.length).toBeGreaterThan(0);
+    expect(inboxWorkspace.events).toEqual([]);
+    expect(inboxWorkspace.observedStocks).toEqual(expect.any(Array));
+    expect(channelFinanceWorkspace.channel.id).toBe(demoChannel.id);
+    expect(channelFinanceWorkspace.events.some((item: any) => item.id === demoFinanceEvent.id)).toBe(true);
+    expect(channelFinanceWorkspace.sales.length).toBeGreaterThan(0);
+    expect(channelFinanceWorkspace.documents.length).toBeGreaterThan(0);
+    expect(financeEventWorkspace.event.id).toBe(demoFinanceEvent.id);
+    expect(financeEventWorkspace.channel.id).toBe(demoChannel.id);
+    expect(financeEventWorkspace.sales.length).toBeGreaterThan(0);
+    expect(financeEventWorkspace.documents.length).toBeGreaterThan(0);
     expect(mapping.products.length).toBe(2);
     expect(mapping.channels.length).toBe(1);
     expect(events).toEqual([]);

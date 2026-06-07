@@ -143,8 +143,16 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   оплаты поставщику, приемки, доп. расхода и разбора недопоставки. Endpoint умеет возвращать общий
   контекст активных заказов или scoped-контекст одного `purchaseOrderId`; формы больше не используют
   `useCollection` и не делают глобального `queryClient.invalidateQueries()`.
-- ⚠️ Фактический текущий остаток фронта: `useCollection` ещё есть в channel/inventory/sales pages:
-  `ChannelDetailPage`, `ChannelsPages`, `inventory/forms`, `SalesPages`.
+- ✅ Channels pages сняты с generic collections:
+  `ChannelsWorkspace` → `/api/channels/workspace`, `ChannelDetailPage`/`ChannelSyncPage` →
+  `/api/integrations/channels/:id`, `SyncInboxPage` → `/api/integrations/inbox/workspace`,
+  `ChannelFinancePage` → `/api/integrations/channels/:id/finance/workspace`,
+  `FinanceEventCardPage` → `/api/integrations/finance-events/:id/workspace`.
+  В `src/frontend/pages/channels` больше нет `useCollection` и глобального `queryClient.invalidateQueries()`;
+  мутации инвалидируют scoped channel/workspace keys и временно старые collection-ключи для ещё не мигрированных
+  смежных sales/inventory страниц.
+- ⚠️ Фактический текущий остаток фронта: `useCollection` ещё есть в inventory/sales pages:
+  `inventory/forms`, `SalesPages`.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,

@@ -31,13 +31,21 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Kpi } from "@/components/ui/kpi";
 import { Pagination } from "@/components/ui/pagination";
-import { useCollection } from "@/lib/use-collection";
 import { apiDelete, apiGet, apiPost } from "@/api";
 import { channelTypeLabel, eventKindLabel, eventStatusLabel, observedLocationStatusLabel } from "@/lib/i18n";
 import { rub, date, dateTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { paginateRows } from "@/lib/pagination";
 import { channelFinanceSaleAllocations, channelFinanceSourceOperationCode, channelFinanceSourceOperationName } from "../../../shared/channel-finance";
+import {
+  CHANNELS_WORKSPACE_QUERY_KEY,
+  SYNC_INBOX_WORKSPACE_QUERY_KEY,
+  channelDetailQueryKey,
+  channelFinanceWorkspaceQueryKey,
+  channelSyncRunsQueryKey,
+  financeEventWorkspaceQueryKey,
+  invalidateChannelArea
+} from "./channel-queries";
 
 const STATUS_TONE: Record<string, "success" | "warning" | "danger" | "neutral"> = {
   active: "success",
@@ -61,11 +69,54 @@ const STREAM_DEFS: Array<{ code: string; label: string; hint: string; pluginCap?
   { code: "payouts", label: "Выплаты", hint: "Поступления и сверка выплат маркетплейса" }
 ];
 
+interface ChannelsWorkspacePayload {
+  channels: any[];
+  plugins: any[];
+  warehouses: any[];
+}
+
+interface ChannelDetailPayload {
+  channel: any;
+  syncRuns: any[];
+}
+
+interface SyncInboxWorkspacePayload {
+  channels: any[];
+  externalProducts: any[];
+  products: any[];
+  documents: any[];
+  events: any[];
+  observedStocks: any[];
+}
+
+interface ChannelFinanceWorkspacePayload {
+  channel: any;
+  events: any[];
+  sales: any[];
+  salesReturns: any[];
+  payouts: any[];
+  documents: any[];
+  externalEvents: any[];
+}
+
+interface FinanceEventWorkspacePayload {
+  event: any;
+  channel: any;
+  sales: any[];
+  salesReturns: any[];
+  payouts: any[];
+  documents: any[];
+  externalEvent: any | null;
+}
+
 export function ChannelsWorkspace() {
-  const state = { salesChannels: useCollection<any[]>("salesChannels") ?? [], integrationPlugins: useCollection<any[]>("integrationPlugins") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
-  const channels = state.salesChannels ?? [];
-  const plugins = state.integrationPlugins ?? [];
-  const warehouses = state.warehouses ?? [];
+  const workspaceQuery = useQuery({
+    queryKey: CHANNELS_WORKSPACE_QUERY_KEY,
+    queryFn: () => apiGet<ChannelsWorkspacePayload>("/api/channels/workspace")
+  });
+  const channels = workspaceQuery.data?.channels ?? [];
+  const plugins = workspaceQuery.data?.plugins ?? [];
+  const warehouses = workspaceQuery.data?.warehouses ?? [];
 
   return (
     <div className="flex flex-col gap-5">
@@ -210,7 +261,7 @@ export function ChannelFormPage() {
       return channel;
     },
     onSuccess: (channel) => {
-      queryClient.invalidateQueries();
+      invalidateChannelArea(queryClient, channel.id);
       navigate(returnTo ?? `/integrations/channels/${channel.id}/onboarding`);
     }
   });
@@ -376,12 +427,16 @@ export function ChannelFormPage() {
 
 export function ChannelSyncPage() {
   const { id } = useParams();
-  const state = { salesChannels: useCollection<any[]>("salesChannels") ?? [] };
   const queryClient = useQueryClient();
-  const channel = (state.salesChannels ?? []).find((candidate: any) => candidate.id === id);
+  const channelQuery = useQuery({
+    queryKey: channelDetailQueryKey(id),
+    queryFn: () => apiGet<ChannelDetailPayload>(`/api/integrations/channels/${encodeURIComponent(id ?? "")}`),
+    enabled: Boolean(id)
+  });
+  const channel = channelQuery.data?.channel;
   const runsQuery = useQuery({
-    queryKey: ["sync-runs", id],
-    queryFn: () => apiGet<any[]>(`/api/integrations/channels/${id}/sync-runs`),
+    queryKey: channelSyncRunsQueryKey(id),
+    queryFn: () => apiGet<any[]>(`/api/integrations/channels/${encodeURIComponent(id ?? "")}/sync-runs`),
     enabled: Boolean(id)
   });
   const runs = (runsQuery.data ?? [])
@@ -395,6 +450,18 @@ export function ChannelSyncPage() {
   });
   const [streams, setStreams] = useState<string[]>(channel?.enabledStreams?.length ? channel.enabledStreams : STREAM_DEFS.map((stream) => stream.code));
   const [selectedRunId, setSelectedRunId] = useState<string | null>(runs[0]?.id ?? null);
+
+  useEffect(() => {
+    if (channel?.enabledStreams?.length) {
+      setStreams(channel.enabledStreams);
+    }
+  }, [channel?.id, channel?.enabledStreams]);
+
+  useEffect(() => {
+    if (!selectedRunId && runs[0]?.id) {
+      setSelectedRunId(runs[0].id);
+    }
+  }, [runs, selectedRunId]);
 
   const selectedRun = runs.find((candidate: any) => candidate.id === selectedRunId) ?? runs[0];
   const selectedRunSummary = selectedRun?.summary ?? {
@@ -413,7 +480,7 @@ export function ChannelSyncPage() {
       since: mode === "full" ? undefined : since
     }),
     onSuccess: (run) => {
-      queryClient.invalidateQueries();
+      invalidateChannelArea(queryClient, id);
       setSelectedRunId(run.id);
     }
   });
@@ -424,17 +491,25 @@ export function ChannelSyncPage() {
       since: run.mode === "full" ? undefined : run.since
     }),
     onSuccess: (run) => {
-      queryClient.invalidateQueries();
+      invalidateChannelArea(queryClient, id);
       setSelectedRunId(run.id);
     }
   });
   const cancel = useMutation({
     mutationFn: (runId: string) => apiPost(`/api/integrations/sync-runs/${runId}/cancel`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => invalidateChannelArea(queryClient, id)
   });
 
   function toggleStream(code: string) {
     setStreams((prev) => prev.includes(code) ? prev.filter((item) => item !== code) : [...prev, code]);
+  }
+
+  if (channelQuery.isPending) {
+    return (
+      <div className="max-w-3xl mx-auto">
+        <PageHeader title="Синхронизация канала" subtitle="Загружаем канал" breadcrumbs={[{ label: "Каналы", to: "/channels" }]} />
+      </div>
+    );
   }
 
   if (!channel) {
@@ -628,17 +703,18 @@ export function ChannelSyncPage() {
 }
 
 export function SyncInboxPage() {
-  const state = { salesChannels: useCollection<any[]>("salesChannels") ?? [], externalProducts: useCollection<any[]>("externalProducts") ?? [], products: useCollection<any[]>("products") ?? [], documents: useCollection<any[]>("documents") ?? [] };
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const eventsQuery = useQuery({ queryKey: ["events"], queryFn: () => apiGet<any[]>("/api/integrations/events") });
-  const events = eventsQuery.data ?? [];
-  const observedQuery = useQuery({ queryKey: ["observed-stock"], queryFn: () => apiGet<any[]>("/api/integrations/observed-stock") });
-  const observed = observedQuery.data ?? [];
-  const channels = state.salesChannels ?? [];
-  const externalProducts = state.externalProducts ?? [];
-  const products = state.products ?? [];
-  const documents = state.documents ?? [];
+  const workspaceQuery = useQuery({
+    queryKey: SYNC_INBOX_WORKSPACE_QUERY_KEY,
+    queryFn: () => apiGet<SyncInboxWorkspacePayload>("/api/integrations/inbox/workspace")
+  });
+  const events = workspaceQuery.data?.events ?? [];
+  const observed = workspaceQuery.data?.observedStocks ?? [];
+  const channels = workspaceQuery.data?.channels ?? [];
+  const externalProducts = workspaceQuery.data?.externalProducts ?? [];
+  const products = workspaceQuery.data?.products ?? [];
+  const documents = workspaceQuery.data?.documents ?? [];
   const [channelId, setChannelId] = useState("");
   const [eventType, setEventType] = useState("");
   const [status, setStatus] = useState("");
@@ -654,12 +730,12 @@ export function SyncInboxPage() {
 
   const reprocess = useMutation({
     mutationFn: (eventId: string) => apiPost(`/api/integrations/events/${eventId}/reprocess`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => invalidateChannelArea(queryClient)
   });
   const ignore = useMutation({
     mutationFn: (eventId: string) => apiPost(`/api/integrations/events/${eventId}/ignore`, { reason: ignoreReason }),
     onSuccess: () => {
-      queryClient.invalidateQueries();
+      invalidateChannelArea(queryClient);
       setIgnoreReason("");
     }
   });
@@ -671,7 +747,7 @@ export function SyncInboxPage() {
       if (selectedEvent.eventType === "fee") return apiPost(`/api/integrations/events/${selectedEvent.id}/materialize-fee`);
       throw new Error("Для этого типа события нет прямой материализации");
     },
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => invalidateChannelArea(queryClient)
   });
 
   const enriched = useMemo(() => {
@@ -899,16 +975,19 @@ export function SyncInboxPage() {
 
 export function ChannelFinancePage() {
   const { id } = useParams();
-  const state = { salesChannels: useCollection<any[]>("salesChannels") ?? [], channelFinanceEvents: useCollection<any[]>("channelFinanceEvents") ?? [], sales: useCollection<any[]>("sales") ?? [], salesReturns: useCollection<any[]>("salesReturns") ?? [], payouts: useCollection<any[]>("payouts") ?? [], documents: useCollection<any[]>("documents") ?? [] };
   const queryClient = useQueryClient();
-  const channel = (state.salesChannels ?? []).find((c: any) => c.id === id);
-  const events = (state.channelFinanceEvents ?? []).filter((e: any) => e.channelId === id);
-  const sales = state.sales ?? [];
-  const returns = state.salesReturns ?? [];
-  const payouts = state.payouts ?? [];
-  const documents = state.documents ?? [];
-  const externalEventsQuery = useQuery({ queryKey: ["events", id], queryFn: () => apiGet<any[]>(`/api/integrations/events?channelId=${id}`), enabled: Boolean(id) });
-  const externalEvents = externalEventsQuery.data ?? [];
+  const workspaceQuery = useQuery({
+    queryKey: channelFinanceWorkspaceQueryKey(id),
+    queryFn: () => apiGet<ChannelFinanceWorkspacePayload>(`/api/integrations/channels/${encodeURIComponent(id ?? "")}/finance/workspace`),
+    enabled: Boolean(id)
+  });
+  const channel = workspaceQuery.data?.channel;
+  const events = workspaceQuery.data?.events ?? [];
+  const sales = workspaceQuery.data?.sales ?? [];
+  const returns = workspaceQuery.data?.salesReturns ?? [];
+  const payouts = workspaceQuery.data?.payouts ?? [];
+  const documents = workspaceQuery.data?.documents ?? [];
+  const externalEvents = workspaceQuery.data?.externalEvents ?? [];
   const [eventKind, setEventKind] = useState("");
   const [status, setStatus] = useState("");
   const [linkedSaleOnly, setLinkedSaleOnly] = useState("");
@@ -920,19 +999,19 @@ export function ChannelFinancePage() {
 
   const processReady = useMutation({
     mutationFn: () => apiPost(`/api/integrations/channels/${id}/finance-events/process-ready`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => invalidateChannelArea(queryClient, id)
   });
   const postEvent = useMutation({
     mutationFn: (eventId: string) => apiPost(`/api/integrations/finance-events/${eventId}/post`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: (_data, eventId) => invalidateChannelArea(queryClient, id, eventId)
   });
   const relink = useMutation({
     mutationFn: ({ financeEventId, saleId }: { financeEventId: string; saleId: string }) => apiPost(`/api/integrations/finance-events/${financeEventId}/link-sale`, { saleId }),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: (_data, variables) => invalidateChannelArea(queryClient, id, variables.financeEventId)
   });
   const reclassify = useMutation({
     mutationFn: ({ financeEventId, eventKind }: { financeEventId: string; eventKind: string }) => apiPost(`/api/integrations/finance-events/${financeEventId}/classification`, { eventKind }),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: (_data, variables) => invalidateChannelArea(queryClient, id, variables.financeEventId)
   });
 
   const rows = useMemo(() => {
@@ -1117,15 +1196,18 @@ export function ChannelFinancePage() {
 export function FinanceEventCardPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const state = { channelFinanceEvents: useCollection<any[]>("channelFinanceEvents") ?? [], sales: useCollection<any[]>("sales") ?? [], salesReturns: useCollection<any[]>("salesReturns") ?? [], payouts: useCollection<any[]>("payouts") ?? [], documents: useCollection<any[]>("documents") ?? [] };
   const queryClient = useQueryClient();
-  const event = (state.channelFinanceEvents ?? []).find((candidate: any) => candidate.id === id);
-  const sales = state.sales ?? [];
-  const returns = state.salesReturns ?? [];
-  const payouts = state.payouts ?? [];
-  const documents = state.documents ?? [];
-  const externalEventQuery = useQuery({ queryKey: ["event", event?.externalEventId], queryFn: () => apiGet<any>(`/api/integrations/events/${event?.externalEventId}`), enabled: Boolean(event?.externalEventId) });
-  const externalEvent = externalEventQuery.data;
+  const workspaceQuery = useQuery({
+    queryKey: financeEventWorkspaceQueryKey(id),
+    queryFn: () => apiGet<FinanceEventWorkspacePayload>(`/api/integrations/finance-events/${encodeURIComponent(id ?? "")}/workspace`),
+    enabled: Boolean(id)
+  });
+  const event = workspaceQuery.data?.event;
+  const sales = workspaceQuery.data?.sales ?? [];
+  const returns = workspaceQuery.data?.salesReturns ?? [];
+  const payouts = workspaceQuery.data?.payouts ?? [];
+  const documents = workspaceQuery.data?.documents ?? [];
+  const externalEvent = workspaceQuery.data?.externalEvent;
   const linkedSale = sales.find((candidate: any) => candidate.id === event?.linkedSaleId);
   const linkedSales = channelFinanceSaleAllocations(event ?? {}).map((allocation) => ({
     allocation,
@@ -1146,25 +1228,35 @@ export function FinanceEventCardPage() {
   const [saleLinkId, setSaleLinkId] = useState(linkedSale?.id ?? "");
   const [deleteOpen, setDeleteOpen] = useState(false);
 
+  useEffect(() => {
+    if (event?.id) {
+      setSaleLinkId(linkedSale?.id ?? "");
+    }
+  }, [event?.id, linkedSale?.id]);
+
   const relink = useMutation({
     mutationFn: () => apiPost(`/api/integrations/finance-events/${id}/link-sale`, { saleId: saleLinkId }),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => invalidateChannelArea(queryClient, event?.channelId, id)
   });
   const postEvent = useMutation({
     mutationFn: () => apiPost(`/api/integrations/finance-events/${id}/post`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => invalidateChannelArea(queryClient, event?.channelId, id)
   });
   const reprocess = useMutation({
     mutationFn: () => apiPost(`/api/integrations/finance-events/${id}/reprocess`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => invalidateChannelArea(queryClient, event?.channelId, id)
   });
   const removeEvent = useMutation({
     mutationFn: () => apiDelete(`/api/integrations/finance-events/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries();
+      invalidateChannelArea(queryClient, event?.channelId, id);
       navigate(event ? `/integrations/channels/${event.channelId}/finance` : "/channels");
     }
   });
+
+  if (workspaceQuery.isPending) {
+    return <PageHeader title="Карточка финансовой операции" breadcrumbs={[{ label: "Каналы", to: "/channels" }]} subtitle="Загружаем операцию" />;
+  }
 
   if (!event) {
     return <PageHeader title="Карточка финансовой операции" breadcrumbs={[{ label: "Каналы", to: "/channels" }]} subtitle="Операция не найдена" />;

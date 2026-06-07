@@ -494,6 +494,124 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     ]);
     return { externalProducts, links, products, channels, externalEvents };
   };
+  const channelsWorkspaceFor = async (c: Context): Promise<any> => {
+    const readModelApp = await readModelAppFor(c);
+    const [channels, plugins, warehouses] = await Promise.all([
+      readModelApp.repos.salesChannels.all(),
+      readModelApp.repos.integrationPlugins.all(),
+      readModelApp.repos.warehouses.all()
+    ]);
+    return { channels, plugins, warehouses };
+  };
+  const channelDetailFor = async (c: Context, channelId: string): Promise<any> => {
+    const readModelApp = await readModelAppFor(c);
+    const channel = await mustFindChannel(readModelApp, channelId);
+    const installedPlugin = channel.pluginId ? await readModelApp.repos.integrationPlugins.getById(channel.pluginId) : undefined;
+    const plugin = installedPlugin ? pluginRegistry.get(installedPlugin.code) : undefined;
+    const [sales, payouts, externalProducts, warehouses, backfillProjects, syncRuns] = await Promise.all([
+      readModelApp.repos.sales.all(),
+      readModelApp.repos.payouts.all(),
+      readModelApp.repos.externalProducts.all(),
+      readModelApp.repos.warehouses.all(),
+      readModelApp.repos.backfillProjects.all(),
+      readModelApp.syncRuns.listByChannel(channel.id)
+    ]);
+    return {
+      channel,
+      credentialStatus: readModelApp.channelCredentialStatus(channel.id),
+      warehouse: await readModelApp.repos.warehouses.getById(channel.salesPointWarehouseId),
+      warehouses: warehouses.filter((warehouse) => warehouse.warehouseType === "sales_point"),
+      backfillProjects: backfillProjects.filter((project) => String(project.payload?.salesChannelId ?? "") === channel.id),
+      plugin: plugin ? serializePluginMeta(plugin) : null,
+      syncRuns: syncRuns.slice(-20).reverse(),
+      counts: {
+        externalProducts: externalProducts.filter((product) => product.channelId === channel.id).length,
+        observedStocks: await readModelApp.observedStocks.count({ channelId: channel.id }),
+        externalEvents: await readModelApp.externalEvents.count({ channelId: channel.id }),
+        sales: sales.filter((sale) => sale.channelId === channel.id).length,
+        payouts: payouts.filter((payout) => payout.channelId === channel.id).length
+      }
+    };
+  };
+  const syncInboxWorkspaceFor = async (c: Context): Promise<any> => {
+    const readModelApp = await readModelAppFor(c);
+    const [channels, externalProducts, products, documents, events, observedStocks] = await Promise.all([
+      readModelApp.repos.salesChannels.all(),
+      readModelApp.repos.externalProducts.all(),
+      readModelApp.repos.products.all(),
+      readModelApp.repos.documents.all(),
+      readModelApp.externalEvents.list(),
+      readModelApp.observedStocks.list()
+    ]);
+    return { channels, externalProducts, products, documents, events, observedStocks };
+  };
+  const channelFinanceWorkspaceFor = async (c: Context, channelId: string): Promise<any> => {
+    const readModelApp = await readModelAppFor(c);
+    const channel = await mustFindChannel(readModelApp, channelId);
+    const [allEvents, allSales, allReturns, allPayouts, allDocuments, externalEvents] = await Promise.all([
+      readModelApp.repos.channelFinanceEvents.all(),
+      readModelApp.repos.sales.all(),
+      readModelApp.repos.salesReturns.all(),
+      readModelApp.repos.payouts.all(),
+      readModelApp.repos.documents.all(),
+      readModelApp.externalEvents.list({ channelId })
+    ]);
+    const events = allEvents.filter((event) => event.channelId === channel.id);
+    const sales = allSales.filter((sale) => sale.channelId === channel.id);
+    const salesReturns = allReturns.filter((salesReturn) => salesReturn.channelId === channel.id);
+    const payouts = allPayouts.filter((payout) => payout.channelId === channel.id);
+    const documentIds = new Set<string>();
+    for (const event of events) documentIds.add(event.documentId);
+    for (const sale of sales) {
+      documentIds.add(sale.documentId);
+      if (sale.financialDocumentId) documentIds.add(sale.financialDocumentId);
+    }
+    for (const salesReturn of salesReturns) documentIds.add(salesReturn.documentId);
+    for (const payout of payouts) documentIds.add(payout.documentId);
+    return {
+      channel,
+      events,
+      sales,
+      salesReturns,
+      payouts,
+      documents: allDocuments.filter((document) => documentIds.has(document.id)),
+      externalEvents
+    };
+  };
+  const financeEventWorkspaceFor = async (c: Context, financeEventId: string): Promise<any> => {
+    const readModelApp = await readModelAppFor(c);
+    const event = await readModelApp.repos.channelFinanceEvents.getById(financeEventId);
+    if (!event) throw new DomainError("finance_event_not_found", "Финансовое событие не найдено");
+    const [channel, allSales, allReturns, allPayouts, allDocuments, externalEvent] = await Promise.all([
+      readModelApp.repos.salesChannels.getById(event.channelId),
+      readModelApp.repos.sales.all(),
+      readModelApp.repos.salesReturns.all(),
+      readModelApp.repos.payouts.all(),
+      readModelApp.repos.documents.all(),
+      event.externalEventId ? readModelApp.externalEvents.getById(event.externalEventId) : Promise.resolve(undefined)
+    ]);
+    const sales = allSales.filter((sale) => sale.channelId === event.channelId);
+    const salesReturns = allReturns.filter((salesReturn) =>
+      salesReturn.channelId === event.channelId || salesReturn.id === event.linkedReturnId
+    );
+    const payouts = allPayouts.filter((payout) => payout.channelId === event.channelId || payout.id === event.payoutId);
+    const documentIds = new Set<string>([event.documentId]);
+    for (const sale of sales) {
+      documentIds.add(sale.documentId);
+      if (sale.financialDocumentId) documentIds.add(sale.financialDocumentId);
+    }
+    for (const salesReturn of salesReturns) documentIds.add(salesReturn.documentId);
+    for (const payout of payouts) documentIds.add(payout.documentId);
+    return {
+      event,
+      channel: channel ?? null,
+      sales,
+      salesReturns,
+      payouts,
+      documents: allDocuments.filter((document) => documentIds.has(document.id)),
+      externalEvent: externalEvent ?? null
+    };
+  };
   const chartAccountsWorkspaceFor = async (c: Context): Promise<any> => {
     const readModelApp = await readModelAppFor(c);
     const [accounts, journalLines] = await Promise.all([
@@ -801,6 +919,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: run });
   });
   api.get("/api/integrations/observed-stock", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).observedStocks.list() }));
+  api.get("/api/integrations/inbox/workspace", async (c) => c.json({ ok: true, data: await syncInboxWorkspaceFor(c) }));
   api.get("/api/controls/audit-events", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).repos.auditEvents.all() }));
   api.get("/api/setup", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).setupSnapshot() }));
   api.get("/api/organization", async (c) => c.json({ ok: true, data: await collectionFor(c, "organization") }));
@@ -844,31 +963,10 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/procurement/workspace", async (c) => c.json({ ok: true, data: await procurementWorkspaceFor(c) }));
   api.get("/api/procurement/forms/workspace", async (c) => c.json({ ok: true, data: await procurementFormsWorkspaceFor(c) }));
   api.get("/api/channels", async (c) => c.json({ ok: true, data: { plugins: await collectionFor(c, "integrationPlugins"), channels: await collectionFor(c, "salesChannels") } }));
+  api.get("/api/channels/workspace", async (c) => c.json({ ok: true, data: await channelsWorkspaceFor(c) }));
   api.get("/api/integrations/channels", async (c) => c.json({ ok: true, data: { plugins: await collectionFor(c, "integrationPlugins"), channels: await collectionFor(c, "salesChannels") } }));
-  api.get("/api/integrations/channels/:id", async (c) => {
-    const readModelApp = await readModelAppFor(c);
-    const channel = await readModelApp.repos.salesChannels.getById(c.req.param("id"));
-    if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
-    const installedPlugin = channel.pluginId ? await readModelApp.repos.integrationPlugins.getById(channel.pluginId) : undefined;
-    const plugin = installedPlugin ? pluginRegistry.get(installedPlugin.code) : undefined;
-    const sales = await readModelApp.repos.sales.all();
-    const payouts = await readModelApp.repos.payouts.all();
-    const externalProducts = await readModelApp.repos.externalProducts.all();
-    return c.json({ ok: true, data: {
-      channel,
-      credentialStatus: readModelApp.channelCredentialStatus(channel.id),
-      warehouse: await readModelApp.repos.warehouses.getById(channel.salesPointWarehouseId),
-      plugin: plugin ? serializePluginMeta(plugin) : null,
-      syncRuns: (await readModelApp.syncRuns.listByChannel(channel.id)).slice(-20).reverse(),
-      counts: {
-        externalProducts: externalProducts.filter((ep) => ep.channelId === channel.id).length,
-        observedStocks: await readModelApp.observedStocks.count({ channelId: channel.id }),
-        externalEvents: await readModelApp.externalEvents.count({ channelId: channel.id }),
-        sales: sales.filter((sale) => sale.channelId === channel.id).length,
-        payouts: payouts.filter((payout) => payout.channelId === channel.id).length
-      }
-    } });
-  });
+  api.get("/api/integrations/channels/workspace", async (c) => c.json({ ok: true, data: await channelsWorkspaceFor(c) }));
+  api.get("/api/integrations/channels/:id", async (c) => c.json({ ok: true, data: await channelDetailFor(c, c.req.param("id")) }));
   api.get("/api/reports/drilldown", async (c) => {
     const documentId = c.req.query("documentId");
     if (!documentId) return c.json({ ok: true, data: { document: undefined, journalEntries: [], stockMovements: [] } });
@@ -969,7 +1067,9 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       lines: (await readModelApp.repos.documentLines.all()).filter((line) => line.documentId === salesReturn.documentId && line.lineType === "sales_return_line")
     } });
   });
+  api.get("/api/integrations/channels/:id/finance/workspace", async (c) => c.json({ ok: true, data: await channelFinanceWorkspaceFor(c, c.req.param("id")) }));
   api.get("/api/integrations/channels/:id/finance-events", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).repos.channelFinanceEvents.all()).filter((event) => event.channelId === c.req.param("id")) }));
+  api.get("/api/integrations/finance-events/:id/workspace", async (c) => c.json({ ok: true, data: await financeEventWorkspaceFor(c, c.req.param("id")) }));
   api.get("/api/integrations/finance-events/:id", async (c) => {
     const event = await (await readModelAppFor(c)).repos.channelFinanceEvents.getById(c.req.param("id"));
     if (!event) throw new DomainError("finance_event_not_found", "Финансовое событие не найдено");

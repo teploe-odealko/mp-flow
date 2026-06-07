@@ -536,6 +536,17 @@ describePostgres("postgres runtime store", () => {
         occurredAt: "2026-02-01T10:00:00.000Z",
         payload: { postingNumber: "FLIP-1", lines: [{ sku: "X", qty: 1, amountRub: 100 }] }
       });
+      const feeEvent = await request<{ id: string; externalId: string }>(api, "POST", `/api/channels/${channel.id}/external-events`, {
+        eventType: "fee",
+        externalId: "FEE-FLIP-1",
+        occurredAt: "2026-02-01T12:00:00.000Z",
+        payload: { operationTypeName: "Комиссия маркетплейса", amountRub: 42 }
+      });
+      const financeEvent = await request<{ id: string; channelId: string; externalEventId?: string }>(
+        api,
+        "POST",
+        `/api/integrations/events/${feeEvent.id}/materialize-fee`
+      );
 
       const session = await store.openReadSession?.();
       try {
@@ -558,6 +569,51 @@ describePostgres("postgres runtime store", () => {
       } finally {
         await inspectPool.end();
       }
+
+      const channelsWorkspace = await request<{ channels: any[]; plugins: any[]; warehouses: any[] }>(
+        api,
+        "GET",
+        "/api/channels/workspace"
+      );
+      expect(channelsWorkspace.channels).toContainEqual(expect.objectContaining({ id: channel.id }));
+      expect(channelsWorkspace.warehouses.length).toBeGreaterThan(0);
+
+      const channelDetail = await request<{ channel: any; counts: { externalEvents: number }; syncRuns: any[] }>(
+        api,
+        "GET",
+        `/api/integrations/channels/${channel.id}`
+      );
+      expect(channelDetail.channel.id).toBe(channel.id);
+      expect(channelDetail.counts.externalEvents).toBe(2);
+      expect(channelDetail.syncRuns).toEqual(expect.any(Array));
+
+      const inboxWorkspace = await request<{ channels: any[]; events: any[]; observedStocks: any[] }>(
+        api,
+        "GET",
+        "/api/integrations/inbox/workspace"
+      );
+      expect(inboxWorkspace.channels).toContainEqual(expect.objectContaining({ id: channel.id }));
+      expect(inboxWorkspace.events).toContainEqual(expect.objectContaining({ id: event.id }));
+      expect(inboxWorkspace.events).toContainEqual(expect.objectContaining({ id: feeEvent.id }));
+      expect(inboxWorkspace.observedStocks).toEqual(expect.any(Array));
+
+      const channelFinanceWorkspace = await request<{ channel: any; events: any[]; externalEvents: any[] }>(
+        api,
+        "GET",
+        `/api/integrations/channels/${channel.id}/finance/workspace`
+      );
+      expect(channelFinanceWorkspace.channel.id).toBe(channel.id);
+      expect(channelFinanceWorkspace.events).toContainEqual(expect.objectContaining({ id: financeEvent.id }));
+      expect(channelFinanceWorkspace.externalEvents).toContainEqual(expect.objectContaining({ id: feeEvent.id }));
+
+      const financeEventWorkspace = await request<{ event: any; channel: any; externalEvent: any | null }>(
+        api,
+        "GET",
+        `/api/integrations/finance-events/${financeEvent.id}/workspace`
+      );
+      expect(financeEventWorkspace.event.id).toBe(financeEvent.id);
+      expect(financeEventWorkspace.channel.id).toBe(channel.id);
+      expect(financeEventWorkspace.externalEvent?.id).toBe(feeEvent.id);
     } finally {
       await store.close();
     }

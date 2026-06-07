@@ -40,9 +40,9 @@ import {
 } from "@/components/ui/dialog";
 import { DataList } from "@/components/ui/data-list";
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/api";
-import { useCollection } from "@/lib/use-collection";
 import { date, dateTime, rub } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { channelDetailQueryKey, invalidateChannelArea } from "./channel-queries";
 
 const STREAM_DEFS: Array<{ code: string; label: string; hint: string }> = [
   { code: "products", label: "Карточки", hint: "Список товаров и их атрибутов" },
@@ -72,6 +72,8 @@ interface ChannelDetailPayload {
   channel: any;
   credentialStatus: { saved: boolean; fields: string[] };
   warehouse: any | null;
+  warehouses: any[];
+  backfillProjects: any[];
   plugin: { code: string; displayName: string; capabilities: string[] } | null;
   syncRuns: any[];
   counts: { externalProducts: number; observedStocks: number; externalEvents: number; sales: number; payouts: number };
@@ -81,13 +83,10 @@ export function ChannelDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const warehouses = (useCollection<any[]>("warehouses") ?? []).filter((w: any) => w.warehouseType === "sales_point");
-  const channelsList = useCollection<any[]>("salesChannels") ?? [];
-  const backfillProjects = useCollection<any[]>("backfillProjects") ?? [];
 
   const channelQuery = useQuery({
-    queryKey: ["channel-detail", id],
-    queryFn: () => apiGet<ChannelDetailPayload>(`/api/integrations/channels/${id}`),
+    queryKey: channelDetailQueryKey(id),
+    queryFn: () => apiGet<ChannelDetailPayload>(`/api/integrations/channels/${encodeURIComponent(id ?? "")}`),
     enabled: Boolean(id)
   });
 
@@ -97,28 +96,58 @@ export function ChannelDetailPage() {
 
   if (!id) return null;
   const data = channelQuery.data;
-  const channel = data?.channel ?? channelsList.find((c: any) => c.id === id);
+  const channel = data?.channel;
+  const warehouses = data?.warehouses ?? [];
+  const backfillProjects = data?.backfillProjects ?? [];
   const status = channel?.status ?? "needs_setup";
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["channel-detail", id] });
-  const refreshAll = () => queryClient.invalidateQueries();
+  const refresh = () => invalidateChannelArea(queryClient, id);
 
   const checkAccess = useMutation({
     mutationFn: () => apiPost(`/api/integrations/channels/${id}/check`),
-    onSuccess: () => { refresh(); refreshAll(); }
+    onSuccess: refresh
   });
   const disable = useMutation({
     mutationFn: () => apiPost(`/api/integrations/channels/${id}/disable`),
-    onSuccess: () => { refresh(); refreshAll(); }
+    onSuccess: refresh
   });
   const enable = useMutation({
     mutationFn: () => apiPatch(`/api/integrations/channels/${id}`, { status: "active" }),
-    onSuccess: () => { refresh(); refreshAll(); }
+    onSuccess: refresh
   });
   const removeCreds = useMutation({
     mutationFn: () => apiDelete(`/api/integrations/channels/${id}/credentials`),
-    onSuccess: () => { refresh(); refreshAll(); }
+    onSuccess: refresh
   });
+
+  const onboarding = useMemo(() => {
+    const projects = backfillProjects
+      .filter((p: any) => String(p?.payload?.salesChannelId ?? "") === String(id))
+      .slice()
+      .sort((a: any, b: any) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")));
+    const project = projects[0];
+    const summary = project?.payload?.summary ?? null;
+    const done = project ? ["applied", "completed"].includes(project.status) : false;
+    const started = Boolean(project) && !done;
+    return { project, summary, done, started };
+  }, [backfillProjects, id]);
+
+  if (channelQuery.isPending) {
+    return (
+      <div className="flex flex-col gap-5">
+        <PageHeader
+          title="Канал продаж"
+          breadcrumbs={[{ label: "Каналы", to: "/channels" }]}
+          actions={<Button variant="ghost" asChild><Link to="/channels"><ArrowLeft size={14} /> К списку</Link></Button>}
+        />
+        <Card>
+          <CardContent className="py-6 text-sm text-[var(--color-muted-foreground)] flex items-center gap-2">
+            <Loader2 size={14} className="animate-spin" /> Загружаем канал
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (!channel) {
     return (
@@ -134,18 +163,6 @@ export function ChannelDetailPage() {
   const capabilities: string[] = data?.plugin?.capabilities ?? [];
   const counts = data?.counts;
 
-  // Onboarding ("перенос в учёт") progress for this channel, derived from its backfill project.
-  const onboarding = useMemo(() => {
-    const projects = backfillProjects
-      .filter((p: any) => String(p?.payload?.salesChannelId ?? "") === String(id))
-      .slice()
-      .sort((a: any, b: any) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")));
-    const project = projects[0];
-    const summary = project?.payload?.summary ?? null;
-    const done = project ? ["applied", "completed"].includes(project.status) : false;
-    const started = Boolean(project) && !done;
-    return { project, summary, done, started };
-  }, [backfillProjects, id]);
   const onboardingDocumentedFlow = onboarding.project?.payload?.inventoryStartMode === "documented_flow";
   const onboardingPath = `/integrations/channels/${channel.id}/onboarding`;
 
@@ -332,7 +349,7 @@ export function ChannelDetailPage() {
               enabled={enabledStreams}
               onSave={async (next) => {
                 await apiPatch(`/api/integrations/channels/${id}`, { enabledStreams: next });
-                refresh(); refreshAll();
+                refresh();
               }}
             />
           </TabsContent>
@@ -425,16 +442,16 @@ export function ChannelDetailPage() {
         channelId={id}
         pluginCode={data?.plugin?.code}
         existingFields={data?.credentialStatus.fields ?? []}
-        onSaved={() => { setCredsOpen(false); refresh(); refreshAll(); }}
+        onSaved={() => { setCredsOpen(false); refresh(); }}
       />
 
       <SyncDialog
         open={syncOpen}
-        onClose={() => { setSyncOpen(false); refresh(); refreshAll(); }}
+        onClose={() => { setSyncOpen(false); refresh(); }}
         channelId={id}
         capabilities={capabilities}
         enabledStreams={enabledStreams}
-        onCompleted={() => { refresh(); refreshAll(); }}
+        onCompleted={refresh}
       />
 
       <EditChannelDialog
@@ -442,7 +459,7 @@ export function ChannelDetailPage() {
         onClose={() => setEditOpen(false)}
         channel={channel}
         warehouses={warehouses}
-        onSaved={() => { setEditOpen(false); refresh(); refreshAll(); navigate(`/integrations/channels/${id}`); }}
+        onSaved={() => { setEditOpen(false); refresh(); navigate(`/integrations/channels/${id}`); }}
       />
     </div>
   );
