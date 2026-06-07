@@ -521,6 +521,43 @@ alter table operating_expense add column if not exists amount_paid_rub numeric(1
 alter table operating_expense add column if not exists payment_mode text;
 alter table operating_expense add column if not exists payment_status text;
 alter table operating_expense add column if not exists cash_account_id uuid references cash_account(id);
+alter table sale add column if not exists financial_document_id uuid references document(id);
+alter table sale add column if not exists warehouse_id uuid references warehouse(id);
+alter table sale add column if not exists external_order_id text;
+alter table sale add column if not exists recognized_gross_amount_rub numeric(18,2);
+alter table sale add column if not exists financial_recognition_date date;
+alter table sale add column if not exists cost_amount_rub numeric(18,2);
+alter table sale add column if not exists gross_profit_rub numeric(18,2);
+alter table sale_line add column if not exists external_product_id uuid references external_product(id);
+alter table sale_line add column if not exists gross_profit_rub numeric(18,2);
+alter table sales_return add column if not exists external_event_id uuid references external_event(id);
+alter table sales_return add column if not exists warehouse_id uuid references warehouse(id);
+alter table sales_return add column if not exists stock_state_code text;
+alter table sales_return add column if not exists status text;
+alter table sales_return add column if not exists comment text;
+alter table channel_finance_event add column if not exists external_id text;
+alter table channel_finance_event add column if not exists treatment text;
+alter table channel_finance_event add column if not exists category text;
+alter table channel_finance_event add column if not exists operation_type text;
+alter table channel_finance_event add column if not exists operation_type_name text;
+alter table channel_finance_event add column if not exists linked_sale_id uuid references sale(id);
+alter table channel_finance_event add column if not exists sale_allocations jsonb;
+alter table channel_finance_event add column if not exists linked_return_id uuid references sales_return(id);
+alter table channel_finance_event add column if not exists status text;
+alter table channel_finance_event add column if not exists comment text;
+alter table payout alter column payment_id drop not null;
+alter table payout add column if not exists composition_mode text;
+alter table payout add column if not exists external_event_id uuid references external_event(id);
+alter table payout add column if not exists external_payout_id text;
+alter table payout add column if not exists period_from date;
+alter table payout add column if not exists period_to date;
+alter table payout add column if not exists expected_amount_rub numeric(18,2);
+alter table payout add column if not exists cash_account_id uuid references cash_account(id);
+alter table payout add column if not exists difference_reason text;
+alter table payout add column if not exists difference_accepted boolean;
+alter table payout_line add column if not exists source_type text;
+alter table payout_line add column if not exists source_id text;
+alter table payout_line add column if not exists line_group text;
 alter table backfill_project add column if not exists created_at timestamptz not null default now();
 alter table organization add column if not exists state_json jsonb not null default '{}'::jsonb;
 alter table accounting_policy add column if not exists state_json jsonb not null default '{}'::jsonb;
@@ -668,6 +705,48 @@ update operating_expense
   where state_json <> '{}'::jsonb or amount_paid_rub is null or payment_mode is null or payment_status is null;
 alter table operating_expense alter column payment_mode set default 'paid_now';
 alter table operating_expense alter column payment_status set default 'paid';
+update sale
+  set external_order_id = coalesce(nullif(state_json->>'externalOrderId', ''), external_order_id),
+      recognized_gross_amount_rub = coalesce(nullif(state_json->>'recognizedGrossAmountRub', '')::numeric, recognized_gross_amount_rub),
+      financial_recognition_date = case when nullif(state_json->>'financialRecognitionDate', '') is not null then (state_json->>'financialRecognitionDate')::date else financial_recognition_date end,
+      cost_amount_rub = coalesce(nullif(state_json->>'costAmountRub', '')::numeric, cost_amount_rub, 0),
+      gross_profit_rub = coalesce(nullif(state_json->>'grossProfitRub', '')::numeric, gross_profit_rub, gross_amount_rub)
+  where state_json <> '{}'::jsonb or cost_amount_rub is null or gross_profit_rub is null;
+update sale_line
+  set gross_profit_rub = coalesce(nullif(state_json->>'grossProfitRub', '')::numeric, gross_profit_rub, revenue_rub - cost_rub)
+  where state_json <> '{}'::jsonb or gross_profit_rub is null;
+update sales_return
+  set stock_state_code = coalesce(nullif(state_json->>'stockStateCode', ''), stock_state_code),
+      status = coalesce(nullif(state_json->>'status', ''), status, 'draft'),
+      comment = coalesce(nullif(state_json->>'comment', ''), comment)
+  where state_json <> '{}'::jsonb or status is null;
+alter table sales_return alter column status set default 'draft';
+update channel_finance_event
+  set external_id = coalesce(nullif(state_json->>'externalId', ''), external_id),
+      treatment = coalesce(nullif(state_json->>'treatment', ''), treatment),
+      category = coalesce(nullif(state_json->>'category', ''), category),
+      operation_type = coalesce(nullif(state_json->>'operationType', ''), operation_type),
+      operation_type_name = coalesce(nullif(state_json->>'operationTypeName', ''), operation_type_name),
+      sale_allocations = case when state_json ? 'saleAllocations' then state_json->'saleAllocations' else sale_allocations end,
+      status = coalesce(nullif(state_json->>'status', ''), status, 'new'),
+      comment = coalesce(nullif(state_json->>'comment', ''), comment)
+  where state_json <> '{}'::jsonb or status is null;
+alter table channel_finance_event alter column status set default 'new';
+update payout
+  set composition_mode = coalesce(nullif(state_json->>'compositionMode', ''), composition_mode, 'auto'),
+      external_payout_id = coalesce(nullif(state_json->>'externalPayoutId', ''), external_payout_id),
+      period_from = case when nullif(state_json->>'periodFrom', '') is not null then (state_json->>'periodFrom')::date else period_from end,
+      period_to = case when nullif(state_json->>'periodTo', '') is not null then (state_json->>'periodTo')::date else period_to end,
+      expected_amount_rub = coalesce(nullif(state_json->>'expectedAmountRub', '')::numeric, expected_amount_rub, gross_events_rub),
+      difference_reason = coalesce(nullif(state_json->>'differenceReason', ''), difference_reason),
+      difference_accepted = coalesce(nullif(state_json->>'differenceAccepted', '')::boolean, difference_accepted, false)
+  where state_json <> '{}'::jsonb or composition_mode is null or expected_amount_rub is null;
+alter table payout alter column composition_mode set default 'auto';
+update payout_line
+  set source_type = coalesce(nullif(state_json->>'sourceType', ''), source_type),
+      source_id = coalesce(nullif(state_json->>'sourceId', ''), source_id),
+      line_group = coalesce(nullif(state_json->>'lineGroup', ''), line_group)
+  where state_json <> '{}'::jsonb;
 
 do $$
 declare

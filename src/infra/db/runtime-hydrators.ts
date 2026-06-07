@@ -8,6 +8,7 @@ import type {
   CashAccount,
   ChartAccount,
   ChannelAgentPermission,
+  ChannelFinanceEvent,
   CorrectionCase,
   Counterparty,
   Document,
@@ -25,6 +26,8 @@ import type {
   OwnerTransaction,
   Payment,
   PaymentAllocation,
+  Payout,
+  PayoutLine,
   PluginStateRecord,
   ProcurementCost,
   ProcurementCostLine,
@@ -34,7 +37,10 @@ import type {
   RecalculationJob,
   ReportSnapshot,
   Role,
+  Sale,
+  SaleLine,
   SalesChannel,
+  SalesReturn,
   SettlementEntry,
   GoodsReceipt,
   GoodsReceiptLine,
@@ -2068,6 +2074,370 @@ export function observedStockFromRow(row: ObservedStockDbRow): ObservedStock {
   });
 }
 
+export const SALE_SELECT = `
+  sale.public_id as id,
+  sale_organization.public_id as organization_id,
+  sale_document.public_id as document_id,
+  sale_financial_document.public_id as financial_document_id,
+  sale_channel.public_id as channel_id,
+  sale.sale_date,
+  sale_external_event.public_id as external_event_id,
+  sale_warehouse.public_id as warehouse_id,
+  sale.external_order_id,
+  sale.gross_amount_rub,
+  sale.recognized_gross_amount_rub,
+  sale.financial_recognition_date,
+  sale.cost_amount_rub,
+  sale.gross_profit_rub,
+  sale.status
+`;
+
+export const SALE_JOINS = `
+  left join organization sale_organization on sale_organization.id = sale.organization_id
+  left join document sale_document on sale_document.id = sale.document_id
+  left join document sale_financial_document on sale_financial_document.id = sale.financial_document_id
+  left join sales_channel sale_channel on sale_channel.id = sale.channel_id
+  left join external_event sale_external_event on sale_external_event.id = sale.external_event_id
+  left join warehouse sale_warehouse on sale_warehouse.id = sale.warehouse_id
+`;
+
+export interface SaleDbRow {
+  id: string;
+  organization_id: string;
+  document_id: string;
+  financial_document_id: string | null;
+  channel_id: string;
+  sale_date: unknown;
+  external_event_id: string | null;
+  warehouse_id: string;
+  external_order_id: string | null;
+  gross_amount_rub: string | number;
+  recognized_gross_amount_rub: string | number | null;
+  financial_recognition_date: unknown;
+  cost_amount_rub: string | number | null;
+  gross_profit_rub: string | number | null;
+  status: Sale["status"];
+}
+
+export function saleFromRow(row: SaleDbRow): Sale {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    documentId: row.document_id,
+    financialDocumentId: optionalText(row.financial_document_id),
+    channelId: row.channel_id,
+    saleDate: dateString(row.sale_date),
+    externalEventId: optionalText(row.external_event_id),
+    warehouseId: row.warehouse_id,
+    externalOrderId: optionalText(row.external_order_id),
+    grossAmountRub: Number(row.gross_amount_rub),
+    recognizedGrossAmountRub: optionalNumber(row.recognized_gross_amount_rub),
+    financialRecognitionDate: optionalDateString(row.financial_recognition_date),
+    costAmountRub: Number(row.cost_amount_rub ?? 0),
+    grossProfitRub: Number(row.gross_profit_rub ?? row.gross_amount_rub),
+    status: row.status
+  });
+}
+
+export const SALE_LINE_SELECT = `
+  sale_line.public_id as id,
+  sale_line_sale.public_id as sale_id,
+  sale_line_product.public_id as product_id,
+  sale_line_external_product.public_id as external_product_id,
+  sale_line.qty,
+  sale_line.price_rub,
+  sale_line.revenue_rub,
+  sale_line.cost_rub,
+  sale_line.gross_profit_rub
+`;
+
+export const SALE_LINE_JOINS = `
+  left join sale sale_line_sale on sale_line_sale.id = sale_line.sale_id
+  left join product sale_line_product on sale_line_product.id = sale_line.product_id
+  left join external_product sale_line_external_product on sale_line_external_product.id = sale_line.external_product_id
+`;
+
+export interface SaleLineDbRow {
+  id: string;
+  sale_id: string;
+  product_id: string;
+  external_product_id: string | null;
+  qty: string | number;
+  price_rub: string | number;
+  revenue_rub: string | number;
+  cost_rub: string | number;
+  gross_profit_rub: string | number | null;
+}
+
+export function saleLineFromRow(row: SaleLineDbRow): SaleLine {
+  return stripUndefined({
+    id: row.id,
+    saleId: row.sale_id,
+    productId: row.product_id,
+    externalProductId: optionalText(row.external_product_id),
+    qty: Number(row.qty),
+    priceRub: Number(row.price_rub),
+    revenueRub: Number(row.revenue_rub),
+    costRub: Number(row.cost_rub),
+    grossProfitRub: Number(row.gross_profit_rub ?? Number(row.revenue_rub) - Number(row.cost_rub))
+  });
+}
+
+export const SALES_RETURN_SELECT = `
+  sales_return.public_id as id,
+  sales_return_organization.public_id as organization_id,
+  sales_return_document.public_id as document_id,
+  sales_return_sale.public_id as sale_id,
+  sales_return_channel.public_id as channel_id,
+  sales_return_external_event.public_id as external_event_id,
+  sales_return.return_date,
+  sales_return_warehouse.public_id as warehouse_id,
+  sales_return.stock_state_code,
+  sales_return.status,
+  sales_return.refund_rub,
+  sales_return.restored_cost_rub,
+  sales_return.comment
+`;
+
+export const SALES_RETURN_JOINS = `
+  left join organization sales_return_organization on sales_return_organization.id = sales_return.organization_id
+  left join document sales_return_document on sales_return_document.id = sales_return.document_id
+  left join sale sales_return_sale on sales_return_sale.id = sales_return.sale_id
+  left join sales_channel sales_return_channel on sales_return_channel.id = sales_return.channel_id
+  left join external_event sales_return_external_event on sales_return_external_event.id = sales_return.external_event_id
+  left join warehouse sales_return_warehouse on sales_return_warehouse.id = sales_return.warehouse_id
+`;
+
+export interface SalesReturnDbRow {
+  id: string;
+  organization_id: string;
+  document_id: string;
+  sale_id: string;
+  channel_id: string;
+  external_event_id: string | null;
+  return_date: unknown;
+  warehouse_id: string;
+  stock_state_code: string | null;
+  status: SalesReturn["status"];
+  refund_rub: string | number;
+  restored_cost_rub: string | number;
+  comment: string | null;
+}
+
+export function salesReturnFromRow(row: SalesReturnDbRow): SalesReturn {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    documentId: row.document_id,
+    saleId: row.sale_id,
+    channelId: row.channel_id,
+    externalEventId: optionalText(row.external_event_id),
+    returnDate: dateString(row.return_date),
+    warehouseId: row.warehouse_id,
+    stockStateCode: optionalText(row.stock_state_code),
+    status: row.status,
+    refundRub: Number(row.refund_rub),
+    restoredCostRub: Number(row.restored_cost_rub),
+    comment: optionalText(row.comment)
+  });
+}
+
+export const CHANNEL_FINANCE_EVENT_SELECT = `
+  channel_finance_event.public_id as id,
+  channel_finance_event_organization.public_id as organization_id,
+  channel_finance_event_channel.public_id as channel_id,
+  channel_finance_event_external_event.public_id as external_event_id,
+  channel_finance_event_document.public_id as document_id,
+  channel_finance_event_payout.public_id as payout_id,
+  channel_finance_event.external_id,
+  channel_finance_event.event_kind,
+  channel_finance_event.treatment,
+  channel_finance_event.category,
+  channel_finance_event.operation_type,
+  channel_finance_event.operation_type_name,
+  channel_finance_event_linked_sale.public_id as linked_sale_id,
+  channel_finance_event.sale_allocations,
+  channel_finance_event_linked_return.public_id as linked_return_id,
+  channel_finance_event.amount_rub,
+  channel_finance_event.occurred_at,
+  channel_finance_event.status,
+  channel_finance_event.comment
+`;
+
+export const CHANNEL_FINANCE_EVENT_JOINS = `
+  left join organization channel_finance_event_organization on channel_finance_event_organization.id = channel_finance_event.organization_id
+  left join sales_channel channel_finance_event_channel on channel_finance_event_channel.id = channel_finance_event.channel_id
+  left join external_event channel_finance_event_external_event on channel_finance_event_external_event.id = channel_finance_event.external_event_id
+  left join document channel_finance_event_document on channel_finance_event_document.id = channel_finance_event.document_id
+  left join payout channel_finance_event_payout on channel_finance_event_payout.id = channel_finance_event.payout_id
+  left join sale channel_finance_event_linked_sale on channel_finance_event_linked_sale.id = channel_finance_event.linked_sale_id
+  left join sales_return channel_finance_event_linked_return on channel_finance_event_linked_return.id = channel_finance_event.linked_return_id
+`;
+
+export interface ChannelFinanceEventDbRow {
+  id: string;
+  organization_id: string;
+  channel_id: string;
+  external_event_id: string | null;
+  document_id: string;
+  payout_id: string | null;
+  external_id: string | null;
+  event_kind: ChannelFinanceEvent["eventKind"];
+  treatment: ChannelFinanceEvent["treatment"] | null;
+  category: ChannelFinanceEvent["category"] | null;
+  operation_type: string | null;
+  operation_type_name: string | null;
+  linked_sale_id: string | null;
+  sale_allocations: unknown;
+  linked_return_id: string | null;
+  amount_rub: string | number;
+  occurred_at: unknown;
+  status: ChannelFinanceEvent["status"];
+  comment: string | null;
+}
+
+export function channelFinanceEventFromRow(row: ChannelFinanceEventDbRow): ChannelFinanceEvent {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    channelId: row.channel_id,
+    externalEventId: optionalText(row.external_event_id),
+    documentId: row.document_id,
+    payoutId: optionalText(row.payout_id),
+    externalId: optionalText(row.external_id),
+    eventKind: row.event_kind,
+    treatment: row.treatment ?? undefined,
+    category: row.category ?? undefined,
+    operationType: optionalText(row.operation_type),
+    operationTypeName: optionalText(row.operation_type_name),
+    linkedSaleId: optionalText(row.linked_sale_id),
+    saleAllocations: financeAllocations(row.sale_allocations),
+    linkedReturnId: optionalText(row.linked_return_id),
+    amountRub: Number(row.amount_rub),
+    occurredAt: dateString(row.occurred_at),
+    status: row.status,
+    comment: optionalText(row.comment)
+  });
+}
+
+export const PAYOUT_SELECT = `
+  payout.public_id as id,
+  payout_organization.public_id as organization_id,
+  payout_channel.public_id as channel_id,
+  payout_document.public_id as document_id,
+  payout.composition_mode,
+  payout_external_event.public_id as external_event_id,
+  payout.external_payout_id,
+  payout_payment.public_id as payment_id,
+  payout.payout_date,
+  payout.period_from,
+  payout.period_to,
+  payout.expected_amount_rub,
+  payout.gross_events_rub,
+  payout.bank_receipt_rub,
+  payout.difference_rub,
+  payout_cash_account.public_id as cash_account_id,
+  payout.difference_reason,
+  payout.difference_accepted,
+  payout.status
+`;
+
+export const PAYOUT_JOINS = `
+  left join organization payout_organization on payout_organization.id = payout.organization_id
+  left join sales_channel payout_channel on payout_channel.id = payout.channel_id
+  left join document payout_document on payout_document.id = payout.document_id
+  left join external_event payout_external_event on payout_external_event.id = payout.external_event_id
+  left join payment payout_payment on payout_payment.id = payout.payment_id
+  left join cash_account payout_cash_account on payout_cash_account.id = payout.cash_account_id
+`;
+
+export interface PayoutDbRow {
+  id: string;
+  organization_id: string;
+  channel_id: string;
+  document_id: string;
+  composition_mode: Payout["compositionMode"] | null;
+  external_event_id: string | null;
+  external_payout_id: string | null;
+  payment_id: string | null;
+  payout_date: unknown;
+  period_from: unknown;
+  period_to: unknown;
+  expected_amount_rub: string | number | null;
+  gross_events_rub: string | number;
+  bank_receipt_rub: string | number;
+  difference_rub: string | number;
+  cash_account_id: string | null;
+  difference_reason: string | null;
+  difference_accepted: boolean | null;
+  status: Payout["status"];
+}
+
+export function payoutFromRow(row: PayoutDbRow): Payout {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    channelId: row.channel_id,
+    documentId: row.document_id,
+    compositionMode: row.composition_mode ?? "auto",
+    externalEventId: optionalText(row.external_event_id),
+    externalPayoutId: optionalText(row.external_payout_id),
+    paymentId: optionalText(row.payment_id),
+    payoutDate: dateString(row.payout_date),
+    periodFrom: optionalDateString(row.period_from),
+    periodTo: optionalDateString(row.period_to),
+    expectedAmountRub: Number(row.expected_amount_rub ?? row.gross_events_rub),
+    grossEventsRub: Number(row.gross_events_rub),
+    bankReceiptRub: Number(row.bank_receipt_rub),
+    differenceRub: Number(row.difference_rub),
+    cashAccountId: optionalText(row.cash_account_id),
+    differenceReason: optionalText(row.difference_reason),
+    differenceAccepted: row.difference_accepted ?? undefined,
+    status: row.status
+  });
+}
+
+export const PAYOUT_LINE_SELECT = `
+  payout_line.public_id as id,
+  payout_line_payout.public_id as payout_id,
+  payout_line.source_type,
+  payout_line.source_id,
+  payout_line.line_group,
+  payout_line_channel_finance_event.public_id as channel_finance_event_id,
+  payout_line_sale.public_id as sale_id,
+  payout_line.amount_rub
+`;
+
+export const PAYOUT_LINE_JOINS = `
+  left join payout payout_line_payout on payout_line_payout.id = payout_line.payout_id
+  left join channel_finance_event payout_line_channel_finance_event on payout_line_channel_finance_event.id = payout_line.channel_finance_event_id
+  left join sale payout_line_sale on payout_line_sale.id = payout_line.sale_id
+`;
+
+export interface PayoutLineDbRow {
+  id: string;
+  payout_id: string;
+  source_type: PayoutLine["sourceType"] | null;
+  source_id: string | null;
+  line_group: PayoutLine["lineGroup"] | null;
+  channel_finance_event_id: string | null;
+  sale_id: string | null;
+  amount_rub: string | number;
+}
+
+export function payoutLineFromRow(row: PayoutLineDbRow): PayoutLine {
+  return stripUndefined({
+    id: row.id,
+    payoutId: row.payout_id,
+    sourceType: row.source_type ?? undefined,
+    sourceId: optionalText(row.source_id),
+    lineGroup: row.line_group ?? undefined,
+    channelFinanceEventId: optionalText(row.channel_finance_event_id),
+    saleId: optionalText(row.sale_id),
+    amountRub: Number(row.amount_rub)
+  });
+}
+
 export const SYNC_RUN_SELECT = `
   sync_run.public_id as id,
   sync_run_organization.public_id as organization_id,
@@ -2186,6 +2556,31 @@ function stringArray(value: unknown): string[] {
     }
   }
   return [];
+}
+
+function financeAllocations(value: unknown): ChannelFinanceEvent["saleAllocations"] | undefined {
+  const parsed = parseMaybeJson(value);
+  if (!Array.isArray(parsed)) return undefined;
+  const allocations = parsed
+    .map((item) => {
+      if (!item || typeof item !== "object") return undefined;
+      const record = item as Record<string, unknown>;
+      if (typeof record.saleId !== "string") return undefined;
+      const amountRub = Number(record.amountRub);
+      if (!Number.isFinite(amountRub)) return undefined;
+      return { saleId: record.saleId, amountRub };
+    })
+    .filter((item): item is { saleId: string; amountRub: number } => item !== undefined);
+  return allocations.length > 0 ? allocations : undefined;
+}
+
+function parseMaybeJson(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
 }
 
 function optionalDateTimeString(value: unknown): string | undefined {

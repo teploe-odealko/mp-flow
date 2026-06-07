@@ -26,6 +26,8 @@ import {
   CASH_ACCOUNT_SELECT,
   CHANNEL_AGENT_PERMISSION_JOINS,
   CHANNEL_AGENT_PERMISSION_SELECT,
+  CHANNEL_FINANCE_EVENT_JOINS,
+  CHANNEL_FINANCE_EVENT_SELECT,
   CHART_ACCOUNT_JOINS,
   CHART_ACCOUNT_SELECT,
   COUNTERPARTY_JOINS,
@@ -67,6 +69,10 @@ import {
   PAYMENT_ALLOCATION_SELECT,
   PAYMENT_JOINS,
   PAYMENT_SELECT,
+  PAYOUT_JOINS,
+  PAYOUT_LINE_JOINS,
+  PAYOUT_LINE_SELECT,
+  PAYOUT_SELECT,
   PLUGIN_STATE_RECORD_JOINS,
   PLUGIN_STATE_RECORD_SELECT,
   PROCUREMENT_COST_JOINS,
@@ -101,8 +107,14 @@ import {
   SUPPLIER_CLAIM_SELECT,
   ROLE_JOINS,
   ROLE_SELECT,
+  SALE_JOINS,
+  SALE_LINE_JOINS,
+  SALE_LINE_SELECT,
+  SALE_SELECT,
   SALES_CHANNEL_JOINS,
   SALES_CHANNEL_SELECT,
+  SALES_RETURN_JOINS,
+  SALES_RETURN_SELECT,
   SYNC_RUN_JOINS,
   SYNC_RUN_SELECT,
   USER_ACCOUNT_JOINS,
@@ -117,6 +129,7 @@ import {
   backfillProjectFromRow,
   cashAccountFromRow,
   channelAgentPermissionFromRow,
+  channelFinanceEventFromRow,
   chartAccountFromRow,
   counterpartyFromRow,
   correctionCaseFromRow,
@@ -139,6 +152,8 @@ import {
   organizationFromRow,
   paymentAllocationFromRow,
   paymentFromRow,
+  payoutFromRow,
+  payoutLineFromRow,
   pluginStateRecordFromRow,
   procurementCostFromRow,
   procurementCostLineFromRow,
@@ -156,7 +171,10 @@ import {
   stocktakeLineFromRow,
   supplierClaimFromRow,
   roleFromRow,
+  saleFromRow,
+  saleLineFromRow,
   salesChannelFromRow,
+  salesReturnFromRow,
   syncRunFromRow,
   userAccountFromRow,
   warehouseFromRow,
@@ -168,6 +186,7 @@ import {
   type BackfillProjectDbRow,
   type CashAccountDbRow,
   type ChannelAgentPermissionDbRow,
+  type ChannelFinanceEventDbRow,
   type ChartAccountDbRow,
   type CounterpartyDbRow,
   type CorrectionCaseDbRow,
@@ -189,6 +208,8 @@ import {
   type OwnerTransactionDbRow,
   type PaymentAllocationDbRow,
   type PaymentDbRow,
+  type PayoutDbRow,
+  type PayoutLineDbRow,
   type PluginStateRecordDbRow,
   type ProcurementCostDbRow,
   type ProcurementCostLineDbRow,
@@ -207,7 +228,10 @@ import {
   type StocktakeLineDbRow,
   type SupplierClaimDbRow,
   type RoleDbRow,
+  type SaleDbRow,
+  type SaleLineDbRow,
   type SalesChannelDbRow,
+  type SalesReturnDbRow,
   type SyncRunDbRow,
   type UserAccountDbRow,
   type WarehouseDbRow
@@ -563,6 +587,85 @@ const SCHEMA_ALTERS = `
     where state_json <> '{}'::jsonb or amount_paid_rub is null or payment_mode is null or payment_status is null;
   alter table operating_expense alter column payment_mode set default 'paid_now';
   alter table operating_expense alter column payment_status set default 'paid';
+  alter table sale add column if not exists financial_document_id uuid references document(id);
+  alter table sale add column if not exists warehouse_id uuid references warehouse(id);
+  alter table sale add column if not exists external_order_id text;
+  alter table sale add column if not exists recognized_gross_amount_rub numeric(18,2);
+  alter table sale add column if not exists financial_recognition_date date;
+  alter table sale add column if not exists cost_amount_rub numeric(18,2);
+  alter table sale add column if not exists gross_profit_rub numeric(18,2);
+  update sale
+    set external_order_id = coalesce(nullif(state_json->>'externalOrderId', ''), external_order_id),
+        recognized_gross_amount_rub = coalesce(nullif(state_json->>'recognizedGrossAmountRub', '')::numeric, recognized_gross_amount_rub),
+        financial_recognition_date = case when nullif(state_json->>'financialRecognitionDate', '') is not null then (state_json->>'financialRecognitionDate')::date else financial_recognition_date end,
+        cost_amount_rub = coalesce(nullif(state_json->>'costAmountRub', '')::numeric, cost_amount_rub, 0),
+        gross_profit_rub = coalesce(nullif(state_json->>'grossProfitRub', '')::numeric, gross_profit_rub, gross_amount_rub)
+    where state_json <> '{}'::jsonb or cost_amount_rub is null or gross_profit_rub is null;
+  alter table sale_line add column if not exists external_product_id uuid references external_product(id);
+  alter table sale_line add column if not exists gross_profit_rub numeric(18,2);
+  update sale_line
+    set gross_profit_rub = coalesce(nullif(state_json->>'grossProfitRub', '')::numeric, gross_profit_rub, revenue_rub - cost_rub)
+    where state_json <> '{}'::jsonb or gross_profit_rub is null;
+  alter table sales_return add column if not exists external_event_id uuid references external_event(id);
+  alter table sales_return add column if not exists warehouse_id uuid references warehouse(id);
+  alter table sales_return add column if not exists stock_state_code text;
+  alter table sales_return add column if not exists status text;
+  alter table sales_return add column if not exists comment text;
+  update sales_return
+    set stock_state_code = coalesce(nullif(state_json->>'stockStateCode', ''), stock_state_code),
+        status = coalesce(nullif(state_json->>'status', ''), status, 'draft'),
+        comment = coalesce(nullif(state_json->>'comment', ''), comment)
+    where state_json <> '{}'::jsonb or status is null;
+  alter table sales_return alter column status set default 'draft';
+  alter table channel_finance_event add column if not exists external_id text;
+  alter table channel_finance_event add column if not exists treatment text;
+  alter table channel_finance_event add column if not exists category text;
+  alter table channel_finance_event add column if not exists operation_type text;
+  alter table channel_finance_event add column if not exists operation_type_name text;
+  alter table channel_finance_event add column if not exists linked_sale_id uuid references sale(id);
+  alter table channel_finance_event add column if not exists sale_allocations jsonb;
+  alter table channel_finance_event add column if not exists linked_return_id uuid references sales_return(id);
+  alter table channel_finance_event add column if not exists status text;
+  alter table channel_finance_event add column if not exists comment text;
+  update channel_finance_event
+    set external_id = coalesce(nullif(state_json->>'externalId', ''), external_id),
+        treatment = coalesce(nullif(state_json->>'treatment', ''), treatment),
+        category = coalesce(nullif(state_json->>'category', ''), category),
+        operation_type = coalesce(nullif(state_json->>'operationType', ''), operation_type),
+        operation_type_name = coalesce(nullif(state_json->>'operationTypeName', ''), operation_type_name),
+        sale_allocations = case when state_json ? 'saleAllocations' then state_json->'saleAllocations' else sale_allocations end,
+        status = coalesce(nullif(state_json->>'status', ''), status, 'new'),
+        comment = coalesce(nullif(state_json->>'comment', ''), comment)
+    where state_json <> '{}'::jsonb or status is null;
+  alter table channel_finance_event alter column status set default 'new';
+  alter table payout alter column payment_id drop not null;
+  alter table payout add column if not exists composition_mode text;
+  alter table payout add column if not exists external_event_id uuid references external_event(id);
+  alter table payout add column if not exists external_payout_id text;
+  alter table payout add column if not exists period_from date;
+  alter table payout add column if not exists period_to date;
+  alter table payout add column if not exists expected_amount_rub numeric(18,2);
+  alter table payout add column if not exists cash_account_id uuid references cash_account(id);
+  alter table payout add column if not exists difference_reason text;
+  alter table payout add column if not exists difference_accepted boolean;
+  update payout
+    set composition_mode = coalesce(nullif(state_json->>'compositionMode', ''), composition_mode, 'auto'),
+        external_payout_id = coalesce(nullif(state_json->>'externalPayoutId', ''), external_payout_id),
+        period_from = case when nullif(state_json->>'periodFrom', '') is not null then (state_json->>'periodFrom')::date else period_from end,
+        period_to = case when nullif(state_json->>'periodTo', '') is not null then (state_json->>'periodTo')::date else period_to end,
+        expected_amount_rub = coalesce(nullif(state_json->>'expectedAmountRub', '')::numeric, expected_amount_rub, gross_events_rub),
+        difference_reason = coalesce(nullif(state_json->>'differenceReason', ''), difference_reason),
+        difference_accepted = coalesce(nullif(state_json->>'differenceAccepted', '')::boolean, difference_accepted, false)
+    where state_json <> '{}'::jsonb or composition_mode is null or expected_amount_rub is null;
+  alter table payout alter column composition_mode set default 'auto';
+  alter table payout_line add column if not exists source_type text;
+  alter table payout_line add column if not exists source_id text;
+  alter table payout_line add column if not exists line_group text;
+  update payout_line
+    set source_type = coalesce(nullif(state_json->>'sourceType', ''), source_type),
+        source_id = coalesce(nullif(state_json->>'sourceId', ''), source_id),
+        line_group = coalesce(nullif(state_json->>'lineGroup', ''), line_group)
+    where state_json <> '{}'::jsonb;
   alter table backfill_project add column if not exists created_at timestamptz not null default now();
 `;
 
@@ -595,6 +698,97 @@ const POST_PUBLIC_ID_BACKFILLS = `
       and nullif(expense.state_json->>'cashAccountId', '') is not null
       and cash_account.workspace_id = expense.workspace_id
       and cash_account.public_id = nullif(expense.state_json->>'cashAccountId', '');
+  update sale
+    set financial_document_id = document.id
+    from document
+    where sale.financial_document_id is null
+      and nullif(sale.state_json->>'financialDocumentId', '') is not null
+      and document.workspace_id = sale.workspace_id
+      and document.public_id = nullif(sale.state_json->>'financialDocumentId', '');
+  update sale
+    set warehouse_id = warehouse.id
+    from warehouse
+    where sale.warehouse_id is null
+      and nullif(sale.state_json->>'warehouseId', '') is not null
+      and warehouse.workspace_id = sale.workspace_id
+      and warehouse.public_id = nullif(sale.state_json->>'warehouseId', '');
+  update sale_line
+    set external_product_id = external_product.id
+    from external_product
+    where sale_line.external_product_id is null
+      and nullif(sale_line.state_json->>'externalProductId', '') is not null
+      and external_product.workspace_id = sale_line.workspace_id
+      and external_product.public_id = nullif(sale_line.state_json->>'externalProductId', '');
+  update sales_return
+    set external_event_id = external_event.id
+    from external_event
+    where sales_return.external_event_id is null
+      and nullif(sales_return.state_json->>'externalEventId', '') is not null
+      and external_event.workspace_id = sales_return.workspace_id
+      and external_event.public_id = nullif(sales_return.state_json->>'externalEventId', '');
+  update sales_return
+    set warehouse_id = warehouse.id
+    from warehouse
+    where sales_return.warehouse_id is null
+      and nullif(sales_return.state_json->>'warehouseId', '') is not null
+      and warehouse.workspace_id = sales_return.workspace_id
+      and warehouse.public_id = nullif(sales_return.state_json->>'warehouseId', '');
+  update channel_finance_event
+    set payout_id = payout.id
+    from payout
+    where channel_finance_event.payout_id is null
+      and nullif(channel_finance_event.state_json->>'payoutId', '') is not null
+      and payout.workspace_id = channel_finance_event.workspace_id
+      and payout.public_id = nullif(channel_finance_event.state_json->>'payoutId', '');
+  update channel_finance_event
+    set linked_sale_id = sale.id
+    from sale
+    where channel_finance_event.linked_sale_id is null
+      and nullif(channel_finance_event.state_json->>'linkedSaleId', '') is not null
+      and sale.workspace_id = channel_finance_event.workspace_id
+      and sale.public_id = nullif(channel_finance_event.state_json->>'linkedSaleId', '');
+  update channel_finance_event
+    set linked_return_id = sales_return.id
+    from sales_return
+    where channel_finance_event.linked_return_id is null
+      and nullif(channel_finance_event.state_json->>'linkedReturnId', '') is not null
+      and sales_return.workspace_id = channel_finance_event.workspace_id
+      and sales_return.public_id = nullif(channel_finance_event.state_json->>'linkedReturnId', '');
+  update payout
+    set external_event_id = external_event.id
+    from external_event
+    where payout.external_event_id is null
+      and nullif(payout.state_json->>'externalEventId', '') is not null
+      and external_event.workspace_id = payout.workspace_id
+      and external_event.public_id = nullif(payout.state_json->>'externalEventId', '');
+  update payout
+    set payment_id = payment.id
+    from payment
+    where payout.payment_id is null
+      and nullif(payout.state_json->>'paymentId', '') is not null
+      and payment.workspace_id = payout.workspace_id
+      and payment.public_id = nullif(payout.state_json->>'paymentId', '');
+  update payout
+    set cash_account_id = cash_account.id
+    from cash_account
+    where payout.cash_account_id is null
+      and nullif(payout.state_json->>'cashAccountId', '') is not null
+      and cash_account.workspace_id = payout.workspace_id
+      and cash_account.public_id = nullif(payout.state_json->>'cashAccountId', '');
+  update payout_line
+    set channel_finance_event_id = channel_finance_event.id
+    from channel_finance_event
+    where payout_line.channel_finance_event_id is null
+      and nullif(payout_line.state_json->>'channelFinanceEventId', '') is not null
+      and channel_finance_event.workspace_id = payout_line.workspace_id
+      and channel_finance_event.public_id = nullif(payout_line.state_json->>'channelFinanceEventId', '');
+  update payout_line
+    set sale_id = sale.id
+    from sale
+    where payout_line.sale_id is null
+      and nullif(payout_line.state_json->>'saleId', '') is not null
+      and sale.workspace_id = payout_line.workspace_id
+      and sale.public_id = nullif(payout_line.state_json->>'saleId', '');
 `;
 
 function publicIdBackfillExpression(table: typeof STATE_JSON_TABLES[number]) {
@@ -1236,47 +1430,82 @@ const TABLES: TableSpec[] = [
     id: entityUuid(requiredString(entity.id, "sales.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "sales.organizationId")),
     document_id: entityUuid(requiredString(entity.documentId, "sales.documentId")),
+    financial_document_id: optionalUuid(entity.financialDocumentId),
     channel_id: entityUuid(requiredString(entity.channelId, "sales.channelId")),
     sale_date: requiredString(entity.saleDate, "sales.saleDate"),
     external_event_id: optionalUuid(entity.externalEventId),
+    warehouse_id: entityUuid(requiredString(entity.warehouseId, "sales.warehouseId")),
+    external_order_id: optionalString(entity.externalOrderId),
     gross_amount_rub: requiredNumber(entity.grossAmountRub, "sales.grossAmountRub"),
-    status: requiredString(entity.status, "sales.status"),
-    state_json: entity
-  }), "sale_date, id"),
+    recognized_gross_amount_rub: optionalNumber(entity.recognizedGrossAmountRub),
+    financial_recognition_date: optionalString(entity.financialRecognitionDate),
+    cost_amount_rub: requiredNumber(entity.costAmountRub, "sales.costAmountRub"),
+    gross_profit_rub: requiredNumber(entity.grossProfitRub, "sales.grossProfitRub"),
+    status: requiredString(entity.status, "sales.status")
+  }), "sale.sale_date, sale.id", {
+    select: SALE_SELECT,
+    joins: SALE_JOINS,
+    hydrate: (row) => saleFromRow(row as unknown as SaleDbRow) as unknown as RuntimeEntity
+  }),
   spec("saleLines", "sale_line", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "saleLines.id")),
     sale_id: entityUuid(requiredString(entity.saleId, "saleLines.saleId")),
     product_id: entityUuid(requiredString(entity.productId, "saleLines.productId")),
+    external_product_id: optionalUuid(entity.externalProductId),
     qty: requiredNumber(entity.qty, "saleLines.qty"),
     price_rub: requiredNumber(entity.priceRub, "saleLines.priceRub"),
     revenue_rub: requiredNumber(entity.revenueRub, "saleLines.revenueRub"),
     cost_rub: requiredNumber(entity.costRub, "saleLines.costRub"),
-    state_json: entity
-  }), "sale_id, id"),
+    gross_profit_rub: requiredNumber(entity.grossProfitRub, "saleLines.grossProfitRub")
+  }), "sale_line.sale_id, sale_line.id", {
+    select: SALE_LINE_SELECT,
+    joins: SALE_LINE_JOINS,
+    hydrate: (row) => saleLineFromRow(row as unknown as SaleLineDbRow) as unknown as RuntimeEntity
+  }),
   spec("salesReturns", "sales_return", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "salesReturns.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "salesReturns.organizationId")),
     document_id: entityUuid(requiredString(entity.documentId, "salesReturns.documentId")),
     sale_id: entityUuid(requiredString(entity.saleId, "salesReturns.saleId")),
     channel_id: entityUuid(requiredString(entity.channelId, "salesReturns.channelId")),
+    external_event_id: optionalUuid(entity.externalEventId),
     return_date: requiredString(entity.returnDate, "salesReturns.returnDate"),
+    warehouse_id: entityUuid(requiredString(entity.warehouseId, "salesReturns.warehouseId")),
+    stock_state_code: optionalString(entity.stockStateCode),
+    status: requiredString(entity.status, "salesReturns.status"),
     refund_rub: requiredNumber(entity.refundRub, "salesReturns.refundRub"),
     restored_cost_rub: requiredNumber(entity.restoredCostRub, "salesReturns.restoredCostRub"),
-    state_json: entity
-  }), "return_date, id"),
+    comment: optionalString(entity.comment)
+  }), "sales_return.return_date, sales_return.id", {
+    select: SALES_RETURN_SELECT,
+    joins: SALES_RETURN_JOINS,
+    hydrate: (row) => salesReturnFromRow(row as unknown as SalesReturnDbRow) as unknown as RuntimeEntity
+  }),
   spec("payouts", "payout", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "payouts.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "payouts.organizationId")),
     channel_id: entityUuid(requiredString(entity.channelId, "payouts.channelId")),
     document_id: entityUuid(requiredString(entity.documentId, "payouts.documentId")),
-    payment_id: entityUuid(requiredString(entity.paymentId, "payouts.paymentId")),
+    composition_mode: requiredString(entity.compositionMode, "payouts.compositionMode"),
+    external_event_id: optionalUuid(entity.externalEventId),
+    external_payout_id: optionalString(entity.externalPayoutId),
+    payment_id: optionalUuid(entity.paymentId),
     payout_date: requiredString(entity.payoutDate, "payouts.payoutDate"),
+    period_from: optionalString(entity.periodFrom),
+    period_to: optionalString(entity.periodTo),
+    expected_amount_rub: requiredNumber(entity.expectedAmountRub, "payouts.expectedAmountRub"),
     gross_events_rub: requiredNumber(entity.grossEventsRub, "payouts.grossEventsRub"),
     bank_receipt_rub: requiredNumber(entity.bankReceiptRub, "payouts.bankReceiptRub"),
     difference_rub: requiredNumber(entity.differenceRub, "payouts.differenceRub"),
-    status: requiredString(entity.status, "payouts.status"),
-    state_json: entity
-  }), "payout_date, id"),
+    cash_account_id: optionalUuid(entity.cashAccountId),
+    difference_reason: optionalString(entity.differenceReason),
+    difference_accepted: typeof entity.differenceAccepted === "boolean" ? entity.differenceAccepted : null,
+    status: requiredString(entity.status, "payouts.status")
+  }), "payout.payout_date, payout.id", {
+    select: PAYOUT_SELECT,
+    joins: PAYOUT_JOINS,
+    hydrate: (row) => payoutFromRow(row as unknown as PayoutDbRow) as unknown as RuntimeEntity
+  }),
   spec("channelFinanceEvents", "channel_finance_event", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "channelFinanceEvents.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "channelFinanceEvents.organizationId")),
@@ -1284,19 +1513,38 @@ const TABLES: TableSpec[] = [
     external_event_id: optionalUuid(entity.externalEventId),
     document_id: entityUuid(requiredString(entity.documentId, "channelFinanceEvents.documentId")),
     payout_id: optionalUuid(entity.payoutId),
+    external_id: optionalString(entity.externalId),
     event_kind: requiredString(entity.eventKind, "channelFinanceEvents.eventKind"),
+    treatment: optionalString(entity.treatment),
+    category: optionalString(entity.category),
+    operation_type: optionalString(entity.operationType),
+    operation_type_name: optionalString(entity.operationTypeName),
+    linked_sale_id: optionalUuid(entity.linkedSaleId),
+    sale_allocations: entity.saleAllocations ? JSON.stringify(entity.saleAllocations) : null,
+    linked_return_id: optionalUuid(entity.linkedReturnId),
     amount_rub: requiredNumber(entity.amountRub, "channelFinanceEvents.amountRub"),
     occurred_at: requiredString(entity.occurredAt, "channelFinanceEvents.occurredAt"),
-    state_json: entity
-  }), "occurred_at, id"),
+    status: requiredString(entity.status, "channelFinanceEvents.status"),
+    comment: optionalString(entity.comment)
+  }), "channel_finance_event.occurred_at, channel_finance_event.id", {
+    select: CHANNEL_FINANCE_EVENT_SELECT,
+    joins: CHANNEL_FINANCE_EVENT_JOINS,
+    hydrate: (row) => channelFinanceEventFromRow(row as unknown as ChannelFinanceEventDbRow) as unknown as RuntimeEntity
+  }),
   spec("payoutLines", "payout_line", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "payoutLines.id")),
     payout_id: entityUuid(requiredString(entity.payoutId, "payoutLines.payoutId")),
+    source_type: optionalString(entity.sourceType),
+    source_id: optionalString(entity.sourceId),
+    line_group: optionalString(entity.lineGroup),
     channel_finance_event_id: optionalUuid(entity.channelFinanceEventId),
     sale_id: optionalUuid(entity.saleId),
-    amount_rub: requiredNumber(entity.amountRub, "payoutLines.amountRub"),
-    state_json: entity
-  }), "payout_id, id"),
+    amount_rub: requiredNumber(entity.amountRub, "payoutLines.amountRub")
+  }), "payout_line.payout_id, payout_line.id", {
+    select: PAYOUT_LINE_SELECT,
+    joins: PAYOUT_LINE_JOINS,
+    hydrate: (row) => payoutLineFromRow(row as unknown as PayoutLineDbRow) as unknown as RuntimeEntity
+  }),
   spec("expenseCategories", "expense_category", ["id"], (entity) => ({
     id: entityUuid(requiredString(entity.id, "expenseCategories.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "expenseCategories.organizationId")),

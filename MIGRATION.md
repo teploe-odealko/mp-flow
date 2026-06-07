@@ -247,6 +247,12 @@ legacy `state_json`. Текущий остаток `state_json: entity` — 16 �
 `amount_paid_rub`, `payment_mode`, `payment_status`, `cash_account_id`; FK backfill выполняется после
 `public_id` backfill. Текущий остаток `state_json: entity` — 12 таблиц.
 
+### ✅ Typed hydrate для продаж и выплат
+На typed specs переведены `sales`, `saleLines`, `salesReturns`, `channelFinanceEvents`, `payouts`,
+`payoutLines`. Добавлены typed optional поля признания выручки, marketplace finance metadata, payout
+composition и polymorphic payout line source. `payout.payment_id` стал nullable, как в доменной модели.
+FK backfill выполняется после `public_id` backfill. Текущий остаток `state_json: entity` — 6 таблиц.
+
 ### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
 Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/
 addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocumentSummary(x))` — хелперы каскадно
