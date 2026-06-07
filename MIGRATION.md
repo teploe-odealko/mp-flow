@@ -117,11 +117,17 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   В `src/frontend/pages/expenses` больше нет `useCollection` и глобального `queryClient.invalidateQueries()`.
 - ✅ Finance/Money workspace снят с generic collections:
   `MoneyWorkspace`/`FinanceWorkspace` → `/api/finance/workspace`.
-  Главный экран денег больше не собирает 14 `useCollection(...)`; на время перехода остаётся только точечная
-  инвалидизация старых collection-ключей для ещё не мигрированных money/finance форм.
+  Главный экран денег больше не собирает 14 `useCollection(...)`; на время перехода остаётся точечная
+  инвалидизация старых collection-ключей для ещё не мигрированных смежных страниц.
+- ✅ Money forms/payout pages сняты с generic collections:
+  `OwnerContributionFormPage`/`OwnerWithdrawalFormPage` → `/api/money/owner-form-workspace`,
+  `PayoutFormPage` → `/api/finance/payouts/form-workspace`, `PayoutsPage` →
+  `/api/finance/payouts/workspace`, `PayoutReconciliationPage` →
+  `/api/finance/payouts/:id/workspace`.
+  В `src/frontend/pages/money` больше нет `useCollection` и глобального `queryClient.invalidateQueries()`.
 - ⚠️ Фактический текущий остаток фронта: `useCollection` ещё есть в channel/procurement/
-  inventory/sales/money pages:
-  `ChannelDetailPage`, `ChannelsPages`, `InventoryWorkspace`, `inventory/forms`, `MoneyPages`, `ProcurementWorkspace`,
+  inventory/sales pages:
+  `ChannelDetailPage`, `ChannelsPages`, `InventoryWorkspace`, `inventory/forms`, `ProcurementWorkspace`,
   `PurchaseOrderCardPage`, `procurement/forms`, `SalesPages`.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое

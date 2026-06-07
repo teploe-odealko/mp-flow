@@ -757,6 +757,9 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: event });
   });
   api.get("/api/finance/payouts", async (c) => c.json({ ok: true, data: await collectionFor(c, "payouts") }));
+  api.get("/api/finance/payouts/workspace", async (c) => c.json({ ok: true, data: await payoutsWorkspaceFor(await readModelAppFor(c)) }));
+  api.get("/api/finance/payouts/form-workspace", async (c) => c.json({ ok: true, data: await payoutFormWorkspaceFor(await readModelAppFor(c)) }));
+  api.get("/api/finance/payouts/:id/workspace", async (c) => c.json({ ok: true, data: await payoutReconciliationWorkspaceFor(await readModelAppFor(c), c.req.param("id")) }));
   api.get("/api/finance/payouts/:id", async (c) => {
     const readModelApp = await readModelAppFor(c);
     const payout = await readModelApp.repos.payouts.getById(c.req.param("id"));
@@ -773,6 +776,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const readModelApp = await readModelAppFor(c);
     return c.json({ ok: true, data: await expenseDetailFor(readModelApp, c.req.param("id")) });
   });
+  api.get("/api/money/owner-form-workspace", async (c) => c.json({ ok: true, data: ownerMoneyFormWorkspaceFor(await readModelAppFor(c)) }));
   api.get("/api/controls/corrections", async (c) => {
     const readModelApp = await readModelAppFor(c);
     return c.json({ ok: true, data: { corrections: await readModelApp.repos.correctionCases.all(), jobs: await readModelApp.repos.recalculationJobs.all() } });
@@ -2638,6 +2642,57 @@ async function financeWorkspaceFor(app: AccountingApp) {
     procurementCosts,
     purchaseOrders,
     salesChannels
+  };
+}
+
+function ownerMoneyFormWorkspaceFor(app: AccountingApp) {
+  return {
+    accountingPolicy: app.setupMetadata().accountingPolicy
+  };
+}
+
+async function payoutFormWorkspaceFor(app: AccountingApp) {
+  return {
+    salesChannels: await app.repos.salesChannels.all()
+  };
+}
+
+async function payoutsWorkspaceFor(app: AccountingApp) {
+  const [payouts, payoutLines, salesChannels] = await Promise.all([
+    app.repos.payouts.all(),
+    app.repos.payoutLines.all(),
+    app.repos.salesChannels.all()
+  ]);
+  return { payouts, payoutLines, salesChannels };
+}
+
+async function payoutReconciliationWorkspaceFor(app: AccountingApp, payoutId: string) {
+  const payout = await app.repos.payouts.getById(payoutId);
+  if (!payout) throw new DomainError("payout_not_found", "Выплата не найдена");
+
+  const [allLines, salesChannels, sales, salesReturns, channelFinanceEvents, payments, documents] = await Promise.all([
+    app.repos.payoutLines.all(),
+    app.repos.salesChannels.all(),
+    app.repos.sales.all(),
+    app.repos.salesReturns.all(),
+    app.repos.channelFinanceEvents.all(),
+    app.repos.payments.all(),
+    app.repos.documents.all()
+  ]);
+  const payoutLines = allLines.filter((line) => line.payoutId === payout.id);
+  const saleIds = new Set(payoutLines.filter((line) => line.sourceType === "sale" && line.sourceId).map((line) => line.sourceId));
+  const returnIds = new Set(payoutLines.filter((line) => line.sourceType === "return" && line.sourceId).map((line) => line.sourceId));
+  const financeEventIds = new Set(payoutLines.filter((line) => line.sourceType === "finance_event" && line.sourceId).map((line) => line.sourceId));
+  const payment = payout.paymentId ? payments.find((candidate) => candidate.id === payout.paymentId) : undefined;
+  return {
+    payout,
+    payoutLines,
+    channel: salesChannels.find((channel) => channel.id === payout.channelId),
+    sales: sales.filter((sale) => saleIds.has(sale.id)),
+    salesReturns: salesReturns.filter((salesReturn) => returnIds.has(salesReturn.id)),
+    channelFinanceEvents: channelFinanceEvents.filter((event) => financeEventIds.has(event.id)),
+    payment,
+    paymentDocument: payment ? documents.find((document) => document.id === payment.documentId) : undefined
   };
 }
 

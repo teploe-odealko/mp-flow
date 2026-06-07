@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, RefreshCcw, Save, Plus, Banknote, Wallet } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,28 +12,97 @@ import { Badge } from "@/components/ui/badge";
 import { Kpi } from "@/components/ui/kpi";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
-import { useCollection } from "@/lib/use-collection";
-import { apiPost } from "@/api";
+import { apiGet, apiPost } from "@/api";
 import { rub, date } from "@/lib/format";
 import { paginateRows } from "@/lib/pagination";
 import { FinanceWorkspace } from "@/pages/finance/FinanceWorkspace";
 
 const today = () => new Date().toISOString().slice(0, 10);
+const OWNER_FORM_QUERY_KEY = ["money-owner-form-workspace"] as const;
+const PAYOUT_FORM_QUERY_KEY = ["payout-form-workspace"] as const;
+const PAYOUTS_WORKSPACE_QUERY_KEY = ["payouts-workspace"] as const;
+
+interface OwnerMoneyFormWorkspacePayload {
+  accountingPolicy?: any;
+}
+
+interface PayoutFormWorkspacePayload {
+  salesChannels: any[];
+}
+
+interface PayoutsWorkspacePayload {
+  payouts: any[];
+  salesChannels: any[];
+  payoutLines: any[];
+}
+
+interface PayoutReconciliationWorkspacePayload {
+  payout: any;
+  payoutLines: any[];
+  channel?: any;
+  sales: any[];
+  salesReturns: any[];
+  channelFinanceEvents: any[];
+  payment?: any;
+  paymentDocument?: any;
+}
+
+const LEGACY_MONEY_COLLECTION_KEYS = [
+  "accountingPolicy",
+  "cashAccounts",
+  "channelFinanceEvents",
+  "documents",
+  "ownerTransactions",
+  "payments",
+  "payoutLines",
+  "payouts",
+  "sales",
+  "salesChannels",
+  "salesReturns"
+] as const;
+
+function invalidateMoneyArea(queryClient: QueryClient, payoutId?: string) {
+  void queryClient.invalidateQueries({ queryKey: ["finance-workspace"] });
+  void queryClient.invalidateQueries({ queryKey: OWNER_FORM_QUERY_KEY });
+  void queryClient.invalidateQueries({ queryKey: PAYOUT_FORM_QUERY_KEY });
+  void queryClient.invalidateQueries({ queryKey: PAYOUTS_WORKSPACE_QUERY_KEY });
+  if (payoutId) void queryClient.invalidateQueries({ queryKey: ["payout-reconciliation", payoutId] });
+  void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+  void queryClient.invalidateQueries({ queryKey: ["documents-workspace"] });
+  void queryClient.invalidateQueries({ queryKey: ["accounting-journal-workspace"] });
+  for (const key of LEGACY_MONEY_COLLECTION_KEYS) {
+    void queryClient.invalidateQueries({ queryKey: ["collection", key] });
+  }
+}
 
 export function MoneyWorkspace() {
   return <FinanceWorkspace />;
 }
 
 export function OwnerContributionFormPage() {
-  const state = { accountingPolicy: useCollection<any>("accountingPolicy") };
+  const ownerFormQuery = useQuery({
+    queryKey: OWNER_FORM_QUERY_KEY,
+    queryFn: () => apiGet<OwnerMoneyFormWorkspacePayload>("/api/money/owner-form-workspace")
+  });
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [paidAt, setPaidAt] = useState(state.accountingPolicy?.accountingStartDate ?? today());
+  const [defaultsApplied, setDefaultsApplied] = useState(false);
+  const [paidAt, setPaidAt] = useState(today());
   const [amountRub, setAmountRub] = useState("500000");
   const [comment, setComment] = useState("Стартовый капитал");
+
+  useEffect(() => {
+    if (defaultsApplied || !ownerFormQuery.data) return;
+    setPaidAt(ownerFormQuery.data.accountingPolicy?.accountingStartDate ?? today());
+    setDefaultsApplied(true);
+  }, [defaultsApplied, ownerFormQuery.data]);
+
   const create = useMutation({
     mutationFn: ({ post }: { post: boolean }) => apiPost("/api/money/owner-contributions", { paidAt, amountRub: Number(amountRub), comment, post }),
-    onSuccess: () => { queryClient.invalidateQueries(); navigate("/money?view=incoming"); }
+    onSuccess: () => {
+      invalidateMoneyArea(queryClient);
+      navigate("/money?view=incoming");
+    }
   });
   return (
     <div className="max-w-2xl mx-auto flex flex-col gap-5">
@@ -63,13 +132,25 @@ export function OwnerContributionFormPage() {
 export function OwnerWithdrawalFormPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const ownerFormQuery = useQuery({
+    queryKey: OWNER_FORM_QUERY_KEY,
+    queryFn: () => apiGet<OwnerMoneyFormWorkspacePayload>("/api/money/owner-form-workspace")
+  });
+  const [defaultsApplied, setDefaultsApplied] = useState(false);
   const [paidAt, setPaidAt] = useState(today());
   const [amountRub, setAmountRub] = useState("50000");
   const [comment, setComment] = useState("Вывод средств владельцем");
+
+  useEffect(() => {
+    if (defaultsApplied || !ownerFormQuery.data) return;
+    setPaidAt(ownerFormQuery.data.accountingPolicy?.accountingStartDate ?? today());
+    setDefaultsApplied(true);
+  }, [defaultsApplied, ownerFormQuery.data]);
+
   const create = useMutation({
     mutationFn: () => apiPost("/api/money/owner-withdrawals", { paidAt, amountRub: Number(amountRub), comment }),
     onSuccess: () => {
-      queryClient.invalidateQueries();
+      invalidateMoneyArea(queryClient);
       navigate("/money?view=outgoing");
     }
   });
@@ -101,17 +182,27 @@ export function OwnerWithdrawalFormPage() {
 }
 
 export function PayoutFormPage() {
-  const state = { salesChannels: useCollection<any[]>("salesChannels") ?? [] };
-  const channels = state.salesChannels ?? [];
+  const formQuery = useQuery({
+    queryKey: PAYOUT_FORM_QUERY_KEY,
+    queryFn: () => apiGet<PayoutFormWorkspacePayload>("/api/finance/payouts/form-workspace")
+  });
+  const channels = formQuery.data?.salesChannels ?? [];
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [channelId, setChannelId] = useState(channels[0]?.id ?? "");
+  const [defaultsApplied, setDefaultsApplied] = useState(false);
+  const [channelId, setChannelId] = useState("");
   const [payoutDate, setPayoutDate] = useState(today());
   const [periodFrom, setPeriodFrom] = useState(today());
   const [periodTo, setPeriodTo] = useState(today());
   const [expectedAmountRub, setExpectedAmountRub] = useState("0");
   const [bankReceiptRub, setBankReceiptRub] = useState("0");
   const [externalPayoutId, setExternalPayoutId] = useState("");
+
+  useEffect(() => {
+    if (defaultsApplied || !formQuery.data) return;
+    setChannelId(channels[0]?.id ?? "");
+    setDefaultsApplied(true);
+  }, [channels, defaultsApplied, formQuery.data]);
 
   const create = useMutation({
     mutationFn: () => apiPost<any>("/api/finance/payouts", {
@@ -125,7 +216,7 @@ export function PayoutFormPage() {
       compositionMode: "manual"
     }),
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries();
+      invalidateMoneyArea(queryClient, data.id);
       navigate(`/finance/payouts/${data.id}/reconciliation`);
     }
   });
@@ -168,10 +259,13 @@ export function PayoutFormPage() {
 }
 
 export function PayoutsPage() {
-  const state = { payouts: useCollection<any[]>("payouts") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], payoutLines: useCollection<any[]>("payoutLines") ?? [] };
-  const payouts = state.payouts ?? [];
-  const channels = state.salesChannels ?? [];
-  const payoutLines = state.payoutLines ?? [];
+  const workspaceQuery = useQuery({
+    queryKey: PAYOUTS_WORKSPACE_QUERY_KEY,
+    queryFn: () => apiGet<PayoutsWorkspacePayload>("/api/finance/payouts/workspace")
+  });
+  const payouts = workspaceQuery.data?.payouts ?? [];
+  const channels = workspaceQuery.data?.salesChannels ?? [];
+  const payoutLines = workspaceQuery.data?.payoutLines ?? [];
   const queryClient = useQueryClient();
 
   const [filterChannelId, setFilterChannelId] = useState("");
@@ -186,7 +280,7 @@ export function PayoutsPage() {
       }
       return readyIds.length;
     },
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => invalidateMoneyArea(queryClient)
   });
 
   const rows = useMemo(() => {
@@ -293,37 +387,45 @@ export function PayoutsPage() {
 
 export function PayoutReconciliationPage() {
   const { id } = useParams();
-  const state = { payouts: useCollection<any[]>("payouts") ?? [], payoutLines: useCollection<any[]>("payoutLines") ?? [], salesChannels: useCollection<any[]>("salesChannels") ?? [], sales: useCollection<any[]>("sales") ?? [], salesReturns: useCollection<any[]>("salesReturns") ?? [], channelFinanceEvents: useCollection<any[]>("channelFinanceEvents") ?? [], payments: useCollection<any[]>("payments") ?? [], documents: useCollection<any[]>("documents") ?? [] };
   const queryClient = useQueryClient();
-  const payout = (state.payouts ?? []).find((candidate: any) => candidate.id === id);
-  const payoutLines = (state.payoutLines ?? []).filter((candidate: any) => candidate.payoutId === id);
-  const channels = state.salesChannels ?? [];
-  const sales = state.sales ?? [];
-  const returns = state.salesReturns ?? [];
-  const financeEvents = state.channelFinanceEvents ?? [];
-  const payments = state.payments ?? [];
-  const documents = state.documents ?? [];
-  const channel = channels.find((candidate: any) => candidate.id === payout?.channelId);
-  const payment = payments.find((candidate: any) => candidate.id === payout?.paymentId);
-  const paymentDocument = documents.find((candidate: any) => candidate.id === payment?.documentId);
-  const [bankReceiptRub, setBankReceiptRub] = useState(String(payout?.bankReceiptRub ?? 0));
-  const [differenceReason, setDifferenceReason] = useState(payout?.differenceReason ?? "");
+  const workspaceQuery = useQuery({
+    queryKey: ["payout-reconciliation", id],
+    queryFn: () => apiGet<PayoutReconciliationWorkspacePayload>(`/api/finance/payouts/${encodeURIComponent(id ?? "")}/workspace`),
+    enabled: Boolean(id)
+  });
+  const payout = workspaceQuery.data?.payout;
+  const payoutLines = workspaceQuery.data?.payoutLines ?? [];
+  const channel = workspaceQuery.data?.channel;
+  const sales = workspaceQuery.data?.sales ?? [];
+  const returns = workspaceQuery.data?.salesReturns ?? [];
+  const financeEvents = workspaceQuery.data?.channelFinanceEvents ?? [];
+  const paymentDocument = workspaceQuery.data?.paymentDocument;
+  const [currentPayoutId, setCurrentPayoutId] = useState("");
+  const [bankReceiptRub, setBankReceiptRub] = useState("0");
+  const [differenceReason, setDifferenceReason] = useState("");
+
+  useEffect(() => {
+    if (!payout || currentPayoutId === payout.id) return;
+    setBankReceiptRub(String(payout.bankReceiptRub ?? 0));
+    setDifferenceReason(payout.differenceReason ?? "");
+    setCurrentPayoutId(payout.id);
+  }, [currentPayoutId, payout]);
 
   const recalc = useMutation({
     mutationFn: () => apiPost(`/api/finance/payouts/${id}/recalculate`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => invalidateMoneyArea(queryClient, id)
   });
   const linkBank = useMutation({
     mutationFn: () => apiPost(`/api/finance/payouts/${id}/link-bank-payment`, { bankReceiptRub: Number(bankReceiptRub) }),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => invalidateMoneyArea(queryClient, id)
   });
   const leaveDifference = useMutation({
     mutationFn: () => apiPost(`/api/finance/payouts/${id}/leave-difference`, { reason: differenceReason }),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => invalidateMoneyArea(queryClient, id)
   });
   const postPayout = useMutation({
     mutationFn: () => apiPost(`/api/finance/payouts/${id}/post`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: () => invalidateMoneyArea(queryClient, id)
   });
 
   const grouped = useMemo(() => {
@@ -359,6 +461,10 @@ export function PayoutReconciliationPage() {
     });
     return groups;
   }, [payoutLines, sales, returns, financeEvents]);
+
+  if (!payout && workspaceQuery.isLoading) {
+    return <PageHeader title="Сверка выплаты" breadcrumbs={[{ label: "Выплаты маркетплейсов", to: "/finance/payouts" }]} subtitle="Загружаем выплату" />;
+  }
 
   if (!payout) {
     return <PageHeader title="Сверка выплаты" breadcrumbs={[{ label: "Выплаты маркетплейсов", to: "/finance/payouts" }]} subtitle="Выплата не найдена" />;

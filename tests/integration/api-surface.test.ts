@@ -153,6 +153,37 @@ describe("MPFlow api surface", () => {
     expect(detail.payment.id).toBe(expense.paymentId);
   });
 
+  it("exposes money owner forms and payout workspace payloads", async () => {
+    const { app, api } = makeApi();
+    await app.setupDemo();
+    const payout = (await app.repos.payouts.all())[0];
+
+    const ownerForm = await get<{ accountingPolicy?: any }>(api, "/api/money/owner-form-workspace");
+    expect(ownerForm.accountingPolicy?.accountingStartDate).toBe("2026-06-01");
+
+    const payoutForm = await get<{ salesChannels: any[] }>(api, "/api/finance/payouts/form-workspace");
+    expect(payoutForm.salesChannels.length).toBeGreaterThan(0);
+
+    const payoutsWorkspace = await get<{ payouts: any[]; payoutLines: any[]; salesChannels: any[] }>(
+      api,
+      "/api/finance/payouts/workspace"
+    );
+    expect(payoutsWorkspace.payouts.some((item) => item.id === payout.id)).toBe(true);
+    expect(payoutsWorkspace.salesChannels.some((item) => item.id === payout.channelId)).toBe(true);
+
+    const reconciliation = await get<{ payout: any; payoutLines: any[]; channel?: any; payment?: any; paymentDocument?: any }>(
+      api,
+      `/api/finance/payouts/${payout.id}/workspace`
+    );
+    expect(reconciliation.payout.id).toBe(payout.id);
+    expect(reconciliation.channel?.id).toBe(payout.channelId);
+    expect(reconciliation.payoutLines.every((line) => line.payoutId === payout.id)).toBe(true);
+    if (payout.paymentId) {
+      expect(reconciliation.payment?.id).toBe(payout.paymentId);
+      expect(reconciliation.paymentDocument?.id).toBe(reconciliation.payment.documentId);
+    }
+  });
+
   it("runs existing-store onboarding through opening balance creation", async () => {
     const { app, api } = makeApi();
     await app.setupDemo();
