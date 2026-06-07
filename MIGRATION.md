@@ -180,6 +180,12 @@ last_error`, `audit_event.entity_public_id`, а также `sync_run.mode/stream
 last_error`. PG-тесты проверяют этот путь на реальной схеме. Следующий остаток — generic collection repo:
 `readRuntimeCollection` и `PostgresRuntimeCollectionRepo` всё ещё hydrate'ят остальные коллекции из `state_json`.
 
+### ✅ Typed hydrate для singleton reference state
+`readRuntimeSingleton` больше не читает `organization/accountingPolicy` из `state_json`: hydrate идёт из
+typed columns и `public_id` join для `organizationId`. Добавлены/заполняются `organization.inn/updated_at`
+и `accounting_policy.allow_open_period_edits/comment`; `saveRuntimeSingleton` пишет эти колонки при bootstrap/commit.
+Остаток singleton `state_json` — только legacy payload/backfill до финального удаления колонки.
+
 ### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
 Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/
 addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocumentSummary(x))` — хелперы каскадно

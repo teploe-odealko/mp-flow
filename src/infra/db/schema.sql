@@ -37,9 +37,11 @@ create table if not exists organization (
   id uuid primary key default gen_random_uuid(),
   display_name text not null,
   legal_form text not null,
+  inn text,
   timezone text not null,
   tax_mode text not null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz
 );
 
 create table if not exists accounting_policy (
@@ -47,7 +49,9 @@ create table if not exists accounting_policy (
   organization_id uuid not null references organization(id),
   accounting_start_date date not null,
   cost_method text not null check (cost_method = 'fifo'),
-  accounting_currency text not null check (accounting_currency = 'RUB')
+  accounting_currency text not null check (accounting_currency = 'RUB'),
+  allow_open_period_edits boolean,
+  comment text
 );
 
 create table if not exists accounting_period (
@@ -452,6 +456,10 @@ create table if not exists agent_token (id uuid primary key default gen_random_u
 create table if not exists channel_agent_permission (id uuid primary key default gen_random_uuid(), agent_token_id uuid not null references agent_token(id), channel_id uuid not null references sales_channel(id), permission_code text not null);
 
 alter table accounting_runtime_meta add column if not exists revision bigint not null default 0;
+alter table organization add column if not exists inn text;
+alter table organization add column if not exists updated_at timestamptz;
+alter table accounting_policy add column if not exists allow_open_period_edits boolean;
+alter table accounting_policy add column if not exists comment text;
 alter table channel_credential add column if not exists encrypted_credentials jsonb;
 alter table channel_credential add column if not exists fields text[] not null default '{}';
 alter table channel_credential add column if not exists created_at timestamptz not null default now();
@@ -556,6 +564,17 @@ alter table channel_agent_permission add column if not exists state_json jsonb n
 update external_event
   set idempotency_key = coalesce(nullif(state_json->>'idempotencyKey', ''), external_id)
   where idempotency_key is null;
+update organization
+  set inn = nullif(state_json->>'inn', ''),
+      updated_at = case when nullif(state_json->>'updatedAt', '') is not null then (state_json->>'updatedAt')::timestamptz else updated_at end
+  where state_json <> '{}'::jsonb;
+update accounting_policy
+  set allow_open_period_edits = case
+        when state_json ? 'allowOpenPeriodEdits' then (state_json->>'allowOpenPeriodEdits')::boolean
+        else allow_open_period_edits
+      end,
+      comment = nullif(state_json->>'comment', '')
+  where state_json <> '{}'::jsonb;
 update external_event
   set created_at = coalesce(nullif(state_json->>'createdAt', '')::timestamptz, created_at),
       updated_at = coalesce(nullif(state_json->>'updatedAt', '')::timestamptz, updated_at),

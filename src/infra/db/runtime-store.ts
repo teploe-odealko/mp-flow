@@ -10,16 +10,23 @@ import type { CollectionRepo, Repositories } from "../../core/repositories";
 import { createEmptyState, currentIdSequence, restoreIdSequence } from "../../core/utils";
 import { stableUuid } from "./ids";
 import {
+  ACCOUNTING_POLICY_JOINS,
+  ACCOUNTING_POLICY_SELECT,
   EXTERNAL_EVENT_JOINS,
   EXTERNAL_EVENT_SELECT,
   OBSERVED_STOCK_JOINS,
   OBSERVED_STOCK_SELECT,
+  ORGANIZATION_SELECT,
   SYNC_RUN_JOINS,
   SYNC_RUN_SELECT,
+  accountingPolicyFromRow,
   externalEventFromRow,
   observedStockFromRow,
+  organizationFromRow,
   syncRunFromRow,
+  type AccountingPolicyDbRow,
   type ExternalEventDbRow,
+  type OrganizationDbRow,
   type ObservedStockDbRow,
   type SyncRunDbRow
 } from "./runtime-hydrators";
@@ -222,6 +229,21 @@ const SCHEMA_ALTERS = `
   );
 
   alter table accounting_runtime_meta add column if not exists revision bigint not null default 0;
+  alter table organization add column if not exists inn text;
+  alter table organization add column if not exists updated_at timestamptz;
+  update organization
+    set inn = nullif(state_json->>'inn', ''),
+        updated_at = case when nullif(state_json->>'updatedAt', '') is not null then (state_json->>'updatedAt')::timestamptz else updated_at end
+    where state_json <> '{}'::jsonb;
+  alter table accounting_policy add column if not exists allow_open_period_edits boolean;
+  alter table accounting_policy add column if not exists comment text;
+  update accounting_policy
+    set allow_open_period_edits = case
+          when state_json ? 'allowOpenPeriodEdits' then (state_json->>'allowOpenPeriodEdits')::boolean
+          else allow_open_period_edits
+        end,
+        comment = nullif(state_json->>'comment', '')
+    where state_json <> '{}'::jsonb;
   alter table channel_credential add column if not exists encrypted_credentials jsonb;
   alter table channel_credential add column if not exists fields text[] not null default '{}';
   alter table channel_credential add column if not exists created_at timestamptz not null default now();
@@ -1909,11 +1931,27 @@ class PostgresRuntimeCollectionRepo<T> implements CollectionRepo<T> {
 }
 
 async function readRuntimeSingleton(source: Queryable, workspaceId: string, table: "organization" | "accounting_policy") {
-  const result = await source.query<{ state_json: unknown }>(
-    `select state_json from ${table} where workspace_id = $1 order by id limit 1`,
+  if (table === "organization") {
+    const result = await source.query<OrganizationDbRow>(
+      `select ${ORGANIZATION_SELECT}
+       from organization
+       where organization.workspace_id = $1
+       order by organization.id
+       limit 1`,
+      [workspaceId]
+    );
+    return result.rows[0] ? organizationFromRow(result.rows[0]) : undefined;
+  }
+  const result = await source.query<AccountingPolicyDbRow>(
+    `select ${ACCOUNTING_POLICY_SELECT}
+     from accounting_policy
+     ${ACCOUNTING_POLICY_JOINS}
+     where accounting_policy.workspace_id = $1
+     order by accounting_policy.id
+     limit 1`,
     [workspaceId]
   );
-  return result.rows[0] ? hydrateEntity(result.rows[0].state_json) : undefined;
+  return result.rows[0] ? accountingPolicyFromRow(result.rows[0]) : undefined;
 }
 
 async function saveRuntimeSingleton(source: Queryable, workspaceId: string, table: "organization" | "accounting_policy", entity: RuntimeEntity | undefined) {
@@ -1927,9 +1965,11 @@ async function saveRuntimeSingleton(source: Queryable, workspaceId: string, tabl
         id: entityUuid(requiredString(entity.id, "organization.id")),
         display_name: requiredString(entity.displayName, "organization.displayName"),
         legal_form: requiredString(entity.legalForm, "organization.legalForm"),
+        inn: optionalString(entity.inn),
         timezone: requiredString(entity.timezone, "organization.timezone"),
         tax_mode: requiredString(entity.taxMode, "organization.taxMode"),
         created_at: requiredString(entity.createdAt, "organization.createdAt"),
+        updated_at: optionalString(entity.updatedAt),
         workspace_id: workspaceId,
         public_id: requiredString(entity.id, "organization.id"),
         state_json: entity
@@ -1940,6 +1980,8 @@ async function saveRuntimeSingleton(source: Queryable, workspaceId: string, tabl
         accounting_start_date: requiredString(entity.accountingStartDate, "accountingPolicy.accountingStartDate"),
         cost_method: requiredString(entity.costMethod, "accountingPolicy.costMethod"),
         accounting_currency: requiredString(entity.accountingCurrency, "accountingPolicy.accountingCurrency"),
+        allow_open_period_edits: typeof entity.allowOpenPeriodEdits === "boolean" ? entity.allowOpenPeriodEdits : null,
+        comment: optionalString(entity.comment),
         workspace_id: workspaceId,
         public_id: requiredString(entity.id, "accountingPolicy.id"),
         state_json: entity

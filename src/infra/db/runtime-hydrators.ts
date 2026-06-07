@@ -1,4 +1,75 @@
-import type { AuditEvent, ExternalEvent, ObservedStock, SyncRun } from "../../core/models";
+import type { AccountingPolicy, AuditEvent, ExternalEvent, ObservedStock, SyncRun, Organization } from "../../core/models";
+
+export const ORGANIZATION_SELECT = `
+  organization.public_id as id,
+  organization.display_name,
+  organization.legal_form,
+  organization.inn,
+  organization.timezone,
+  organization.tax_mode,
+  organization.created_at,
+  organization.updated_at
+`;
+
+export interface OrganizationDbRow {
+  id: string;
+  display_name: string;
+  legal_form: Organization["legalForm"];
+  inn: string | null;
+  timezone: string;
+  tax_mode: Organization["taxMode"];
+  created_at: unknown;
+  updated_at: unknown;
+}
+
+export function organizationFromRow(row: OrganizationDbRow): Organization {
+  return stripUndefined({
+    id: row.id,
+    displayName: row.display_name,
+    legalForm: row.legal_form,
+    inn: optionalText(row.inn),
+    timezone: row.timezone,
+    taxMode: row.tax_mode,
+    createdAt: dateTimeString(row.created_at),
+    updatedAt: optionalDateTimeString(row.updated_at)
+  });
+}
+
+export const ACCOUNTING_POLICY_SELECT = `
+  accounting_policy.public_id as id,
+  accounting_policy_organization.public_id as organization_id,
+  accounting_policy.accounting_start_date,
+  accounting_policy.cost_method,
+  accounting_policy.accounting_currency,
+  accounting_policy.allow_open_period_edits,
+  accounting_policy.comment
+`;
+
+export const ACCOUNTING_POLICY_JOINS = `
+  left join organization accounting_policy_organization on accounting_policy_organization.id = accounting_policy.organization_id
+`;
+
+export interface AccountingPolicyDbRow {
+  id: string;
+  organization_id: string;
+  accounting_start_date: unknown;
+  cost_method: AccountingPolicy["costMethod"];
+  accounting_currency: AccountingPolicy["accountingCurrency"];
+  allow_open_period_edits: boolean | null;
+  comment: string | null;
+}
+
+export function accountingPolicyFromRow(row: AccountingPolicyDbRow): AccountingPolicy {
+  return stripUndefined({
+    id: row.id,
+    organizationId: row.organization_id,
+    accountingStartDate: dateString(row.accounting_start_date),
+    costMethod: row.cost_method,
+    accountingCurrency: row.accounting_currency,
+    allowOpenPeriodEdits: row.allow_open_period_edits ?? undefined,
+    comment: optionalText(row.comment)
+  });
+}
 
 export const EXTERNAL_EVENT_SELECT = `
   external_event.public_id as id,
@@ -234,6 +305,11 @@ function optionalDateTimeString(value: unknown): string | undefined {
 
 function dateTimeString(value: unknown): string {
   if (value instanceof Date) return value.toISOString();
+  return String(value ?? "");
+}
+
+function dateString(value: unknown): string {
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
   return String(value ?? "");
 }
 

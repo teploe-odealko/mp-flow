@@ -156,5 +156,27 @@ export const migrations: Migration[] = [
             last_error = nullif(state_json->>'lastError', '')
         where state_json <> '{}'::jsonb;
     `
+  },
+  {
+    id: "0006",
+    name: "singleton_typed_hydrate_columns",
+    sql: `
+      alter table organization add column if not exists inn text;
+      alter table organization add column if not exists updated_at timestamptz;
+      update organization
+        set inn = nullif(state_json->>'inn', ''),
+            updated_at = case when nullif(state_json->>'updatedAt', '') is not null then (state_json->>'updatedAt')::timestamptz else updated_at end
+        where state_json <> '{}'::jsonb;
+
+      alter table accounting_policy add column if not exists allow_open_period_edits boolean;
+      alter table accounting_policy add column if not exists comment text;
+      update accounting_policy
+        set allow_open_period_edits = case
+              when state_json ? 'allowOpenPeriodEdits' then (state_json->>'allowOpenPeriodEdits')::boolean
+              else allow_open_period_edits
+            end,
+            comment = nullif(state_json->>'comment', '')
+        where state_json <> '{}'::jsonb;
+    `
   }
 ];
