@@ -240,6 +240,10 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   и обслуживаются через `RuntimeWriteContext` до session middleware. Prod-readiness фиксирует, что
   эти commands не открывают `openWriteSession`; Postgres runtime проверяет typed rows в `warehouse`,
   `counterparty`, `cash_account`.
+- ✅ Recalculation jobs (`POST /api/recalculation-jobs`, `POST /api/recalculation-jobs/:id/retry`,
+  `POST /api/reports/recalculate`) вынесены в `src/backend/services/recalculation-service.ts` и
+  обслуживаются через `RuntimeWriteContext`. Prod-readiness покрывает create/retry/reports-recalculate
+  без `openWriteSession`; Postgres runtime проверяет typed rows в `recalculation_job`.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,

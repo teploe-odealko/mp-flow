@@ -84,6 +84,9 @@ describePostgres("postgres runtime store", () => {
     const serviceCounterparty = await request<any>(api, "POST", "/api/counterparties", { name: "PG service supplier", counterpartyType: "supplier", country: "CN" });
     const serviceCashAccount = await request<any>(api, "POST", "/api/money/cash-accounts", { name: "PG service account", accountCode: "51", openingBalanceRub: 321.45 });
     const serviceCashAccountUpdated = await request<any>(api, "PATCH", `/api/money/cash-accounts/${serviceCashAccount.id}`, { name: "PG service account updated", isActive: false });
+    const serviceRecalculationJob = await request<any>(api, "POST", "/api/recalculation-jobs", { jobType: "sales_profit", scope: { channelId: "all" } });
+    const serviceRecalculationJobRetried = await request<any>(api, "POST", `/api/recalculation-jobs/${serviceRecalculationJob.id}/retry`);
+    const reportRecalculationJob = await request<any>(api, "POST", "/api/reports/recalculate");
     const productImage = await request<any>(api, "POST", `/api/products/${product.id}/images`, { url: "https://example.test/pg-product.jpg" });
     const productAsset = await store.runWriteContext("default", (writeContext) => createProductAsset(writeContext, {
       productId: product.id,
@@ -171,6 +174,14 @@ describePostgres("postgres runtime store", () => {
         "select name, is_active, balance_rub::float8 as balance_rub from cash_account where public_id = $1",
         [serviceCashAccount.id]
       );
+      const serviceRecalculationJobRows = await inspectPool.query<{ job_type: string; status: string; progress: number; scope: any }>(
+        "select job_type, status, progress::float8 as progress, scope from recalculation_job where public_id = $1",
+        [serviceRecalculationJob.id]
+      );
+      const reportRecalculationJobRows = await inspectPool.query<{ job_type: string; status: string; progress: number }>(
+        "select job_type, status, progress::float8 as progress from recalculation_job where public_id = $1",
+        [reportRecalculationJob.id]
+      );
       const credentials = await inspectPool.query<{ encrypted_credentials: unknown; fields: string[] }>(
         `
           select cc.encrypted_credentials, cc.fields
@@ -195,6 +206,11 @@ describePostgres("postgres runtime store", () => {
       expect(serviceCashAccount).toEqual(expect.objectContaining({ name: "PG service account", accountCode: "51", balanceRub: 321.45, isActive: true }));
       expect(serviceCashAccountUpdated).toEqual(expect.objectContaining({ id: serviceCashAccount.id, name: "PG service account updated", isActive: false }));
       expect(serviceCashAccountRows.rows[0]).toEqual({ name: "PG service account updated", is_active: false, balance_rub: 321.45 });
+      expect(serviceRecalculationJob).toEqual(expect.objectContaining({ jobType: "sales_profit", scope: { channelId: "all" }, status: "completed", progress: 100 }));
+      expect(serviceRecalculationJobRetried).toEqual(expect.objectContaining({ id: serviceRecalculationJob.id, status: "completed", progress: 100 }));
+      expect(serviceRecalculationJobRows.rows[0]).toEqual({ job_type: "sales_profit", status: "completed", progress: 100, scope: { channelId: "all" } });
+      expect(reportRecalculationJob).toEqual(expect.objectContaining({ jobType: "reports", status: "completed", progress: 100 }));
+      expect(reportRecalculationJobRows.rows[0]).toEqual({ job_type: "reports", status: "completed", progress: 100 });
       expect(dashboard.configured).toBe(true);
       expect(dashboard.counters.products).toBe(1);
       expect(documentsWorkspace.documents).toContainEqual(expect.objectContaining({

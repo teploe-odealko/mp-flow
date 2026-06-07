@@ -24,6 +24,7 @@ import { confirmProductAsset, createProductAsset, deleteProductAsset, updateProd
 import { defaultReceiptPreviewFor, receiptPreviewFor } from "./services/procurement-preview-service";
 import { deleteProductImage, setProductImage } from "./services/product-image-service";
 import { archiveProduct, createProduct, restoreProduct, updateProduct } from "./services/product-service";
+import { createRecalculationJob, retryRecalculationJob } from "./services/recalculation-service";
 import { createCashAccount, createCounterparty, createWarehouse, updateCashAccount } from "./services/reference-data-service";
 import {
   goodsReceiptRollbackPreviewFor,
@@ -1345,6 +1346,9 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/reports/cash-flow", async (c) => c.json({ ok: true, data: (await reportsFor(c)).cashFlow }));
   api.get("/api/reports/unit-economics", async (c) => c.json({ ok: true, data: (await reportsFor(c)).unitEconomics }));
   api.get("/api/reports/inventory", async (c) => c.json({ ok: true, data: (await reportsFor(c)).inventory }));
+  api.post("/api/reports/recalculate", async (c) => {
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => createRecalculationJob(writeContext, { jobType: "reports", scope: { requestedAt: nowIso() } })) });
+  });
   api.get("/api/integrations/channels/:id/sync-runs", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).syncRuns.listByChannel(c.req.param("id")) }));
   api.get("/api/integrations/sync-runs/:id", async (c) => {
     const run = await (await readContextFor(c)).syncRuns.getById(c.req.param("id"));
@@ -1658,6 +1662,13 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/controls/workspace", async (c) => c.json({ ok: true, data: await controlsWorkspaceFor(c) }));
   api.get("/api/onboarding/existing-store/workspace", async (c) => c.json({ ok: true, data: await onboardingWorkspaceFor(c) }));
   api.get("/api/recalculation-jobs", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).repos.recalculationJobs.all() }));
+  api.post("/api/recalculation-jobs", async (c) => {
+    const body = recalculationJobSchema.parse(await c.req.json());
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => createRecalculationJob(writeContext, body)) });
+  });
+  api.post("/api/recalculation-jobs/:id/retry", async (c) => {
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => retryRecalculationJob(writeContext, c.req.param("id"))) });
+  });
   api.get("/api/mcp/config", async (c) => c.json({ ok: true, data: await mcpSettingsPayload(await readContextFor(c), publicMcpEndpoint(c)) }));
   api.get("/api/mcp/keys", async (c) => c.json({ ok: true, data: await mcpSettingsPayload(await readContextFor(c), publicMcpEndpoint(c)) }));
   api.get("/api/users", async (c) => {
@@ -1776,7 +1787,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       await session.close?.();
     }
   });
-  api.post("/api/reports/recalculate", async (c) => c.json({ ok: true, data: await scopedApp.createRecalculationJob({ jobType: "reports", scope: { requestedAt: nowIso() } }) }));
   api.post("/api/setup", async (c) => {
     const body = bootstrapSchema.parse(await c.req.json());
     const data = await scopedApp.bootstrap(body);
@@ -2889,11 +2899,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const body = correctionPreviewSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.applyDocumentCorrection(c.req.param("id"), body.patch, body.reason ?? "Исправление документа") });
   });
-  api.post("/api/recalculation-jobs", async (c) => {
-    const body = recalculationJobSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: await scopedApp.createRecalculationJob(body) });
-  });
-  api.post("/api/recalculation-jobs/:id/retry", async (c) => c.json({ ok: true, data: await scopedApp.retryRecalculationJob(c.req.param("id")) }));
   api.post("/api/procurement-costs/:id/correct", async (c) => {
     const body = z.object({ newAmountRub: z.number(), reason: z.string().min(1) }).parse(await c.req.json());
     return c.json({ ok: true, data: await scopedApp.applyProcurementCostCorrection({ procurementCostId: c.req.param("id"), ...body }) });
