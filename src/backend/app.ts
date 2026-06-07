@@ -320,6 +320,102 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       shortageResolutionLines
     };
   };
+  const purchaseOrderCardWorkspaceFor = async (c: Context, purchaseOrderId: string): Promise<any> => {
+    const readModelApp = await readModelAppFor(c);
+    const order = await readModelApp.repos.purchaseOrders.getById(purchaseOrderId);
+    if (!order) throw new DomainError("purchase_order_not_found", "Заказ поставщику не найден");
+
+    const [
+      purchaseOrderLines,
+      counterparties,
+      documentVersions,
+      documents,
+      goodsReceipts,
+      goodsReceiptLines,
+      inventoryLots,
+      journalEntries,
+      paymentAllocations,
+      payments,
+      procurementCosts,
+      procurementCostLines,
+      products,
+      shortageResolutions,
+      shortageResolutionLines,
+      warehouses
+    ] = await Promise.all([
+      readModelApp.repos.purchaseOrderLines.all(),
+      readModelApp.repos.counterparties.all(),
+      readModelApp.repos.documentVersions.all(),
+      readModelApp.repos.documents.all(),
+      readModelApp.repos.goodsReceipts.all(),
+      readModelApp.repos.goodsReceiptLines.all(),
+      readModelApp.repos.inventoryLots.all(),
+      readModelApp.repos.journalEntries.all(),
+      readModelApp.repos.paymentAllocations.all(),
+      readModelApp.repos.payments.all(),
+      readModelApp.repos.procurementCosts.all(),
+      readModelApp.repos.procurementCostLines.all(),
+      readModelApp.repos.products.all(),
+      readModelApp.repos.shortageResolutions.all(),
+      readModelApp.repos.shortageResolutionLines.all(),
+      readModelApp.repos.warehouses.all()
+    ]);
+
+    const lines = purchaseOrderLines.filter((line) => line.purchaseOrderId === order.id);
+    const receipts = goodsReceipts.filter((receipt) => receipt.purchaseOrderId === order.id);
+    const receiptIds = new Set(receipts.map((receipt) => receipt.id));
+    const receiptDocumentIds = new Set(receipts.map((receipt) => receipt.documentId));
+    const receiptLines = goodsReceiptLines.filter((line) => receiptIds.has(line.goodsReceiptId));
+    const allocations = paymentAllocations.filter((allocation) => allocation.purchaseOrderId === order.id);
+    const paymentIds = new Set(allocations.map((allocation) => allocation.paymentId));
+    const orderPayments = payments.filter((payment) => paymentIds.has(payment.id));
+    const costs = procurementCosts.filter((cost) => cost.purchaseOrderId === order.id);
+    const costIds = new Set(costs.map((cost) => cost.id));
+    const costLines = procurementCostLines.filter((line) => costIds.has(line.procurementCostId));
+    const shortages = shortageResolutions.filter((shortage) => shortage.purchaseOrderId === order.id);
+    const shortageIds = new Set(shortages.map((shortage) => shortage.id));
+    const shortageLines = shortageResolutionLines.filter((line) => shortageIds.has(line.shortageResolutionId));
+
+    const documentIds = new Set<string>([order.documentId]);
+    orderPayments.forEach((payment) => payment.documentId && documentIds.add(payment.documentId));
+    receipts.forEach((receipt) => receipt.documentId && documentIds.add(receipt.documentId));
+    costs.forEach((cost) => cost.documentId && documentIds.add(cost.documentId));
+    shortages.forEach((shortage) => shortage.documentId && documentIds.add(shortage.documentId));
+
+    const receiptLineIds = new Set(receiptLines.map((line) => line.id));
+    const relatedLots = inventoryLots.filter((lot) =>
+      receiptDocumentIds.has(lot.sourceDocumentId) || (lot.sourceLineId ? receiptLineIds.has(lot.sourceLineId) : false)
+    );
+    const productIds = new Set<string>();
+    lines.forEach((line) => productIds.add(line.productId));
+    receiptLines.forEach((line) => productIds.add(line.productId));
+    shortageLines.forEach((line) => productIds.add(line.productId));
+    relatedLots.forEach((lot) => productIds.add(lot.productId));
+
+    const warehouseIds = new Set<string>([order.destinationWarehouseId]);
+    receipts.forEach((receipt) => warehouseIds.add(receipt.warehouseId));
+
+    return {
+      accountingPolicy: readModelApp.setupMetadata().accountingPolicy,
+      order,
+      counterparties: counterparties.filter((counterparty) => counterparty.id === order.supplierId),
+      documentVersions: documentVersions.filter((version) => version.documentId === order.documentId),
+      documents: documents.filter((document) => documentIds.has(document.id)),
+      goodsReceiptLines: receiptLines,
+      goodsReceipts: receipts,
+      inventoryLots: relatedLots,
+      journalEntries: journalEntries.filter((entry) => documentIds.has(entry.documentId)),
+      paymentAllocations: allocations,
+      payments: orderPayments,
+      procurementCostLines: costLines,
+      procurementCosts: costs,
+      products: products.filter((product) => productIds.has(product.id)),
+      purchaseOrderLines: lines,
+      shortageResolutionLines: shortageLines,
+      shortageResolutions: shortages,
+      warehouses: warehouses.filter((warehouse) => warehouseIds.has(warehouse.id))
+    };
+  };
   const productChannelMappingFor = async (c: Context): Promise<any> => {
     const readModelApp = await readModelAppFor(c);
     const [externalProducts, links, products, channels, externalEvents] = await Promise.all([
@@ -737,6 +833,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const document = (await readModelApp.repos.documents.all()).find((item) => item.id === id && item.documentType === "opening_balance");
     return c.json({ ok: true, data: { document, lines: (await readModelApp.repos.documentLines.all()).filter((line) => line.documentId === document?.id) } });
   });
+  api.get("/api/procurement/purchase-orders/:id/workspace", async (c) => c.json({ ok: true, data: await purchaseOrderCardWorkspaceFor(c, c.req.param("id")) }));
   api.get("/api/procurement/purchase-orders/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).purchaseOrderDetails(c.req.param("id")) }));
   api.get("/api/procurement/purchase-orders/:id/payments", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).paymentsForPurchaseOrder(c.req.param("id")) }));
   api.get("/api/settlements/suppliers/:id", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).repos.settlementEntries.all()).filter((entry) => entry.counterpartyId === c.req.param("id")) }));

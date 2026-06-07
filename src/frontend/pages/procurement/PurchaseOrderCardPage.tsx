@@ -14,7 +14,6 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Field, Input, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { ProductCell } from "@/components/product-thumb";
-import { useCollection } from "@/lib/use-collection";
 import { apiDelete, apiGet, apiPost } from "@/api";
 import { rub, qty, date, dateTime } from "@/lib/format";
 import {
@@ -25,48 +24,131 @@ import {
   purchaseOrderStatusLabel,
   shortageActionLabel
 } from "@/lib/i18n";
-import { getPurchaseOrderMetrics } from "./metrics";
+import { getPurchaseOrderMetrics, type PurchaseOrderMetrics } from "./metrics";
 import { EntityDeleteDialog, type EntityRollbackPreview } from "@/components/entity-delete-dialog";
+
+const PURCHASE_ORDER_CARD_QUERY_KEY = "purchase-order-card-workspace";
+const PURCHASE_ORDER_COLLECTION_KEYS = [
+  "documents",
+  "documentVersions",
+  "goodsReceipts",
+  "goodsReceiptLines",
+  "inventoryLots",
+  "journalEntries",
+  "paymentAllocations",
+  "payments",
+  "procurementCostLines",
+  "procurementCosts",
+  "purchaseOrders",
+  "purchaseOrderLines",
+  "shortageResolutionLines",
+  "shortageResolutions"
+] as const;
+
+interface PurchaseOrderCardWorkspacePayload {
+  accountingPolicy?: any;
+  order?: any;
+  counterparties: any[];
+  documentVersions: any[];
+  documents: any[];
+  goodsReceiptLines: any[];
+  goodsReceipts: any[];
+  inventoryLots: any[];
+  journalEntries: any[];
+  paymentAllocations: any[];
+  payments: any[];
+  procurementCostLines: any[];
+  procurementCosts: any[];
+  products: any[];
+  purchaseOrderLines: any[];
+  shortageResolutionLines: any[];
+  shortageResolutions: any[];
+  warehouses: any[];
+}
+
+const EMPTY_PURCHASE_ORDER_METRICS: PurchaseOrderMetrics = {
+  totalOrderedQty: 0,
+  totalPaidRub: 0,
+  totalReceivedGoodsRub: 0,
+  totalProcurementCostsRub: 0,
+  totalCapitalizedRub: 0,
+  receivedQty: 0,
+  closedShortageQty: 0,
+  completedQty: 0,
+  remainingQty: 0,
+  inventoryGapRub: 0,
+  receiptQtyByReceiptId: new Map<string, number>()
+};
+
+function purchaseOrderCardQueryKey(id: string | undefined) {
+  return [PURCHASE_ORDER_CARD_QUERY_KEY, id] as const;
+}
 
 export function PurchaseOrderCardPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const state = { accountingPolicy: useCollection<any>("accountingPolicy"), counterparties: useCollection<any[]>("counterparties") ?? [], documentVersions: useCollection<any[]>("documentVersions") ?? [], documents: useCollection<any[]>("documents") ?? [], goodsReceiptLines: useCollection<any[]>("goodsReceiptLines") ?? [], goodsReceipts: useCollection<any[]>("goodsReceipts") ?? [], inventoryLots: useCollection<any[]>("inventoryLots") ?? [], journalEntries: useCollection<any[]>("journalEntries") ?? [], paymentAllocations: useCollection<any[]>("paymentAllocations") ?? [], payments: useCollection<any[]>("payments") ?? [], procurementCostLines: useCollection<any[]>("procurementCostLines") ?? [], procurementCosts: useCollection<any[]>("procurementCosts") ?? [], products: useCollection<any[]>("products") ?? [], purchaseOrderLines: useCollection<any[]>("purchaseOrderLines") ?? [], purchaseOrders: useCollection<any[]>("purchaseOrders") ?? [], shortageResolutionLines: useCollection<any[]>("shortageResolutionLines") ?? [], shortageResolutions: useCollection<any[]>("shortageResolutions") ?? [], warehouses: useCollection<any[]>("warehouses") ?? [] };
   const queryClient = useQueryClient();
-  const order = (state.purchaseOrders ?? []).find((candidate: any) => candidate.id === id);
-  if (!order) return null;
+  const workspaceQuery = useQuery({
+    queryKey: purchaseOrderCardQueryKey(id),
+    queryFn: () => apiGet<PurchaseOrderCardWorkspacePayload>(`/api/procurement/purchase-orders/${encodeURIComponent(id ?? "")}/workspace`),
+    enabled: Boolean(id)
+  });
+  const state = useMemo(() => {
+    const data = workspaceQuery.data;
+    return {
+      accountingPolicy: data?.accountingPolicy,
+      counterparties: data?.counterparties ?? [],
+      documentVersions: data?.documentVersions ?? [],
+      documents: data?.documents ?? [],
+      goodsReceiptLines: data?.goodsReceiptLines ?? [],
+      goodsReceipts: data?.goodsReceipts ?? [],
+      inventoryLots: data?.inventoryLots ?? [],
+      journalEntries: data?.journalEntries ?? [],
+      paymentAllocations: data?.paymentAllocations ?? [],
+      payments: data?.payments ?? [],
+      procurementCostLines: data?.procurementCostLines ?? [],
+      procurementCosts: data?.procurementCosts ?? [],
+      products: data?.products ?? [],
+      purchaseOrderLines: data?.purchaseOrderLines ?? [],
+      purchaseOrders: data?.order ? [data.order] : [],
+      shortageResolutionLines: data?.shortageResolutionLines ?? [],
+      shortageResolutions: data?.shortageResolutions ?? [],
+      warehouses: data?.warehouses ?? []
+    };
+  }, [workspaceQuery.data]);
+  const order = workspaceQuery.data?.order;
+  const orderId = order?.id ?? id;
 
-  const lines = (state.purchaseOrderLines ?? []).filter((line: any) => line.purchaseOrderId === id);
+  const lines = (state.purchaseOrderLines ?? []).filter((line: any) => line.purchaseOrderId === orderId);
   const products = state.products ?? [];
   const counterparties = state.counterparties ?? [];
   const warehouses = state.warehouses ?? [];
   const docs = state.documents ?? [];
   const docById = new Map(docs.map((doc: any) => [doc.id, doc]));
   const journalEntries = state.journalEntries ?? [];
-  const supplier = counterparties.find((counterparty: any) => counterparty.id === order.supplierId);
-  const warehouse = warehouses.find((item: any) => item.id === order.destinationWarehouseId);
-  const orderDocument = docs.find((doc: any) => doc.id === order.documentId);
-  const receipts = (state.goodsReceipts ?? []).filter((receipt: any) => receipt.purchaseOrderId === id);
+  const supplier = order ? counterparties.find((counterparty: any) => counterparty.id === order.supplierId) : undefined;
+  const warehouse = order ? warehouses.find((item: any) => item.id === order.destinationWarehouseId) : undefined;
+  const orderDocument = order ? docs.find((doc: any) => doc.id === order.documentId) : undefined;
+  const receipts = (state.goodsReceipts ?? []).filter((receipt: any) => receipt.purchaseOrderId === orderId);
   const receiptLines = (state.goodsReceiptLines ?? []).filter((line: any) => receipts.some((receipt: any) => receipt.id === line.goodsReceiptId));
-  const allocations = (state.paymentAllocations ?? []).filter((allocation: any) => allocation.purchaseOrderId === id);
+  const allocations = (state.paymentAllocations ?? []).filter((allocation: any) => allocation.purchaseOrderId === orderId);
   const payments = (state.payments ?? []).filter((payment: any) => allocations.some((allocation: any) => allocation.paymentId === payment.id));
-  const procurementCosts = (state.procurementCosts ?? []).filter((cost: any) => cost.purchaseOrderId === id);
-  const shortages = (state.shortageResolutions ?? []).filter((shortage: any) => shortage.purchaseOrderId === id);
+  const procurementCosts = (state.procurementCosts ?? []).filter((cost: any) => cost.purchaseOrderId === orderId);
+  const shortages = (state.shortageResolutions ?? []).filter((shortage: any) => shortage.purchaseOrderId === orderId);
   const shortageLines = (state.shortageResolutionLines ?? []).filter((line: any) => shortages.some((shortage: any) => shortage.id === line.shortageResolutionId));
   const versions = (state.documentVersions ?? [])
-    .filter((version: any) => version.documentId === order.documentId)
+    .filter((version: any) => version.documentId === order?.documentId)
     .slice()
     .sort((left: any, right: any) => Number(right.versionNo ?? 0) - Number(left.versionNo ?? 0));
-  const metrics = getPurchaseOrderMetrics(state, order.id);
+  const metrics = order ? getPurchaseOrderMetrics(state, order.id) : EMPTY_PURCHASE_ORDER_METRICS;
   const hasDependencies = payments.length > 0 || receipts.length > 0;
-  const isEditable = !hasDependencies && (order.status === "draft" || order.status === "ordered");
-  const isCancellable = order.status !== "cancelled" && !hasDependencies;
-  const canPost = order.status === "draft" && !hasDependencies;
+  const isEditable = Boolean(order && !hasDependencies && (order.status === "draft" || order.status === "ordered"));
+  const canPost = Boolean(order && order.status === "draft" && !hasDependencies);
 
   const receiptQtyByReceiptId = metrics.receiptQtyByReceiptId;
   const costingRows = useMemo(
-    () => purchaseOrderCostingRows(state, order.id),
-    [order.id, state]
+    () => order ? purchaseOrderCostingRows(state, order.id) : [],
+    [order, state]
   );
   const costingTotals = useMemo(() => purchaseOrderCostingTotals(costingRows), [costingRows]);
   const costingColumns = useMemo(() => purchaseOrderCostingColumns(costingTotals), [costingTotals]);
@@ -81,9 +163,9 @@ export function PurchaseOrderCardPage() {
   ].filter(Boolean);
 
   const openShortageQuery = useQuery({
-    queryKey: ["purchase-order-shortage-preview", id],
-    queryFn: () => apiGet<any>(`/api/procurement/purchase-orders/${id}/shortages/preview`),
-    enabled: Boolean(id)
+    queryKey: ["purchase-order-shortage-preview", orderId ?? ""],
+    queryFn: () => apiGet<any>(`/api/procurement/purchase-orders/${encodeURIComponent(orderId ?? "")}/shortages/preview`),
+    enabled: Boolean(orderId && order)
   });
 
   const relatedDocumentIds = useMemo(() => {
@@ -104,7 +186,7 @@ export function PurchaseOrderCardPage() {
   const [addOpOpen, setAddOpOpen] = useState(false);
   const [opType, setOpType] = useState<"goods" | "delivery" | "packaging" | "customs" | "certification" | "other">("goods");
   const [opAmount, setOpAmount] = useState("");
-  const [opDate, setOpDate] = useState(state.accountingPolicy?.accountingStartDate ?? new Date().toISOString().slice(0, 10));
+  const [opDate, setOpDate] = useState(new Date().toISOString().slice(0, 10));
   const [opComment, setOpComment] = useState("");
   const [opBasis, setOpBasis] = useState<"by_cost" | "by_weight" | "by_unit">("by_cost");
   const [receiptCorrection, setReceiptCorrection] = useState<null | {
@@ -125,12 +207,26 @@ export function PurchaseOrderCardPage() {
     : [];
   const selectedReceiptLine = selectedReceiptLines.find((line: any) => line.purchaseOrderLineId === receiptCorrection?.purchaseOrderLineId);
   const selectedCost = procurementCosts.find((cost: any) => cost.id === costCorrection?.costId);
+  const requireOrderId = () => {
+    if (!orderId) throw new Error("Заказ не найден");
+    return encodeURIComponent(orderId);
+  };
+  const invalidatePurchaseOrderArea = () => {
+    if (orderId) {
+      void queryClient.invalidateQueries({ queryKey: purchaseOrderCardQueryKey(orderId) });
+      void queryClient.invalidateQueries({ queryKey: ["purchase-order-shortage-preview", orderId] });
+    }
+    void queryClient.invalidateQueries({ queryKey: ["procurement-workspace"] });
+    void queryClient.invalidateQueries({ queryKey: ["inventory-workspace"] });
+    void queryClient.invalidateQueries({ queryKey: ["finance-workspace"] });
+    void queryClient.invalidateQueries({ queryKey: ["documents-workspace"] });
+    void queryClient.invalidateQueries({ queryKey: ["accounting-journal-workspace"] });
+    PURCHASE_ORDER_COLLECTION_KEYS.forEach((name) => void queryClient.invalidateQueries({ queryKey: ["collection", name] }));
+  };
 
   const postOrder = useMutation({
-    mutationFn: () => apiPost(`/api/procurement/purchase-orders/${id}/post`),
-    onSuccess: () => {
-      queryClient.invalidateQueries();
-    }
+    mutationFn: () => apiPost(`/api/procurement/purchase-orders/${requireOrderId()}/post`),
+    onSuccess: invalidatePurchaseOrderArea
   });
   const deletePreviewPath = (target: { kind: string; id: string }) =>
     target.kind === "payment" ? `/api/payments/${target.id}/delete-preview`
@@ -148,7 +244,7 @@ export function PurchaseOrderCardPage() {
   const deleteEntity = useMutation({
     mutationFn: () => apiDelete(deletePath(deleteTarget!)),
     onSuccess: () => {
-      queryClient.invalidateQueries();
+      invalidatePurchaseOrderArea();
       setDeleteTarget(null);
     }
   });
@@ -162,7 +258,7 @@ export function PurchaseOrderCardPage() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries();
+      invalidatePurchaseOrderArea();
       setReceiptCorrection(null);
     }
   });
@@ -175,36 +271,36 @@ export function PurchaseOrderCardPage() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries();
+      invalidatePurchaseOrderArea();
       setCostCorrection(null);
     }
   });
   const postPayment = useMutation({
     mutationFn: (paymentId: string) => apiPost(`/api/payments/${paymentId}/post`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: invalidatePurchaseOrderArea
   });
   const postReceipt = useMutation({
     mutationFn: (receiptId: string) => apiPost(`/api/procurement/receipts/${receiptId}/post`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: invalidatePurchaseOrderArea
   });
   const postCost = useMutation({
     mutationFn: (costId: string) => apiPost(`/api/procurement/costs/${costId}/post`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: invalidatePurchaseOrderArea
   });
   const postShortage = useMutation({
     mutationFn: (shortageId: string) => apiPost(`/api/procurement/shortages/${shortageId}/post`),
-    onSuccess: () => queryClient.invalidateQueries()
+    onSuccess: invalidatePurchaseOrderArea
   });
   const addOperation = useMutation({
     mutationFn: () => {
       const amountRub = Number(opAmount);
       if (opType === "goods") {
-        return apiPost(`/api/procurement/purchase-orders/${id}/payments`, { amountRub, paidAt: opDate, comment: opComment || undefined });
+        return apiPost(`/api/procurement/purchase-orders/${requireOrderId()}/payments`, { amountRub, paidAt: opDate, comment: opComment || undefined });
       }
-      return apiPost(`/api/procurement/purchase-orders/${id}/costs`, { costType: opType, allocationBasis: opBasis, costDate: opDate, amountRub, paidImmediately: true, comment: opComment || undefined });
+      return apiPost(`/api/procurement/purchase-orders/${requireOrderId()}/costs`, { costType: opType, allocationBasis: opBasis, costDate: opDate, amountRub, paidImmediately: true, comment: opComment || undefined });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries();
+      invalidatePurchaseOrderArea();
       setAddOpOpen(false);
       setOpAmount("");
       setOpComment("");
@@ -214,6 +310,19 @@ export function PurchaseOrderCardPage() {
     ...payments.map((payment: any) => ({ kind: "payment" as const, id: payment.id, date: payment.paidAt, typeLabel: "Оплата товара поставщику", amountRub: payment.amountRub, documentId: payment.documentId, pending: false })),
     ...procurementCosts.map((cost: any) => ({ kind: "procurement_cost" as const, id: cost.id, date: cost.costDate, typeLabel: procurementCostTypeLabel[cost.costType] ?? cost.costType, amountRub: cost.amountRub, documentId: cost.documentId, pending: Boolean(cost.pendingAllocation) }))
   ].sort((left, right) => String(right.date).localeCompare(String(left.date)));
+
+  if (!order) {
+    return (
+      <div className="flex flex-col gap-5">
+        <PageHeader
+          breadcrumbs={[{ label: "Поставки", to: "/procurement" }, { label: "Заказ" }]}
+          title={workspaceQuery.isLoading ? "Загружаем заказ" : "Заказ не найден"}
+          subtitle={workspaceQuery.isLoading ? "Карточка поставки загружает связанный учетный контекст." : "Возможно, заказ был удален или недоступен."}
+          actions={<Button variant="ghost" asChild><Link to="/procurement"><ArrowLeft size={14} /> К списку</Link></Button>}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-5">

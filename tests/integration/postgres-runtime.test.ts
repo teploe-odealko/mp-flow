@@ -95,6 +95,15 @@ describePostgres("postgres runtime store", () => {
     const onboardingWorkspace = await request<any>(api, "GET", "/api/onboarding/existing-store/workspace");
     const productListWorkspace = await request<any>(api, "GET", "/api/products/workspace");
     const inventoryWorkspace = await request<any>(api, "GET", "/api/inventory/workspace");
+    const ownWarehouse = inventoryWorkspace.warehouses.find((warehouse: any) => warehouse.warehouseType === "own");
+    const purchaseOrder = await request<any>(api, "POST", "/api/procurement/purchase-orders", {
+      supplierName: "PG поставщик",
+      destinationWarehouseId: ownWarehouse.id,
+      supplierCurrency: "RUB",
+      orderedAt: "2026-01-16",
+      lines: [{ productId: product.id, qty: 4, supplierUnitPrice: 250 }]
+    });
+    const purchaseOrderCardWorkspace = await request<any>(api, "GET", `/api/procurement/purchase-orders/${purchaseOrder.id}/workspace`);
     const procurementWorkspace = await request<any>(api, "GET", "/api/procurement/workspace");
     const productChannelMapping = await request<any>(api, "GET", "/api/products/channel-mapping");
     const productWorkspace = await request<any>(api, "GET", `/api/products/${product.id}/workspace`);
@@ -148,6 +157,12 @@ describePostgres("postgres runtime store", () => {
       expect(inventoryWorkspace.warehouses).toEqual(expect.any(Array));
       expect(inventoryWorkspace.documents).toEqual(expect.any(Array));
       expect(inventoryWorkspace.stockMovements).toEqual(expect.any(Array));
+      expect(ownWarehouse).toEqual(expect.objectContaining({ warehouseType: "own" }));
+      expect(purchaseOrderCardWorkspace.order).toEqual(expect.objectContaining({ id: purchaseOrder.id, supplierCurrency: "RUB" }));
+      expect(purchaseOrderCardWorkspace.purchaseOrderLines).toContainEqual(expect.objectContaining({ purchaseOrderId: purchaseOrder.id, productId: product.id }));
+      expect(purchaseOrderCardWorkspace.counterparties).toContainEqual(expect.objectContaining({ name: "PG поставщик" }));
+      expect(purchaseOrderCardWorkspace.documents).toContainEqual(expect.objectContaining({ id: purchaseOrder.documentId }));
+      expect(purchaseOrderCardWorkspace.warehouses).toContainEqual(expect.objectContaining({ id: ownWarehouse.id }));
       expect(procurementWorkspace.purchaseOrders).toEqual(expect.any(Array));
       expect(procurementWorkspace.purchaseOrderLines).toEqual(expect.any(Array));
       expect(procurementWorkspace.counterparties).toEqual(expect.any(Array));

@@ -133,10 +133,15 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   `ProcurementWorkspace` → `/api/procurement/workspace` с явным payload по заказам,
   строкам, поставщикам, документам, оплатам, приемкам, расходам поставки и закрытию недопоставок.
   Главный экран поставок больше не собирает состояние из 11 `useCollection(...)`.
+- ✅ Карточка заказа поставщику снята с generic collections:
+  `PurchaseOrderCardPage` → `/api/procurement/purchase-orders/:id/workspace` с явным payload только по
+  конкретному заказу: строки, поставщик, склад, документы, платежи, приемки, расходы, партии,
+  проводки и решения по недопоставкам. После мутаций карточка инвалидирует свой workspace и
+  затронутые соседние workspaces, без глобального `queryClient.invalidateQueries()`.
 - ⚠️ Фактический текущий остаток фронта: `useCollection` ещё есть в channel/procurement/
   inventory/sales pages:
   `ChannelDetailPage`, `ChannelsPages`, `inventory/forms`,
-  `PurchaseOrderCardPage`, `procurement/forms`, `SalesPages`.
+  `procurement/forms`, `SalesPages`.
 
 ## Бэкенд-ядро (оставшийся snapshot) — самое трудоёмкое
 Домен (`AccountingApp`, синхронный) глубоко впаян: `documents` 70 чтений, `journalEntries` 26, `sales` 24,
