@@ -7,7 +7,7 @@ import type { ExternalEventStore, ExternalEventListFilter } from "../../core/ext
 import type { ObservedStockStore, ObservedStockListFilter } from "../../core/observed-stock-store";
 import type { SyncRunStore } from "../../core/sync-run-store";
 import type { CollectionRepo, Repositories } from "../../core/repositories";
-import { createEmptyState, currentIdSequence, restoreIdSequence } from "../../core/utils";
+import { createEmptyState, currentIdSequence, restoreIdSequence, round2 } from "../../core/utils";
 import { stableUuid } from "./ids";
 import {
   ACCOUNTING_POLICY_JOINS,
@@ -269,9 +269,13 @@ export interface RuntimeSession {
   close?(): Promise<void>;
 }
 
+export type RuntimeLedgerBalances = Record<string, { debit: number; credit: number }>;
+
 export interface RuntimePersistence {
   save?(app: AccountingApp, workspaceId?: string): Promise<void>;
   readCollection?(workspaceId: string | undefined, name: string): Promise<{ found: boolean; data?: unknown }>;
+  readReports?(workspaceId?: string): Promise<unknown>;
+  readLedgerBalances?(workspaceId?: string): Promise<RuntimeLedgerBalances>;
   openReadModelApp?(workspaceId?: string): Promise<AccountingApp>;
   openReadSession?(workspaceId?: string): Promise<RuntimeSession>;
   openWriteSession?(workspaceId?: string): Promise<RuntimeSession>;
@@ -1942,6 +1946,16 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     return await readRuntimeCollection(this.pool, normalizeWorkspaceId(workspaceId), name);
   }
 
+  async readReports(workspaceId = DEFAULT_WORKSPACE_ID): Promise<unknown> {
+    await this.init();
+    return await readRuntimeReports(this.pool, normalizeWorkspaceId(workspaceId));
+  }
+
+  async readLedgerBalances(workspaceId = DEFAULT_WORKSPACE_ID): Promise<RuntimeLedgerBalances> {
+    await this.init();
+    return await readRuntimeLedgerBalances(this.pool, normalizeWorkspaceId(workspaceId));
+  }
+
   async openReadModelApp(workspaceId = DEFAULT_WORKSPACE_ID): Promise<AccountingApp> {
     await this.init();
     const scope = normalizeWorkspaceId(workspaceId);
@@ -2691,6 +2705,119 @@ export async function readRuntimeCollection(source: Queryable, workspaceId: stri
     [tableWorkspaceId]
   );
   return { found: true, data: result.rows.map((row) => hydrateTableRow(table, row)) };
+}
+
+export async function readRuntimeLedgerBalances(source: Queryable, workspaceId: string | undefined): Promise<RuntimeLedgerBalances> {
+  const scope = normalizeWorkspaceId(workspaceId);
+  const result = await source.query<{ account_code: string; debit: string; credit: string }>(
+    `
+      select
+        journal_line.account_code,
+        coalesce(sum(journal_line.debit), 0)::text as debit,
+        coalesce(sum(journal_line.credit), 0)::text as credit
+      from journal_line
+      join journal_entry on journal_entry.id = journal_line.journal_entry_id
+      where journal_entry.workspace_id = $1 and journal_line.workspace_id = $1
+      group by journal_line.account_code
+      order by journal_line.account_code
+    `,
+    [scope]
+  );
+  return result.rows.reduce<RuntimeLedgerBalances>((acc, row) => {
+    acc[row.account_code] = {
+      debit: round2(Number(row.debit ?? 0)),
+      credit: round2(Number(row.credit ?? 0))
+    };
+    return acc;
+  }, {});
+}
+
+export async function readRuntimeReports(source: Queryable, workspaceId: string | undefined) {
+  const scope = normalizeWorkspaceId(workspaceId);
+  const balances = await readRuntimeLedgerBalances(source, scope);
+  const [
+    chartAccounts,
+    products,
+    warehouses,
+    payments,
+    saleLines,
+    stockStates
+  ] = await Promise.all([
+    readCollectionData<RuntimeEntity>(source, scope, "chartAccounts"),
+    readCollectionData<RuntimeEntity>(source, scope, "products"),
+    readCollectionData<RuntimeEntity>(source, scope, "warehouses"),
+    readCollectionData<RuntimeEntity>(source, scope, "payments"),
+    readCollectionData<RuntimeEntity>(source, scope, "saleLines"),
+    readCollectionData<RuntimeEntity>(source, scope, "stockStates")
+  ]);
+
+  const revenue = creditTurnover(balances["90.01"]);
+  const costOfSales = debitTurnover(balances["90.02"]);
+  const operatingExpenses = round2(debitTurnover(balances["26"]) + debitTurnover(balances["44"]) + debitTurnover(balances["91.02"]));
+  const otherIncome = creditTurnover(balances["91.01"]);
+  const pnl = {
+    revenue,
+    costOfSales,
+    operatingExpenses,
+    otherIncome,
+    netProfit: round2(revenue + otherIncome - costOfSales - operatingExpenses)
+  };
+  const inventory = stockStates.map((stock) => ({
+    ...stock,
+    product: products.find((product) => product.id === stock.productId),
+    warehouse: warehouses.find((warehouse) => warehouse.id === stock.warehouseId)
+  }));
+  return {
+    trialBalance: chartAccounts.map((account) => ({
+      account,
+      debit: balances[String(account.code)]?.debit ?? 0,
+      credit: balances[String(account.code)]?.credit ?? 0,
+      balance: round2((balances[String(account.code)]?.debit ?? 0) - (balances[String(account.code)]?.credit ?? 0))
+    })),
+    pnl,
+    balanceSheet: {
+      assets: debitBalance(balances["41.01"]) + debitBalance(balances["41.02"]) + debitBalance(balances["41.03"]) + debitBalance(balances["45.03"]) + debitBalance(balances["50"]) + debitBalance(balances["51"]) + debitBalance(balances["76.02"]) + debitBalance(balances["76.ТП"]),
+      liabilities: creditBalance(balances["60.01"]) + creditBalance(balances["60.02"]) + creditBalance(balances["76.ТП"]),
+      equity: creditBalance(balances["80.01"]) - debitBalance(balances["80.02"]) + pnl.netProfit
+    },
+    cashFlow: {
+      cashBalance: debitBalance(balances["51"]) + debitBalance(balances["50"]),
+      incoming: payments.filter((payment) => payment.paymentDirection === "incoming").reduce((sum, payment) => sum + Number(payment.amountRub ?? 0), 0),
+      outgoing: payments.filter((payment) => payment.paymentDirection === "outgoing").reduce((sum, payment) => sum + Number(payment.amountRub ?? 0), 0)
+    },
+    inventory,
+    unitEconomics: saleLines.map((line) => ({
+      saleLine: line,
+      product: products.find((product) => product.id === line.productId),
+      grossMarginRub: round2(Number(line.revenueRub ?? 0) - Number(line.costRub ?? 0)),
+      grossMarginPercent: Number(line.revenueRub ?? 0) > 0 ? round2(((Number(line.revenueRub ?? 0) - Number(line.costRub ?? 0)) / Number(line.revenueRub ?? 0)) * 100) : 0
+    }))
+  };
+}
+
+async function readCollectionData<T extends RuntimeEntity>(source: Queryable, workspaceId: string, name: RuntimeCollectionName): Promise<T[]> {
+  const result = await readRuntimeCollection(source, workspaceId, name);
+  return (result.data ?? []) as T[];
+}
+
+function debitBalance(balance?: { debit: number; credit: number }): number {
+  if (!balance) return 0;
+  return round2(Math.max(0, balance.debit - balance.credit));
+}
+
+function creditBalance(balance?: { debit: number; credit: number }): number {
+  if (!balance) return 0;
+  return round2(Math.max(0, balance.credit - balance.debit));
+}
+
+function debitTurnover(balance?: { debit: number; credit: number }): number {
+  if (!balance) return 0;
+  return round2(balance.debit - balance.credit);
+}
+
+function creditTurnover(balance?: { debit: number; credit: number }): number {
+  if (!balance) return 0;
+  return round2(balance.credit - balance.debit);
 }
 
 export async function openPostgresReadModelApp(source: Queryable, workspaceId: string | undefined): Promise<AccountingApp> {

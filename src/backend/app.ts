@@ -6,7 +6,7 @@ import { z } from "zod";
 import { AccountingApp } from "../core/accounting-app";
 import type { AgentToken, ChannelFinanceEvent, ChannelStreamCode, ExternalEvent, Payout, Sale, SalesChannel, SalesReturn, SyncRun } from "../core/models";
 import { DomainError, id, nowIso, runWithIdSequence } from "../core/utils";
-import { openPostgresReadModelApp, readRuntimeCollection, type RuntimePersistence } from "../infra/db/runtime-store";
+import { openPostgresReadModelApp, readRuntimeCollection, readRuntimeLedgerBalances, readRuntimeReports, type RuntimePersistence } from "../infra/db/runtime-store";
 import { pluginRegistry } from "../plugins/registry";
 import { createPluginSecretApi, createPluginStateApi, pluginStateKey } from "../plugins/runtime";
 import { buildMediaKey, createPresignedUpload, headObject, isAllowedImageType, isStorageConfigured } from "../infra/storage/s3";
@@ -207,6 +207,18 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       loadAuditEvents: () => readModelApp.repos.auditEvents.all()
     });
   };
+  const reportsFor = async (c: Context): Promise<any> => {
+    const workspaceId = eventsWorkspaceId(c);
+    if (options.persistence?.readReports) return await options.persistence.readReports(workspaceId);
+    if (postgresBacked()) return await readRuntimeReports(getPool(), workspaceId);
+    return await (await readModelAppFor(c)).reports();
+  };
+  const ledgerBalancesFor = async (c: Context): Promise<Record<string, { debit: number; credit: number }>> => {
+    const workspaceId = eventsWorkspaceId(c);
+    if (options.persistence?.readLedgerBalances) return await options.persistence.readLedgerBalances(workspaceId);
+    if (postgresBacked()) return await readRuntimeLedgerBalances(getPool(), workspaceId);
+    return await (await readModelAppFor(c)).ledgerBalances();
+  };
   const documentDescendantIdForLink = (link: { linkType: string; fromDocumentId: string; toDocumentId: string }, currentDocumentId: string) => {
     switch (link.linkType) {
       case "payment":
@@ -377,12 +389,12 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/dashboard", async (c) => {
     return c.json({ ok: true, data: await (await readModelAppFor(c)).dashboard() });
   });
-  api.get("/api/reports", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).reports() }));
-  api.get("/api/reports/profit-and-loss", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).reports()).pnl }));
-  api.get("/api/reports/balance-sheet", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).reports()).balanceSheet }));
-  api.get("/api/reports/cash-flow", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).reports()).cashFlow }));
-  api.get("/api/reports/unit-economics", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).reports()).unitEconomics }));
-  api.get("/api/reports/inventory", async (c) => c.json({ ok: true, data: (await (await readModelAppFor(c)).reports()).inventory }));
+  api.get("/api/reports", async (c) => c.json({ ok: true, data: await reportsFor(c) }));
+  api.get("/api/reports/profit-and-loss", async (c) => c.json({ ok: true, data: (await reportsFor(c)).pnl }));
+  api.get("/api/reports/balance-sheet", async (c) => c.json({ ok: true, data: (await reportsFor(c)).balanceSheet }));
+  api.get("/api/reports/cash-flow", async (c) => c.json({ ok: true, data: (await reportsFor(c)).cashFlow }));
+  api.get("/api/reports/unit-economics", async (c) => c.json({ ok: true, data: (await reportsFor(c)).unitEconomics }));
+  api.get("/api/reports/inventory", async (c) => c.json({ ok: true, data: (await reportsFor(c)).inventory }));
   api.get("/api/integrations/channels/:id/sync-runs", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).syncRuns.listByChannel(c.req.param("id")) }));
   api.get("/api/integrations/sync-runs/:id", async (c) => {
     const run = await (await readModelAppFor(c)).syncRuns.getById(c.req.param("id"));
@@ -400,8 +412,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/journal", async (c) => c.json({ ok: true, data: { entries: await collectionFor(c, "journalEntries"), lines: await collectionFor(c, "journalLines") } }));
   api.get("/api/accounting/journal", async (c) => c.json({ ok: true, data: { entries: await collectionFor(c, "journalEntries"), lines: await collectionFor(c, "journalLines") } }));
   api.get("/api/accounting/journal/:id", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).journalEntryDetails(c.req.param("id")) }));
-  api.get("/api/ledger", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).ledgerBalances() }));
-  api.get("/api/accounting/ledger", async (c) => c.json({ ok: true, data: await (await readModelAppFor(c)).ledgerBalances() }));
+  api.get("/api/ledger", async (c) => c.json({ ok: true, data: await ledgerBalancesFor(c) }));
+  api.get("/api/accounting/ledger", async (c) => c.json({ ok: true, data: await ledgerBalancesFor(c) }));
   api.get("/api/documents", async (c) => c.json({ ok: true, data: await collectionFor(c, "documents") }));
   api.get("/api/products", async (c) => c.json({ ok: true, data: await collectionFor(c, "products") }));
   api.get("/api/products/channel-mapping", async (c) => c.json({

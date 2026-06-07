@@ -268,6 +268,15 @@ Generic runtime repo больше не имеет fallback `select state_json`/`
 схему через `information_schema`: после `PostgresRuntimeStore.init()` + `runMigrations()` нет ни одной
 `state_json`-колонки. Проверка: `npm run build`, `npm test`, `npm run test:postgres` зелёные.
 
+### ✅ Backend reports/ledger API сняты с `AccountingApp.reports()`
+`/api/reports*` и `/api/ledger` в Postgres-runtime теперь читают typed Postgres read-model напрямую:
+`readRuntimeLedgerBalances()` агрегирует проводки SQL-группировкой по `journal_line`, `readRuntimeReports()`
+собирает публичный report shape без создания `AccountingApp`. `RuntimePersistence` получил
+`readReports/readLedgerBalances`, поэтому PG-тесты с `PostgresRuntimeStore` тоже идут через новый путь.
+Остаток этапа reports — фронтовый `ReportsPage`: он всё ещё строит расширенные drilldown/юнит-экономику из
+набора `useCollection(...)`; следующий срез — перевести экран на серверные report DTO вместо клиентского
+перебора коллекций.
+
 ### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
 Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/
 addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocumentSummary(x))` — хелперы каскадно
