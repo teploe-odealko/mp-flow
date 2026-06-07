@@ -326,70 +326,6 @@ const DEFAULT_WORKSPACE_ID = "default";
 const CREDENTIALS_AAD = Buffer.from("mpflow-channel-credentials");
 const GLOBAL_REFERENCE_TABLES = new Set(["document_type_registry"]);
 
-const COLLECTIONS: RuntimeCollectionName[] = [
-  "periods",
-  "chartAccounts",
-  "documentTypes",
-  "documents",
-  "documentLines",
-  "documentVersions",
-  "documentLinks",
-  "journalEntries",
-  "journalLines",
-  "auditEvents",
-  "counterparties",
-  "products",
-  "productAssets",
-  "warehouses",
-  "stockStates",
-  "inventoryLots",
-  "stockMovements",
-  "costApplications",
-  "purchaseOrders",
-  "purchaseOrderLines",
-  "cashAccounts",
-  "payments",
-  "paymentAllocations",
-  "settlementEntries",
-  "goodsReceipts",
-  "goodsReceiptLines",
-  "procurementCosts",
-  "procurementCostLines",
-  "shortageResolutions",
-  "shortageResolutionLines",
-  "supplierClaims",
-  "stockTransfers",
-  "stockTransferLines",
-  "pluginStateRecords",
-  "integrationPlugins",
-  "salesChannels",
-  "externalProducts",
-  "productExternalLinks",
-  "syncRuns",
-  "externalEvents",
-  "observedStocks",
-  "sales",
-  "saleLines",
-  "salesReturns",
-  "channelFinanceEvents",
-  "payouts",
-  "payoutLines",
-  "expenseCategories",
-  "operatingExpenses",
-  "ownerTransactions",
-  "stocktakes",
-  "stocktakeLines",
-  "correctionCases",
-  "recalculationJobs",
-  "reportSnapshots",
-  "backfillProjects",
-  "backfillItems",
-  "users",
-  "roles",
-  "agentTokens",
-  "channelAgentPermissions"
-];
-
 const STATE_JSON_TABLES = [
   "organization",
   "accounting_policy",
@@ -2051,12 +1987,7 @@ export class PostgresRuntimeStore implements RuntimePersistence {
       await client.query("begin");
       const configured = await this.hasNormalizedData(client);
       if (!configured) {
-        const legacy = await this.loadLegacyState(client);
-        if (legacy) {
-          await this.importLegacyState(client, DEFAULT_WORKSPACE_ID, legacy.state, legacy.credentials, legacy.nextId);
-        } else {
-          await this.saveMeta(client, 1);
-        }
+        await this.saveMeta(client, 1);
       } else {
         const meta = await this.loadMeta(client);
         if (!meta) await this.saveMeta(client, 1);
@@ -2096,30 +2027,6 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     await this.saveChannelCredentials(client, workspaceId, app.exportChannelCredentials());
     await this.savePluginSecrets(client, workspaceId, app.state.organization?.id, app.exportPluginSecrets());
     await this.saveMeta(client, currentIdSequence());
-  }
-
-  private async importLegacyState(
-    client: PoolClient,
-    workspaceId: string,
-    state: AccountingState,
-    credentials: ChannelCredentials,
-    nextId: number
-  ) {
-    await saveRuntimeSingleton(client, workspaceId, "organization", state.organization as unknown as RuntimeEntity | undefined);
-    await saveRuntimeSingleton(client, workspaceId, "accounting_policy", state.accountingPolicy as unknown as RuntimeEntity | undefined);
-    for (const table of TABLES) {
-      for (const entity of collectionEntities(state, table.collection)) {
-        const row = {
-          ...table.serialize(entity),
-          workspace_id: workspaceIdForTable(table, workspaceId),
-          public_id: entityId(table.collection, entity)
-        };
-        await upsertRow(client, table.table, table.keyColumns, row);
-      }
-    }
-    await this.saveChannelCredentials(client, workspaceId, credentials);
-    await this.savePluginSecrets(client, workspaceId, state.organization?.id, {});
-    await this.saveMeta(client, nextId);
   }
 
   private async saveMeta(client: PoolClient, nextId: number) {
@@ -2309,77 +2216,6 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     }
   }
 
-  private async loadLegacyState(client: PoolClient) {
-    const entityState = await this.loadLegacyEntityStore(client);
-    if (entityState) return entityState;
-    return await this.loadLegacySnapshot(client);
-  }
-
-  private async loadLegacyEntityStore(client: PoolClient) {
-    const tableExists = await client.query<{ exists: boolean }>(
-      "select to_regclass('public.accounting_runtime_entity') is not null as exists"
-    );
-    if (!tableExists.rows[0]?.exists) return undefined;
-
-    const meta = await this.loadMeta(client);
-    const rows = await client.query<{ collection: RuntimeCollectionName; data: unknown }>(
-      "select collection, data from accounting_runtime_entity"
-    );
-    if (rows.rowCount === 0 && !(meta?.singletons && Object.keys((meta.singletons as Record<string, unknown>) ?? {}).length > 0)) {
-      return undefined;
-    }
-
-    const state = hydrateState(meta?.singletons);
-    for (const row of rows.rows) {
-      if (!COLLECTIONS.includes(row.collection)) continue;
-      state[row.collection].push(hydrateEntity(row.data) as never);
-    }
-
-    return {
-      state,
-      nextId: Math.max(meta?.next_id ?? 1, inferNextIdFromState(state)),
-      credentials: await this.loadLegacyRuntimeCredentials(client)
-    };
-  }
-
-  private async loadLegacySnapshot(client: PoolClient) {
-    const tableExists = await client.query<{ exists: boolean }>(
-      "select to_regclass('public.accounting_runtime_snapshot') is not null as exists"
-    );
-    if (!tableExists.rows[0]?.exists) return undefined;
-
-    const result = await client.query<{
-      state: unknown;
-      next_id: number;
-      encrypted_channel_credentials: unknown;
-    }>(
-      "select state, next_id, encrypted_channel_credentials from accounting_runtime_snapshot where key = $1",
-      [RUNTIME_ROW_KEY]
-    );
-    if (result.rowCount === 0) return undefined;
-
-    const row = result.rows[0];
-    const state = hydrateState(row.state);
-    return {
-      state,
-      nextId: Math.max(row.next_id ?? 1, inferNextIdFromState(state)),
-      credentials: this.decryptCredentialMap(row.encrypted_channel_credentials)
-    };
-  }
-
-  private async loadLegacyRuntimeCredentials(source: Queryable): Promise<ChannelCredentials> {
-    const exists = await source.query<{ exists: boolean }>(
-      "select to_regclass('public.accounting_runtime_channel_credential') is not null as exists"
-    );
-    if (!exists.rows[0]?.exists) return {};
-    const result = await source.query<{ channel_id: string; encrypted_credentials: unknown }>(
-      "select channel_id, encrypted_credentials from accounting_runtime_channel_credential"
-    );
-    return Object.fromEntries(
-      result.rows.map((row) => [row.channel_id, this.decryptCredentials(row.encrypted_credentials)])
-    ) as ChannelCredentials;
-  }
-
   private encryptCredentials(credentials: CleanCredentials): EncryptedPayload {
     const iv = randomBytes(12);
     const cipher = createCipheriv("aes-256-gcm", this.encryptionKey, iv);
@@ -2415,10 +2251,6 @@ export class PostgresRuntimeStore implements RuntimePersistence {
       }));
       return {};
     }
-  }
-
-  private decryptCredentialMap(payload: unknown): ChannelCredentials {
-    return this.decryptPayload<ChannelCredentials>(payload) ?? {};
   }
 
   private decryptPayload<T>(payload: unknown): T | undefined {
@@ -2675,17 +2507,6 @@ export class PostgresSyncRunStore implements SyncRunStore {
     if (ids.length === 0) return;
     await this.q.query("delete from sync_run where workspace_id = $1 and public_id = any($2::text[])", [this.workspaceId, ids]);
   }
-}
-
-export function exportRuntimeEntities(state: AccountingState) {
-  return COLLECTIONS.flatMap((collection) => {
-    const entities = collectionEntities(state, collection);
-    return entities.map((entity) => ({
-      collection,
-      entityId: entityId(collection, entity),
-      data: entity
-    }));
-  });
 }
 
 export async function readRuntimeCollection(source: Queryable, workspaceId: string | undefined, name: string): Promise<{ found: boolean; data?: unknown }> {
@@ -3016,20 +2837,8 @@ async function upsertRow(client: Queryable, table: string, keyColumns: string[],
   );
 }
 
-function collectionEntities(state: AccountingState, collection: RuntimeCollectionName): RuntimeEntity[] {
-  return state[collection] as unknown as RuntimeEntity[];
-}
-
 function workspaceIdForTable(table: TableSpec, workspaceId: string) {
   return GLOBAL_REFERENCE_TABLES.has(table.table) ? DEFAULT_WORKSPACE_ID : workspaceId;
-}
-
-function hydrateState(raw: unknown): AccountingState {
-  return Object.assign(createEmptyState(), raw ?? {}) as AccountingState;
-}
-
-function hydrateEntity(raw: unknown) {
-  return (raw ?? {}) as RuntimeEntity;
 }
 
 function cleanCredentials(credentials: Record<string, string | undefined>): CleanCredentials {
@@ -3087,24 +2896,4 @@ function requiredBoolean(value: unknown, field: string) {
     throw new Error(`Нельзя сохранить ${field}: ожидается boolean`);
   }
   return value;
-}
-
-function inferNextIdFromState(state: AccountingState): number {
-  let max = 0;
-  const visit = (value: unknown) => {
-    if (typeof value === "string") {
-      const match = value.match(/_(\d{6})$/);
-      if (match) max = Math.max(max, Number(match[1]));
-      return;
-    }
-    if (Array.isArray(value)) {
-      value.forEach(visit);
-      return;
-    }
-    if (value && typeof value === "object") {
-      Object.values(value as Record<string, unknown>).forEach(visit);
-    }
-  };
-  visit(state);
-  return max + 1;
 }

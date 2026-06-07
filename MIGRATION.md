@@ -36,8 +36,8 @@
    искать по state); вызвать `flushPendingExternalEventUpdates()` в сессии перед commit (см. п.4).
 3. **Postgres-флип (точный рецепт):**
    - `PostgresExternalEventStore implements ExternalEventStore` в `runtime-store.ts` (там entityUuid +
-     external_event TableSpec.serialize + hydrateEntity). Lookup: typed/public columns
-     (`public_id`, `channel_id`, `external_id`, `idempotency_key`); `state_json` пока только hydrate payload.
+     external_event typed `TableSpec.serialize` + typed hydrator). Lookup: typed/public columns
+     (`public_id`, `channel_id`, `external_id`, `idempotency_key`); `state_json` не участвует в runtime read/write.
      Запись: `upsertRow(client,"external_event",["id"],{...spec.serialize(e), workspace_id, public_id})`;
      delete: `delete ... where public_id = any($ids)`. Конструктор `(Queryable, workspaceId)`.
    - Инъекция: в `openReadSession` (≈1011) `snapshot.app.externalEvents = new PostgresExternalEventStore(this.pool, scope)`;
@@ -267,6 +267,12 @@ Generic runtime repo больше не имеет fallback `select state_json`/`
 `state_json` на время backfill старых payload-колонок и затем всегда дропают их. Новый PG-тест проверяет реальную
 схему через `information_schema`: после `PostgresRuntimeStore.init()` + `runMigrations()` нет ни одной
 `state_json`-колонки. Проверка: `npm run build`, `npm test`, `npm run test:postgres` зелёные.
+
+### ✅ Legacy full-snapshot/entity-store importer удалён
+Runtime больше не читает `accounting_runtime_snapshot`, `accounting_runtime_entity` и
+`accounting_runtime_channel_credential`; `exportRuntimeEntities` удалён. Если нормализованных строк ещё нет,
+Postgres runtime создаёт только metadata и ждёт обычный `/api/setup`, а не пытается восстановить старый
+всесущий snapshot. Тест prod-readiness теперь проверяет durable rows через `/api/collections/:name`.
 
 ### ✅ Backend reports/ledger API сняты с `AccountingApp.reports()`
 `/api/reports*` и `/api/ledger` в Postgres-runtime теперь читают typed Postgres read-model напрямую:

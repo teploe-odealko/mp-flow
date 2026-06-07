@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { createApi } from "../../src/backend/app";
 import { AccountingApp } from "../../src/core/accounting-app";
 import { resetIds } from "../../src/core/utils";
-import { exportRuntimeEntities } from "../../src/infra/db/runtime-store";
 
 async function request<T>(api: ReturnType<typeof createApi>, method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
   const response = await api.request(path, {
@@ -270,7 +269,7 @@ describe("prod-ready contracts", () => {
     expect(restored.credentialsForChannel(channel.id)).toEqual({ clientId: "client", apiKey: "key" });
   });
 
-  it("exports durable database rows by collection and keeps secrets out of entity data", async () => {
+  it("exposes durable collection rows and keeps secrets out of public data", async () => {
     resetIds();
     const app = new AccountingApp();
     const api = createApi(app);
@@ -285,12 +284,15 @@ describe("prod-ready contracts", () => {
     const channel = await app.createSalesChannel({ name: "Ozon DB", channelType: "marketplace", pluginCode: "ozon" });
     await app.saveChannelCredentials(channel.id, { clientId: "client-secret", apiKey: "api-secret" });
 
-    const rows = exportRuntimeEntities(app.state);
+    const products = await get<any[]>(api, "/api/collections/products");
+    const stockStates = await get<any[]>(api, "/api/collections/stockStates");
+    const channels = await get<any[]>(api, "/api/collections/salesChannels");
+    const organization = await get<any>(api, "/api/collections/organization");
 
-    expect(rows.some((row) => row.collection === "products" && row.entityId === product.id)).toBe(true);
-    expect(rows.some((row) => row.collection === "stockStates" && row.entityId === `${product.id}:${warehouse?.id}:sellable`)).toBe(true);
-    expect(rows.some((row) => row.collection === "salesChannels" && row.entityId === channel.id)).toBe(true);
-    expect(rows.map((row) => row.collection)).not.toContain("organization");
-    expect(JSON.stringify(rows)).not.toContain("api-secret");
+    expect(products.some((row) => row.id === product.id)).toBe(true);
+    expect(stockStates.some((row) => row.productId === product.id && row.warehouseId === warehouse?.id && (row.stateCode ?? "sellable") === "sellable")).toBe(true);
+    expect(channels.some((row) => row.id === channel.id)).toBe(true);
+    expect(organization.displayName).toBe("Entity Store");
+    expect(JSON.stringify({ products, stockStates, channels, organization })).not.toContain("api-secret");
   });
 });
