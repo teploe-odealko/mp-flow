@@ -322,6 +322,7 @@ export class AccountingApp {
     this.accountingPolicy = accountingPolicy;
     this.state.organization = organization;
     this.state.accountingPolicy = accountingPolicy;
+    await this.repos.saveSingletons?.({ organization, accountingPolicy });
     for (const period of monthPeriods(organization.id, input.accountingStartDate, 24)) {
       await this.repos.periods.add(period);
     }

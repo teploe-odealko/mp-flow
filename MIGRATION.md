@@ -36,12 +36,13 @@
    искать по state); вызвать `flushPendingExternalEventUpdates()` в сессии перед commit (см. п.4).
 3. **Postgres-флип (точный рецепт):**
    - `PostgresExternalEventStore implements ExternalEventStore` в `runtime-store.ts` (там entityUuid +
-     external_event TableSpec.serialize + hydrateEntity). Чтение: `select state_json ...` (как
-     `ExternalEventRepository`). Запись: `upsertRow(client,"external_event",["id"],{...spec.serialize(e),
-     workspace_id})`; delete: `delete ... where state_json->>'id' = any($ids)`. Конструктор `(Queryable, workspaceId)`.
+     external_event TableSpec.serialize + hydrateEntity). Lookup: typed/public columns
+     (`public_id`, `channel_id`, `external_id`, `idempotency_key`); `state_json` пока только hydrate payload.
+     Запись: `upsertRow(client,"external_event",["id"],{...spec.serialize(e), workspace_id, public_id})`;
+     delete: `delete ... where public_id = any($ids)`. Конструктор `(Queryable, workspaceId)`.
    - Инъекция: в `openReadSession` (≈1011) `snapshot.app.externalEvents = new PostgresExternalEventStore(this.pool, scope)`;
      в `openWriteSession` (≈1027) — с `client`. 
-   - В `finalize("commit")` (≈1034) ПЕРЕД `saveState`: `await app.flushPendingExternalEventUpdates()`.
+   - В `finalize("commit")` — перед commit: `await app.flushPendingExternalEventUpdates()`.
    - Добавить `"externalEvents"` в `SNAPSHOT_APPEND_ONLY` → loadSnapshot не грузит, saveState не
      удаляет; upsert-цикл no-op (state.externalEvents пуст). Стор владеет таблицей целиком.
    - PG-тест: после write событие в таблице, но `openReadSession().app.state.externalEvents == []`;
@@ -157,7 +158,19 @@ Postgres repositories (`openPostgresReadModelApp`) и не вызывают `loa
 глобальный `WRITE_LOCK_SQL`: write-session держит обычную транзакцию, а доменные коллекции пишутся
 через repositories во время операции; commit сохраняет только singleton metadata, credentials/secrets
 и id meta. Legacy snapshot/entity-store остаётся только одноразовым importer'ом при миграции старой БД.
-Оставшийся большой слой: `state_json` всё ещё является payload-колонкой для generic repository hydrate/serialize.
+
+### ✅ Public lookup layer для отказа от JSON-expression ключей
+Добавлен `public_id` во все runtime-таблицы с backfill из legacy `state_json` (`id`/`code`, для `stock_state`
+композит `productId:warehouseId`) и индексом `(workspace_id, public_id)`. `getById`/`removeById`,
+credentials join, `ExternalEventRepository`, `AuditEventRepository`, `PostgresExternalEventStore`,
+`PostgresObservedStockStore`, `PostgresSyncRunStore` и PG-тесты больше не ищут сущности через
+`state_json->>'id'`/`channelId`/`entityId`; lookup идёт по `public_id` и typed FK-колонкам.
+Для событий добавлены typed columns `idempotency_key`, `sync_run_id`, `external_product_id`, `product_id`,
+`reason`; дедупликация событий теперь не требует JSON-expression. В bootstrap добавлен `repos.saveSingletons`
+для `organization/accountingPolicy`, чтобы FK-зависимые коллекции писались в Postgres без временного snapshot.
+Оставшийся большой слой: `state_json` всё ещё является payload-колонкой для generic repository hydrate/serialize
+и backfill-источником в миграциях. Следующий этап — typed hydrators/serializers, после чего `state_json`
+можно удалить из схемы и read-model.
 
 ### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
 Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/

@@ -2347,7 +2347,7 @@ async function collectionPayload(
   if (name === "observedStocks") return await app.observedStocks.list();
   if (name === "syncRuns") return await app.syncRuns.listAll();
 
-  const repo = (app.repos as Record<string, { all(): Promise<unknown[]> } | undefined>)[name];
+  const repo = (app.repos as unknown as Record<string, { all(): Promise<unknown[]> } | undefined>)[name];
   if (!repo) throw new DomainError("collection_not_found", `Неизвестная коллекция: ${name}`);
   const items = await repo.all();
   return sanitizeCollectionPayload(name, items);

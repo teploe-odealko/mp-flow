@@ -406,7 +406,7 @@ create table if not exists external_product (id uuid primary key default gen_ran
 create table if not exists product_external_link (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), product_id uuid not null references product(id), external_product_id uuid not null references external_product(id), channel_id uuid not null references sales_channel(id), status text not null);
 create table if not exists sync_run (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), channel_id uuid not null references sales_channel(id), status text not null, started_at timestamptz not null, finished_at timestamptz, stats jsonb not null default '{}');
 create table if not exists sync_stream_run (id uuid primary key default gen_random_uuid(), sync_run_id uuid not null references sync_run(id), stream_code text not null, status text not null, stats jsonb not null default '{}');
-create table if not exists external_event (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), channel_id uuid not null references sales_channel(id), event_type text not null, external_id text not null, occurred_at timestamptz not null, raw_payload jsonb not null, normalized_payload jsonb not null, status text not null, materialized_document_id uuid references document(id), unique (channel_id, external_id));
+create table if not exists external_event (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), channel_id uuid not null references sales_channel(id), sync_run_id uuid references sync_run(id), event_type text not null, external_id text not null, idempotency_key text, occurred_at timestamptz not null, raw_payload jsonb not null, normalized_payload jsonb not null, status text not null, materialized_document_id uuid references document(id), external_product_id uuid references external_product(id), product_id uuid references product(id), reason text, unique (channel_id, external_id));
 create table if not exists observed_stock (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), channel_id uuid not null references sales_channel(id), external_product_id uuid not null references external_product(id), product_id uuid references product(id), warehouse_id uuid references warehouse(id), observed_at timestamptz not null, qty_observed numeric(18,4) not null, location_status text not null);
 create table if not exists sale (id uuid primary key default gen_random_uuid(), organization_id uuid not null references organization(id), document_id uuid not null references document(id), channel_id uuid not null references sales_channel(id), sale_date date not null, external_event_id uuid references external_event(id), gross_amount_rub numeric(18,2) not null, status text not null);
 create table if not exists sale_line (id uuid primary key default gen_random_uuid(), sale_id uuid not null references sale(id), product_id uuid not null references product(id), qty numeric(18,4) not null, price_rub numeric(18,2) not null, revenue_rub numeric(18,2) not null, cost_rub numeric(18,2) not null);
@@ -455,6 +455,11 @@ alter table channel_credential add column if not exists encrypted_credentials js
 alter table channel_credential add column if not exists fields text[] not null default '{}';
 alter table channel_credential add column if not exists created_at timestamptz not null default now();
 alter table channel_credential add column if not exists updated_at timestamptz not null default now();
+alter table external_event add column if not exists sync_run_id uuid;
+alter table external_event add column if not exists idempotency_key text;
+alter table external_event add column if not exists external_product_id uuid;
+alter table external_event add column if not exists product_id uuid;
+alter table external_event add column if not exists reason text;
 alter table procurement_cost add column if not exists allocation_basis text;
 alter table procurement_cost_line add column if not exists lot_id uuid references inventory_lot(id);
 alter table procurement_cost_line add column if not exists warehouse_id uuid references warehouse(id);
@@ -486,6 +491,7 @@ alter table journal_entry add column if not exists state_json jsonb not null def
 alter table journal_line add column if not exists state_json jsonb not null default '{}'::jsonb;
 alter table counterparty add column if not exists state_json jsonb not null default '{}'::jsonb;
 alter table product add column if not exists state_json jsonb not null default '{}'::jsonb;
+alter table product_asset add column if not exists state_json jsonb not null default '{}'::jsonb;
 alter table warehouse add column if not exists state_json jsonb not null default '{}'::jsonb;
 alter table stock_state add column if not exists state_json jsonb not null default '{}'::jsonb;
 alter table inventory_lot add column if not exists state_json jsonb not null default '{}'::jsonb;
@@ -506,6 +512,7 @@ alter table shortage_resolution_line add column if not exists state_json jsonb n
 alter table supplier_claim add column if not exists state_json jsonb not null default '{}'::jsonb;
 alter table stock_transfer add column if not exists state_json jsonb not null default '{}'::jsonb;
 alter table stock_transfer_line add column if not exists state_json jsonb not null default '{}'::jsonb;
+alter table plugin_state_record add column if not exists state_json jsonb not null default '{}'::jsonb;
 alter table integration_plugin add column if not exists state_json jsonb not null default '{}'::jsonb;
 alter table sales_channel add column if not exists state_json jsonb not null default '{}'::jsonb;
 alter table external_product add column if not exists state_json jsonb not null default '{}'::jsonb;
@@ -533,6 +540,52 @@ alter table user_account add column if not exists state_json jsonb not null defa
 alter table role add column if not exists state_json jsonb not null default '{}'::jsonb;
 alter table agent_token add column if not exists state_json jsonb not null default '{}'::jsonb;
 alter table channel_agent_permission add column if not exists state_json jsonb not null default '{}'::jsonb;
+
+update external_event
+  set idempotency_key = coalesce(nullif(state_json->>'idempotencyKey', ''), external_id)
+  where idempotency_key is null;
+
+do $$
+declare
+  target_table text;
+begin
+  foreach target_table in array array[
+    'organization','accounting_policy','accounting_period','chart_account',
+    'document_type_registry','document','document_line','document_version',
+    'document_link','audit_event','journal_entry','journal_line','counterparty',
+    'product','product_asset','warehouse','stock_state','inventory_lot',
+    'stock_movement','cost_application','purchase_order','purchase_order_line',
+    'cash_account','payment','payment_allocation','settlement_entry','goods_receipt',
+    'goods_receipt_line','procurement_cost','procurement_cost_line',
+    'shortage_resolution','shortage_resolution_line','supplier_claim',
+    'stock_transfer','stock_transfer_line','plugin_state_record','integration_plugin',
+    'sales_channel','external_product','product_external_link','sync_run',
+    'external_event','observed_stock','sale','sale_line','sales_return',
+    'channel_finance_event','payout','payout_line','expense_category',
+    'operating_expense','owner_transaction','stocktake','stocktake_line',
+    'correction_case','recalculation_job','report_snapshot','backfill_project',
+    'backfill_item','user_account','role','agent_token','channel_agent_permission'
+  ]
+  loop
+    execute format('alter table %I add column if not exists public_id text', target_table);
+    if target_table = 'stock_state' then
+      execute format($fmt$
+        update %I
+          set public_id = concat(state_json->>'productId', ':', state_json->>'warehouseId')
+          where public_id is null
+            and nullif(state_json->>'productId', '') is not null
+            and nullif(state_json->>'warehouseId', '') is not null
+      $fmt$, target_table);
+    else
+      execute format($fmt$
+        update %I
+          set public_id = coalesce(nullif(state_json->>'id', ''), nullif(state_json->>'code', ''))
+          where public_id is null
+            and coalesce(nullif(state_json->>'id', ''), nullif(state_json->>'code', '')) is not null
+      $fmt$, target_table);
+    end if;
+  end loop;
+end $$;
 
 create index if not exists document_org_date_idx on document (organization_id, accounting_date);
 create index if not exists journal_entry_document_idx on journal_entry (document_id);

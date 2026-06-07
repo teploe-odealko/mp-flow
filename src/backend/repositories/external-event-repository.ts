@@ -1,4 +1,5 @@
 import type { ExternalEvent } from "../../core/models";
+import { stableUuid } from "../../infra/db/ids";
 import type { Queryable } from "../db/transaction";
 
 export interface ExternalEventListFilter {
@@ -16,19 +17,18 @@ export interface ExternalEventCountFilter {
 
 /**
  * Классический репозиторий для external_event: читает поток событий маркетплейса
- * напрямую из таблицы, не загружая его в общий snapshot. Источник истины — state_json
- * (как и в snapshot-гидрации), поэтому совместим с уже записанными строками.
+ * напрямую из таблицы, не загружая его в общий snapshot. Lookup идёт по typed/public
+ * колонкам; state_json пока используется только как совместимый hydrate payload.
  *
  * Конструируется на запрос с Queryable (пул для чтения или client транзакции для записи)
- * и workspaceId. Запись добавим вместе с выносом таблицы из snapshot (нельзя, чтобы
- * snapshot и репозиторий писали в одну таблицу одновременно).
+ * и workspaceId.
  */
 export class ExternalEventRepository {
   constructor(private readonly q: Queryable, private readonly workspaceId: string) {}
 
   async getById(id: string): Promise<ExternalEvent | undefined> {
     const result = await this.q.query<{ state_json: ExternalEvent }>(
-      "select state_json from external_event where workspace_id = $1 and state_json->>'id' = $2 limit 1",
+      "select state_json from external_event where workspace_id = $1 and public_id = $2 limit 1",
       [this.workspaceId, id]
     );
     return result.rows[0]?.state_json;
@@ -37,9 +37,9 @@ export class ExternalEventRepository {
   async findByExternalId(channelId: string, externalId: string): Promise<ExternalEvent | undefined> {
     const result = await this.q.query<{ state_json: ExternalEvent }>(
       `select state_json from external_event
-       where workspace_id = $1 and state_json->>'channelId' = $2 and external_id = $3
+       where workspace_id = $1 and channel_id = $2 and external_id = $3
        limit 1`,
-      [this.workspaceId, channelId, externalId]
+      [this.workspaceId, stableUuid(channelId), externalId]
     );
     return result.rows[0]?.state_json;
   }
@@ -48,8 +48,8 @@ export class ExternalEventRepository {
     const conditions = ["workspace_id = $1"];
     const params: unknown[] = [this.workspaceId];
     if (filter.channelId) {
-      params.push(filter.channelId);
-      conditions.push(`state_json->>'channelId' = $${params.length}`);
+      params.push(stableUuid(filter.channelId));
+      conditions.push(`channel_id = $${params.length}`);
     }
     if (filter.status) {
       params.push(filter.status);
@@ -76,8 +76,8 @@ export class ExternalEventRepository {
     const conditions = ["workspace_id = $1"];
     const params: unknown[] = [this.workspaceId];
     if (filter.channelId) {
-      params.push(filter.channelId);
-      conditions.push(`state_json->>'channelId' = $${params.length}`);
+      params.push(stableUuid(filter.channelId));
+      conditions.push(`channel_id = $${params.length}`);
     }
     if (filter.status) {
       params.push(filter.status);

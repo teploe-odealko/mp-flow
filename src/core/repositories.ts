@@ -76,6 +76,8 @@ type ArrayCollections = {
 
 export type Repositories = {
   [K in keyof ArrayCollections]: CollectionRepo<ArrayCollections[K]>;
+} & {
+  saveSingletons?(singletons: Pick<AccountingState, "organization" | "accountingPolicy">): Promise<void>;
 };
 
 /**

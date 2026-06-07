@@ -8,6 +8,7 @@ import type { ObservedStockStore, ObservedStockListFilter } from "../../core/obs
 import type { SyncRunStore } from "../../core/sync-run-store";
 import type { CollectionRepo, Repositories } from "../../core/repositories";
 import { createEmptyState, currentIdSequence, restoreIdSequence } from "../../core/utils";
+import { stableUuid } from "./ids";
 
 export interface RuntimeSession {
   app: AccountingApp;
@@ -211,6 +212,14 @@ const SCHEMA_ALTERS = `
   alter table channel_credential add column if not exists fields text[] not null default '{}';
   alter table channel_credential add column if not exists created_at timestamptz not null default now();
   alter table channel_credential add column if not exists updated_at timestamptz not null default now();
+  alter table external_event add column if not exists sync_run_id uuid;
+  alter table external_event add column if not exists idempotency_key text;
+  alter table external_event add column if not exists external_product_id uuid;
+  alter table external_event add column if not exists product_id uuid;
+  alter table external_event add column if not exists reason text;
+  update external_event
+    set idempotency_key = coalesce(nullif(state_json->>'idempotencyKey', ''), external_id)
+    where idempotency_key is null;
   alter table plugin_secret_record add column if not exists created_at timestamptz not null default now();
   alter table plugin_secret_record add column if not exists updated_at timestamptz not null default now();
   alter table procurement_cost add column if not exists allocation_basis text;
@@ -235,6 +244,28 @@ const SCHEMA_ALTERS = `
 const STATE_JSON_ALTERS = STATE_JSON_TABLES
   .map((table) => `alter table ${table} add column if not exists state_json jsonb not null default '{}'::jsonb;`)
   .join("\n");
+
+const PUBLIC_ID_ALTERS = STATE_JSON_TABLES
+  .map((table) => `
+    alter table ${table} add column if not exists public_id text;
+    update ${table}
+      set public_id = ${publicIdBackfillExpression(table)}
+      where public_id is null and ${publicIdBackfillExpression(table)} is not null;
+    create index if not exists ${table}_workspace_public_id_idx on ${table}(workspace_id, public_id);
+  `)
+  .join("\n");
+
+function publicIdBackfillExpression(table: typeof STATE_JSON_TABLES[number]) {
+  if (table === "stock_state") {
+    return `
+        case
+          when nullif(state_json->>'productId', '') is not null and nullif(state_json->>'warehouseId', '') is not null
+          then concat(state_json->>'productId', ':', state_json->>'warehouseId')
+        end
+      `;
+  }
+  return "coalesce(nullif(state_json->>'id', ''), nullif(state_json->>'code', ''))";
+}
 
 const WORKSPACE_ALTERS = [
   ...STATE_JSON_TABLES.map((table) => `
@@ -708,13 +739,18 @@ const TABLES: TableSpec[] = [
     id: entityUuid(requiredString(entity.id, "externalEvents.id")),
     organization_id: entityUuid(requiredString(entity.organizationId, "externalEvents.organizationId")),
     channel_id: entityUuid(requiredString(entity.channelId, "externalEvents.channelId")),
+    sync_run_id: optionalUuid(entity.syncRunId),
     event_type: requiredString(entity.eventType, "externalEvents.eventType"),
     external_id: requiredString(entity.externalId, "externalEvents.externalId"),
+    idempotency_key: requiredString(entity.idempotencyKey ?? entity.externalId, "externalEvents.idempotencyKey"),
     occurred_at: requiredString(entity.occurredAt, "externalEvents.occurredAt"),
     raw_payload: entity.rawPayload ?? {},
     normalized_payload: entity.normalizedPayload ?? {},
     status: requiredString(entity.status, "externalEvents.status"),
     materialized_document_id: optionalUuid(entity.materializedDocumentId),
+    external_product_id: optionalUuid(entity.externalProductId),
+    product_id: optionalUuid(entity.productId),
+    reason: optionalString(entity.reason),
     state_json: entity
   }), "occurred_at, id"),
   spec("observedStocks", "observed_stock", ["id"], (entity) => ({
@@ -1062,6 +1098,7 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     await this.pool.query(SCHEMA_ALTERS);
     await this.pool.query(STATE_JSON_ALTERS);
     await this.pool.query(WORKSPACE_ALTERS);
+    await this.pool.query(PUBLIC_ID_ALTERS);
     await this.migrateLegacyState();
   }
 
@@ -1111,8 +1148,8 @@ export class PostgresRuntimeStore implements RuntimePersistence {
   }
 
   private async saveAppSideEffects(client: PoolClient, workspaceId: string, app: AccountingApp) {
-    await this.saveSingleton(client, workspaceId, "organization", app.state.organization as unknown as RuntimeEntity | undefined);
-    await this.saveSingleton(client, workspaceId, "accounting_policy", app.state.accountingPolicy as unknown as RuntimeEntity | undefined);
+    await saveRuntimeSingleton(client, workspaceId, "organization", app.state.organization as unknown as RuntimeEntity | undefined);
+    await saveRuntimeSingleton(client, workspaceId, "accounting_policy", app.state.accountingPolicy as unknown as RuntimeEntity | undefined);
     await this.saveChannelCredentials(client, workspaceId, app.exportChannelCredentials());
     await this.savePluginSecrets(client, workspaceId, app.state.organization?.id, app.exportPluginSecrets());
     await this.saveMeta(client, currentIdSequence());
@@ -1125,13 +1162,14 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     credentials: ChannelCredentials,
     nextId: number
   ) {
-    await this.saveSingleton(client, workspaceId, "organization", state.organization as unknown as RuntimeEntity | undefined);
-    await this.saveSingleton(client, workspaceId, "accounting_policy", state.accountingPolicy as unknown as RuntimeEntity | undefined);
+    await saveRuntimeSingleton(client, workspaceId, "organization", state.organization as unknown as RuntimeEntity | undefined);
+    await saveRuntimeSingleton(client, workspaceId, "accounting_policy", state.accountingPolicy as unknown as RuntimeEntity | undefined);
     for (const table of TABLES) {
       for (const entity of collectionEntities(state, table.collection)) {
         const row = {
           ...table.serialize(entity),
-          workspace_id: workspaceIdForTable(table, workspaceId)
+          workspace_id: workspaceIdForTable(table, workspaceId),
+          public_id: entityId(table.collection, entity)
         };
         await upsertRow(client, table.table, table.keyColumns, row);
       }
@@ -1139,43 +1177,6 @@ export class PostgresRuntimeStore implements RuntimePersistence {
     await this.saveChannelCredentials(client, workspaceId, credentials);
     await this.savePluginSecrets(client, workspaceId, state.organization?.id, {});
     await this.saveMeta(client, nextId);
-  }
-
-  private async saveSingleton(client: PoolClient, workspaceId: string, table: "organization" | "accounting_policy", entity: RuntimeEntity | undefined) {
-    if (!entity) {
-      await client.query(`delete from ${table} where workspace_id = $1`, [workspaceId]);
-      return;
-    }
-
-    const row = table === "organization"
-      ? {
-          id: entityUuid(requiredString(entity.id, "organization.id")),
-          display_name: requiredString(entity.displayName, "organization.displayName"),
-          legal_form: requiredString(entity.legalForm, "organization.legalForm"),
-          timezone: requiredString(entity.timezone, "organization.timezone"),
-          tax_mode: requiredString(entity.taxMode, "organization.taxMode"),
-          created_at: requiredString(entity.createdAt, "organization.createdAt"),
-          workspace_id: workspaceId,
-          state_json: entity
-        }
-      : {
-          id: entityUuid(requiredString(entity.id, "accountingPolicy.id")),
-          organization_id: entityUuid(requiredString(entity.organizationId, "accountingPolicy.organizationId")),
-          accounting_start_date: requiredString(entity.accountingStartDate, "accountingPolicy.accountingStartDate"),
-          cost_method: requiredString(entity.costMethod, "accountingPolicy.costMethod"),
-          accounting_currency: requiredString(entity.accountingCurrency, "accountingPolicy.accountingCurrency"),
-          workspace_id: workspaceId,
-          state_json: entity
-        };
-
-    await upsertRow(client, table, ["id"], row);
-    const result = await client.query<{ id: string }>(`select id from ${table} where workspace_id = $1`, [workspaceId]);
-    const currentIds = new Set([String(row.id)]);
-    for (const candidate of result.rows) {
-      if (!currentIds.has(candidate.id)) {
-        await client.query(`delete from ${table} where id = $1 and workspace_id = $2`, [candidate.id, workspaceId]);
-      }
-    }
   }
 
   private async saveMeta(client: PoolClient, nextId: number) {
@@ -1200,7 +1201,7 @@ export class PostgresRuntimeStore implements RuntimePersistence {
       encrypted_credentials: unknown;
     }>(`
       select
-        sales_channel.state_json->>'id' as public_channel_id,
+        sales_channel.public_id as public_channel_id,
         channel_credential.encrypted_credentials
       from channel_credential
       join sales_channel on sales_channel.id = channel_credential.channel_id
@@ -1498,7 +1499,7 @@ const externalEventTableSpec = TABLES.find((table) => table.collection === "exte
 
 /**
  * Postgres-реализация ExternalEventStore: события живут в таблице external_event, а НЕ в snapshot.
- * Чтение — по state_json (источник истины); запись — через тот же spec-сериализатор, что и snapshot.
+ * Чтение пока hydrate'ит entity payload, но lookup уже идёт по typed/public columns.
  * Инжектится в сессию (read: pool, write: транзакционный client), чтобы app не грузил общий snapshot.
  */
 export class PostgresExternalEventStore implements ExternalEventStore {
@@ -1506,7 +1507,7 @@ export class PostgresExternalEventStore implements ExternalEventStore {
 
   async getById(id: ID): Promise<ExternalEvent | undefined> {
     const result = await this.q.query<{ state_json: ExternalEvent }>(
-      "select state_json from external_event where workspace_id = $1 and state_json->>'id' = $2 limit 1",
+      "select state_json from external_event where workspace_id = $1 and public_id = $2 limit 1",
       [this.workspaceId, id]
     );
     return result.rows[0]?.state_json;
@@ -1515,11 +1516,11 @@ export class PostgresExternalEventStore implements ExternalEventStore {
   async findByIdentity(channelId: ID, externalId: string, idempotencyKey?: string): Promise<ExternalEvent | undefined> {
     const result = await this.q.query<{ state_json: ExternalEvent }>(
       `select state_json from external_event
-       where workspace_id = $1 and state_json->>'channelId' = $2
-         and (external_id = $3 or state_json->>'idempotencyKey' = $4)
-       order by (state_json->>'idempotencyKey' = $4) desc
+       where workspace_id = $1 and channel_id = $2
+         and (external_id = $3 or idempotency_key = $4)
+       order by (idempotency_key = $4) desc
        limit 1`,
-      [this.workspaceId, channelId, externalId, idempotencyKey ?? externalId]
+      [this.workspaceId, entityUuid(channelId), externalId, idempotencyKey ?? externalId]
     );
     return result.rows[0]?.state_json;
   }
@@ -1528,8 +1529,8 @@ export class PostgresExternalEventStore implements ExternalEventStore {
     const conditions = ["workspace_id = $1"];
     const params: unknown[] = [this.workspaceId];
     if (filter.channelId) {
-      params.push(filter.channelId);
-      conditions.push(`state_json->>'channelId' = $${params.length}`);
+      params.push(entityUuid(filter.channelId));
+      conditions.push(`channel_id = $${params.length}`);
     }
     if (filter.status) {
       params.push(filter.status);
@@ -1550,8 +1551,8 @@ export class PostgresExternalEventStore implements ExternalEventStore {
     const conditions = ["workspace_id = $1"];
     const params: unknown[] = [this.workspaceId];
     if (filter.channelId) {
-      params.push(filter.channelId);
-      conditions.push(`state_json->>'channelId' = $${params.length}`);
+      params.push(entityUuid(filter.channelId));
+      conditions.push(`channel_id = $${params.length}`);
     }
     if (filter.status) {
       params.push(filter.status);
@@ -1565,7 +1566,7 @@ export class PostgresExternalEventStore implements ExternalEventStore {
   }
 
   async upsert(event: ExternalEvent): Promise<void> {
-    const row = { ...externalEventTableSpec.serialize(event as unknown as RuntimeEntity), workspace_id: this.workspaceId } as RowRecord;
+    const row = { ...externalEventTableSpec.serialize(event as unknown as RuntimeEntity), workspace_id: this.workspaceId, public_id: event.id } as RowRecord;
     const columns = Object.keys(row);
     const placeholders = columns.map((_, index) => `$${index + 1}`).join(", ");
     const updates = columns.filter((column) => column !== "id").map((column) => `${column} = excluded.${column}`).join(", ");
@@ -1577,7 +1578,7 @@ export class PostgresExternalEventStore implements ExternalEventStore {
 
   async deleteByIds(ids: ID[]): Promise<void> {
     if (ids.length === 0) return;
-    await this.q.query("delete from external_event where workspace_id = $1 and state_json->>'id' = any($2)", [this.workspaceId, ids]);
+    await this.q.query("delete from external_event where workspace_id = $1 and public_id = any($2::text[])", [this.workspaceId, ids]);
   }
 }
 
@@ -1589,7 +1590,7 @@ export class PostgresObservedStockStore implements ObservedStockStore {
 
   async getById(id: ID): Promise<ObservedStock | undefined> {
     const result = await this.q.query<{ state_json: ObservedStock }>(
-      "select state_json from observed_stock where workspace_id = $1 and state_json->>'id' = $2 limit 1",
+      "select state_json from observed_stock where workspace_id = $1 and public_id = $2 limit 1",
       [this.workspaceId, id]
     );
     return result.rows[0]?.state_json;
@@ -1598,10 +1599,10 @@ export class PostgresObservedStockStore implements ObservedStockStore {
   async findByKey(channelId: ID, externalProductId: ID, warehouseId: ID | undefined, observedAt: string): Promise<ObservedStock | undefined> {
     const result = await this.q.query<{ state_json: ObservedStock }>(
       `select state_json from observed_stock
-       where workspace_id = $1 and state_json->>'channelId' = $2 and state_json->>'externalProductId' = $3
-         and state_json->>'observedAt' = $4 and (state_json->>'warehouseId') is not distinct from $5
+       where workspace_id = $1 and channel_id = $2 and external_product_id = $3
+         and observed_at = $4 and warehouse_id is not distinct from $5
        limit 1`,
-      [this.workspaceId, channelId, externalProductId, observedAt, warehouseId ?? null]
+      [this.workspaceId, entityUuid(channelId), entityUuid(externalProductId), observedAt, warehouseId ? entityUuid(warehouseId) : null]
     );
     return result.rows[0]?.state_json;
   }
@@ -1610,12 +1611,12 @@ export class PostgresObservedStockStore implements ObservedStockStore {
     const conditions = ["workspace_id = $1"];
     const params: unknown[] = [this.workspaceId];
     if (filter.channelId) {
-      params.push(filter.channelId);
-      conditions.push(`state_json->>'channelId' = $${params.length}`);
+      params.push(entityUuid(filter.channelId));
+      conditions.push(`channel_id = $${params.length}`);
     }
     if (filter.externalProductId) {
-      params.push(filter.externalProductId);
-      conditions.push(`state_json->>'externalProductId' = $${params.length}`);
+      params.push(entityUuid(filter.externalProductId));
+      conditions.push(`external_product_id = $${params.length}`);
     }
     const result = await this.q.query<{ state_json: ObservedStock }>(
       `select state_json from observed_stock where ${conditions.join(" and ")} order by observed_at, id`,
@@ -1628,8 +1629,8 @@ export class PostgresObservedStockStore implements ObservedStockStore {
     const conditions = ["workspace_id = $1"];
     const params: unknown[] = [this.workspaceId];
     if (filter.channelId) {
-      params.push(filter.channelId);
-      conditions.push(`state_json->>'channelId' = $${params.length}`);
+      params.push(entityUuid(filter.channelId));
+      conditions.push(`channel_id = $${params.length}`);
     }
     const result = await this.q.query<{ count: string }>(
       `select count(*)::text as count from observed_stock where ${conditions.join(" and ")}`,
@@ -1639,7 +1640,7 @@ export class PostgresObservedStockStore implements ObservedStockStore {
   }
 
   async upsert(observed: ObservedStock): Promise<void> {
-    const row = { ...observedStockTableSpec.serialize(observed as unknown as RuntimeEntity), workspace_id: this.workspaceId } as RowRecord;
+    const row = { ...observedStockTableSpec.serialize(observed as unknown as RuntimeEntity), workspace_id: this.workspaceId, public_id: observed.id } as RowRecord;
     const columns = Object.keys(row);
     const placeholders = columns.map((_, index) => `$${index + 1}`).join(", ");
     const updates = columns.filter((column) => column !== "id").map((column) => `${column} = excluded.${column}`).join(", ");
@@ -1651,7 +1652,7 @@ export class PostgresObservedStockStore implements ObservedStockStore {
 
   async deleteByIds(ids: ID[]): Promise<void> {
     if (ids.length === 0) return;
-    await this.q.query("delete from observed_stock where workspace_id = $1 and state_json->>'id' = any($2)", [this.workspaceId, ids]);
+    await this.q.query("delete from observed_stock where workspace_id = $1 and public_id = any($2::text[])", [this.workspaceId, ids]);
   }
 }
 
@@ -1663,7 +1664,7 @@ export class PostgresSyncRunStore implements SyncRunStore {
 
   async getById(id: ID): Promise<SyncRun | undefined> {
     const result = await this.q.query<{ state_json: SyncRun }>(
-      "select state_json from sync_run where workspace_id = $1 and state_json->>'id' = $2 limit 1",
+      "select state_json from sync_run where workspace_id = $1 and public_id = $2 limit 1",
       [this.workspaceId, id]
     );
     return result.rows[0]?.state_json;
@@ -1679,14 +1680,14 @@ export class PostgresSyncRunStore implements SyncRunStore {
 
   async listByChannel(channelId: ID): Promise<SyncRun[]> {
     const result = await this.q.query<{ state_json: SyncRun }>(
-      "select state_json from sync_run where workspace_id = $1 and state_json->>'channelId' = $2 order by started_at, id",
-      [this.workspaceId, channelId]
+      "select state_json from sync_run where workspace_id = $1 and channel_id = $2 order by started_at, id",
+      [this.workspaceId, entityUuid(channelId)]
     );
     return result.rows.map((row) => row.state_json);
   }
 
   async upsert(run: SyncRun): Promise<void> {
-    const row = { ...syncRunTableSpec.serialize(run as unknown as RuntimeEntity), workspace_id: this.workspaceId } as RowRecord;
+    const row = { ...syncRunTableSpec.serialize(run as unknown as RuntimeEntity), workspace_id: this.workspaceId, public_id: run.id } as RowRecord;
     const columns = Object.keys(row);
     const placeholders = columns.map((_, index) => `$${index + 1}`).join(", ");
     const updates = columns.filter((column) => column !== "id").map((column) => `${column} = excluded.${column}`).join(", ");
@@ -1698,7 +1699,7 @@ export class PostgresSyncRunStore implements SyncRunStore {
 
   async deleteByIds(ids: ID[]): Promise<void> {
     if (ids.length === 0) return;
-    await this.q.query("delete from sync_run where workspace_id = $1 and state_json->>'id' = any($2)", [this.workspaceId, ids]);
+    await this.q.query("delete from sync_run where workspace_id = $1 and public_id = any($2::text[])", [this.workspaceId, ids]);
   }
 }
 
@@ -1752,6 +1753,10 @@ export function buildPostgresRuntimeRepositories(source: Queryable, workspaceId:
   for (const table of TABLES) {
     (repos as Record<string, unknown>)[table.collection] = new PostgresRuntimeCollectionRepo(source, scope, table);
   }
+  repos.saveSingletons = async (singletons) => {
+    await saveRuntimeSingleton(source, scope, "organization", singletons.organization as unknown as RuntimeEntity | undefined);
+    await saveRuntimeSingleton(source, scope, "accounting_policy", singletons.accountingPolicy as unknown as RuntimeEntity | undefined);
+  };
   return repos;
 }
 
@@ -1770,7 +1775,7 @@ class PostgresRuntimeCollectionRepo<T> implements CollectionRepo<T> {
   async getById(id: string): Promise<T | undefined> {
     const tableWorkspaceId = workspaceIdForTable(this.table, this.workspaceId);
     const result = await this.q.query<{ state_json: unknown }>(
-      `select state_json from ${this.table.table} where workspace_id = $1 and state_json->>'id' = $2 limit 1`,
+      `select state_json from ${this.table.table} where workspace_id = $1 and public_id = $2 limit 1`,
       [tableWorkspaceId, id]
     );
     return result.rows[0] ? hydrateEntity(result.rows[0].state_json) as T : undefined;
@@ -1784,7 +1789,8 @@ class PostgresRuntimeCollectionRepo<T> implements CollectionRepo<T> {
   async upsert(item: T): Promise<T> {
     const row = {
       ...this.table.serialize(item as unknown as RuntimeEntity),
-      workspace_id: workspaceIdForTable(this.table, this.workspaceId)
+      workspace_id: workspaceIdForTable(this.table, this.workspaceId),
+      public_id: entityId(this.table.collection, item as unknown as RuntimeEntity)
     };
     await upsertRow(this.q, this.table.table, this.table.keyColumns, row);
     return item;
@@ -1792,7 +1798,7 @@ class PostgresRuntimeCollectionRepo<T> implements CollectionRepo<T> {
 
   async removeById(id: string): Promise<void> {
     await this.q.query(
-      `delete from ${this.table.table} where workspace_id = $1 and state_json->>'id' = $2`,
+      `delete from ${this.table.table} where workspace_id = $1 and public_id = $2`,
       [workspaceIdForTable(this.table, this.workspaceId), id]
     );
   }
@@ -1817,6 +1823,45 @@ async function readRuntimeSingleton(source: Queryable, workspaceId: string, tabl
     [workspaceId]
   );
   return result.rows[0] ? hydrateEntity(result.rows[0].state_json) : undefined;
+}
+
+async function saveRuntimeSingleton(source: Queryable, workspaceId: string, table: "organization" | "accounting_policy", entity: RuntimeEntity | undefined) {
+  if (!entity) {
+    await source.query(`delete from ${table} where workspace_id = $1`, [workspaceId]);
+    return;
+  }
+
+  const row = table === "organization"
+    ? {
+        id: entityUuid(requiredString(entity.id, "organization.id")),
+        display_name: requiredString(entity.displayName, "organization.displayName"),
+        legal_form: requiredString(entity.legalForm, "organization.legalForm"),
+        timezone: requiredString(entity.timezone, "organization.timezone"),
+        tax_mode: requiredString(entity.taxMode, "organization.taxMode"),
+        created_at: requiredString(entity.createdAt, "organization.createdAt"),
+        workspace_id: workspaceId,
+        public_id: requiredString(entity.id, "organization.id"),
+        state_json: entity
+      }
+    : {
+        id: entityUuid(requiredString(entity.id, "accountingPolicy.id")),
+        organization_id: entityUuid(requiredString(entity.organizationId, "accountingPolicy.organizationId")),
+        accounting_start_date: requiredString(entity.accountingStartDate, "accountingPolicy.accountingStartDate"),
+        cost_method: requiredString(entity.costMethod, "accountingPolicy.costMethod"),
+        accounting_currency: requiredString(entity.accountingCurrency, "accountingPolicy.accountingCurrency"),
+        workspace_id: workspaceId,
+        public_id: requiredString(entity.id, "accountingPolicy.id"),
+        state_json: entity
+      };
+
+  await upsertRow(source, table, ["id"], row);
+  const result = await source.query<{ id: string }>(`select id from ${table} where workspace_id = $1`, [workspaceId]);
+  const currentIds = new Set([String(row.id)]);
+  for (const candidate of result.rows) {
+    if (!currentIds.has(candidate.id)) {
+      await source.query(`delete from ${table} where id = $1 and workspace_id = $2`, [candidate.id, workspaceId]);
+    }
+  }
 }
 
 function spec(collection: RuntimeCollectionName, table: string, keyColumns: string[], serialize: (entity: RuntimeEntity) => RowRecord, orderBy?: string): TableSpec {
@@ -1879,17 +1924,6 @@ function entityUuid(id: string) {
 
 function optionalUuid(value: unknown) {
   return typeof value === "string" && value.length > 0 ? stableUuid(value) : null;
-}
-
-function stableUuid(value: string) {
-  const normalized = `mpflow:${value}`;
-  const hex = createHash("sha1").update(normalized).digest("hex");
-  const part1 = hex.slice(0, 8);
-  const part2 = hex.slice(8, 12);
-  const part3 = `5${hex.slice(13, 16)}`;
-  const part4 = `a${hex.slice(17, 20)}`;
-  const part5 = hex.slice(20, 32);
-  return `${part1}-${part2}-${part3}-${part4}-${part5}`;
 }
 
 function normalizeWorkspaceId(workspaceId: string | undefined) {

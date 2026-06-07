@@ -60,14 +60,14 @@ describePostgres("postgres runtime store", () => {
     const inspectPool = new Pool({ connectionString: connectionString! });
     try {
       const products = await inspectPool.query<{ sku: string; public_id: string }>(
-        "select sku, state_json->>'id' as public_id from product order by sku"
+        "select sku, public_id from product order by sku"
       );
       const credentials = await inspectPool.query<{ encrypted_credentials: unknown; fields: string[] }>(
         `
           select cc.encrypted_credentials, cc.fields
           from channel_credential cc
           join sales_channel sc on sc.id = cc.channel_id
-          where sc.state_json->>'id' = $1
+          where sc.public_id = $1
         `,
         [channel.id]
       );
@@ -199,13 +199,17 @@ describePostgres("postgres runtime store", () => {
       const readB = await store.openReadSession?.("workspace_b");
       try {
         if (!readA || !readB) throw new Error("read_session_missing");
+        const productsA = await readA.app.repos.products.all();
+        const productsB = await readB.app.repos.products.all();
+        const documentTypesA = await readA.app.repos.documentTypes.all();
+        const documentTypesB = await readB.app.repos.documentTypes.all();
         expect(readA.app.state.organization?.displayName).toBe("Tenant A");
-        expect(readA.app.state.products.map((product) => product.sku)).toEqual(["A-001"]);
+        expect(productsA.map((product) => product.sku)).toEqual(["A-001"]);
         expect(readB.app.state.organization?.displayName).toBe("Tenant B");
-        expect(readB.app.state.products.map((product) => product.sku)).toEqual(["B-001"]);
-        expect(readA.app.state.documentTypes.length).toBeGreaterThan(0);
-        expect(readB.app.state.documentTypes.map((type) => type.code)).toEqual(readA.app.state.documentTypes.map((type) => type.code));
-        expect(new Set(readB.app.state.documentTypes.map((type) => type.code)).size).toBe(readB.app.state.documentTypes.length);
+        expect(productsB.map((product) => product.sku)).toEqual(["B-001"]);
+        expect(documentTypesA.length).toBeGreaterThan(0);
+        expect(documentTypesB.map((type) => type.code)).toEqual(documentTypesA.map((type) => type.code));
+        expect(new Set(documentTypesB.map((type) => type.code)).size).toBe(documentTypesB.length);
       } finally {
         await readA?.close?.();
         await readB?.close?.();
@@ -420,7 +424,7 @@ describePostgres("postgres runtime store", () => {
       const inspectPool = new Pool({ connectionString: connectionString! });
       try {
         const rows = await inspectPool.query<{ n: number }>(
-          "select count(*)::int as n from external_event where state_json->>'id' = $1",
+          "select count(*)::int as n from external_event where public_id = $1",
           [event.id]
         );
         expect(rows.rows[0]?.n).toBe(1);
