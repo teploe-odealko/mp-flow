@@ -88,6 +88,52 @@ describe("prod-ready contracts", () => {
     expect(app.channelCredentialStatus(channel.id).saved).toBe(true);
   });
 
+  it("writes channel create and update through runtime write contexts", async () => {
+    resetIds();
+    const app = new AccountingApp();
+    await app.setupDemo();
+    let writeContexts = 0;
+    let writeSessions = 0;
+    const api = createApi(app, {
+      persistence: {
+        async runWriteContext(_workspaceId, handler) {
+          writeContexts += 1;
+          return await handler({
+            repos: app.repos,
+            externalEvents: app.externalEvents,
+            observedStocks: app.observedStocks,
+            syncRuns: app.syncRuns,
+            setupMetadata: () => app.setupMetadata()
+          });
+        },
+        async openWriteSession() {
+          writeSessions += 1;
+          return { app, nextId: 1, commit: async () => undefined, rollback: async () => undefined, close: async () => undefined };
+        }
+      }
+    });
+
+    const manualChannel = await post<any>(api, "/api/channels", { name: "Ручной канал", channelType: "manual" });
+    const pluginChannel = await post<any>(api, "/api/integrations/channels", {
+      name: "Ozon runtime",
+      channelType: "marketplace",
+      pluginCode: "ozon"
+    });
+    const updatedPluginChannel = await patch<any>(api, `/api/integrations/channels/${pluginChannel.id}`, {
+      name: "Ozon runtime updated",
+      enabledStreams: ["products", "stocks"],
+      status: "disabled"
+    });
+    const linkedWarehouse = app.state.warehouses.find((warehouse) => warehouse.id === manualChannel.salesPointWarehouseId);
+
+    expect(manualChannel).toEqual(expect.objectContaining({ name: "Ручной канал", channelType: "manual", status: "active" }));
+    expect(linkedWarehouse).toEqual(expect.objectContaining({ warehouseType: "sales_point", channelId: manualChannel.id }));
+    expect(pluginChannel).toEqual(expect.objectContaining({ name: "Ozon runtime", status: "needs_setup" }));
+    expect(updatedPluginChannel).toEqual(expect.objectContaining({ id: pluginChannel.id, name: "Ozon runtime updated", enabledStreams: ["products", "stocks"], status: "disabled" }));
+    expect(writeContexts).toBe(3);
+    expect(writeSessions).toBe(0);
+  });
+
   it("persists after successful mutating requests and leaves reads untouched", async () => {
     resetIds();
     const app = new AccountingApp();

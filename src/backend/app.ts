@@ -21,6 +21,7 @@ import { getPool } from "./db/pool";
 import { ExternalEventRepository } from "./repositories/external-event-repository";
 import { disableUser, inviteUser, resendUserInvite, updateUserRole } from "./services/access-management-service";
 import { hashToken, issueMcpAgentToken, publicAgentToken, revokeAgentToken, setChannelAgentPermission } from "./services/agent-token-service";
+import { createSalesChannel, updateSalesChannel } from "./services/channel-service";
 import { ignoreExternalEvent, ingestExternalEvent, reprocessExternalEvent } from "./services/external-event-service";
 import { createExternalProduct, createInternalProductFromExternal, ignoreExternalProduct, linkExternalProduct, reprocessEventsForExternalProduct, unlinkExternalProduct } from "./services/external-product-service";
 import { ignoreObservedStock, recordObservedStock } from "./services/observed-stock-service";
@@ -1374,6 +1375,20 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => ignoreExternalEvent(writeContext, c.req.param("id"), body.reason)) });
   });
   api.get("/api/integrations/observed-stock", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).observedStocks.list() }));
+  api.post("/api/channels", async (c) => {
+    const body = channelSchema.parse(await c.req.json());
+    const channel = await writeContextFor(c, (writeContext) => createSalesChannel(writeContext, body));
+    return c.json({ ok: true, data: channel });
+  });
+  api.post("/api/integrations/channels", async (c) => {
+    const body = channelSchema.parse(await c.req.json());
+    const channel = await writeContextFor(c, (writeContext) => createSalesChannel(writeContext, body));
+    return c.json({ ok: true, data: channel });
+  });
+  api.patch("/api/integrations/channels/:id", async (c) => {
+    const body = channelPatchSchema.parse(await c.req.json());
+    return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => updateSalesChannel(writeContext, c.req.param("id"), body)) });
+  });
   api.post("/api/channels/:id/observed-stock", async (c) => {
     const body = observedStockSchema.parse(await c.req.json());
     return c.json({ ok: true, data: await writeContextFor(c, (writeContext) => recordObservedStock(writeContext, { ...body, channelId: c.req.param("id") })) });
@@ -2263,16 +2278,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const online = await plugin.checkAccess(body.credentials ?? {});
     return c.json({ ok: true, data: online });
   });
-  api.post("/api/channels", async (c) => {
-    const body = channelSchema.parse(await c.req.json());
-    const channel = await scopedApp.createSalesChannel(body);
-    return c.json({ ok: true, data: channel });
-  });
-  api.post("/api/integrations/channels", async (c) => {
-    const body = channelSchema.parse(await c.req.json());
-    const channel = await scopedApp.createSalesChannel(body);
-    return c.json({ ok: true, data: channel });
-  });
   api.delete("/api/integrations/channels/:id/credentials", async (c) => {
     const channel = await scopedApp.repos.salesChannels.getById(c.req.param("id"));
     if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
@@ -2309,10 +2314,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     }
     await scopedApp.repos.salesChannels.upsert(channel);
     return c.json({ ok: true, data: { ...saved, online: { ok: true } } });
-  });
-  api.patch("/api/integrations/channels/:id", async (c) => {
-    const body = channelPatchSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: await scopedApp.updateSalesChannel(c.req.param("id"), body) });
   });
   api.post("/api/integrations/channels/:id/check", async (c) => {
     const channel = await scopedApp.repos.salesChannels.getById(c.req.param("id"));

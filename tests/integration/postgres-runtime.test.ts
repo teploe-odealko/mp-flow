@@ -121,6 +121,15 @@ describePostgres("postgres runtime store", () => {
       channelType: "marketplace",
       pluginCode: "ozon"
     });
+    const serviceChannel = await request<any>(api, "POST", "/api/channels", {
+      name: "PG service channel",
+      channelType: "manual"
+    });
+    const serviceChannelUpdated = await request<any>(api, "PATCH", `/api/integrations/channels/${serviceChannel.id}`, {
+      name: "PG service channel updated",
+      enabledStreams: ["products", "stocks"],
+      status: "disabled"
+    });
     const previousAccessForToken = process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED;
     process.env.ACCOUNTING_ACCESS_MANAGEMENT_ENABLED = "true";
     let accessToken: any;
@@ -321,6 +330,28 @@ describePostgres("postgres runtime store", () => {
         "select job_type, status, progress::float8 as progress, scope from recalculation_job where public_id = $1",
         [serviceRecalculationJob.id]
       );
+      const serviceChannelRows = await inspectPool.query<{
+        name: string;
+        channel_type: string;
+        status: string;
+        enabled_streams: string[] | null;
+        warehouse_public_id: string | null;
+        warehouse_channel_public_id: string | null;
+      }>(
+        `
+          select sc.name,
+                 sc.channel_type,
+                 sc.status,
+                 sc.enabled_streams,
+                 wh.public_id as warehouse_public_id,
+                 wh_channel.public_id as warehouse_channel_public_id
+          from sales_channel sc
+          left join warehouse wh on wh.id = sc.sales_point_warehouse_id
+          left join sales_channel wh_channel on wh_channel.id = wh.channel_id
+          where sc.public_id = $1
+        `,
+        [serviceChannel.id]
+      );
       const reportRecalculationJobRows = await inspectPool.query<{ job_type: string; status: string; progress: number }>(
         "select job_type, status, progress::float8 as progress from recalculation_job where public_id = $1",
         [reportRecalculationJob.id]
@@ -387,6 +418,16 @@ describePostgres("postgres runtime store", () => {
       expect(serviceRecalculationJob).toEqual(expect.objectContaining({ jobType: "sales_profit", scope: { channelId: "all" }, status: "completed", progress: 100 }));
       expect(serviceRecalculationJobRetried).toEqual(expect.objectContaining({ id: serviceRecalculationJob.id, status: "completed", progress: 100 }));
       expect(serviceRecalculationJobRows.rows[0]).toEqual({ job_type: "sales_profit", status: "completed", progress: 100, scope: { channelId: "all" } });
+      expect(serviceChannel).toEqual(expect.objectContaining({ name: "PG service channel", channelType: "manual", status: "active" }));
+      expect(serviceChannelUpdated).toEqual(expect.objectContaining({ id: serviceChannel.id, name: "PG service channel updated", enabledStreams: ["products", "stocks"], status: "disabled" }));
+      expect(serviceChannelRows.rows[0]).toEqual({
+        name: "PG service channel updated",
+        channel_type: "manual",
+        status: "disabled",
+        enabled_streams: ["products", "stocks"],
+        warehouse_public_id: serviceChannel.salesPointWarehouseId,
+        warehouse_channel_public_id: serviceChannel.id
+      });
       expect(reportRecalculationJob).toEqual(expect.objectContaining({ jobType: "reports", status: "completed", progress: 100 }));
       expect(reportRecalculationJobRows.rows[0]).toEqual({ job_type: "reports", status: "completed", progress: 100 });
       expect(dashboard.configured).toBe(true);

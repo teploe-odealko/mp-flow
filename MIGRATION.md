@@ -53,8 +53,9 @@
 `recordObservedStock` через стор (async, await в плагинах/роуте); все endpoint/pipeline-чтения
 (reconciliation, ignore, observed-stock list, channel-count, onboarding-seed, sync baseline/telemetry)
 на стор; `PostgresObservedStockStore` инжектится в сессии; `observedStocks` в `SNAPSHOT_APPEND_ONLY`.
-Остаток-полиш — 2 доменные мутации (`updateChannel` смена sales-point склада; `refreshExternalReferencesForProduct`):
-читают пустой state в Postgres (edge; следующий sync перезаписывает остатки и чинит).
+Полиш по публичным API закрыт: `channel-service.updateSalesChannel` и
+`external-product-service.refreshExternalReferencesForProduct` обновляют остатки через typed store,
+а не через пустой state в Postgres-сессии.
 
 ### ✅ `syncRuns` ВЫНЕСЕН из снэпшота (4-я коллекция) — Этап 1 (append-only потоки) закрыт
 `SyncRunStore` порт + in-memory ([sync-run-store.ts](src/core/sync-run-store.ts)); жизненный цикл
@@ -254,6 +255,13 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
   товара переиспользует `product-service`, refresh linked observed/events идет через typed stores;
   prod-readiness фиксирует `writeSessions = 0`, Postgres runtime проверяет typed rows в
   `external_product`, `product_external_link`, `product`.
+- ✅ Channel create/update commands сняты с session middleware:
+  `/api/channels`, `/api/integrations/channels`, PATCH `/api/integrations/channels/:id`
+  обслуживаются `src/backend/services/channel-service.ts` через `RuntimeWriteContext`.
+  Автосоздание sales-point склада, привязка склада к каналу и обновление `observed_stock`
+  при смене точки продаж больше не пишут через request-scoped `AccountingApp`; prod-readiness
+  фиксирует `writeSessions = 0`, Postgres runtime проверяет typed rows в `sales_channel`
+  и связанном `warehouse`.
 - ✅ Начат перенос write/control на обычные сервисы без `AccountingApp` session: добавлен
   `RuntimeWriteContext` и `PostgresRuntimeStore.runWriteContext`, который открывает транзакцию,
   отдаёт сервису `repos + typed stores`, сохраняет `next_id` и коммитит без request-scoped app facade.
