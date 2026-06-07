@@ -1110,7 +1110,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   });
   api.post("/api/procurement/purchase-orders/:id/costs/preview", async (c) => {
     const body = procurementCostSchema.omit({ purchaseOrderId: true }).partial({ paidImmediately: true, costDate: true, costType: true }).parse(await c.req.json().catch(() => ({})));
-    return c.json({ ok: true, data: scopedApp.previewProcurementCost({ purchaseOrderId: c.req.param("id"), allocationBasis: body.allocationBasis, amountRub: body.amountRub ?? 0 }) });
+    return c.json({ ok: true, data: await scopedApp.previewProcurementCost({ purchaseOrderId: c.req.param("id"), allocationBasis: body.allocationBasis, amountRub: body.amountRub ?? 0 }) });
   });
   api.post("/api/procurement/purchase-orders/:id/costs", async (c) => {
     const body = procurementCostSchema.omit({ purchaseOrderId: true }).parse(await c.req.json());

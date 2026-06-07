@@ -36,7 +36,7 @@ describe("procurement landed cost allocation", () => {
   it("allocates delivery by product weight and prep cost by units", async () => {
     const { app, order, light, heavy } = await setupTwoProductReceipt();
 
-    const preview = app.previewProcurementCost({
+    const preview = await app.previewProcurementCost({
       purchaseOrderId: order.id,
       allocationBasis: "by_weight",
       amountRub: 4_000
@@ -92,12 +92,12 @@ describe("procurement landed cost allocation", () => {
       lines: [{ purchaseOrderLineId: app.state.purchaseOrderLines[0].id, qtyReceived: 1 }]
     });
 
-    expect(() =>
+    await expect(
       app.previewProcurementCost({
         purchaseOrderId: order.id,
         allocationBasis: "by_weight",
         amountRub: 100
       })
-    ).toThrow(/вес/i);
+    ).rejects.toThrow(/вес/i);
   });
 });

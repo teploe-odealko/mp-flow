@@ -136,16 +136,18 @@ sync в app.ts сохраняется через `store.upsert` (а не `state.
 → `repos.X.replaceAll` (мутация на месте, ссылка цела) + delete-for-resync. app.ts-хендлеры (55 floating-
 promise в `c.json` починены) + пайплайн (`materializeSale/Payout/Return`) + тесты на `await`; sync test-
 коллбэки → async; async-throw → `rejects.toThrow`. **Двойная запись/AVCO/удаления корректны (тесты зелёные).**
-Остаток `this.state.` в домене: **85** (было 565; факт после среза `app.ts`/plugins/finance/backfill/corrections);
+Остаток `this.state.` в домене: **26** (было 565; факт после среза `app.ts`/plugins/finance/backfill/corrections);
 из них часть — синглтоны/metadata (`organization`, `accountingPolicy`, `documentTypes`) и временные in-memory
 stores (`externalEvents`/`observedStocks`/`syncRuns`) в конструкторе. Переведены reporting
 (`reports`/`ledgerBalances`), `dashboard`, backend helper-layer в `app.ts` (прямого `app.state` больше нет),
 backfill/materialization/sync helpers, marketplace plugins, `saveChannelCredentials`, finance-link методы,
 `previewGoodsReceipt`, `postPurchaseOrder`, payment posting lookup'и, rollback/delete helpers,
-procurement/receipt correction paths и `documentDescendants`/`previewCorrection`.
-Топ sync-хелперов на конверсию: `updatePurchaseOrderDraft`(12), `receiptDispatchContext`(9),
-`paymentRollbackPreview`(9), `goodsReceiptRollbackPreview`(9), `purchaseOrderDetails`(7), `consumeFifo`(мутирует!),
-`appendJournalEntry`, `receivedQtyForLine`, `paidShareForOrderLine`, `inventoryUsageDocuments`, `findRollbackDocumentSummary` и т.д.
+procurement/receipt correction paths, procurement posting (`updatePurchaseOrderDraft`/`postGoodsReceipt`/
+`postProcurementCost`/`postShortage`/`postStockTransfer`), document links, stock/receipt/shortage helpers,
+async `previewProcurementCost` и `documentDescendants`/`previewCorrection`.
+Оставшиеся sync/state-точки на конверсию: bootstrap/setup metadata (`organization`/`accountingPolicy`/
+`documentTypes`), `audit`/`createCorrectionCase`/`queueRecalculation`, `nextDocumentNumber`,
+`periodForDate`/`assertAccountingDateAllowed`, `bufferExternalEventUpdate` и in-memory store wiring в конструкторе.
 Синглтоны `organization`/`accountingPolicy` (~16 рефов) — НЕ массивы, не «тяжёлый снэпшот»; добираются в самом конце
 (или отдельным singleton-аксессором), уже после выноса всех коллекций.
 

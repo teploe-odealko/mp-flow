@@ -45,6 +45,7 @@ import type {
   SettlementEntry,
   ShortageResolution,
   ShortageResolutionLine,
+  SupplierClaim,
   StockMovement,
   Stocktake,
   StockState,
@@ -509,7 +510,7 @@ export class AccountingApp {
     await this.recordOwnerContribution({ amountRub: 500_000, paidAt: "2026-06-01", comment: "Стартовый капитал" });
     const po = await this.createPurchaseOrder({
       supplierId: supplier.id,
-      destinationWarehouseId: this.ownWarehouse().id,
+      destinationWarehouseId: (await this.ownWarehouse()).id,
       supplierCurrency: "CNY",
       orderedAt: "2026-06-02",
       lines: [
@@ -526,7 +527,7 @@ export class AccountingApp {
     });
     await this.receiveGoods({
       purchaseOrderId: po.id,
-      warehouseId: this.ownWarehouse().id,
+      warehouseId: (await this.ownWarehouse()).id,
       receiptDate: "2026-06-12",
       lines: [
         { purchaseOrderLineId: (await this.repos.purchaseOrderLines.all()).find((line) => line.purchaseOrderId === po.id && line.productId === productA.id)!.id, qtyReceived: 990 },
@@ -544,7 +545,7 @@ export class AccountingApp {
     const channel = await this.createSalesChannel({ name: "Ozon FBO", channelType: "marketplace", pluginCode: "ozon", enabledStreams: ["products", "stocks", "sales", "returns", "finance_events", "payouts"] });
     channel.status = "active";
     await this.transferStock({
-      fromWarehouseId: this.ownWarehouse().id,
+      fromWarehouseId: (await this.ownWarehouse()).id,
       toWarehouseId: channel.salesPointWarehouseId,
       transferDate: "2026-06-15",
       lines: [
@@ -951,7 +952,7 @@ export class AccountingApp {
       amountRub: input.amountRub
     };
     await this.repos.paymentAllocations.add(allocation);
-    this.ensureDocumentLink(payment.documentId, order.documentId, "payment");
+    await this.ensureDocumentLink(payment.documentId, order.documentId, "payment");
     if (input.post !== false) {
       await this.postSupplierPayment(payment.id);
     }
@@ -1017,7 +1018,7 @@ export class AccountingApp {
     for (const line of input.lines) {
       assertPositive(line.qtyReceived, "Принимаемое количество должно быть положительным");
       const ordered = this.mustFind(purchaseOrderLines, line.purchaseOrderLineId, "purchase_order_line_not_found");
-      const alreadyReceived = this.receivedQtyForLine(line.purchaseOrderLineId);
+      const alreadyReceived = await this.receivedQtyForLine(line.purchaseOrderLineId);
       if (line.qtyReceived > ordered.qtyOrdered - alreadyReceived + 0.0001) {
         throw new DomainError("receipt_qty_exceeds_order", "Нельзя принять больше, чем осталось по заказу");
       }
@@ -1095,7 +1096,7 @@ export class AccountingApp {
     assertPositive(input.amountRub, "Сумма расхода должна быть положительной");
     const allocationBasis = input.allocationBasis ?? "by_cost";
     // До приёмки партий ещё нет — расход висит «в пути» (41.02) и распределяется при приёмке.
-    const hasLots = this.procurementCostTargets(input.purchaseOrderId, allocationBasis).length > 0;
+    const hasLots = (await this.procurementCostTargets(input.purchaseOrderId, allocationBasis)).length > 0;
     const organizationId = this.currentOrgId();
     const document = await this.createDocument({
       documentType: "procurement_cost",
@@ -1121,7 +1122,7 @@ export class AccountingApp {
     await this.repos.procurementCosts.add(cost);
 
     if (hasLots) {
-      await this.buildProcurementCostLines(cost, document, this.previewProcurementCost({
+      await this.buildProcurementCostLines(cost, document, await this.previewProcurementCost({
         purchaseOrderId: input.purchaseOrderId,
         allocationBasis,
         amountRub: input.amountRub
@@ -1167,15 +1168,15 @@ export class AccountingApp {
     }
   }
 
-  previewProcurementCost(input: {
+  async previewProcurementCost(input: {
     purchaseOrderId?: ID;
     allocationBasis?: ProcurementCost["allocationBasis"];
     amountRub: number;
-  }): ProcurementCostPreview {
+  }): Promise<ProcurementCostPreview> {
     const amountRub = round2(input.amountRub);
     assertNonNegative(amountRub, "Сумма расхода не может быть отрицательной");
     const allocationBasis = input.allocationBasis ?? "by_cost";
-    const targets = this.procurementCostTargets(input.purchaseOrderId, allocationBasis);
+    const targets = await this.procurementCostTargets(input.purchaseOrderId, allocationBasis);
     if (targets.length === 0) {
       throw new DomainError("procurement_cost_no_lots", "Нет партий для распределения расхода");
     }
@@ -1263,9 +1264,9 @@ export class AccountingApp {
     const purchaseOrderLines = await this.repos.purchaseOrderLines.all();
     for (const [index, line] of input.lines.entries()) {
       const orderLine = this.mustFind(purchaseOrderLines, line.purchaseOrderLineId, "purchase_order_line_not_found");
-      const openQty = this.openShortageQtyForLine(order.id, orderLine.id);
+      const openQty = await this.openShortageQtyForLine(order.id, orderLine.id);
       const qtyShortage = round4(line.qtyShortage ?? openQty);
-      const paidShareRub = this.paidShareForOrderLine(order.id, orderLine, qtyShortage);
+      const paidShareRub = await this.paidShareForOrderLine(order.id, orderLine, qtyShortage);
       const resolutionLine: ShortageResolutionLine = {
         id: id("shortage_line"),
         shortageResolutionId: resolution.id,
@@ -2055,16 +2056,17 @@ export class AccountingApp {
       comment: input.comment,
       source: input.externalEventId ? "plugin" : "manual"
     });
-    const prepared = returnLines.map((line) => {
+    const prepared: Array<{ saleLine: SaleLine; qty: number; revenuePart: number; alreadyReturnedQty: number }> = [];
+    for (const line of returnLines) {
       const saleLine = this.mustFind(saleLines, line.saleLineId, "sale_line_not_found");
-      const alreadyReturnedQty = this.returnedQtyForSaleLine(line.saleLineId);
+      const alreadyReturnedQty = await this.returnedQtyForSaleLine(line.saleLineId);
       const maxQty = round4(Math.max(0, saleLine.qty - alreadyReturnedQty));
       if (line.qty > maxQty + 0.0001) {
         throw new DomainError("return_qty_exceeds_sale", "Нельзя вернуть больше, чем осталось к возврату", { saleLineId: line.saleLineId, maxQty });
       }
       const revenuePart = round2((saleLine.revenueRub * line.qty) / saleLine.qty);
-      return { saleLine, qty: round4(line.qty), revenuePart, alreadyReturnedQty };
-    });
+      prepared.push({ saleLine, qty: round4(line.qty), revenuePart, alreadyReturnedQty });
+    }
     const proportionalRefundRub = round2(prepared.reduce((sum, line) => sum + line.revenuePart, 0));
     const totalQty = round4(prepared.reduce((sum, line) => sum + line.qty, 0));
     const refundRub = round2(input.refundRub ?? proportionalRefundRub);
@@ -2246,7 +2248,7 @@ export class AccountingApp {
       plannedQty.set(line.productId, round4((plannedQty.get(line.productId) ?? 0) + line.qty));
     });
     for (const [productId, qtyRequired] of plannedQty.entries()) {
-      const availableQty = this.stockState(productId, sale.warehouseId).qty;
+      const availableQty = (await this.stockState(productId, sale.warehouseId)).qty;
       if (availableQty + 0.0001 < qtyRequired) {
         const reason = "Недостаточно книжного остатка. Создайте перемещение, приемку или корректировку";
         sale.status = "needs_attention";
@@ -2390,7 +2392,7 @@ export class AccountingApp {
         createdAt: nowIso()
       });
     }
-    this.ensureDocumentLink(sale.documentId, financialDocument.id, "sale_finance");
+    await this.ensureDocumentLink(sale.documentId, financialDocument.id, "sale_finance");
     if (input.externalEventId) {
       this.markExternalEventProcessed(input.externalEventId, financialDocument.id);
     }
@@ -2717,8 +2719,11 @@ export class AccountingApp {
     }
     const allocation = (await this.repos.paymentAllocations.all()).find((candidate) => candidate.paymentId === payment.id && candidate.allocationPurpose === "goods_purchase");
     if (allocation?.purchaseOrderId) {
+      const documents = await this.repos.documents.all();
       const postedReceipts = (await this.repos.goodsReceipts.all()).filter((receipt) =>
-        receipt.purchaseOrderId === allocation.purchaseOrderId && receipt.status === "posted" && this.isDocumentPosted(receipt.documentId)
+        receipt.purchaseOrderId === allocation.purchaseOrderId &&
+        receipt.status === "posted" &&
+        documents.find((candidate) => candidate.id === receipt.documentId)?.status === "posted"
       );
       if (postedReceipts.length > 0) {
         blockers.push({
@@ -2746,7 +2751,7 @@ export class AccountingApp {
       documentId: document.id,
       documentNumber: document.number,
       title: document.title,
-      status: this.isDocumentPosted(document.id) ? "posted" : document.status,
+      status: (await this.isDocumentPosted(document.id)) ? "posted" : document.status,
       accountingDate: document.accountingDate,
       canDelete: blockers.length === 0,
       blockers,
@@ -3130,7 +3135,7 @@ export class AccountingApp {
       const saleLineId = String(payload.saleLineId ?? "");
       const saleLine = this.mustFind(saleLines, saleLineId, "sale_line_not_found");
       const qtyToReturn = round4(Number(documentLine.qty ?? 0));
-      const alreadyReturnedQty = this.returnedQtyForSaleLine(saleLine.id, salesReturn.id);
+      const alreadyReturnedQty = await this.returnedQtyForSaleLine(saleLine.id, salesReturn.id);
       const returnableQty = round4(Math.max(0, saleLine.qty - alreadyReturnedQty));
       if (qtyToReturn > returnableQty + 0.0001) {
         const reason = `Превышен доступный возврат по товару ${saleLine.productId}`;
@@ -3216,7 +3221,7 @@ export class AccountingApp {
         { accountCode: "90.02", credit: salesReturn.restoredCostRub, memo: "Сторно себестоимости продаж" }
       ]);
     }
-    this.ensureDocumentLink(sale.documentId, salesReturn.documentId, "return");
+    await this.ensureDocumentLink(sale.documentId, salesReturn.documentId, "return");
     this.markExternalEventProcessed(salesReturn.externalEventId, salesReturn.documentId);
     return salesReturn;
   }
@@ -3266,7 +3271,7 @@ export class AccountingApp {
     event.saleAllocations = undefined;
     if (!event.treatment) event.treatment = "sale_variable";
     event.status = event.eventKind ? "classified" : event.status;
-    this.ensureDocumentLink(event.documentId, sale.documentId, "channel_fee");
+    await this.ensureDocumentLink(event.documentId, sale.documentId, "channel_fee");
     await this.repos.channelFinanceEvents.upsert(event);
     return event;
   }
@@ -3282,7 +3287,7 @@ export class AccountingApp {
     if (!["posted", "reversed", "ignored"].includes(event.status)) {
       event.status = event.eventKind ? "classified" : event.status;
     }
-    this.ensureDocumentLink(event.documentId, salesReturn.documentId, "channel_fee");
+    await this.ensureDocumentLink(event.documentId, salesReturn.documentId, "channel_fee");
     await this.repos.channelFinanceEvents.upsert(event);
     return event;
   }
@@ -3311,10 +3316,10 @@ export class AccountingApp {
     event.saleAllocations = normalized.length > 1 ? normalized : undefined;
     if (!event.treatment) event.treatment = "sale_variable";
     event.status = event.eventKind ? "classified" : event.status;
-    normalized.forEach((allocation) => {
+    for (const allocation of normalized) {
       const sale = this.mustFind(sales, allocation.saleId, "sale_not_found");
-      this.ensureDocumentLink(event.documentId, sale.documentId, "channel_fee");
-    });
+      await this.ensureDocumentLink(event.documentId, sale.documentId, "channel_fee");
+    }
     await this.repos.channelFinanceEvents.upsert(event);
     return event;
   }
@@ -3344,18 +3349,18 @@ export class AccountingApp {
     await this.repos.channelFinanceEvents.upsert(event);
     if (event.linkedSaleId) {
       const sale = this.mustFind(await this.repos.sales.all(), event.linkedSaleId, "sale_not_found");
-      this.ensureDocumentLink(event.documentId, sale.documentId, "channel_fee");
+      await this.ensureDocumentLink(event.documentId, sale.documentId, "channel_fee");
     }
     if (event.saleAllocations?.length) {
       const sales = await this.repos.sales.all();
       for (const allocation of event.saleAllocations) {
         const sale = this.mustFind(sales, allocation.saleId, "sale_not_found");
-        this.ensureDocumentLink(event.documentId, sale.documentId, "channel_fee");
+        await this.ensureDocumentLink(event.documentId, sale.documentId, "channel_fee");
       }
     }
     if (event.linkedReturnId) {
       const salesReturn = this.mustFind(await this.repos.salesReturns.all(), event.linkedReturnId, "return_not_found");
-      this.ensureDocumentLink(event.documentId, salesReturn.documentId, "channel_fee");
+      await this.ensureDocumentLink(event.documentId, salesReturn.documentId, "channel_fee");
     }
     this.markExternalEventProcessed(event.externalEventId, event.documentId);
     return event;
@@ -3415,7 +3420,7 @@ export class AccountingApp {
       if (paymentDocument.status !== "posted") {
         paymentDocument.status = "posted";
         paymentDocument.postedAt = nowIso();
-        this.applyPaymentToCashAccount(payment);
+        await this.applyPaymentToCashAccount(payment);
         await this.repos.documents.upsert(paymentDocument);
         await this.repos.payments.upsert(payment);
       }
@@ -3605,7 +3610,7 @@ export class AccountingApp {
       { accountCode: category.accountCode, debit: expense.amountRub, memo: category.name },
       { accountCode: "51", credit: expense.amountRub, memo: "Оплата операционного расхода" }
     ]);
-    this.applyPaymentToCashAccount(payment);
+    await this.applyPaymentToCashAccount(payment);
     await this.repos.payments.upsert(payment);
     expense.amountPaidRub = expense.amountRub;
     expense.paymentStatus = "paid";
@@ -3635,7 +3640,7 @@ export class AccountingApp {
       { accountCode: "80.02", debit: input.amountRub, memo: "Изъятие владельца" },
       { accountCode: "51", credit: input.amountRub, memo: "Выплата владельцу" }
     ]);
-    this.applyPaymentToCashAccount(payment);
+    await this.applyPaymentToCashAccount(payment);
     await this.repos.payments.upsert(payment);
     return payment;
   }
@@ -3664,7 +3669,7 @@ export class AccountingApp {
     };
     await this.repos.stocktakes.add(stocktake);
     for (const line of input.lines) {
-      const book = this.stockState(line.productId, input.warehouseId);
+      const book = await this.stockState(line.productId, input.warehouseId);
       const diffQty = round4(line.observedQty - book.qty);
       const avgCost = book.qty > 0 ? book.costRub / book.qty : 0;
       const unitCostRub = diffQty > 0 ? (line.unitCostRub ?? avgCost) : avgCost;
@@ -3955,7 +3960,7 @@ export class AccountingApp {
         journalLines.push({ accountCode: sourceAccountCode, debit: Math.abs(accountingDelta), memo: "Уменьшение источника расхода" });
       }
       await this.postDocument(document.id, journalLines);
-      this.linkDocuments(sourceDocument.id, document.id, "correction");
+      await this.linkDocuments(sourceDocument.id, document.id, "correction");
     }
     correction.status = "applied";
     correction.appliedAt = nowIso();
@@ -4148,7 +4153,7 @@ export class AccountingApp {
       newQty: input.newQtyReceived,
       amountDelta
     });
-    const state = this.stockState(receiptLine.productId, receipt.warehouseId);
+    const state = await this.stockState(receiptLine.productId, receipt.warehouseId);
     if (state.qty + 0.0001 < qtyDelta) {
       correction.status = "failed";
       throw new DomainError("negative_stock_after_correction", "Исправление создаст отрицательный остаток", { state, qtyDelta });
@@ -4173,7 +4178,7 @@ export class AccountingApp {
       { accountCode: "60.02", debit: amountDelta, memo: "Возврат доли оплаты в аванс по недопоставке" },
       { accountCode: "41.01", credit: amountDelta, memo: "Уменьшение фактически принятого товара" }
     ]);
-    this.linkDocuments(sourceDocument.id, document.id, "correction");
+    await this.linkDocuments(sourceDocument.id, document.id, "correction");
     receiptLine.qtyReceived = input.newQtyReceived;
     receiptLine.allocatedGoodsCostRub = round2(receiptLine.allocatedGoodsCostRub - amountDelta);
     receiptLine.unitCostRub = round6(receiptLine.allocatedGoodsCostRub / receiptLine.qtyReceived);
@@ -4767,7 +4772,7 @@ export class AccountingApp {
       { accountCode: "51", debit: payment.amountRub, memo: "Поступление денег" },
       { accountCode: "80.01", credit: payment.amountRub, memo: "Вклад владельца" }
     ]);
-    this.applyPaymentToCashAccount(payment);
+    await this.applyPaymentToCashAccount(payment);
     return payment;
   }
 
@@ -4787,7 +4792,7 @@ export class AccountingApp {
       { accountCode: "60.02", debit: payment.amountRub, memo: "Аванс поставщику" },
       { accountCode: "51", credit: payment.amountRub, memo: "Оплата с расчетного счета" }
     ]);
-    this.applyPaymentToCashAccount(payment);
+    await this.applyPaymentToCashAccount(payment);
     await this.repos.settlementEntries.add({
       id: id("settlement"),
       organizationId: this.currentOrgId(),
@@ -4798,7 +4803,7 @@ export class AccountingApp {
       creditRub: 0,
       createdAt: nowIso()
     });
-    this.ensureDocumentLink(payment.documentId, order.documentId, "payment");
+    await this.ensureDocumentLink(payment.documentId, order.documentId, "payment");
     return payment;
   }
 
@@ -4813,7 +4818,7 @@ export class AccountingApp {
       { accountCode: "80.02", debit: payment.amountRub, memo: "Изъятие владельца" },
       { accountCode: "51", credit: payment.amountRub, memo: "Выплата владельцу" }
     ]);
-    this.applyPaymentToCashAccount(payment);
+    await this.applyPaymentToCashAccount(payment);
     return payment;
   }
 
@@ -4859,11 +4864,11 @@ export class AccountingApp {
     }
     if (input.lines) {
       if (input.lines.length === 0) throw new DomainError("empty_order", "В заказе должна быть хотя бы одна строка");
-      const existingLines = this.state.purchaseOrderLines
+      const existingLines = (await this.repos.purchaseOrderLines.all())
         .filter((line) => line.purchaseOrderId === order.id)
         .slice()
         .sort((left, right) => left.lineNo - right.lineNo);
-      const existingDocumentLines = this.state.documentLines
+      const existingDocumentLines = (await this.repos.documentLines.all())
         .filter((line) => line.documentId === document.id)
         .slice()
         .sort((left, right) => left.lineNo - right.lineNo);
@@ -4914,7 +4919,7 @@ export class AccountingApp {
     const lines = (await this.repos.purchaseOrderLines.all()).filter((line) => line.purchaseOrderId === order.id);
     order.totalSupplierAmount = round2(lines.reduce((sum, line) => sum + line.supplierAmount, 0));
     order.totalQty = round4(lines.reduce((sum, line) => sum + line.qtyOrdered, 0));
-    this.state.documentVersions.push({
+    await this.repos.documentVersions.add({
       id: id("doc_version"),
       documentId: document.id,
       versionNo: (await this.repos.documentVersions.all()).filter((version) => version.documentId === document.id).length + 1,
@@ -4922,6 +4927,8 @@ export class AccountingApp {
       reason: "Редактирование заказа поставщику",
       createdAt: nowIso()
     });
+    await this.repos.purchaseOrders.upsert(order);
+    await this.repos.documents.upsert(document);
     this.audit("purchase_order", order.id, "update", before.order, order);
     return order;
   }
@@ -4970,12 +4977,12 @@ export class AccountingApp {
     const allProducts = await this.repos.products.all();
     const allProductExternalLinks = await this.repos.productExternalLinks.all();
     const allExternalProducts = await this.repos.externalProducts.all();
-    const lines = (await this.repos.goodsReceiptLines.all())
+    const lines = await Promise.all((await this.repos.goodsReceiptLines.all())
       .filter((line) => line.goodsReceiptId === receipt.id)
-      .map((line) => {
+      .map(async (line) => {
         const product = this.mustFind(allProducts, line.productId, "product_not_found");
-        const alreadyDispatchedQty = this.dispatchedQtyForReceiptLine(line.id, channel?.id);
-        const qtyAvailableToDispatch = this.remainingQtyForReceiptLine(line.id, receipt.warehouseId, "sellable");
+        const alreadyDispatchedQty = await this.dispatchedQtyForReceiptLine(line.id, channel?.id);
+        const qtyAvailableToDispatch = await this.remainingQtyForReceiptLine(line.id, receipt.warehouseId, "sellable");
         const externalLinks = channel
           ? allProductExternalLinks.filter((link) => link.productId === line.productId && link.channelId === channel.id && link.status === "active")
           : [];
@@ -4999,7 +5006,7 @@ export class AccountingApp {
           heightMm: product.heightMm,
           externalOfferIds: externalProducts.map((candidate) => String(candidate?.externalSku ?? "")).filter(Boolean)
         };
-      });
+      }));
     return {
       receipt,
       document,
@@ -5013,7 +5020,7 @@ export class AccountingApp {
 
   async postPayment(paymentId: ID): Promise<Payment> {
     const payment = this.mustFind(await this.repos.payments.all(), paymentId, "payment_not_found");
-    if (this.isDocumentPosted(payment.documentId)) return payment;
+    if (await this.isDocumentPosted(payment.documentId)) return payment;
     switch (payment.paymentType) {
       case "owner_contribution":
         return await this.postOwnerContribution(payment.id);
@@ -5035,13 +5042,13 @@ export class AccountingApp {
   }
 
   async postGoodsReceipt(receiptId: ID): Promise<GoodsReceipt> {
-    const receipt = this.mustFind(this.state.goodsReceipts, receiptId, "receipt_not_found");
-    const document = this.mustFind(this.state.documents, receipt.documentId, "document_not_found");
+    const receipt = this.mustFind(await this.repos.goodsReceipts.all(), receiptId, "receipt_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), receipt.documentId, "document_not_found");
     if (document.status === "posted" && receipt.status === "posted") return receipt;
     if (document.status === "cancelled") {
       throw new DomainError("document_cancelled", "Отмененную приемку нельзя провести повторно");
     }
-    const order = this.mustFind(this.state.purchaseOrders, receipt.purchaseOrderId, "purchase_order_not_found");
+    const order = this.mustFind(await this.repos.purchaseOrders.all(), receipt.purchaseOrderId, "purchase_order_not_found");
     const receiptLines = (await this.repos.goodsReceiptLines.all()).filter((line) => line.goodsReceiptId === receipt.id);
     const documentLines = (await this.repos.documentLines.all()).filter((line) => line.documentId === document.id);
 
@@ -5059,6 +5066,7 @@ export class AccountingApp {
       });
       if (existingLine) {
         existingLine.payload = { ...(existingLine.payload ?? {}), lotId: lot.id };
+        await this.repos.documentLines.upsert(existingLine);
       }
     }
 
@@ -5074,8 +5082,8 @@ export class AccountingApp {
       );
     }
     await this.postDocument(document.id, journalLines);
-    this.ensureDocumentLink(order.documentId, document.id, "receipt");
-    this.state.settlementEntries.push({
+    await this.ensureDocumentLink(order.documentId, document.id, "receipt");
+    await this.repos.settlementEntries.add({
       id: id("settlement"),
       organizationId: this.currentOrgId(),
       counterpartyId: order.supplierId,
@@ -5086,7 +5094,7 @@ export class AccountingApp {
       createdAt: nowIso()
     });
     if (setoff > 0) {
-      this.state.settlementEntries.push({
+      await this.repos.settlementEntries.add({
         id: id("settlement"),
         organizationId: this.currentOrgId(),
         counterpartyId: order.supplierId,
@@ -5100,6 +5108,7 @@ export class AccountingApp {
     // Распределяем расходы закупки, добавленные до этой приёмки («товары в пути»), на новые партии.
     await this.capitalizePendingProcurementCosts(order.id);
     receipt.status = "posted";
+    await this.repos.goodsReceipts.upsert(receipt);
     return receipt;
   }
 
@@ -5113,8 +5122,8 @@ export class AccountingApp {
   }
 
   async postProcurementCost(costId: ID): Promise<ProcurementCost> {
-    const cost = this.mustFind(this.state.procurementCosts, costId, "procurement_cost_not_found");
-    const document = this.mustFind(this.state.documents, cost.documentId, "document_not_found");
+    const cost = this.mustFind(await this.repos.procurementCosts.all(), costId, "procurement_cost_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), cost.documentId, "document_not_found");
     if (document.status === "posted" && cost.status === "posted") return cost;
     if (document.status === "cancelled") {
       throw new DomainError("document_cancelled", "Отмененный расход закупки нельзя провести повторно");
@@ -5126,17 +5135,19 @@ export class AccountingApp {
         { accountCode: "41.02", debit: cost.amountRub, memo: "Расход закупки (товары в пути)" },
         { accountCode: creditAccount, credit: cost.amountRub, memo: cost.paidImmediately ? "Оплачен расход закупки" : "Задолженность за расход закупки" }
       ]);
-      this.ensurePaidProcurementCostPayment(cost, document);
+      await this.ensurePaidProcurementCostPayment(cost, document);
       if (cost.purchaseOrderId) {
-        const order = this.mustFind(this.state.purchaseOrders, cost.purchaseOrderId, "purchase_order_not_found");
-        this.ensureDocumentLink(order.documentId, document.id, "procurement_cost");
+        const order = this.mustFind(await this.repos.purchaseOrders.all(), cost.purchaseOrderId, "purchase_order_not_found");
+        await this.ensureDocumentLink(order.documentId, document.id, "procurement_cost");
       }
       cost.status = "posted";
+      await this.repos.procurementCosts.upsert(cost);
       return cost;
     }
     const previewLines = (await this.repos.procurementCostLines.all()).filter((line) => line.procurementCostId === cost.id);
+    const inventoryLots = await this.repos.inventoryLots.all();
     for (const line of previewLines) {
-      const lot = line.lotId ? this.mustFind(this.state.inventoryLots, line.lotId, "lot_not_found") : undefined;
+      const lot = line.lotId ? this.mustFind(inventoryLots, line.lotId, "lot_not_found") : undefined;
       if (!lot) continue;
       lot.costInitialRub = round2(lot.costInitialRub + line.allocatedAmountRub);
       if (line.remainingInventoryAmountRub > 0 && lot.qtyRemaining > 0) {
@@ -5144,14 +5155,16 @@ export class AccountingApp {
         lot.unitCostRub = round6(lot.costRemainingRub / lot.qtyRemaining);
         await this.addStockState(lot.productId, lot.warehouseId, 0, line.remainingInventoryAmountRub);
       }
+      await this.repos.inventoryLots.upsert(lot);
     }
 
     const creditAccount = cost.paidImmediately ? "51" : "60.01";
     const journalLines: JournalLineInput[] = [];
     const remainingByAccount = new Map<string, number>();
+    const warehouses = await this.repos.warehouses.all();
     previewLines.forEach((line) => {
       if (!line.warehouseId || line.remainingInventoryAmountRub <= 0) return;
-      const warehouse = this.mustFind(this.state.warehouses, line.warehouseId, "warehouse_not_found");
+      const warehouse = this.mustFind(warehouses, line.warehouseId, "warehouse_not_found");
       const accountCode = accountForWarehouse(warehouse);
       remainingByAccount.set(accountCode, round2((remainingByAccount.get(accountCode) ?? 0) + line.remainingInventoryAmountRub));
     });
@@ -5169,20 +5182,21 @@ export class AccountingApp {
     });
     await this.postDocument(document.id, journalLines);
 
-    this.ensurePaidProcurementCostPayment(cost, document);
+    await this.ensurePaidProcurementCostPayment(cost, document);
     if (cost.purchaseOrderId) {
-      const order = this.mustFind(this.state.purchaseOrders, cost.purchaseOrderId, "purchase_order_not_found");
-      this.ensureDocumentLink(order.documentId, document.id, "procurement_cost");
+      const order = this.mustFind(await this.repos.purchaseOrders.all(), cost.purchaseOrderId, "purchase_order_not_found");
+      await this.ensureDocumentLink(order.documentId, document.id, "procurement_cost");
     }
     cost.status = "posted";
+    await this.repos.procurementCosts.upsert(cost);
     return cost;
   }
 
-  private ensurePaidProcurementCostPayment(cost: ProcurementCost, document: Document) {
+  private async ensurePaidProcurementCostPayment(cost: ProcurementCost, document: Document) {
     if (!cost.paidImmediately) return;
-    let payment = this.state.payments.find((candidate) => candidate.documentId === document.id && candidate.paymentType === "procurement_cost_payment");
+    let payment = (await this.repos.payments.all()).find((candidate) => candidate.documentId === document.id && candidate.paymentType === "procurement_cost_payment");
     if (!payment) {
-      const cashAccount = this.state.cashAccounts.find((account) => account.accountCode === "51" && account.isActive);
+      const cashAccount = (await this.repos.cashAccounts.all()).find((account) => account.accountCode === "51" && account.isActive);
       if (!cashAccount) throw new DomainError("cash_account_not_found", "Не найден расчетный счет");
       payment = {
         id: id("payment"),
@@ -5195,8 +5209,8 @@ export class AccountingApp {
         paidAt: cost.costDate,
         comment: cost.comment
       };
-      this.state.payments.push(payment);
-      this.state.paymentAllocations.push({
+      await this.repos.payments.add(payment);
+      await this.repos.paymentAllocations.add({
         id: id("payment_alloc"),
         paymentId: payment.id,
         allocationPurpose: "procurement_cost",
@@ -5205,23 +5219,25 @@ export class AccountingApp {
         amountRub: cost.amountRub
       });
     }
-    this.applyPaymentToCashAccount(payment);
+    await this.applyPaymentToCashAccount(payment);
   }
 
   // Распределяет «висящие» расходы заказа (41.02) на партии новой приёмки: Дт 41.0x / Кт 41.02.
   private async capitalizePendingProcurementCosts(purchaseOrderId: ID) {
-    const pending = this.state.procurementCosts.filter((cost) => cost.purchaseOrderId === purchaseOrderId && cost.pendingAllocation && cost.status !== "cancelled");
+    const pending = (await this.repos.procurementCosts.all()).filter((cost) => cost.purchaseOrderId === purchaseOrderId && cost.pendingAllocation && cost.status !== "cancelled");
     for (const cost of pending) {
       // Если расход нельзя распределить (например «по весу» без заполненного веса товара) —
       // не блокируем приёмку: расход остаётся «в пути», его можно распределить позже.
       try {
-      if (this.procurementCostTargets(purchaseOrderId, cost.allocationBasis).length === 0) continue;
-      const document = this.mustFind(this.state.documents, cost.documentId, "document_not_found");
-      const preview = this.previewProcurementCost({ purchaseOrderId, allocationBasis: cost.allocationBasis, amountRub: cost.amountRub });
+      if ((await this.procurementCostTargets(purchaseOrderId, cost.allocationBasis)).length === 0) continue;
+      const document = this.mustFind(await this.repos.documents.all(), cost.documentId, "document_not_found");
+      const preview = await this.previewProcurementCost({ purchaseOrderId, allocationBasis: cost.allocationBasis, amountRub: cost.amountRub });
       await this.buildProcurementCostLines(cost, document, preview);
       const remainingByAccount = new Map<string, number>();
+      const inventoryLots = await this.repos.inventoryLots.all();
+      const warehouses = await this.repos.warehouses.all();
       for (const line of preview.lines) {
-        const lot = line.lotId ? this.state.inventoryLots.find((candidate) => candidate.id === line.lotId) : undefined;
+        const lot = line.lotId ? inventoryLots.find((candidate) => candidate.id === line.lotId) : undefined;
         if (lot) {
           lot.costInitialRub = round2(lot.costInitialRub + line.allocatedAmountRub);
           if (line.remainingInventoryAmountRub > 0 && lot.qtyRemaining > 0) {
@@ -5229,9 +5245,10 @@ export class AccountingApp {
             lot.unitCostRub = round6(lot.costRemainingRub / lot.qtyRemaining);
             await this.addStockState(lot.productId, lot.warehouseId, 0, line.remainingInventoryAmountRub);
           }
+          await this.repos.inventoryLots.upsert(lot);
         }
         if (line.warehouseId && line.remainingInventoryAmountRub > 0) {
-          const warehouse = this.mustFind(this.state.warehouses, line.warehouseId, "warehouse_not_found");
+          const warehouse = this.mustFind(warehouses, line.warehouseId, "warehouse_not_found");
           const accountCode = accountForWarehouse(warehouse);
           remainingByAccount.set(accountCode, round2((remainingByAccount.get(accountCode) ?? 0) + line.remainingInventoryAmountRub));
         }
@@ -5245,8 +5262,9 @@ export class AccountingApp {
         journalLines.push({ accountCode: "90.02", debit: soldCostAmountRub, memo: "Расход закупки по проданным товарам" });
       }
       journalLines.push({ accountCode: "41.02", credit: cost.amountRub, memo: "Списание товаров в пути" });
-      this.appendJournalEntry(document, journalLines);
+      await this.appendJournalEntry(document, journalLines);
       cost.pendingAllocation = undefined;
+      await this.repos.procurementCosts.upsert(cost);
       } catch {
         // Расход остаётся «в пути» — пользователь дозаполнит данные (вес) или сменит базу распределения.
       }
@@ -5254,14 +5272,15 @@ export class AccountingApp {
   }
 
   // Добавляет дополнительную проводку к уже проведённому документу, не меняя его статус.
-  private appendJournalEntry(document: Document, lines: JournalLineInput[]) {
+  private async appendJournalEntry(document: Document, lines: JournalLineInput[]) {
     const debit = round2(lines.reduce((sum, line) => sum + (line.debit ?? 0), 0));
     const credit = round2(lines.reduce((sum, line) => sum + (line.credit ?? 0), 0));
     if (debit !== credit) {
       throw new DomainError("unbalanced_journal_entry", "Проводка не сбалансирована", { debit, credit, lines });
     }
+    const chartAccounts = await this.repos.chartAccounts.all();
     lines.forEach((line) => {
-      if (!this.state.chartAccounts.some((account) => account.code === line.accountCode)) {
+      if (!chartAccounts.some((account) => account.code === line.accountCode)) {
         throw new DomainError("unknown_account", `Неизвестный счет ${line.accountCode}`);
       }
     });
@@ -5273,9 +5292,9 @@ export class AccountingApp {
       memo: document.title,
       createdAt: nowIso()
     };
-    this.state.journalEntries.push(entry);
-    lines.forEach((line) => {
-      this.state.journalLines.push({
+    await this.repos.journalEntries.add(entry);
+    for (const line of lines) {
+      await this.repos.journalLines.add({
         id: id("jl"),
         journalEntryId: entry.id,
         accountCode: line.accountCode,
@@ -5283,24 +5302,24 @@ export class AccountingApp {
         credit: round2(line.credit ?? 0),
         memo: line.memo ?? document.title
       });
-    });
+    }
     return entry;
   }
 
   async shortagePreview(purchaseOrderId: ID) {
     const order = this.mustFind(await this.repos.purchaseOrders.all(), purchaseOrderId, "purchase_order_not_found");
-    const lines = (await this.repos.purchaseOrderLines.all()).filter((line) => line.purchaseOrderId === order.id).map((line) => {
-      const qtyReceived = this.receivedQtyForLine(line.id);
-      const qtyShortage = this.openShortageQtyForLine(order.id, line.id);
+    const lines = (await Promise.all((await this.repos.purchaseOrderLines.all()).filter((line) => line.purchaseOrderId === order.id).map(async (line) => {
+      const qtyReceived = await this.receivedQtyForLine(line.id);
+      const qtyShortage = await this.openShortageQtyForLine(order.id, line.id);
       return {
         purchaseOrderLineId: line.id,
         productId: line.productId,
         qtyOrdered: line.qtyOrdered,
         qtyReceived,
         qtyShortage,
-        paidShareRub: this.paidShareForOrderLine(order.id, line, qtyShortage)
+        paidShareRub: await this.paidShareForOrderLine(order.id, line, qtyShortage)
       };
-    }).filter((line) => line.qtyShortage > 0);
+    }))).filter((line) => line.qtyShortage > 0);
     return { purchaseOrderId: order.id, lines };
   }
 
@@ -5316,31 +5335,34 @@ export class AccountingApp {
   }
 
   async postShortage(shortageId: ID) {
-    const shortage = this.mustFind(this.state.shortageResolutions, shortageId, "shortage_not_found");
-    const document = this.mustFind(this.state.documents, shortage.documentId, "document_not_found");
+    const shortage = this.mustFind(await this.repos.shortageResolutions.all(), shortageId, "shortage_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), shortage.documentId, "document_not_found");
     if (document.status === "posted" && shortage.status === "posted") return shortage;
     if (document.status === "cancelled") {
       throw new DomainError("document_cancelled", "Отмененное решение по недопоставке нельзя провести повторно");
     }
-    const order = this.mustFind(this.state.purchaseOrders, shortage.purchaseOrderId, "purchase_order_not_found");
+    const order = this.mustFind(await this.repos.purchaseOrders.all(), shortage.purchaseOrderId, "purchase_order_not_found");
     const shortageLines = (await this.repos.shortageResolutionLines.all()).filter((line) => line.shortageResolutionId === shortage.id);
     const journalLines: JournalLineInput[] = [];
-    shortageLines.forEach((line) => {
+    const supplierClaims = await this.repos.supplierClaims.all();
+    for (const line of shortageLines) {
       if (line.action === "supplier_claim" && line.paidShareRub > 0) {
         journalLines.push(
           { accountCode: "76.02", debit: line.paidShareRub, memo: "Претензия поставщику" },
           { accountCode: "60.02", credit: line.paidShareRub, memo: "Закрытие аванса по недопоставке" }
         );
-        const claimExists = this.state.supplierClaims.some((claim) => claim.shortageResolutionLineId === line.id);
+        const claimExists = supplierClaims.some((claim) => claim.shortageResolutionLineId === line.id);
         if (!claimExists) {
-          this.state.supplierClaims.push({
+          const claim: SupplierClaim = {
             id: id("claim"),
             organizationId: this.currentOrgId(),
             shortageResolutionLineId: line.id,
             supplierId: order.supplierId,
             amountRub: line.paidShareRub,
             status: "open"
-          });
+          };
+          await this.repos.supplierClaims.add(claim);
+          supplierClaims.push(claim);
         }
       }
       if (line.action === "loss" && line.paidShareRub > 0) {
@@ -5349,16 +5371,18 @@ export class AccountingApp {
           { accountCode: "60.02", credit: line.paidShareRub, memo: "Закрытие аванса по недопоставке" }
         );
       }
-    });
+    }
     if (journalLines.length > 0) {
       await this.postDocument(document.id, journalLines);
     } else {
       document.status = "posted";
       document.postedAt = nowIso();
+      await this.repos.documents.upsert(document);
       this.audit("document", document.id, "post", undefined, document, "Решение по недопоставке без проводок");
     }
-    this.ensureDocumentLink(order.documentId, document.id, "shortage");
+    await this.ensureDocumentLink(order.documentId, document.id, "shortage");
     shortage.status = "posted";
+    await this.repos.shortageResolutions.upsert(shortage);
     return shortage;
   }
 
@@ -5372,13 +5396,14 @@ export class AccountingApp {
   }
 
   async postStockTransfer(transferId: ID): Promise<StockTransfer> {
-    const transfer = this.mustFind(this.state.stockTransfers, transferId, "transfer_not_found");
-    const document = this.mustFind(this.state.documents, transfer.documentId, "document_not_found");
+    const transfer = this.mustFind(await this.repos.stockTransfers.all(), transferId, "transfer_not_found");
+    const document = this.mustFind(await this.repos.documents.all(), transfer.documentId, "document_not_found");
     if (document.status === "posted" && transfer.status === "posted") return transfer;
     if (document.status === "cancelled") {
       throw new DomainError("document_cancelled", "Отмененное перемещение нельзя провести повторно");
     }
     const transferLines = (await this.repos.stockTransferLines.all()).filter((line) => line.stockTransferId === transfer.id);
+    const documentLines = (await this.repos.documentLines.all()).filter((line) => line.documentId === document.id);
     let totalCost = 0;
     for (const line of transferLines) {
       const applications = await this.consumeFifo({
@@ -5405,8 +5430,7 @@ export class AccountingApp {
         date: transfer.transferDate,
         movementType: "transfer_in"
       });
-      const documentLine = this.state.documentLines.find((candidate) =>
-        candidate.documentId === document.id &&
+      const documentLine = documentLines.find((candidate) =>
         candidate.lineType === "stock_transfer_line" &&
         (candidate.payload as Record<string, unknown>)?.productId === line.productId &&
         Number(candidate.qty ?? 0) === Number(line.qty)
@@ -5414,14 +5438,18 @@ export class AccountingApp {
       if (documentLine) {
         documentLine.amountRub = costRub;
         documentLine.payload = { ...(documentLine.payload ?? {}), transferLineId: line.id, lotId: lot.id };
+        await this.repos.documentLines.upsert(documentLine);
       }
+      await this.repos.stockTransferLines.upsert(line);
     }
     document.amountRub = totalCost;
-    const fromAccount = accountForWarehouse(this.mustFind(this.state.warehouses, transfer.fromWarehouseId, "warehouse_not_found"));
-    const toAccount = accountForWarehouse(this.mustFind(this.state.warehouses, transfer.toWarehouseId, "warehouse_not_found"));
+    const warehouses = await this.repos.warehouses.all();
+    const fromAccount = accountForWarehouse(this.mustFind(warehouses, transfer.fromWarehouseId, "warehouse_not_found"));
+    const toAccount = accountForWarehouse(this.mustFind(warehouses, transfer.toWarehouseId, "warehouse_not_found"));
     if (fromAccount === toAccount) {
       document.status = "posted";
       document.postedAt = nowIso();
+      await this.repos.documents.upsert(document);
       this.audit("document", document.id, "post", undefined, document, "Перемещение внутри одного субсчета");
     } else {
       await this.postDocument(document.id, [
@@ -5430,6 +5458,7 @@ export class AccountingApp {
       ]);
     }
     transfer.status = "posted";
+    await this.repos.stockTransfers.upsert(transfer);
     return transfer;
   }
 
@@ -5776,8 +5805,8 @@ export class AccountingApp {
     return state;
   }
 
-  private stockState(productId: ID, warehouseId: ID, stateCode = "sellable"): StockState {
-    return this.state.stockStates.find((candidate) =>
+  private async stockState(productId: ID, warehouseId: ID, stateCode = "sellable"): Promise<StockState> {
+    return (await this.repos.stockStates.all()).find((candidate) =>
       candidate.productId === productId &&
       candidate.warehouseId === warehouseId &&
       (candidate.stateCode ?? "sellable") === stateCode
@@ -5790,13 +5819,13 @@ export class AccountingApp {
     };
   }
 
-  private ownWarehouse(): Warehouse {
-    const warehouse = this.state.warehouses.find((candidate) => candidate.warehouseType === "own");
+  private async ownWarehouse(): Promise<Warehouse> {
+    const warehouse = (await this.repos.warehouses.all()).find((candidate) => candidate.warehouseType === "own");
     if (!warehouse) throw new DomainError("warehouse_not_found", "Не найден собственный склад");
     return warehouse;
   }
 
-  private linkDocuments(fromDocumentId: ID, toDocumentId: ID, linkType: string): DocumentLink {
+  private async linkDocuments(fromDocumentId: ID, toDocumentId: ID, linkType: string): Promise<DocumentLink> {
     const link: DocumentLink = {
       id: id("doc_link"),
       organizationId: this.currentOrgId(),
@@ -5804,17 +5833,17 @@ export class AccountingApp {
       toDocumentId,
       linkType
     };
-    this.state.documentLinks.push(link);
+    await this.repos.documentLinks.add(link);
     return link;
   }
 
-  private ensureDocumentLink(fromDocumentId: ID, toDocumentId: ID, linkType: string): DocumentLink {
-    const existing = this.state.documentLinks.find((link) =>
+  private async ensureDocumentLink(fromDocumentId: ID, toDocumentId: ID, linkType: string): Promise<DocumentLink> {
+    const existing = (await this.repos.documentLinks.all()).find((link) =>
       link.fromDocumentId === fromDocumentId &&
       link.toDocumentId === toDocumentId &&
       link.linkType === linkType
     );
-    return existing ?? this.linkDocuments(fromDocumentId, toDocumentId, linkType);
+    return existing ?? await this.linkDocuments(fromDocumentId, toDocumentId, linkType);
   }
 
   private documentDescendantIdForLink(link: DocumentLink, currentDocumentId: ID): ID | undefined {
@@ -5833,20 +5862,23 @@ export class AccountingApp {
     }
   }
 
-  private applyPaymentToCashAccount(payment: Payment): Payment {
-    const cashAccount = this.mustFind(this.state.cashAccounts, payment.cashAccountId, "cash_account_not_found");
+  private async applyPaymentToCashAccount(payment: Payment): Promise<Payment> {
+    const cashAccount = this.mustFind(await this.repos.cashAccounts.all(), payment.cashAccountId, "cash_account_not_found");
     const direction = payment.paymentDirection === "incoming" ? 1 : -1;
     cashAccount.balanceRub = round2(cashAccount.balanceRub + direction * payment.amountRub);
+    await this.repos.cashAccounts.upsert(cashAccount);
     return payment;
   }
 
   private async rollbackPaymentsForDocument(documentId: ID) {
     const payments = (await this.repos.payments.all()).filter((candidate) => candidate.documentId === documentId);
     if (payments.length === 0) return;
+    const cashAccounts = await this.repos.cashAccounts.all();
     for (const payment of payments) {
-      const cashAccount = this.mustFind(this.state.cashAccounts, payment.cashAccountId, "cash_account_not_found");
+      const cashAccount = this.mustFind(cashAccounts, payment.cashAccountId, "cash_account_not_found");
       const direction = payment.paymentDirection === "incoming" ? 1 : -1;
       cashAccount.balanceRub = round2(cashAccount.balanceRub - direction * payment.amountRub);
+      await this.repos.cashAccounts.upsert(cashAccount);
     }
     const paymentIds = new Set(payments.map((payment) => payment.id));
     await this.repos.paymentAllocations.replaceAll((await this.repos.paymentAllocations.all()).filter((allocation) => !paymentIds.has(allocation.paymentId)));
@@ -5936,15 +5968,23 @@ export class AccountingApp {
   }
 
   private async supplierAdvanceBalance(purchaseOrderId: ID): Promise<number> {
-    const paid = (await this.repos.paymentAllocations.all())
-      .filter((allocation) =>
+    let paid = 0;
+    for (const allocation of (await this.repos.paymentAllocations.all())) {
+      if (
         allocation.purchaseOrderId === purchaseOrderId &&
         allocation.allocationPurpose === "goods_purchase" &&
-        this.isPaymentAllocationPosted(allocation)
-      )
-      .reduce((sum, allocation) => sum + allocation.amountRub, 0);
+        await this.isPaymentAllocationPosted(allocation)
+      ) {
+        paid = round2(paid + allocation.amountRub);
+      }
+    }
+    const documents = await this.repos.documents.all();
     const received = (await this.repos.goodsReceipts.all())
-      .filter((receipt) => receipt.purchaseOrderId === purchaseOrderId && receipt.status === "posted" && this.isDocumentPosted(receipt.documentId))
+      .filter((receipt) =>
+        receipt.purchaseOrderId === purchaseOrderId &&
+        receipt.status === "posted" &&
+        documents.find((document) => document.id === receipt.documentId)?.status === "posted"
+      )
       .reduce((sum, receipt) => sum + receipt.goodsCostRubTotal, 0);
     const allShortageResolutionLines = await this.repos.shortageResolutionLines.all();
     const resolved = (await this.repos.shortageResolutions.all())
@@ -5954,30 +5994,35 @@ export class AccountingApp {
     return round2(paid - received - resolved);
   }
 
-  private paidShareForOrderLine(orderId: ID, orderLine: PurchaseOrderLine, qty: number): number {
-    const linkedGoodsPaymentRub = this.state.paymentAllocations
-      .filter((allocation) =>
+  private async paidShareForOrderLine(orderId: ID, orderLine: PurchaseOrderLine, qty: number): Promise<number> {
+    let linkedGoodsPaymentRub = 0;
+    for (const allocation of await this.repos.paymentAllocations.all()) {
+      if (
         allocation.purchaseOrderId === orderId &&
         allocation.allocationPurpose === "goods_purchase" &&
-        this.isPaymentAllocationPosted(allocation)
-      )
-      .reduce((sum, allocation) => sum + allocation.amountRub, 0);
-    const orderLines = this.state.purchaseOrderLines.filter((line) => line.purchaseOrderId === orderId);
+        await this.isPaymentAllocationPosted(allocation)
+      ) {
+        linkedGoodsPaymentRub = round2(linkedGoodsPaymentRub + allocation.amountRub);
+      }
+    }
+    const orderLines = (await this.repos.purchaseOrderLines.all()).filter((line) => line.purchaseOrderId === orderId);
     const totalBasis = orderLines.reduce((sum, line) => sum + line.supplierAmount, 0);
     const lineBasis = qty * orderLine.supplierUnitPrice;
     return totalBasis > 0 ? round2((linkedGoodsPaymentRub * lineBasis) / totalBasis) : 0;
   }
 
-  private procurementCostTargets(purchaseOrderId: ID | undefined, allocationBasis: ProcurementCost["allocationBasis"]) {
-    const lots = this.state.inventoryLots.filter((lot) => {
+  private async procurementCostTargets(purchaseOrderId: ID | undefined, allocationBasis: ProcurementCost["allocationBasis"]) {
+    const goodsReceipts = await this.repos.goodsReceipts.all();
+    const products = await this.repos.products.all();
+    const lots = (await this.repos.inventoryLots.all()).filter((lot) => {
       if (lot.status === "reversed" || lot.qtyInitial <= 0) return false;
       if (!purchaseOrderId) return true;
-      const receipt = this.state.goodsReceipts.find((candidate) => candidate.documentId === lot.sourceDocumentId);
+      const receipt = goodsReceipts.find((candidate) => candidate.documentId === lot.sourceDocumentId);
       return receipt?.purchaseOrderId === purchaseOrderId;
     });
 
     return lots.map((lot) => {
-      const product = this.mustFind(this.state.products, lot.productId, "product_not_found");
+      const product = this.mustFind(products, lot.productId, "product_not_found");
       const qtyInitial = round4(lot.qtyInitial);
       const qtyRemaining = round4(Math.max(0, lot.qtyRemaining));
       const qtySold = round4(Math.max(0, qtyInitial - qtyRemaining));
@@ -6001,17 +6046,18 @@ export class AccountingApp {
     return (await this.repos.documentLines.all()).filter((line) => line.documentId === salesReturn.documentId && line.lineType === "sales_return_line");
   }
 
-  private returnedQtyForSaleLine(saleLineId: ID, excludeReturnId?: ID): number {
+  private async returnedQtyForSaleLine(saleLineId: ID, excludeReturnId?: ID): Promise<number> {
+    const salesReturns = await this.repos.salesReturns.all();
     const excludedDocumentId = excludeReturnId
-      ? this.state.salesReturns.find((candidate) => candidate.id === excludeReturnId)?.documentId
+      ? salesReturns.find((candidate) => candidate.id === excludeReturnId)?.documentId
       : undefined;
     return round4(
-      this.state.documentLines
+      (await this.repos.documentLines.all())
         .filter((line) => line.lineType === "sales_return_line")
         .filter((line) => !excludedDocumentId || line.documentId !== excludedDocumentId)
         .filter((line) => {
           const payload = (line.payload ?? {}) as Record<string, unknown>;
-          const salesReturn = this.state.salesReturns.find((candidate) => candidate.documentId === line.documentId);
+          const salesReturn = salesReturns.find((candidate) => candidate.documentId === line.documentId);
           return payload.saleLineId === saleLineId && salesReturn?.status === "posted";
         })
         .reduce((sum, line) => sum + Number(line.qty ?? 0), 0)
@@ -6061,39 +6107,41 @@ export class AccountingApp {
     }
   }
 
-  private receivedQtyForLine(purchaseOrderLineId: ID): number {
+  private async receivedQtyForLine(purchaseOrderLineId: ID): Promise<number> {
+    const documents = await this.repos.documents.all();
     const postedReceiptIds = new Set(
-      this.state.goodsReceipts
-        .filter((receipt) => receipt.status === "posted" && this.isDocumentPosted(receipt.documentId))
+      (await this.repos.goodsReceipts.all())
+        .filter((receipt) => receipt.status === "posted" && documents.find((document) => document.id === receipt.documentId)?.status === "posted")
         .map((receipt) => receipt.id)
     );
     return round4(
-      this.state.goodsReceiptLines
+      (await this.repos.goodsReceiptLines.all())
         .filter((line) => line.purchaseOrderLineId === purchaseOrderLineId && postedReceiptIds.has(line.goodsReceiptId))
         .reduce((sum, line) => sum + line.qtyReceived, 0)
     );
   }
 
-  private dispatchedQtyForReceiptLine(goodsReceiptLineId: ID, channelId?: ID): number {
+  private async dispatchedQtyForReceiptLine(goodsReceiptLineId: ID, channelId?: ID): Promise<number> {
+    const documents = await this.repos.documents.all();
     const postedTransferIds = new Set(
-      this.state.stockTransfers
+      (await this.repos.stockTransfers.all())
         .filter((transfer) =>
           transfer.status === "posted" &&
-          this.isDocumentPosted(transfer.documentId) &&
+          documents.find((document) => document.id === transfer.documentId)?.status === "posted" &&
           (!channelId || transfer.channelId === channelId)
         )
         .map((transfer) => transfer.id)
     );
     return round4(
-      this.state.stockTransferLines
+      (await this.repos.stockTransferLines.all())
         .filter((line) => line.sourceGoodsReceiptLineId === goodsReceiptLineId && postedTransferIds.has(line.stockTransferId))
         .reduce((sum, line) => sum + line.qty, 0)
     );
   }
 
-  private remainingQtyForReceiptLine(goodsReceiptLineId: ID, warehouseId?: ID, stateCode = "sellable"): number {
+  private async remainingQtyForReceiptLine(goodsReceiptLineId: ID, warehouseId?: ID, stateCode = "sellable"): Promise<number> {
     return round4(
-      this.state.inventoryLots
+      (await this.repos.inventoryLots.all())
         .filter((lot) =>
           lot.sourceLineId === goodsReceiptLineId &&
           lot.status !== "reversed" &&
@@ -6105,25 +6153,26 @@ export class AccountingApp {
     );
   }
 
-  private openShortageQtyForLine(orderId: ID, purchaseOrderLineId: ID): number {
-    const line = this.mustFind(this.state.purchaseOrderLines, purchaseOrderLineId, "purchase_order_line_not_found");
+  private async openShortageQtyForLine(orderId: ID, purchaseOrderLineId: ID): Promise<number> {
+    const line = this.mustFind(await this.repos.purchaseOrderLines.all(), purchaseOrderLineId, "purchase_order_line_not_found");
+    const shortageResolutionLines = await this.repos.shortageResolutionLines.all();
     const resolvedQty = round4(
-      this.state.shortageResolutions
+      (await this.repos.shortageResolutions.all())
         .filter((resolution) => resolution.purchaseOrderId === orderId && resolution.status === "posted")
-        .flatMap((resolution) => this.state.shortageResolutionLines.filter((candidate) => candidate.shortageResolutionId === resolution.id))
+        .flatMap((resolution) => shortageResolutionLines.filter((candidate) => candidate.shortageResolutionId === resolution.id))
         .filter((candidate) => candidate.purchaseOrderLineId === purchaseOrderLineId)
         .reduce((sum, candidate) => sum + candidate.qtyShortage, 0)
     );
-    return round4(Math.max(0, line.qtyOrdered - this.receivedQtyForLine(purchaseOrderLineId) - resolvedQty));
+    return round4(Math.max(0, line.qtyOrdered - await this.receivedQtyForLine(purchaseOrderLineId) - resolvedQty));
   }
 
-  private isPaymentAllocationPosted(allocation: PaymentAllocation): boolean {
-    const payment = this.state.payments.find((candidate) => candidate.id === allocation.paymentId);
-    return payment ? this.isDocumentPosted(payment.documentId) : false;
+  private async isPaymentAllocationPosted(allocation: PaymentAllocation): Promise<boolean> {
+    const payment = (await this.repos.payments.all()).find((candidate) => candidate.id === allocation.paymentId);
+    return payment ? await this.isDocumentPosted(payment.documentId) : false;
   }
 
-  private isDocumentPosted(documentId: ID): boolean {
-    return this.state.documents.find((document) => document.id === documentId)?.status === "posted";
+  private async isDocumentPosted(documentId: ID): Promise<boolean> {
+    return (await this.repos.documents.all()).find((document) => document.id === documentId)?.status === "posted";
   }
 
   private async channelClearingBalance(channelId: ID): Promise<number> {
