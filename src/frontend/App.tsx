@@ -51,7 +51,8 @@ import { ReportsWorkspace } from "@/pages/reports/ReportsPage";
 import { ControlsWorkspace } from "@/pages/controls/ControlsPages";
 import { AuditPage } from "@/pages/access/AccessPages";
 import { BackfillWizardPage } from "@/pages/onboarding/OnboardingPages";
-import { useCollection } from "@/lib/use-collection";
+import { useQuery } from "@tanstack/react-query";
+import { apiGet } from "@/api";
 
 export function App() {
   return (
@@ -162,7 +163,7 @@ export function App() {
 }
 
 function ExistingStoreEntryRedirect() {
-  const organization = useCollection<any>("organization");
+  const dashboardQuery = useQuery({ queryKey: ["dashboard"], queryFn: () => apiGet<any>("/api/dashboard") });
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const mode = searchParams.get("mode") === "current_stock_start" ? "current_stock_start" : "historical_backfill";
@@ -175,7 +176,8 @@ function ExistingStoreEntryRedirect() {
     confirmed ? "confirmed=1" : ""
   ].filter(Boolean).join("&");
 
-  return <Navigate to={organization ? `/setup/existing-store?${suffix}` : "/setup"} replace />;
+  if (dashboardQuery.isLoading) return null;
+  return <Navigate to={dashboardQuery.data?.configured ? `/setup/existing-store?${suffix}` : "/setup"} replace />;
 }
 
 function LegacySetupReviewRedirect() {

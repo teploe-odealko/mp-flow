@@ -2599,6 +2599,7 @@ export async function readRuntimeDashboard(source: Queryable, workspaceId: strin
     configured: Boolean(organization),
     policy: accountingPolicy,
     currentPeriod: periods.find((period) => period.status === "open"),
+    periods,
     counters: {
       products: products.length,
       documents: documents.length,

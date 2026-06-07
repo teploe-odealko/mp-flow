@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
-import { useCollection } from "@/lib/use-collection";
+import { useQuery } from "@tanstack/react-query";
+import { apiGet } from "@/api";
 import { AlertStack } from "@/components/ui/alert-stack";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
@@ -20,7 +21,8 @@ export function AppShell() {
     if (typeof window === "undefined") return "";
     return window.localStorage.getItem(WORKING_PERIOD_KEY) ?? "";
   });
-  const periods = useCollection<any[]>("periods") ?? [];
+  const dashboardQuery = useQuery({ queryKey: ["dashboard"], queryFn: () => apiGet<any>("/api/dashboard") });
+  const periods = dashboardQuery.data?.periods ?? [];
 
   useEffect(() => {
     if (periods.length === 0) {

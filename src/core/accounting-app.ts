@@ -466,6 +466,7 @@ export class AccountingApp {
   async dashboard() {
     const org = this.organization;
     const documents = await this.repos.documents.all();
+    const periods = await this.repos.periods.all();
     const stockStates = await this.repos.stockStates.all();
     const sales = await this.repos.sales.all();
     const purchaseOrders = await this.repos.purchaseOrders.all();
@@ -473,7 +474,8 @@ export class AccountingApp {
       organization: org,
       configured: Boolean(org),
       policy: this.accountingPolicy,
-      currentPeriod: (await this.repos.periods.all()).find((period) => period.status === "open"),
+      currentPeriod: periods.find((period) => period.status === "open"),
+      periods,
       counters: {
         products: (await this.repos.products.all()).length,
         documents: documents.length,

@@ -301,6 +301,10 @@ prod-readiness фиксирует, что dashboard больше не откры
 через `useCollection`. `/api/dashboard` возвращает counters, `inventoryCostRub` и `recentDocuments`; Postgres
 runtime собирает их из typed read-model.
 
+### ✅ Shell/Topbar используют dashboard DTO
+`AppShell`, `Topbar` и redirect для existing-store больше не читают `organization/periods` через collections.
+`/api/dashboard` теперь возвращает `periods`, а React Query переиспользует один `["dashboard"]` cache key.
+
 ### 🛑 Скрипт для хелпер-слоя исчерпан (проверено ТРИЖДЫ, каждый раз откат к зелёному)
 Массовый async-ify хелперов всегда даёт неустранимый скриптом каскад: `forEach(x => { await this.createLot/
 addStockState/consumeFifo(...) })` и `.map(x => await this.findRollbackDocumentSummary(x))` — хелперы каскадно

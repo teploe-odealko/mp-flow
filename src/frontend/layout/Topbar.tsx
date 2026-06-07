@@ -3,12 +3,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, ChevronDown, HelpCircle, Landmark, LogOut, Search } from "lucide-react";
 import { apiGet, apiPost } from "@/api";
 import { Button } from "@/components/ui/button";
-import { useCollection } from "@/lib/use-collection";
 
 export function Topbar() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const organization = useCollection<any>("organization");
+  const dashboardQuery = useQuery({ queryKey: ["dashboard"], queryFn: () => apiGet<any>("/api/dashboard") });
+  const organization = dashboardQuery.data?.organization;
   const sessionQuery = useQuery({
     queryKey: ["auth", "session"],
     retry: false,
