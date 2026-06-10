@@ -314,7 +314,7 @@ export function PayoutsPage() {
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Выплаты маркетплейсов"
-        subtitle="Здесь заносите документы Ozon и Wildberries вручную, сверяете поступление на счёт и проводите закрытие 76.ТП."
+        subtitle="Здесь заносите документы маркетплейсов вручную, сверяете поступление на счёт и проводите закрытие 76.ТП."
         breadcrumbs={[{ label: "Деньги и расчеты", to: "/money" }, { label: "Выплаты маркетплейсов" }]}
         actions={
           <div className="flex gap-2">

@@ -32,6 +32,9 @@ export async function createSalesChannel(writeContext: RuntimeWriteContext, inpu
   const plugin = input.pluginCode
     ? (await writeContext.repos.integrationPlugins.all()).find((candidate) => candidate.code === input.pluginCode)
     : undefined;
+  if (input.pluginCode && !plugin) {
+    throw new DomainError("plugin_not_found", `Плагин «${input.pluginCode}» не поддерживается. Доступны Ozon и ручные каналы`);
+  }
   const channel: SalesChannel = {
     id: id("channel"),
     organizationId,
@@ -82,6 +85,9 @@ export async function updateSalesChannel(writeContext: RuntimeWriteContext, chan
   }
   if (patch.pluginCode !== undefined) {
     const plugin = (await writeContext.repos.integrationPlugins.all()).find((candidate) => candidate.code === patch.pluginCode);
+    if (patch.pluginCode && !plugin) {
+      throw new DomainError("plugin_not_found", `Плагин «${patch.pluginCode}» не поддерживается. Доступны Ozon и ручные каналы`);
+    }
     channel.pluginId = plugin?.id;
   }
 

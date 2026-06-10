@@ -169,7 +169,6 @@ function defaultWarehouses(organizationId: ID): Warehouse[] {
 function defaultIntegrationPlugins(): AccountingState["integrationPlugins"] {
   return [
     { id: id("plugin"), code: "ozon", displayName: "Ozon", status: "available" },
-    { id: id("plugin"), code: "wildberries", displayName: "Wildberries", status: "available" },
     { id: id("plugin"), code: "manual", displayName: "Ручной канал", status: "installed" }
   ];
 }

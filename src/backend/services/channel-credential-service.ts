@@ -24,7 +24,10 @@ export async function saveChannelCredentials(
 ): Promise<CredentialStatus & { online: ValidationResult }> {
   const channel = await findChannel(writeContext, channelId);
   const installedPlugin = await requireInstalledPlugin(writeContext, channel);
-  const plugin = pluginRegistry.get(installedPlugin.code);
+  const plugin = pluginRegistry.find(installedPlugin.code);
+  if (!plugin) {
+    throw new DomainError("plugin_not_supported", `Интеграция «${installedPlugin.displayName}» больше не поддерживается, сохранение учётных данных недоступно`);
+  }
   const validation = plugin.validateCredentials(credentials);
   if (!validation.ok) throw new DomainError("plugin_credentials_invalid", validation.message);
 
@@ -61,7 +64,15 @@ export async function checkChannelAccess(
     return { channelId: channel.id, validation: { ok: true } };
   }
 
-  const plugin = pluginRegistry.get(installedPlugin.code);
+  const plugin = pluginRegistry.find(installedPlugin.code);
+  if (!plugin) {
+    const message = `Интеграция «${installedPlugin.displayName}» больше не поддерживается`;
+    channel.status = "error";
+    channel.lastError = message;
+    channel.lastCheckedAt = nowIso();
+    await writeContext.repos.salesChannels.upsert(channel);
+    return { channelId: channel.id, validation: { ok: false, message }, status: channel.status };
+  }
   const shape = plugin.validateCredentials(credentials ?? {});
   if (!shape.ok) {
     channel.status = "error";

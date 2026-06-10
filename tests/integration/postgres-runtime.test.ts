@@ -1364,6 +1364,108 @@ describePostgres("postgres runtime store", () => {
     }
   }, 30_000);
 
+  it("миграция 0009 удаляет плагин wildberries и его каналы с зависимыми данными", async () => {
+    await resetRuntimeTables();
+
+    const store = new PostgresRuntimeStore(new Pool({ connectionString: connectionString! }), "postgres-wb-migration-secret");
+    const api = createApi(new AccountingApp(), { persistence: store });
+    try {
+      await request(api, "POST", "/api/setup", { displayName: "WB Migration", accountingStartDate: "2026-01-01" });
+      const ozonChannel = await request<any>(api, "POST", "/api/integrations/channels", {
+        name: "Ozon контрольный",
+        channelType: "marketplace",
+        pluginCode: "ozon"
+      });
+
+      const pool = new Pool({ connectionString: connectionString! });
+      try {
+        // Эмуляция данных старой версии: WB-плагин, канал и фейковые данные демо-заглушки.
+        await pool.query(`
+          insert into integration_plugin (code, display_name, status, public_id)
+          values ('wildberries', 'Wildberries', 'available', 'plugin_wb_legacy')
+        `);
+        await pool.query(`
+          insert into sales_channel (organization_id, name, channel_type, plugin_id, sales_point_warehouse_id, status, public_id)
+          select o.id, 'WB Legacy', 'marketplace', ip.id, w.id, 'needs_setup', 'channel_wb_legacy'
+          from organization o
+          cross join integration_plugin ip
+          cross join lateral (select id from warehouse where warehouse_type = 'sales_point' limit 1) w
+          where ip.code = 'wildberries'
+          limit 1
+        `);
+        await pool.query(`
+          insert into external_product (organization_id, channel_id, external_sku, external_name, status, public_id)
+          select sc.organization_id, sc.id, 'WB-CASE-001', 'Чехол / карточка WB', 'active', 'external_wb_legacy'
+          from sales_channel sc where sc.public_id = 'channel_wb_legacy'
+        `);
+        await pool.query(`
+          insert into external_event (organization_id, channel_id, event_type, external_id, occurred_at, raw_payload, normalized_payload, status, public_id)
+          select sc.organization_id, sc.id, 'sale', 'wb-sale-demo-1', now(), '{}'::jsonb, '{}'::jsonb, 'received', 'event_wb_legacy'
+          from sales_channel sc where sc.public_id = 'channel_wb_legacy'
+        `);
+        await pool.query(`
+          insert into observed_stock (organization_id, channel_id, external_product_id, observed_at, qty_observed, location_status)
+          select sc.organization_id, sc.id, ep.id, now(), 97, 'unmapped'
+          from sales_channel sc join external_product ep on ep.channel_id = sc.id
+          where sc.public_id = 'channel_wb_legacy'
+        `);
+        await pool.query(`
+          insert into channel_credential (channel_id, secret_ref, status)
+          select sc.id, 'wb-secret-legacy', 'active'
+          from sales_channel sc where sc.public_id = 'channel_wb_legacy'
+        `);
+
+        const counts = async () => {
+          const result = await pool.query<{ plugins: string; channels: string; products: string; events: string; stocks: string; credentials: string }>(`
+            select
+              (select count(*) from integration_plugin where code = 'wildberries') as plugins,
+              (select count(*) from sales_channel where public_id = 'channel_wb_legacy') as channels,
+              (select count(*) from external_product where external_sku like 'WB-%') as products,
+              (select count(*) from external_event where external_id = 'wb-sale-demo-1') as events,
+              (select count(*) from observed_stock) as stocks,
+              (select count(*) from channel_credential where secret_ref = 'wb-secret-legacy') as credentials
+          `);
+          const row = result.rows[0];
+          return {
+            plugins: Number(row.plugins),
+            channels: Number(row.channels),
+            products: Number(row.products),
+            events: Number(row.events),
+            stocks: Number(row.stocks),
+            credentials: Number(row.credentials)
+          };
+        };
+
+        const before = await counts();
+        expect(before).toEqual({ plugins: 1, channels: 1, products: 1, events: 1, stocks: 1, credentials: 1 });
+
+        await runMigrations(pool);
+        const afterFirstRun = await counts();
+        expect(afterFirstRun).toEqual({ plugins: 0, channels: 0, products: 0, events: 0, stocks: 0, credentials: 0 });
+
+        // Контрольные строки не тронуты: ozon и manual остаются, канал Ozon жив.
+        const survivors = await pool.query<{ code: string }>("select code from integration_plugin order by code");
+        expect(survivors.rows.map((row) => row.code)).toEqual(["manual", "ozon"]);
+        const ozonChannels = await pool.query("select id from sales_channel where public_id = $1", [ozonChannel.id]);
+        expect(ozonChannels.rows).toHaveLength(1);
+
+        // Идемпотентность: повторный прогон 0009 не падает и снова удаляет вновь найденный сид.
+        await pool.query("delete from schema_migrations where id = '0009'");
+        await pool.query(`
+          insert into integration_plugin (code, display_name, status, public_id)
+          values ('wildberries', 'Wildberries', 'available', 'plugin_wb_legacy_2')
+        `);
+        await runMigrations(pool);
+        const afterSecondRun = await counts();
+        expect(afterSecondRun.plugins).toBe(0);
+      } finally {
+        await pool.end();
+      }
+    } finally {
+      await store.close();
+    }
+  }, 30_000);
+
   it("moves legacy default auth members to personal workspaces", async () => {
     await resetRuntimeTables();
 

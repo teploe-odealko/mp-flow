@@ -384,7 +384,6 @@ export class AccountingApp {
 
     for (const plugin of [
       { id: id("plugin"), code: "ozon", displayName: "Ozon", status: "available" },
-      { id: id("plugin"), code: "wildberries", displayName: "Wildberries", status: "available" },
       { id: id("plugin"), code: "manual", displayName: "Ручной канал", status: "installed" }
     ] satisfies Array<AccountingState["integrationPlugins"][number]>) {
       await this.repos.integrationPlugins.add(plugin);

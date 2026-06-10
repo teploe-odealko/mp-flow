@@ -98,3 +98,120 @@ describe("marketplace plugins", () => {
     expect(after.externalEvents.find((event: any) => event.externalId === "ozon-sale-demo-1").status).toBe("ready_for_processing");
   });
 });
+
+describe("wildberries removal", () => {
+  it("does not expose wildberries in plugin registry or seeds", async () => {
+    resetIds();
+    const app = new AccountingApp();
+    const api = createApi(app);
+    await post(api, "/api/setup", { displayName: "WB Removal", accountingStartDate: "2026-01-01" });
+
+    const plugins = await get<any[]>(api, "/api/plugins");
+    expect(plugins.some((plugin) => plugin.code === "wildberries")).toBe(false);
+    expect(plugins.some((plugin) => plugin.code === "ozon")).toBe(true);
+
+    const state = await readStateViaApi(api);
+    const seededCodes = state.integrationPlugins.map((plugin: any) => plugin.code);
+    expect(seededCodes).toContain("ozon");
+    expect(seededCodes).toContain("manual");
+    expect(seededCodes).not.toContain("wildberries");
+  });
+
+  it("rejects creating or switching a channel to wildberries with a clear error", async () => {
+    resetIds();
+    const app = new AccountingApp();
+    const api = createApi(app);
+    await post(api, "/api/setup", { displayName: "WB Channels", accountingStartDate: "2026-01-01" });
+
+    await expect(post(api, "/api/integrations/channels", {
+      name: "WB канал",
+      channelType: "marketplace",
+      pluginCode: "wildberries"
+    })).rejects.toThrow(/plugin_not_found/);
+
+    const ozonChannel = await post<any>(api, "/api/integrations/channels", {
+      name: "Ozon канал",
+      channelType: "marketplace",
+      pluginCode: "ozon"
+    });
+    const patchResponse = await api.request(`/api/integrations/channels/${ozonChannel.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ pluginCode: "wildberries" }),
+      headers: { "Content-Type": "application/json" }
+    });
+    const patchPayload = await patchResponse.json() as any;
+    expect(patchPayload.ok).toBe(false);
+    expect(patchPayload.error.code).toBe("plugin_not_found");
+  });
+
+  it("rejects credential validation for wildberries instead of returning 500", async () => {
+    resetIds();
+    const app = new AccountingApp();
+    const api = createApi(app);
+    await post(api, "/api/setup", { displayName: "WB Validate", accountingStartDate: "2026-01-01" });
+
+    const response = await api.request("/api/integrations/channels/validate", {
+      method: "POST",
+      body: JSON.stringify({ pluginCode: "wildberries", credentials: { token: "real-token" } }),
+      headers: { "Content-Type": "application/json" }
+    });
+    const payload = await response.json() as any;
+    expect(response.status).toBe(400);
+    expect(payload.ok).toBe(false);
+    expect(payload.error.code).toBe("plugin_not_found");
+  });
+
+  it("keeps legacy wildberries channels readable and blocks sync/credentials without 500", async () => {
+    resetIds();
+    const app = new AccountingApp();
+    const api = createApi(app);
+    await app.setupDemo();
+
+    // Эмуляция данных старой версии: строка integration_plugin и канал, созданные до удаления WB.
+    const legacyPlugin = { id: "plugin_wb_legacy", code: "wildberries", displayName: "Wildberries", status: "available" as const };
+    app.state.integrationPlugins.push(legacyPlugin);
+    const state = await readStateViaApi(api);
+    const salesPoint = state.warehouses.find((warehouse: any) => warehouse.warehouseType === "sales_point");
+    await app.repos.salesChannels.add({
+      id: "channel_wb_legacy",
+      organizationId: state.organization.id,
+      name: "Wildberries Legacy",
+      channelType: "marketplace",
+      pluginId: legacyPlugin.id,
+      salesPointWarehouseId: salesPoint.id,
+      clearingAccountCode: "76.ТП",
+      status: "needs_setup"
+    });
+
+    // Деталь канала не падает: плагин просто отсутствует.
+    const detail = await get<any>(api, "/api/integrations/channels/channel_wb_legacy");
+    expect(detail.channel.id).toBe("channel_wb_legacy");
+    expect(detail.plugin).toBeNull();
+
+    // Сохранение кредов отбивается доменной ошибкой, а не 500.
+    await expect(post(api, "/api/integrations/channels/channel_wb_legacy/credentials", {
+      credentials: { token: "x" }
+    })).rejects.toThrow(/plugin_not_supported/);
+
+    // Оба sync-роута отбиваются и не пишут фейковые данные.
+    await expect(post(api, "/api/channels/channel_wb_legacy/sync", {
+      credentials: { token: "x" }
+    })).rejects.toThrow(/plugin_not_supported/);
+    await expect(post(api, "/api/integrations/channels/channel_wb_legacy/sync-runs", {
+      credentials: { token: "x" }
+    })).rejects.toThrow(/plugin_not_supported/);
+
+    const after = await readStateViaApi(api);
+    expect(after.externalEvents.some((event: any) => event.externalId === "wb-sale-demo-1")).toBe(false);
+    expect(after.externalProducts.some((product: any) => String(product.externalSku).startsWith("WB-"))).toBe(false);
+    const detailAfter = await get<any>(api, "/api/integrations/channels/channel_wb_legacy");
+    expect(detailAfter.credentialStatus.saved).toBe(false);
+    expect(detailAfter.syncRuns).toHaveLength(0);
+
+    // Проверка доступа помечает канал ошибкой с понятным сообщением.
+    const check = await post<any>(api, "/api/integrations/channels/channel_wb_legacy/check", {});
+    expect(check.validation.ok).toBe(false);
+    expect(check.validation.message).toContain("не поддерживается");
+    expect(check.status).toBe("error");
+  });
+});

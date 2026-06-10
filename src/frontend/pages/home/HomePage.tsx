@@ -225,7 +225,7 @@ function HomeDashboard({ dashboard }: { dashboard: any }) {
             <NextAction
               done={false}
               title="Подключить канал"
-              text="Привяжите Ozon/WB или ручной канал."
+              text="Привяжите кабинет Ozon или ручной канал."
               to="/integrations/channels/new"
             />
           </CardContent>

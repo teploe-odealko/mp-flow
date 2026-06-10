@@ -624,7 +624,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const channel = await readContext.repos.salesChannels.getById(channelId);
     if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
     const installedPlugin = channel.pluginId ? await readContext.repos.integrationPlugins.getById(channel.pluginId) : undefined;
-    const plugin = installedPlugin ? pluginRegistry.get(installedPlugin.code) : undefined;
+    const plugin = installedPlugin ? pluginRegistry.find(installedPlugin.code) : undefined;
     const [sales, payouts, externalProducts, warehouses, backfillProjects, syncRuns] = await Promise.all([
       readContext.repos.sales.all(),
       readContext.repos.payouts.all(),
@@ -1162,7 +1162,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const channel = await readContext.repos.salesChannels.getById(channelId);
     if (!channel) throw new DomainError("channel_not_found", "Канал продаж не найден");
     const installedPlugin = channel.pluginId ? await readContext.repos.integrationPlugins.getById(channel.pluginId) : undefined;
-    const plugin = installedPlugin ? pluginRegistry.get(installedPlugin.code) : undefined;
+    const plugin = installedPlugin ? pluginRegistry.find(installedPlugin.code) : undefined;
     if (!plugin) return null;
     const record = (await readContext.repos.pluginStateRecords.all()).find((candidate) =>
       candidate.pluginCode === plugin.code &&
@@ -1267,7 +1267,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
         };
       });
     const installedPlugin = channel?.pluginId ? await readContext.repos.integrationPlugins.getById(channel.pluginId) : undefined;
-    const plugin = installedPlugin ? pluginRegistry.get(installedPlugin.code) : undefined;
+    const plugin = installedPlugin ? pluginRegistry.find(installedPlugin.code) : undefined;
     return {
       receipt,
       document,
@@ -1393,7 +1393,10 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.get("/api/integrations/observed-stock", async (c) => c.json({ ok: true, data: await (await readContextFor(c)).observedStocks.list() }));
   api.post("/api/integrations/channels/validate", async (c) => {
     const body = channelValidationSchema.parse(await c.req.json());
-    const plugin = body.pluginCode ? pluginRegistry.get(body.pluginCode) : undefined;
+    const plugin = body.pluginCode ? pluginRegistry.find(body.pluginCode) : undefined;
+    if (body.pluginCode && !plugin) {
+      throw new DomainError("plugin_not_found", `Плагин «${body.pluginCode}» не поддерживается. Доступна интеграция Ozon`);
+    }
     if (!plugin) return c.json({ ok: true, data: { ok: true } });
     const shape = plugin.validateCredentials(body.credentials ?? {});
     if (!shape.ok || !body.online || !plugin.checkAccess) {
@@ -2320,7 +2323,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const installedPlugin = channel.pluginId ? await scopedApp.repos.integrationPlugins.getById(channel.pluginId) : undefined;
     if (!installedPlugin) throw new DomainError("plugin_not_found", "У канала не выбран плагин");
     const body = pluginSyncSchema.parse(await c.req.json().catch(() => ({})));
-    const plugin = pluginRegistry.get(installedPlugin.code);
+    const plugin = pluginRegistry.find(installedPlugin.code);
+    if (!plugin) throw new DomainError("plugin_not_supported", `Интеграция «${installedPlugin.displayName}» больше не поддерживается, синхронизация недоступна`);
     const credentials = body.credentials ?? scopedApp.credentialsForChannel(channel.id);
     const validation = plugin.validateCredentials(credentials ?? {});
     if (!validation.ok) throw new DomainError("plugin_credentials_invalid", validation.message);
@@ -2346,6 +2350,8 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const installedPlugin = channel.pluginId ? await scopedApp.repos.integrationPlugins.getById(channel.pluginId) : undefined;
     if (!installedPlugin) throw new DomainError("plugin_not_found", "У канала не выбран плагин");
     if (channel.status === "disabled") throw new DomainError("channel_disabled", "Канал отключён, синхронизация недоступна");
+    const plugin = pluginRegistry.find(installedPlugin.code);
+    if (!plugin) throw new DomainError("plugin_not_supported", `Интеграция «${installedPlugin.displayName}» больше не поддерживается, синхронизация недоступна`);
     const body = pluginSyncSchema.parse(await c.req.json().catch(() => ({})));
     const streams = body.streams && body.streams.length > 0
       ? body.streams
@@ -2372,7 +2378,6 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     syncRun.streamRuns = initSyncRunStreams(syncRun.id, selectedStreams, startedAt);
     await scopedApp.syncRuns.upsert(syncRun);
     const baseline = await captureSyncRunBaseline(scopedApp, channel.id);
-    const plugin = pluginRegistry.get(installedPlugin.code);
     const credentials = body.credentials ?? scopedApp.credentialsForChannel(channel.id);
     const validation = plugin.validateCredentials(credentials ?? {});
     if (!validation.ok) {
@@ -4034,7 +4039,7 @@ async function mustFindChannel(app: AccountingApp, channelId: string): Promise<S
 
 async function resolveChannelPlugin(app: AccountingApp, channel: SalesChannel) {
   const installedPlugin = channel.pluginId ? await app.repos.integrationPlugins.getById(channel.pluginId) : undefined;
-  return installedPlugin ? pluginRegistry.get(installedPlugin.code) : undefined;
+  return installedPlugin ? pluginRegistry.find(installedPlugin.code) : undefined;
 }
 
 async function requireChannelPlugin(app: AccountingApp, channel: SalesChannel) {

@@ -1,16 +1,20 @@
 import { ozonPlugin } from "./ozon";
 import type { MarketplacePlugin } from "./types";
-import { wildberriesPlugin } from "./wildberries";
 
-const plugins = [ozonPlugin, wildberriesPlugin];
+const plugins = [ozonPlugin];
 
 export class PluginRegistry {
   all(): MarketplacePlugin[] {
     return plugins;
   }
 
+  /** Небросающий поиск: для кодов из БД (легаси-каналы, удалённые интеграции) возвращает undefined. */
+  find(code: string): MarketplacePlugin | undefined {
+    return this.all().find((candidate) => candidate.code === code);
+  }
+
   get(code: string): MarketplacePlugin {
-    const plugin = plugins.find((candidate) => candidate.code === code);
+    const plugin = this.find(code);
     if (!plugin) {
       throw new Error(`Unknown marketplace plugin: ${code}`);
     }

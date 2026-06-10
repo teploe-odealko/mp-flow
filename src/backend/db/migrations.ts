@@ -208,5 +208,68 @@ export const migrations: Migration[] = [
           and not exists (select 1 from journal_entry je where je.document_id = d.id)
           and not exists (select 1 from stock_movement sm where sm.document_id = d.id);
     `
+  },
+  {
+    // Интеграция Wildberries удалена из кода (была демо-заглушкой и писала фейковые данные).
+    // Чистим сид integration_plugin и каскадно удаляем WB-каналы со всеми зависимыми строками:
+    // продовых данных нет, каналы могли появиться только через прямой API/демо-заглушку.
+    // Документы и проводки материализованных демо-продаж не трогаем — у них нет FK на канал.
+    id: "0009",
+    name: "drop_wildberries_plugin_and_channels",
+    sql: `
+      do $$
+      declare
+        wb_channel_ids uuid[];
+      begin
+        select coalesce(array_agg(sc.id), '{}') into wb_channel_ids
+        from sales_channel sc
+        join integration_plugin ip on ip.id = sc.plugin_id
+        where ip.code = 'wildberries';
+
+        delete from return_cost_restoration where sales_return_line_id in (
+          select srl.id from sales_return_line srl
+          join sales_return sr on sr.id = srl.sales_return_id
+          where sr.channel_id = any(wb_channel_ids)
+             or sr.sale_id in (select id from sale where channel_id = any(wb_channel_ids))
+        );
+        delete from sales_return_line where sales_return_id in (
+          select id from sales_return
+          where channel_id = any(wb_channel_ids)
+             or sale_id in (select id from sale where channel_id = any(wb_channel_ids))
+        );
+        delete from sales_return
+          where channel_id = any(wb_channel_ids)
+             or sale_id in (select id from sale where channel_id = any(wb_channel_ids));
+        delete from payout_line where payout_id in (select id from payout where channel_id = any(wb_channel_ids));
+        delete from payout_line where sale_id in (select id from sale where channel_id = any(wb_channel_ids));
+        delete from payout_line where channel_finance_event_id in (
+          select id from channel_finance_event where channel_id = any(wb_channel_ids)
+        );
+        delete from sale_profit_component where sale_line_id in (
+          select sl.id from sale_line sl join sale s on s.id = sl.sale_id where s.channel_id = any(wb_channel_ids)
+        );
+        delete from sale_line where sale_id in (select id from sale where channel_id = any(wb_channel_ids));
+        delete from sale where channel_id = any(wb_channel_ids);
+        delete from channel_finance_event where channel_id = any(wb_channel_ids);
+        delete from payout where channel_id = any(wb_channel_ids);
+        delete from observed_stock where channel_id = any(wb_channel_ids);
+        delete from external_event where channel_id = any(wb_channel_ids);
+        delete from sync_stream_run where sync_run_id in (select id from sync_run where channel_id = any(wb_channel_ids));
+        delete from sync_run where channel_id = any(wb_channel_ids);
+        delete from product_external_link where channel_id = any(wb_channel_ids);
+        delete from external_product where channel_id = any(wb_channel_ids);
+        delete from channel_credential where channel_id = any(wb_channel_ids);
+        delete from channel_capability where channel_id = any(wb_channel_ids);
+        delete from channel_agent_permission where channel_id = any(wb_channel_ids);
+        update stock_transfer set channel_id = null where channel_id = any(wb_channel_ids);
+        update warehouse set channel_id = null where channel_id = any(wb_channel_ids);
+        update settlement_entry set channel_id = null where channel_id = any(wb_channel_ids);
+        delete from sales_channel where id = any(wb_channel_ids);
+
+        delete from plugin_state_record where plugin_code = 'wildberries';
+        delete from plugin_secret_record where plugin_code = 'wildberries';
+        delete from integration_plugin where code = 'wildberries';
+      end $$;
+    `
   }
 ];

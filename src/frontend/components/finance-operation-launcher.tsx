@@ -28,7 +28,7 @@ const OPTIONS = [
   {
     key: "marketplace-payout",
     title: "Поступление от маркетплейса",
-    description: "Поступление денег от Ozon или WB со сверкой состава выплаты.",
+    description: "Поступление денег от маркетплейса со сверкой состава выплаты.",
     to: "/finance/payouts/new",
     Icon: Store
   },
