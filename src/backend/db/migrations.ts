@@ -191,5 +191,22 @@ export const migrations: Migration[] = [
         end
         where state_json <> '{}'::jsonb;
     `
+  },
+  {
+    // Старый runStocktake помечал инвентаризацию posted до проведения, а guard postStocktake
+    // мгновенно выходил — документ оставался draft без проводок и движений. Возвращаем такие
+    // строки в draft, чтобы их можно было реально провести.
+    id: "0008",
+    name: "reset_stocktakes_stuck_posted_noop",
+    sql: `
+      update stocktake st
+        set status = 'draft'
+        from document d
+        where d.id = st.document_id
+          and st.status = 'posted'
+          and d.status = 'draft'
+          and not exists (select 1 from journal_entry je where je.document_id = d.id)
+          and not exists (select 1 from stock_movement sm where sm.document_id = d.id);
+    `
   }
 ];

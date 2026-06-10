@@ -3702,7 +3702,7 @@ export class AccountingApp {
       warehouseId: input.warehouseId,
       documentId: document.id,
       stocktakeDate: input.stocktakeDate,
-      status: input.post === false ? "draft" : "posted"
+      status: "draft"
     };
     await this.repos.stocktakes.add(stocktake);
     for (const line of input.lines) {
@@ -3723,19 +3723,17 @@ export class AccountingApp {
       });
     }
 
-    if (input.post !== false) {
-      await this.postStocktake(stocktake.id);
-    } else {
-      document.status = "draft";
-      document.postedAt = undefined;
-    }
+    if (input.post !== false) return await this.postStocktake(stocktake.id);
     return stocktake;
   }
 
   async postStocktake(stocktakeId: ID) {
     const stocktake = this.mustFind(await this.repos.stocktakes.all(), stocktakeId, "stocktake_not_found");
     const document = this.mustFind(await this.repos.documents.all(), stocktake.documentId, "document_not_found");
-    if (stocktake.status === "posted") return stocktake;
+    if (document.status === "posted" && stocktake.status === "posted") return stocktake;
+    if (document.status === "cancelled" || stocktake.status === "cancelled") {
+      throw new DomainError("document_cancelled", "Отменённую инвентаризацию нельзя провести повторно");
+    }
 
     const journalLines: JournalLineInput[] = [];
     const lines = (await this.repos.stocktakeLines.all()).filter((line) => line.stocktakeId === stocktake.id);
@@ -3743,7 +3741,7 @@ export class AccountingApp {
 
     for (const line of lines) {
       if (line.differenceQty < 0) {
-        await this.consumeFifo({
+        const applications = await this.consumeFifo({
           productId: line.productId,
           warehouseId: stocktake.warehouseId,
           qty: Math.abs(line.differenceQty),
@@ -3752,10 +3750,15 @@ export class AccountingApp {
           applicationType: "writeoff",
           movementType: "adjustment"
         });
-        if (line.adjustmentCostRub > 0) {
+        const writeOffCostRub = round2(applications.reduce((sum, application) => sum + application.costRub, 0));
+        if (writeOffCostRub !== line.adjustmentCostRub) {
+          line.adjustmentCostRub = writeOffCostRub;
+          await this.repos.stocktakeLines.upsert(line);
+        }
+        if (writeOffCostRub > 0) {
           journalLines.push(
-            { accountCode: "94", debit: line.adjustmentCostRub, memo: "Недостача при инвентаризации" },
-            { accountCode: inventoryAccount, credit: line.adjustmentCostRub, memo: "Списание товарного остатка" }
+            { accountCode: "94", debit: writeOffCostRub, memo: "Недостача при инвентаризации" },
+            { accountCode: inventoryAccount, credit: writeOffCostRub, memo: "Списание товарного остатка" }
           );
         }
       }

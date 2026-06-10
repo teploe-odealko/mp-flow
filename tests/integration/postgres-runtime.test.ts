@@ -1306,6 +1306,64 @@ describePostgres("postgres runtime store", () => {
     }
   }, 30_000);
 
+  it("миграция 0008 возвращает в draft stocktake'и, зависшие в posted без проводок", async () => {
+    await resetRuntimeTables();
+
+    const store = new PostgresRuntimeStore(new Pool({ connectionString: connectionString! }), "postgres-stocktake-migration-secret");
+    const api = createApi(new AccountingApp(), { persistence: store });
+    try {
+      await request(api, "POST", "/api/setup", { displayName: "Stocktake Migration", accountingStartDate: "2026-01-01" });
+      const product = await request<any>(api, "POST", "/api/products", { sku: "ST-PG-001", name: "PG stocktake товар" });
+      const inventoryWorkspace = await request<any>(api, "GET", "/api/inventory/workspace");
+      const ownWarehouse = inventoryWorkspace.warehouses.find((warehouse: any) => warehouse.warehouseType === "own");
+
+      const stuckStocktake = await request<any>(api, "POST", "/api/inventory/stocktakes", {
+        warehouseId: ownWarehouse.id,
+        stocktakeDate: "2026-01-15",
+        post: false,
+        lines: [{ productId: product.id, observedQty: 0 }]
+      });
+      const postedStocktake = await request<any>(api, "POST", "/api/inventory/stocktakes", {
+        warehouseId: ownWarehouse.id,
+        stocktakeDate: "2026-01-16",
+        post: false,
+        lines: [{ productId: product.id, observedQty: 0 }]
+      });
+      await request<any>(api, "POST", `/api/inventory/adjustments/${postedStocktake.id}/post`);
+
+      const pool = new Pool({ connectionString: connectionString! });
+      try {
+        // Имитация бага старого runStocktake: stocktake числится posted при draft-документе без эффектов.
+        await pool.query("update stocktake set status = 'posted' where public_id = $1", [stuckStocktake.id]);
+
+        const statuses = async () => {
+          const rows = await pool.query<{ public_id: string; status: string; document_status: string }>(
+            `select st.public_id, st.status, d.status as document_status
+             from stocktake st join document d on d.id = st.document_id`
+          );
+          return new Map(rows.rows.map((row) => [row.public_id, { status: row.status, documentStatus: row.document_status }]));
+        };
+
+        await runMigrations(pool);
+        const afterFirstRun = await statuses();
+        expect(afterFirstRun.get(stuckStocktake.id)).toEqual({ status: "draft", documentStatus: "draft" });
+        // Контрольная строка с posted-документом не тронута.
+        expect(afterFirstRun.get(postedStocktake.id)).toEqual({ status: "posted", documentStatus: "posted" });
+
+        // Идемпотентность SQL: повторный прогон 0008 ничего не меняет.
+        await pool.query("delete from schema_migrations where id = '0008'");
+        await runMigrations(pool);
+        const afterSecondRun = await statuses();
+        expect(afterSecondRun.get(stuckStocktake.id)).toEqual({ status: "draft", documentStatus: "draft" });
+        expect(afterSecondRun.get(postedStocktake.id)).toEqual({ status: "posted", documentStatus: "posted" });
+      } finally {
+        await pool.end();
+      }
+    } finally {
+      await store.close();
+    }
+  }, 30_000);
+
   it("moves legacy default auth members to personal workspaces", async () => {
     await resetRuntimeTables();
 
