@@ -2110,6 +2110,17 @@ export class AccountingApp {
     }
     const proportionalRefundRub = round2(prepared.reduce((sum, line) => sum + line.revenuePart, 0));
     const totalQty = round4(prepared.reduce((sum, line) => sum + line.qty, 0));
+    if (input.refundRub !== undefined) {
+      if (input.refundRub < 0) {
+        throw new DomainError("return_refund_negative", "Сумма возврата не может быть отрицательной", { refundRub: input.refundRub });
+      }
+      if (round2(input.refundRub) > proportionalRefundRub + 0.01) {
+        throw new DomainError("return_refund_exceeds_revenue", "Сумма возврата превышает выручку по возвращаемым позициям", {
+          refundRub: round2(input.refundRub),
+          maxRefundRub: proportionalRefundRub
+        });
+      }
+    }
     const refundRub = round2(input.refundRub ?? proportionalRefundRub);
     let refundAllocated = 0;
     for (const [index, line] of prepared.entries()) {
@@ -3171,6 +3182,7 @@ export class AccountingApp {
 
     let refundRub = 0;
     let restoredCostRub = 0;
+    let totalRevenuePart = 0;
     for (const documentLine of returnDocumentLines) {
       const payload = (documentLine.payload ?? {}) as Record<string, unknown>;
       const saleLineId = String(payload.saleLineId ?? "");
@@ -3208,6 +3220,7 @@ export class AccountingApp {
       const targetStateCode = String(payload.stockStateCode ?? salesReturn.stockStateCode ?? "sellable");
       const lineRefundRub = round2(Number(payload.refundRub ?? documentLine.amountRub ?? 0));
       refundRub = round2(refundRub + lineRefundRub);
+      totalRevenuePart = round2(totalRevenuePart + round2((saleLine.revenueRub * qtyToReturn) / saleLine.qty));
 
       let qtyRemaining = qtyToReturn;
       let lineRestoredCostRub = 0;
@@ -3248,6 +3261,14 @@ export class AccountingApp {
       await this.repos.documentLines.upsert(documentLine);
     }
 
+    if (round2(refundRub) > round2(totalRevenuePart) + 0.01) {
+      const reason = "Сумма возврата превышает выручку по возвращаемым позициям";
+      if (!salesReturn.externalEventId) {
+        throw new DomainError("return_refund_exceeds_revenue", reason, { refundRub: round2(refundRub), maxRefundRub: round2(totalRevenuePart) });
+      }
+      salesReturn.status = "needs_attention";
+      this.markExternalEventNeedsAttention(salesReturn.externalEventId, salesReturn.documentId, reason);
+    }
     salesReturn.refundRub = round2(refundRub);
     salesReturn.restoredCostRub = round2(restoredCostRub);
     salesReturn.status = salesReturn.status === "needs_attention" ? "needs_attention" : "posted";

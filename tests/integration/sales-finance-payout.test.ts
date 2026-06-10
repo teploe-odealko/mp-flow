@@ -574,4 +574,159 @@ describe("sales, returns, finance events and payouts", () => {
     expect(recreatedEvent.id).not.toBe(financeEvent.id);
     expect(app.state.channelFinanceEvents.find((candidate) => candidate.id === recreatedEvent.id)?.status).toBe("posted");
   });
+
+  async function setupPostedSaleForRefund(options: { qty: number; priceRub: number }) {
+    resetIds();
+    const app = new AccountingApp();
+    const api = createApi(app);
+    await post(api, "/api/setup", { displayName: "Refund QA", accountingStartDate: "2026-01-01" });
+
+    const product = await post<any>(api, "/api/products", { sku: "REF-001", name: "Товар для возврата денег" });
+    const channel = await post<any>(api, "/api/integrations/channels", { name: "Manual Marketplace", channelType: "marketplace" });
+    const ownWarehouse = app.state.warehouses.find((warehouse) => warehouse.warehouseType === "own");
+    if (!ownWarehouse) throw new Error("own_warehouse_not_found");
+
+    await post(api, "/api/inventory/opening-balances", {
+      date: "2026-01-01",
+      warehouseId: ownWarehouse.id,
+      lines: [{ productId: product.id, qty: 10, costRub: 100 }]
+    });
+    await post(api, "/api/inventory/transfers", {
+      transferDate: "2026-01-02",
+      fromWarehouseId: ownWarehouse.id,
+      toWarehouseId: channel.salesPointWarehouseId,
+      lines: [{ productId: product.id, qty: 10 }]
+    });
+
+    const sale = await post<any>(api, "/api/sales", {
+      channelId: channel.id,
+      saleDate: "2026-01-03",
+      post: true,
+      lines: [{ productId: product.id, qty: options.qty, priceRub: options.priceRub }]
+    });
+    const saleLine = app.state.saleLines.find((line) => line.saleId === sale.id);
+    if (!saleLine) throw new Error("sale_line_not_found");
+    return { app, api, sale, saleLine };
+  }
+
+  function revenueStornoDebit(app: AccountingApp, documentId: string) {
+    const entry = app.state.journalEntries.find((candidate) => candidate.documentId === documentId);
+    if (!entry) throw new Error("journal_entry_not_found");
+    return app.state.journalLines.find((line) => line.journalEntryId === entry.id && line.accountCode === "90.01")?.debit;
+  }
+
+  it("rejects refund exceeding proportional revenue on partial return", async () => {
+    const { app, api, sale, saleLine } = await setupPostedSaleForRefund({ qty: 2, priceRub: 950 });
+
+    await expect(post(api, `/api/sales/${sale.id}/returns`, {
+      returnDate: "2026-01-04",
+      refundRub: 1900,
+      post: false,
+      lines: [{ saleLineId: saleLine.id, qty: 1 }]
+    })).rejects.toThrow(/return_refund_exceeds_revenue/);
+
+    expect(app.state.salesReturns).toHaveLength(0);
+  });
+
+  it("defaults refund to proportional share of returned quantity", async () => {
+    const { app, api, sale, saleLine } = await setupPostedSaleForRefund({ qty: 2, priceRub: 950 });
+
+    const salesReturn = await post<any>(api, `/api/sales/${sale.id}/returns`, {
+      returnDate: "2026-01-04",
+      post: true,
+      lines: [{ saleLineId: saleLine.id, qty: 1 }]
+    });
+
+    expect(salesReturn.status).toBe("posted");
+    expect(salesReturn.refundRub).toBe(950);
+    expect(revenueStornoDebit(app, salesReturn.documentId)).toBe(950);
+  });
+
+  it("accepts refund below proportional share", async () => {
+    const { app, api, sale, saleLine } = await setupPostedSaleForRefund({ qty: 2, priceRub: 950 });
+
+    const salesReturn = await post<any>(api, `/api/sales/${sale.id}/returns`, {
+      returnDate: "2026-01-04",
+      refundRub: 500,
+      post: true,
+      lines: [{ saleLineId: saleLine.id, qty: 1 }]
+    });
+
+    expect(salesReturn.status).toBe("posted");
+    expect(salesReturn.refundRub).toBe(500);
+    expect(revenueStornoDebit(app, salesReturn.documentId)).toBe(500);
+  });
+
+  it("rejects negative refund at api validation layer", async () => {
+    const { app, api, sale, saleLine } = await setupPostedSaleForRefund({ qty: 2, priceRub: 950 });
+
+    await expect(post(api, `/api/sales/${sale.id}/returns`, {
+      returnDate: "2026-01-04",
+      refundRub: -100,
+      post: false,
+      lines: [{ saleLineId: saleLine.id, qty: 1 }]
+    })).rejects.toThrow(/validation_error/);
+
+    expect(app.state.salesReturns).toHaveLength(0);
+  });
+
+  it("blocks posting of pre-existing draft with inflated refund", async () => {
+    const { app, api, sale, saleLine } = await setupPostedSaleForRefund({ qty: 2, priceRub: 950 });
+
+    const salesReturn = await post<any>(api, `/api/sales/${sale.id}/returns`, {
+      returnDate: "2026-01-04",
+      refundRub: 950,
+      post: false,
+      lines: [{ saleLineId: saleLine.id, qty: 1 }]
+    });
+
+    // Симуляция данных, созданных до фикса: завышенный refund в строке документа и в самом возврате.
+    const documentLine = app.state.documentLines.find((line) => line.documentId === salesReturn.documentId && line.lineType === "sales_return_line");
+    if (!documentLine) throw new Error("return_line_not_found");
+    documentLine.amountRub = 1900;
+    documentLine.payload = { ...(documentLine.payload as Record<string, unknown>), refundRub: 1900 };
+    await app.repos.documentLines.upsert(documentLine);
+    const draft = app.state.salesReturns.find((candidate) => candidate.id === salesReturn.id);
+    if (!draft) throw new Error("return_not_found");
+    draft.refundRub = 1900;
+    await app.repos.salesReturns.upsert(draft);
+
+    await expect(post(api, `/api/returns/${salesReturn.id}/post`)).rejects.toThrow(/return_refund_exceeds_revenue/);
+
+    expect(app.state.salesReturns.find((candidate) => candidate.id === salesReturn.id)?.status).toBe("draft");
+    expect(app.state.journalEntries.find((entry) => entry.documentId === salesReturn.documentId)).toBeUndefined();
+  });
+
+  it("accepts per-line rounded refunds for fractional unit prices", async () => {
+    // Продажа 3 шт суммарно на 1000 ₽: цена за штуку 333.33(3), пропорция за 1 шт = 333.33.
+    const { app, api, sale, saleLine } = await setupPostedSaleForRefund({ qty: 3, priceRub: 1000 / 3 });
+    expect(saleLine.revenueRub).toBe(1000);
+
+    const firstReturn = await post<any>(api, `/api/sales/${sale.id}/returns`, {
+      returnDate: "2026-01-04",
+      refundRub: 333.33,
+      post: true,
+      lines: [{ saleLineId: saleLine.id, qty: 1 }]
+    });
+    expect(firstReturn.status).toBe("posted");
+    expect(firstReturn.refundRub).toBe(333.33);
+
+    const secondReturn = await post<any>(api, `/api/sales/${sale.id}/returns`, {
+      returnDate: "2026-01-05",
+      post: true,
+      lines: [{ saleLineId: saleLine.id, qty: 1 }]
+    });
+    const thirdReturn = await post<any>(api, `/api/sales/${sale.id}/returns`, {
+      returnDate: "2026-01-06",
+      post: true,
+      lines: [{ saleLineId: saleLine.id, qty: 1 }]
+    });
+    expect(secondReturn.status).toBe("posted");
+    expect(thirdReturn.status).toBe("posted");
+
+    const totalRefund = app.state.salesReturns
+      .filter((candidate) => candidate.saleId === sale.id)
+      .reduce((sum, candidate) => sum + candidate.refundRub, 0);
+    expect(Math.round(totalRefund * 100) / 100).toBe(999.99);
+  });
 });

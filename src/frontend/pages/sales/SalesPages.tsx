@@ -927,16 +927,31 @@ export function ReturnFormPage() {
       soldQty: Number(line.qty ?? 0),
       alreadyReturnedQty,
       returnQty: "0",
-      refundableRub: String(round2((line.revenueRub / Math.max(line.qty, 1)) * Math.max(0, line.qty - alreadyReturnedQty))),
       restoredCostRub: round2((line.costRub / Math.max(line.qty, 1)) * Math.max(0, line.qty - alreadyReturnedQty))
     };
   });
 
   const [returnDate, setReturnDate] = useState(sale?.saleDate ?? today());
   const [stockStateCode, setStockStateCode] = useState("sellable");
-  const [refundRub, setRefundRub] = useState(String(round2(initialRows.reduce((sum, row) => sum + Number(row.refundableRub ?? 0), 0))));
+  const [refundOverride, setRefundOverride] = useState<string | null>(null);
   const [comment, setComment] = useState("");
   const [rows, setRows] = useState(initialRows);
+
+  const unitRevenue = (saleLineId: string) => {
+    const line = lines.find((candidate: any) => candidate.id === saleLineId);
+    return Number(line?.revenueRub ?? 0) / Math.max(Number(line?.qty ?? 1), 1);
+  };
+  // Round2 по каждой строке, затем сумма — зеркально серверному recordReturn, чтобы дефолтный сабмит проходил серверную проверку.
+  const computedRefundRub = round2(rows.reduce((sum, row) => sum + round2(Number(row.returnQty || 0) * unitRevenue(row.saleLineId)), 0));
+  const refundRub = refundOverride ?? String(computedRefundRub);
+  const totalReturnQty = rows.reduce((sum, row) => sum + Number(row.returnQty || 0), 0);
+  const submitBlockReason = totalReturnQty === 0
+    ? "Укажите количество к возврату"
+    : Number(refundRub) < 0
+      ? "Сумма возврата не может быть отрицательной"
+      : Number(refundRub) > computedRefundRub + 0.01
+        ? "Сумма возврата не может превышать расчётную выручку по возвращаемым позициям"
+        : null;
 
   const create = useMutation({
     mutationFn: ({ post }: { post: boolean }) => apiPost<any>(`/api/sales/${targetSaleId}/returns`, {
@@ -975,7 +990,17 @@ export function ReturnFormPage() {
               {Object.entries(stockStateLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </Select>
           </Field>
-          <Field label="Сумма возврата RUB"><Input type="number" value={refundRub} onChange={(event) => setRefundRub(event.target.value)} /></Field>
+          <Field
+            label="Сумма возврата RUB"
+            hint={refundOverride !== null && Number(refundOverride) !== computedRefundRub ? (
+              <>
+                Расчётная: {rub(computedRefundRub)}{" "}
+                <button type="button" className="underline" onClick={() => setRefundOverride(null)}>Сбросить</button>
+              </>
+            ) : undefined}
+          >
+            <Input type="number" value={refundRub} onChange={(event) => setRefundOverride(event.target.value)} />
+          </Field>
           <Field label="Комментарий" className="xl:col-span-1 md:col-span-2">
             <Textarea value={comment} onChange={(event) => setComment(event.target.value)} />
           </Field>
@@ -1043,9 +1068,12 @@ export function ReturnFormPage() {
 
       <div className="flex justify-between">
         <Button variant="ghost" onClick={() => setRows((current) => current.map((row) => ({ ...row, returnQty: String(round4(Math.max(0, row.soldQty - row.alreadyReturnedQty))) })))}>Вернуть все доступное</Button>
-        <div className="flex gap-2">
-          <Button variant="secondary" size="lg" onClick={() => create.mutate({ post: false })} disabled={create.isPending}><Save size={14} /> Сохранить черновик</Button>
-          <Button size="lg" onClick={() => create.mutate({ post: true })} disabled={create.isPending}><Save size={14} /> Провести возврат</Button>
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex gap-2">
+            <Button variant="secondary" size="lg" onClick={() => create.mutate({ post: false })} disabled={create.isPending || submitBlockReason !== null}><Save size={14} /> Сохранить черновик</Button>
+            <Button size="lg" onClick={() => create.mutate({ post: true })} disabled={create.isPending || submitBlockReason !== null}><Save size={14} /> Провести возврат</Button>
+          </div>
+          {submitBlockReason && <p className="text-xs text-[var(--color-muted-foreground)]">{submitBlockReason}</p>}
         </div>
       </div>
     </div>
@@ -1061,7 +1089,7 @@ function updateSaleLine(
 }
 
 function updateReturnRow(
-  setRows: React.Dispatch<React.SetStateAction<Array<{ saleLineId: string; productId: string; soldQty: number; alreadyReturnedQty: number; returnQty: string; refundableRub: string; restoredCostRub: number }>>>,
+  setRows: React.Dispatch<React.SetStateAction<Array<{ saleLineId: string; productId: string; soldQty: number; alreadyReturnedQty: number; returnQty: string; restoredCostRub: number }>>>,
   index: number,
   patch: Partial<{ returnQty: string }>
 ) {

@@ -3941,7 +3941,7 @@ const returnSchema = z.object({
   warehouseId: z.string().optional(),
   stockStateCode: z.enum(["sellable", "reserved", "damaged", "lost_pending"]).optional(),
   comment: z.string().optional(),
-  refundRub: z.number().optional(),
+  refundRub: z.number().min(0).optional(),
   post: z.boolean().optional(),
   lines: z.array(z.object({ saleLineId: z.string(), qty: z.number() })).optional()
 });
