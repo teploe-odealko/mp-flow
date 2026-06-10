@@ -44,6 +44,8 @@ import {
   stockTransferRollbackPreviewFor
 } from "./services/rollback-preview-service";
 
+z.config(z.locales.ru());
+
 interface CreateApiOptions {
   persistence?: RuntimePersistence;
   auth?: AuthService | null;
@@ -132,6 +134,14 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   api.onError((error, c) => {
     if (error instanceof DomainError) {
       return c.json({ ok: false, error: { code: error.code, message: error.message, details: error.details } }, 400);
+    }
+    // ZodError = невалидный ввод клиента: zod используется только на границе API (схемы в app.ts).
+    // Не использовать zod для парсинга ответов внешних API без try/catch — иначе их падения станут «клиентскими 400».
+    if (error instanceof z.ZodError) {
+      return c.json({ ok: false, error: validationErrorBody(error) }, 400);
+    }
+    if (error instanceof SyntaxError) {
+      return c.json({ ok: false, error: { code: "invalid_json", message: "Тело запроса не является корректным JSON" } }, 400);
     }
     captureException(error, { request_id: c.get("requestId") as string | undefined, path: c.req.path });
     console.error(JSON.stringify({
@@ -3378,6 +3388,12 @@ function publicMcpEndpoint(c: { req: { url: string } }) {
 function bearerToken(header: string | undefined) {
   const match = /^Bearer\s+(.+)$/i.exec(header?.trim() ?? "");
   return match?.[1]?.trim();
+}
+
+function validationErrorBody(error: z.ZodError) {
+  const fields = [...new Set(error.issues.map((issue) => issue.path.join(".") || "тело запроса"))];
+  const shown = fields.slice(0, 5).join(", ") + (fields.length > 5 ? "…" : "");
+  return { code: "validation_error", message: `Некорректные данные запроса: ${shown}`, details: error.issues };
 }
 
 function agentAllowsMethod(agent: McpAgentPrincipal, method: string) {
