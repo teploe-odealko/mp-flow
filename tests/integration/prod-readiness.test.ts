@@ -88,6 +88,56 @@ describe("prod-ready contracts", () => {
     expect(app.channelCredentialStatus(channel.id).saved).toBe(true);
   });
 
+  it("rejects empty-form payloads with zero amounts and quantities", async () => {
+    resetIds();
+    const app = new AccountingApp();
+    const api = createApi(app);
+    await post(api, "/api/setup", { displayName: "Prod QA", accountingStartDate: "2026-01-01" });
+    const product = await post<any>(api, "/api/products", { sku: "ZERO", name: "Товар для нулевых проверок" });
+    const warehouse = app.state.warehouses.find((item) => item.warehouseType === "own");
+    const order = await post<any>(api, "/api/procurement/purchase-orders", {
+      supplierName: "Поставщик нулевых проверок",
+      destinationWarehouseId: warehouse?.id,
+      supplierCurrency: "CNY",
+      orderedAt: "2026-01-10",
+      lines: [{ productId: product.id, qty: 5, supplierUnitPrice: 10 }]
+    });
+
+    const expectValidationError = async (path: string, body: unknown) => {
+      const response = await api.request(path, {
+        method: "POST",
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" }
+      });
+      const payload = await response.json() as { ok: boolean; error?: { code: string } };
+      expect(payload.ok).toBe(false);
+      expect(payload.error?.code).toBe("validation_error");
+    };
+
+    await expectValidationError("/api/money/owner-contributions", { paidAt: "2026-01-05", amountRub: 0 });
+    await expectValidationError("/api/money/owner-withdrawals", { paidAt: "2026-01-05", amountRub: 0 });
+    await expectValidationError(`/api/procurement/purchase-orders/${order.id}/payments`, { paidAt: "2026-01-11", amountRub: 0 });
+    await expectValidationError(`/api/procurement/purchase-orders/${order.id}/costs`, {
+      costType: "delivery",
+      allocationBasis: "by_cost",
+      costDate: "2026-01-12",
+      amountRub: 0,
+      paidImmediately: true
+    });
+    await expectValidationError("/api/procurement/purchase-orders", {
+      supplierName: "Поставщик нулевого заказа",
+      destinationWarehouseId: warehouse?.id,
+      supplierCurrency: "CNY",
+      orderedAt: "2026-01-10",
+      lines: [{ productId: product.id, qty: 0, supplierUnitPrice: 10 }]
+    });
+    await expectValidationError("/api/inventory/opening-balances", {
+      date: "2026-01-01",
+      warehouseId: warehouse?.id,
+      lines: [{ productId: product.id, qty: 0, unitCostRub: 100 }]
+    });
+  });
+
   it("writes channel create and update through runtime write contexts", async () => {
     resetIds();
     const app = new AccountingApp();

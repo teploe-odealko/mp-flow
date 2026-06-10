@@ -223,7 +223,7 @@ export function ChannelFormPage() {
   const returnTo = sanitizeReturnTo(searchParams.get("returnTo"));
 
   const [step, setStep] = useState<(typeof STEPS)[number]["key"]>("channel");
-  const [name, setName] = useState("Ozon FBO");
+  const [name, setName] = useState("");
 
   const [clientId, setClientId] = useState("");
   const [apiKey, setApiKey] = useState("");

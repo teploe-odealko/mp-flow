@@ -32,12 +32,12 @@ export function OpeningBalanceFormPage() {
 
   const [warehouseId, setWarehouseId] = useState(defaultWarehouseId);
   const [stateCode, setStateCode] = useState("sellable");
-  const [comment, setComment] = useState("Стартовые остатки на дату начала учета");
+  const [comment, setComment] = useState("");
   const [lines, setLines] = useState<Array<{ productId: string; qty: string; unitCostRub: string }>>([
     {
       productId: products[0]?.id ?? "",
-      qty: "100",
-      unitCostRub: "1200"
+      qty: "",
+      unitCostRub: ""
     }
   ]);
 
@@ -68,6 +68,7 @@ export function OpeningBalanceFormPage() {
       Boolean(line.productId) &&
       !line.duplicate &&
       line.qtyNumber > 0 &&
+      line.unitCostRub.trim() !== "" &&
       line.unitCostNumber >= 0
     )
   );
@@ -150,7 +151,7 @@ export function OpeningBalanceFormPage() {
               </Field>
               <div className="md:col-span-2">
                 <Field label="Комментарий">
-                  <Input aria-label="Комментарий" value={comment} onChange={(event) => setComment(event.target.value)} />
+                  <Input aria-label="Комментарий" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Стартовые остатки на дату начала учета" />
                 </Field>
               </div>
             </CardContent>
@@ -466,9 +467,9 @@ export function TransferFormPage() {
   const [toWarehouseId, setToWarehouseId] = useState(prefilledTargetWarehouseId || (warehouses.find((w: any) => w.warehouseType === "sales_point")?.id ?? ""));
   const [toStockStateCode, setToStockStateCode] = useState("sellable");
   const [transferType, setTransferType] = useState("to_sales_point");
-  const [comment, setComment] = useState("Перемещение товара между складскими узлами");
+  const [comment, setComment] = useState("");
   const [productId, setProductId] = useState(products[0]?.id ?? "");
-  const [qtyValue, setQtyValue] = useState("25");
+  const [qtyValue, setQtyValue] = useState("");
   const selectedProduct = products.find((product: any) => product.id === productId);
   const selectedSource = warehouses.find((warehouse: any) => warehouse.id === fromWarehouseId);
   const selectedTarget = warehouses.find((warehouse: any) => warehouse.id === toWarehouseId);
@@ -574,7 +575,7 @@ export function TransferFormPage() {
               </Field>
               <div className="md:col-span-2">
                 <Field label="Комментарий">
-                  <Input value={comment} onChange={(e) => setComment(e.target.value)} />
+                  <Input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Перемещение товара между складскими узлами" />
                 </Field>
               </div>
             </CardContent>

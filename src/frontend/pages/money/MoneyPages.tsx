@@ -88,8 +88,8 @@ export function OwnerContributionFormPage() {
   const navigate = useNavigate();
   const [defaultsApplied, setDefaultsApplied] = useState(false);
   const [paidAt, setPaidAt] = useState(today());
-  const [amountRub, setAmountRub] = useState("500000");
-  const [comment, setComment] = useState("Стартовый капитал");
+  const [amountRub, setAmountRub] = useState("");
+  const [comment, setComment] = useState("");
 
   useEffect(() => {
     if (defaultsApplied || !ownerFormQuery.data) return;
@@ -115,15 +115,15 @@ export function OwnerContributionFormPage() {
       <Card>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4 py-5">
           <Field label="Дата" required><Input type="date" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} /></Field>
-          <Field label="Сумма, ₽" required><Input type="number" value={amountRub} onChange={(e) => setAmountRub(e.target.value)} /></Field>
+          <Field label="Сумма, ₽" required><Input type="number" value={amountRub} onChange={(e) => setAmountRub(e.target.value)} placeholder="0" /></Field>
           <div className="md:col-span-2">
-            <Field label="Комментарий"><Textarea value={comment} onChange={(e) => setComment(e.target.value)} /></Field>
+            <Field label="Комментарий"><Textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Например: стартовый капитал" /></Field>
           </div>
         </CardContent>
       </Card>
       <div className="flex justify-end gap-2">
-        <Button size="lg" variant="secondary" onClick={() => create.mutate({ post: false })} disabled={create.isPending}><Save size={14} /> Сохранить черновик</Button>
-        <Button size="lg" onClick={() => create.mutate({ post: true })} disabled={create.isPending}><Save size={14} /> Провести пополнение</Button>
+        <Button size="lg" variant="secondary" onClick={() => create.mutate({ post: false })} disabled={create.isPending || !(Number(amountRub) > 0)}><Save size={14} /> Сохранить черновик</Button>
+        <Button size="lg" onClick={() => create.mutate({ post: true })} disabled={create.isPending || !(Number(amountRub) > 0)}><Save size={14} /> Провести пополнение</Button>
       </div>
     </div>
   );
@@ -138,8 +138,8 @@ export function OwnerWithdrawalFormPage() {
   });
   const [defaultsApplied, setDefaultsApplied] = useState(false);
   const [paidAt, setPaidAt] = useState(today());
-  const [amountRub, setAmountRub] = useState("50000");
-  const [comment, setComment] = useState("Вывод средств владельцем");
+  const [amountRub, setAmountRub] = useState("");
+  const [comment, setComment] = useState("");
 
   useEffect(() => {
     if (defaultsApplied || !ownerFormQuery.data) return;
@@ -166,9 +166,9 @@ export function OwnerWithdrawalFormPage() {
       <Card>
         <CardContent className="grid grid-cols-1 gap-4 py-5 md:grid-cols-2">
           <Field label="Дата" required><Input type="date" value={paidAt} onChange={(event) => setPaidAt(event.target.value)} /></Field>
-          <Field label="Сумма, ₽" required><Input type="number" value={amountRub} onChange={(event) => setAmountRub(event.target.value)} /></Field>
+          <Field label="Сумма, ₽" required><Input type="number" value={amountRub} onChange={(event) => setAmountRub(event.target.value)} placeholder="0" /></Field>
           <div className="md:col-span-2">
-            <Field label="Комментарий"><Textarea value={comment} onChange={(event) => setComment(event.target.value)} /></Field>
+            <Field label="Комментарий"><Textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Например: вывод средств владельцем" /></Field>
           </div>
         </CardContent>
       </Card>

@@ -300,9 +300,9 @@ export function ExpenseFormPage() {
   const [categoryId, setCategoryId] = useState("");
   const [counterpartyId, setCounterpartyId] = useState("");
   const [counterpartyName, setCounterpartyName] = useState("");
-  const [amountRub, setAmountRub] = useState("45000");
+  const [amountRub, setAmountRub] = useState("");
   const [cashAccountId, setCashAccountId] = useState("");
-  const [comment, setComment] = useState("Аренда склада за июнь");
+  const [comment, setComment] = useState("");
 
   useEffect(() => {
     if (defaultsApplied || !formQuery.data) return;
@@ -364,7 +364,7 @@ export function ExpenseFormPage() {
                 </Select>
               </Field>
               <Field label="Сумма" required>
-                <Input type="number" value={amountRub} onChange={(event) => setAmountRub(event.target.value)} />
+                <Input type="number" value={amountRub} onChange={(event) => setAmountRub(event.target.value)} placeholder="0" />
               </Field>
               {!counterpartyId && (
                 <div className="md:col-span-2">
@@ -375,7 +375,7 @@ export function ExpenseFormPage() {
               )}
               <div className="md:col-span-2">
                 <Field label="Комментарий">
-                  <Textarea value={comment} onChange={(event) => setComment(event.target.value)} />
+                  <Textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Например: аренда склада" />
                 </Field>
               </div>
             </CardContent>
@@ -514,8 +514,8 @@ export function ExpenseCardPage() {
 function OwnerWithdrawalDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [paidAt, setPaidAt] = useState(today());
-  const [amountRub, setAmountRub] = useState("50000");
-  const [comment, setComment] = useState("Вывод средств владельцем");
+  const [amountRub, setAmountRub] = useState("");
+  const [comment, setComment] = useState("");
 
   const create = useMutation({
     mutationFn: () => apiPost("/api/finance/owner-withdrawals", { paidAt, amountRub: Number(amountRub), comment }),
@@ -533,8 +533,8 @@ function OwnerWithdrawalDialog({ open, onClose }: { open: boolean; onClose: () =
         </DialogHeader>
         <DialogBody className="flex flex-col gap-4">
           <Field label="Дата" required><Input type="date" value={paidAt} onChange={(event) => setPaidAt(event.target.value)} /></Field>
-          <Field label="Сумма, RUB" required><Input type="number" value={amountRub} onChange={(event) => setAmountRub(event.target.value)} /></Field>
-          <Field label="Комментарий"><Textarea value={comment} onChange={(event) => setComment(event.target.value)} /></Field>
+          <Field label="Сумма, RUB" required><Input type="number" value={amountRub} onChange={(event) => setAmountRub(event.target.value)} placeholder="0" /></Field>
+          <Field label="Комментарий"><Textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Например: вывод средств владельцем" /></Field>
         </DialogBody>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Отмена</Button>

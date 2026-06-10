@@ -259,8 +259,14 @@ export function ManualSaleFormPage() {
   const [saleDate, setSaleDate] = useState(today());
   const [externalOrderId, setExternalOrderId] = useState("");
   const [lines, setLines] = useState<Array<{ productId: string; qty: string; priceRub: string }>>([
-    { productId: products[0]?.id ?? "", qty: "1", priceRub: "990" }
+    { productId: "", qty: "1", priceRub: "" }
   ]);
+
+  const canSubmit = Boolean(
+    channelId &&
+    lines.length > 0 &&
+    lines.every((line) => line.productId && Number(line.qty) > 0 && line.priceRub.trim() !== "" && Number(line.priceRub) >= 0)
+  );
 
   const create = useMutation({
     mutationFn: ({ post }: { post: boolean }) => apiPost<any>("/api/sales", {
@@ -268,9 +274,7 @@ export function ManualSaleFormPage() {
       saleDate,
       externalOrderId: externalOrderId || undefined,
       post,
-      lines: lines
-        .filter((line) => line.productId)
-        .map((line) => ({ productId: line.productId, qty: Number(line.qty), priceRub: Number(line.priceRub) }))
+      lines: lines.map((line) => ({ productId: line.productId, qty: Number(line.qty), priceRub: Number(line.priceRub) }))
     }),
     onSuccess: (sale) => {
       invalidateSalesArea(queryClient);
@@ -323,7 +327,7 @@ export function ManualSaleFormPage() {
                     </Select>
                   </TD>
                   <TD numeric><Input type="number" min="0" step="0.0001" value={line.qty} onChange={(event) => updateSaleLine(setLines, index, { qty: event.target.value })} /></TD>
-                  <TD numeric><Input type="number" min="0" step="0.01" value={line.priceRub} onChange={(event) => updateSaleLine(setLines, index, { priceRub: event.target.value })} /></TD>
+                  <TD numeric><Input type="number" min="0" step="0.01" value={line.priceRub} onChange={(event) => updateSaleLine(setLines, index, { priceRub: event.target.value })} placeholder="0" /></TD>
                   <TD numeric className="font-semibold">{rub(Number(line.qty || 0) * Number(line.priceRub || 0))}</TD>
                   <TD>
                     <div className="flex justify-end">
@@ -336,13 +340,13 @@ export function ManualSaleFormPage() {
           </Table>
         </CardContent>
         <div className="px-5 pb-4">
-          <Button variant="secondary" onClick={() => setLines((current) => [...current, { productId: products[0]?.id ?? "", qty: "1", priceRub: "0" }])}><Plus size={14} /> Добавить строку</Button>
+          <Button variant="secondary" onClick={() => setLines((current) => [...current, { productId: "", qty: "1", priceRub: "" }])}><Plus size={14} /> Добавить строку</Button>
         </div>
       </Card>
 
       <div className="flex justify-end gap-2">
-        <Button variant="secondary" size="lg" onClick={() => create.mutate({ post: false })} disabled={create.isPending}><Save size={14} /> Сохранить черновик</Button>
-        <Button size="lg" onClick={() => create.mutate({ post: true })} disabled={create.isPending}><Save size={14} /> Провести продажу</Button>
+        <Button variant="secondary" size="lg" onClick={() => create.mutate({ post: false })} disabled={create.isPending || !canSubmit}><Save size={14} /> Сохранить черновик</Button>
+        <Button size="lg" onClick={() => create.mutate({ post: true })} disabled={create.isPending || !canSubmit}><Save size={14} /> Провести продажу</Button>
       </div>
     </div>
   );

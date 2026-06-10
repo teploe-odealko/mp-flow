@@ -113,13 +113,13 @@ export function PurchaseOrderFormPage() {
   const isEditable = !isEditing || (order && order.status !== "cancelled" && existingPayments.length === 0 && existingReceipts.length === 0);
 
   const [supplierId, setSupplierId] = useState<string>("");
-  const [supplierName, setSupplierName] = useState("Shenzhen Good Supply");
+  const [supplierName, setSupplierName] = useState("");
   const [orderedAt, setOrderedAt] = useState(state.accountingPolicy?.accountingStartDate ?? today());
   const [supplierCurrency, setSupplierCurrency] = useState("CNY");
   const [destinationWarehouseId, setDestinationWarehouseId] = useState(defaultWarehouseId);
-  const [comment, setComment] = useState("Закупка партии аксессуаров");
-  const [lines, setLines] = useState([
-    { productId: products[0]?.id ?? "", qtyOrdered: 300, supplierUnitPrice: 9.5, lineNote: "" }
+  const [comment, setComment] = useState("");
+  const [lines, setLines] = useState<Array<{ productId: string; qtyOrdered: string; supplierUnitPrice: string; lineNote: string }>>([
+    { productId: products[0]?.id ?? "", qtyOrdered: "", supplierUnitPrice: "", lineNote: "" }
   ]);
   const [hydratedOrderId, setHydratedOrderId] = useState<string | null>(null);
 
@@ -143,8 +143,8 @@ export function PurchaseOrderFormPage() {
     setComment(order.comment ?? "");
     setLines(existingLines.map((line: any) => ({
       productId: line.productId,
-      qtyOrdered: line.qtyOrdered,
-      supplierUnitPrice: line.supplierUnitPrice,
+      qtyOrdered: String(line.qtyOrdered ?? ""),
+      supplierUnitPrice: String(line.supplierUnitPrice ?? ""),
       lineNote: line.lineNote ?? ""
     })));
     setHydratedOrderId(order.id);
@@ -152,6 +152,11 @@ export function PurchaseOrderFormPage() {
 
   const totalQty = lines.reduce((s, l) => s + Number(l.qtyOrdered || 0), 0);
   const totalAmount = lines.reduce((s, l) => s + Number(l.qtyOrdered || 0) * Number(l.supplierUnitPrice || 0), 0);
+  const canSubmit = Boolean(
+    (supplierId || supplierName.trim()) &&
+    lines.length > 0 &&
+    lines.every((l) => l.productId && Number(l.qtyOrdered) > 0 && l.supplierUnitPrice.trim() !== "" && Number(l.supplierUnitPrice) >= 0)
+  );
 
   const save = useMutation({
     mutationFn: () => {
@@ -230,7 +235,7 @@ export function PurchaseOrderFormPage() {
               </Field>
               {!supplierId && (
                 <Field label="Название нового поставщика" required>
-                  <Input value={supplierName} onChange={(e) => setSupplierName(e.target.value)} disabled={!isEditable} />
+                  <Input value={supplierName} onChange={(e) => setSupplierName(e.target.value)} placeholder="Например: Shenzhen Trading Co." disabled={!isEditable} />
                 </Field>
               )}
               <Field label="Дата заказа" required>
@@ -244,7 +249,7 @@ export function PurchaseOrderFormPage() {
                 </Select>
               </Field>
               <div className="md:col-span-2">
-                <Field label="Комментарий для поставки"><Textarea value={comment} onChange={(e) => setComment(e.target.value)} disabled={!isEditable} /></Field>
+                <Field label="Комментарий для поставки"><Textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Например: закупка партии аксессуаров" disabled={!isEditable} /></Field>
               </div>
             </CardContent>
           </Card>
@@ -255,7 +260,7 @@ export function PurchaseOrderFormPage() {
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => setLines([...lines, { productId: products[0]?.id ?? "", qtyOrdered: 1, supplierUnitPrice: 0, lineNote: "" }])}
+                onClick={() => setLines([...lines, { productId: products[0]?.id ?? "", qtyOrdered: "", supplierUnitPrice: "", lineNote: "" }])}
                 disabled={!isEditable}
               >
                 <Plus size={13} /> Добавить
@@ -325,7 +330,7 @@ export function PurchaseOrderFormPage() {
               {mutationMessage(save.error)}
             </div>
           )}
-          <Button size="lg" onClick={() => save.mutate()} disabled={save.isPending || !isEditable}>
+          <Button size="lg" onClick={() => save.mutate()} disabled={save.isPending || !isEditable || !canSubmit}>
             <Save size={14} /> {isEditing ? "Сохранить изменения" : "Создать и отправить поставщику"}
           </Button>
         </aside>
@@ -358,8 +363,8 @@ export function SupplierPaymentFormPage() {
   const order = purchaseOrders.find((o: any) => o.id === purchaseOrderId);
 
   const [paidAt, setPaidAt] = useState(order?.orderedAt ?? state.accountingPolicy?.accountingStartDate ?? today());
-  const [amountRub, setAmountRub] = useState("130000");
-  const [comment, setComment] = useState("Оплата товара поставщику");
+  const [amountRub, setAmountRub] = useState("");
+  const [comment, setComment] = useState("");
   useEffect(() => {
     if (id && id !== purchaseOrderId) {
       setPurchaseOrderId(id);
@@ -428,11 +433,11 @@ export function SupplierPaymentFormPage() {
             <Input aria-label="Дата оплаты" type="date" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
           </Field>
           <Field label="Сумма в рублях" required hint="Включая комиссию банка">
-            <Input type="number" value={amountRub} onChange={(e) => setAmountRub(e.target.value)} />
+            <Input type="number" value={amountRub} onChange={(e) => setAmountRub(e.target.value)} placeholder="0" />
           </Field>
           <div className="md:col-span-2">
             <Field label="Комментарий">
-              <Textarea value={comment} onChange={(e) => setComment(e.target.value)} />
+              <Textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Например: оплата товара поставщику" />
             </Field>
           </div>
         </CardContent>
@@ -452,10 +457,10 @@ export function SupplierPaymentFormPage() {
       </Card>
 
       <div className="flex justify-end gap-2">
-        <Button size="lg" variant="secondary" onClick={() => create.mutate({ post: false })} disabled={create.isPending || !purchaseOrderId}>
+        <Button size="lg" variant="secondary" onClick={() => create.mutate({ post: false })} disabled={create.isPending || !purchaseOrderId || !(Number(amountRub) > 0)}>
           <Save size={14} /> Сохранить черновик
         </Button>
-        <Button size="lg" onClick={() => create.mutate({ post: true })} disabled={create.isPending || !purchaseOrderId}>
+        <Button size="lg" onClick={() => create.mutate({ post: true })} disabled={create.isPending || !purchaseOrderId || !(Number(amountRub) > 0)}>
           <Save size={14} /> Провести оплату
         </Button>
       </div>
@@ -767,9 +772,9 @@ export function ProcurementCostFormPage() {
   const [costType, setCostType] = useState("delivery");
   const [allocationBasis, setAllocationBasis] = useState("by_cost");
   const [costDate, setCostDate] = useState(order?.orderedAt ?? state.accountingPolicy?.accountingStartDate ?? today());
-  const [amountRub, setAmountRub] = useState("25000");
+  const [amountRub, setAmountRub] = useState("");
   const [paidImmediately, setPaidImmediately] = useState("true");
-  const [comment, setComment] = useState("Доставка до Москвы");
+  const [comment, setComment] = useState("");
   useEffect(() => {
     if (id) {
       setPurchaseOrderId(id);
@@ -866,7 +871,7 @@ export function ProcurementCostFormPage() {
                 <Input aria-label="Дата" type="date" value={costDate} onChange={(e) => setCostDate(e.target.value)} />
               </Field>
               <Field label="Сумма, ₽" required>
-                <Input type="number" value={amountRub} onChange={(e) => setAmountRub(e.target.value)} />
+                <Input type="number" value={amountRub} onChange={(e) => setAmountRub(e.target.value)} placeholder="0" />
               </Field>
               <Field label="Оплачено сразу" required>
                 <Select value={paidImmediately} onChange={(e) => setPaidImmediately(e.target.value)}>
@@ -875,7 +880,7 @@ export function ProcurementCostFormPage() {
                 </Select>
               </Field>
               <div className="md:col-span-2">
-                <Field label="Комментарий"><Textarea value={comment} onChange={(e) => setComment(e.target.value)} /></Field>
+                <Field label="Комментарий"><Textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Например: доставка до Москвы" /></Field>
               </div>
             </CardContent>
           </Card>
@@ -983,10 +988,10 @@ export function ProcurementCostFormPage() {
           </Card>
 
           <div className="grid grid-cols-1 gap-2">
-            <Button size="lg" variant="secondary" className="w-full" onClick={() => create.mutate({ post: false })} disabled={create.isPending || !selectedOrderId}>
+            <Button size="lg" variant="secondary" className="w-full" onClick={() => create.mutate({ post: false })} disabled={create.isPending || !selectedOrderId || !(Number(amountRub) > 0)}>
               <Save size={14} /> Сохранить черновик
             </Button>
-            <Button size="lg" className="w-full" onClick={() => create.mutate({ post: true })} disabled={create.isPending || !selectedOrderId}>
+            <Button size="lg" className="w-full" onClick={() => create.mutate({ post: true })} disabled={create.isPending || !selectedOrderId || !(Number(amountRub) > 0)}>
               <Save size={14} /> Провести расход
             </Button>
           </div>
@@ -1037,7 +1042,7 @@ export function ShortageResolutionFormPage() {
   const previewLines = shortagePreviewQuery.data?.lines ?? [];
 
   const [resolvedAt, setResolvedAt] = useState(order?.orderedAt ?? state.accountingPolicy?.accountingStartDate ?? today());
-  const [reason, setReason] = useState("При приёмке не досчитались товара");
+  const [reason, setReason] = useState("");
   const [linesState, setLinesState] = useState<Array<{ purchaseOrderLineId: string; qtyShortage: number; action: "wait_supplier" | "supplier_claim" | "loss" | "close_without_accounting" }>>([]);
   useEffect(() => {
     if (previewLines.length === 0) return;
@@ -1077,7 +1082,7 @@ export function ShortageResolutionFormPage() {
             <Input type="date" value={resolvedAt} onChange={(e) => setResolvedAt(e.target.value)} />
           </Field>
           <div className="md:col-span-2">
-            <Field label="Причина"><Textarea value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
+            <Field label="Причина"><Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Например: при приёмке не досчитались товара" /></Field>
           </div>
         </CardContent>
       </Card>
