@@ -89,7 +89,8 @@ export async function applyExternalEventState(writeContext: RuntimeWriteContext,
   event.externalProductId = undefined;
   event.productId = undefined;
 
-  if (event.eventType === "fee" || event.eventType === "sale_accrual" || event.eventType === "payout") {
+  // Для cancellation маппинг SKU не нужен: материализация ищет продажу по postingNumber.
+  if (event.eventType === "fee" || event.eventType === "sale_accrual" || event.eventType === "payout" || event.eventType === "cancellation") {
     event.status = "ready_for_processing";
     return event;
   }

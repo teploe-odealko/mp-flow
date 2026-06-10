@@ -165,6 +165,7 @@ export function SalesWorkspace() {
             <option value="">Все статусы</option>
             <option value="posted">Проведён</option>
             <option value="shipped">Ждёт начисления</option>
+            <option value="reversed">Сторнирован</option>
           </Select>
           <Select value={costStatus} onChange={(event) => { setCostStatus(event.target.value); setPage(1); }} className="w-44">
             <option value="">Любая себестоимость</option>

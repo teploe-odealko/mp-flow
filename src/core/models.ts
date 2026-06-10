@@ -557,7 +557,7 @@ export interface ExternalEvent {
   organizationId: ID;
   channelId: ID;
   syncRunId?: ID;
-  eventType: "sale" | "sale_accrual" | "return" | "fee" | "payout" | "stock" | "product";
+  eventType: "sale" | "sale_accrual" | "return" | "cancellation" | "fee" | "payout" | "stock" | "product";
   externalId: string;
   idempotencyKey: string;
   occurredAt: string;

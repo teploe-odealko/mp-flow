@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createApi } from "../../src/backend/app";
 import { AccountingApp } from "../../src/core/accounting-app";
 import { resetIds } from "../../src/core/utils";
-import { expandOzonFinanceEvents, expandOzonPostingEvents, ozonPlugin, parseSince } from "../../src/plugins/ozon";
+import { classifyOzonPosting, expandOzonFinanceEvents, expandOzonPostingEvents, ozonPlugin, parseSince, postingsWindowFrom } from "../../src/plugins/ozon";
 import { readStateViaApi } from "../support/api-state";
 
 async function post<T>(api: ReturnType<typeof createApi>, path: string, body: unknown = {}): Promise<T> {
@@ -267,6 +267,57 @@ describe("ozon posting events (expandOzonPostingEvents)", () => {
 
     expect(byOrderId[0].externalId).toBe("ozon-posting-555");
     expect(byFallback[0].externalId).toBe("ozon-posting-7");
+  });
+
+  it("expands a cancelled posting into a single cancellation event under the -cancel key", () => {
+    const events = expandOzonPostingEvents({ ...salePosting, status: "cancelled" }, new Map(), 0);
+
+    expect(events).toHaveLength(1);
+    expect(events[0].eventType).toBe("cancellation");
+    expect(events[0].externalId).toBe("ozon-posting-49917343-0273-1-cancel");
+    expect(events[0].payload.postingNumber).toBe("49917343-0273-1");
+    expect(events[0].payload.status).toBe("cancelled");
+  });
+});
+
+describe("ozon posting classification (classifyOzonPosting)", () => {
+  it("classifies cancelled and unredeemed postings as cancellation", () => {
+    expect(classifyOzonPosting({ status: "cancelled" })).toBe("cancellation");
+    expect(classifyOzonPosting({ status: "awaiting_deliver", substatus: "posting_canceled" })).toBe("cancellation");
+    expect(classifyOzonPosting({ status: "delivering", cancellation: { cancellation_type: "client" } })).toBe("cancellation");
+    expect(classifyOzonPosting({ status: "delivering", cancellation: { cancel_reason: "Отменено покупателем" } })).toBe("cancellation");
+  });
+
+  it("keeps the return marker priority over cancellation", () => {
+    expect(classifyOzonPosting({ status: "cancelled", return_status: "returned" })).toBe("return");
+    expect(classifyOzonPosting({ status: "cancelled", cancellation: { cancel_reason: "Возврат после невыкупа" } })).toBe("return");
+  });
+
+  it("classifies regular postings as sales", () => {
+    expect(classifyOzonPosting({ status: "delivered" })).toBe("sale");
+    expect(classifyOzonPosting({ status: "awaiting_deliver" })).toBe("sale");
+    expect(classifyOzonPosting({ status: "delivered", cancellation: { cancel_reason: "", cancellation_type: "" } })).toBe("sale");
+  });
+});
+
+describe("ozon postings lookback window (postingsWindowFrom)", () => {
+  const startedAt = new Date("2026-06-11T12:00:00.000Z");
+
+  it("extends a fresh incremental window back by 30 days", () => {
+    const windowFrom = new Date("2026-06-04T12:00:00.000Z");
+    expect(postingsWindowFrom(windowFrom, startedAt, "incremental").toISOString()).toBe("2026-05-12T12:00:00.000Z");
+  });
+
+  it("keeps the window when it already reaches deeper than the lookback", () => {
+    const windowFrom = new Date("2026-01-01T00:00:00.000Z");
+    expect(postingsWindowFrom(windowFrom, startedAt, "incremental").toISOString()).toBe("2026-01-01T00:00:00.000Z");
+  });
+
+  it("does not shift the window for backfill, full mode or explicit since", () => {
+    const windowFrom = new Date("2026-06-04T12:00:00.000Z");
+    expect(postingsWindowFrom(windowFrom, startedAt, "backfill").toISOString()).toBe(windowFrom.toISOString());
+    expect(postingsWindowFrom(windowFrom, startedAt, "full").toISOString()).toBe(windowFrom.toISOString());
+    expect(postingsWindowFrom(windowFrom, startedAt, "incremental", "2026-06-04").toISOString()).toBe(windowFrom.toISOString());
   });
 });
 

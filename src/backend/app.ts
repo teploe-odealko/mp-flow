@@ -2411,6 +2411,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
         ...result.stats,
         auto_sales_materialized: autoProcessing.salesPosted,
         auto_returns_materialized: autoProcessing.returnsPosted,
+        auto_cancellations_processed: autoProcessing.cancellationsProcessed,
         auto_finance_posted: autoProcessing.financePosted,
         auto_payouts_materialized: autoProcessing.payoutsMaterialized,
         auto_needs_attention: autoProcessing.needsAttention,
@@ -2532,6 +2533,11 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const event = await scopedApp.externalEvents.getById(c.req.param("id"));
     if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
     return c.json({ ok: true, data: await materializeReturnEvent(scopedApp, event) });
+  });
+  api.post("/api/integrations/events/:id/materialize-cancellation", async (c) => {
+    const event = await scopedApp.externalEvents.getById(c.req.param("id"));
+    if (!event) throw new DomainError("external_event_not_found", "Внешнее событие не найдено");
+    return c.json({ ok: true, data: await materializeCancellationEvent(scopedApp, event) });
   });
   api.post("/api/integrations/events/:id/materialize-fee", async (c) => {
     const event = await scopedApp.externalEvents.getById(c.req.param("id"));
@@ -3931,7 +3937,7 @@ const pluginSyncSchema = z.object({
 const externalProductSchema = z.object({ externalSku: z.string(), externalName: z.string(), imageUrl: z.string().optional() });
 const externalProductLinkSchema = z.object({ productId: z.string() });
 const productExternalLinkSchema = z.object({ externalProductId: z.string() });
-const externalEventSchema = z.object({ eventType: z.enum(["sale", "sale_accrual", "return", "fee", "payout", "stock", "product"]), externalId: z.string(), occurredAt: z.string(), payload: z.record(z.string(), z.unknown()) });
+const externalEventSchema = z.object({ eventType: z.enum(["sale", "sale_accrual", "return", "cancellation", "fee", "payout", "stock", "product"]), externalId: z.string(), occurredAt: z.string(), payload: z.record(z.string(), z.unknown()) });
 const externalEventIgnoreSchema = z.object({ reason: z.string().min(3) });
 const observedStockSchema = z.object({ externalProductId: z.string(), observedAt: z.string(), qtyObserved: z.number() });
 const saleSchema = z.object({
@@ -4426,6 +4432,119 @@ async function materializeReturnEvent(app: AccountingApp, event: ExternalEvent):
   return salesReturn;
 }
 
+/**
+ * Материализует отмену/невыкуп отправления маркетплейса. Если продажи по posting number
+ * нет (отмена видна в том же окне синка) — продажа и не нужна: нейтрализуем соседнее
+ * sale-событие и закрываем отмену. Если продажа отгружена, но выручка не признана —
+ * компенсируем остаток возвратом с нулевой выручкой (postReturn восстановит товар
+ * проводкой 41.x ← 45.03 и пометит полностью возвращённую продажу статусом "reversed").
+ * Признанную продажу не сторнируем автоматически — это решение пользователя.
+ */
+async function materializeCancellationEvent(app: AccountingApp, event: ExternalEvent): Promise<ExternalEvent | SalesReturn> {
+  if (event.eventType !== "cancellation") {
+    throw new DomainError("external_event_type_invalid", "Событие не относится к отменам");
+  }
+  if (event.materializedDocumentId) {
+    const existingReturn = (await app.repos.salesReturns.all()).find((candidate) => candidate.documentId === event.materializedDocumentId);
+    if (existingReturn) {
+      return existingReturn.status === "posted" ? existingReturn : await app.postReturn(existingReturn.id);
+    }
+  }
+  const payload = event.normalizedPayload as Record<string, unknown>;
+  const postingNumber = String(payload.postingNumber ?? "").trim();
+  const sale = postingNumber ? await resolveSaleByPostingNumber(app, event.channelId, postingNumber) : undefined;
+  if (!sale) {
+    // Без нейтрализации соседнего sale-события пользователь смаппит товар, и продажа
+    // по отменённому заказу всё-таки материализуется.
+    const baseExternalId = event.externalId.endsWith("-cancel")
+      ? event.externalId.slice(0, -"-cancel".length)
+      : undefined;
+    const saleEvent = baseExternalId ? await app.findExternalEventByIdentity(event.channelId, baseExternalId) : undefined;
+    if (
+      saleEvent &&
+      saleEvent.eventType === "sale" &&
+      !saleEvent.materializedDocumentId &&
+      saleEvent.status !== "processed" &&
+      saleEvent.status !== "ignored"
+    ) {
+      saleEvent.status = "ignored";
+      saleEvent.reason = "Отправление отменено — продажа не требуется";
+      saleEvent.lastError = undefined;
+      saleEvent.updatedAt = nowIso();
+      await app.externalEvents.upsert(saleEvent);
+    }
+    markExternalEventOutOfScope(event, "Отменено до отгрузки — продажа не создавалась");
+    await app.externalEvents.upsert(event);
+    return event;
+  }
+  if (sale.status === "reversed") {
+    markExternalEventCancellationDone(event, "Продажа уже сторнирована — повторная компенсация не нужна");
+    await app.externalEvents.upsert(event);
+    return event;
+  }
+  if (sale.financialDocumentId || sale.status === "posted") {
+    throw new DomainError("sale_already_recognized", "Продажа уже признана финансово — оформите возврат вручную");
+  }
+  if (sale.status === "draft" || sale.status === "needs_attention") {
+    // Товар ещё не списан (FIFO не выполнялся) — восстанавливать нечего: гасим продажу
+    // и её документ без проводок.
+    const saleDocument = await app.repos.documents.getById(sale.documentId);
+    if (saleDocument && saleDocument.status !== "cancelled") {
+      saleDocument.status = "cancelled";
+      await app.repos.documents.upsert(saleDocument);
+    }
+    sale.status = "reversed";
+    await app.repos.sales.upsert(sale);
+    markExternalEventCancellationDone(event, "Отправление отменено до списания товара — продажа сторнирована без проводок");
+    event.materializedDocumentId = sale.documentId;
+    await app.externalEvents.upsert(event);
+    return event;
+  }
+  // sale.status === "shipped": компенсируем только остаток, не покрытый ранними возвратами.
+  const returnedBySaleLine = await returnedQtyBySaleLine(app, sale.id);
+  const saleLines = (await app.repos.saleLines.all()).filter((line) => line.saleId === sale.id);
+  const lines = saleLines
+    .map((line) => ({ saleLineId: line.id, qty: round4(line.qty - (returnedBySaleLine.get(line.id) ?? 0)) }))
+    .filter((line) => line.qty > 0.0001);
+  if (lines.length === 0) {
+    markExternalEventCancellationDone(event, "Товар по отменённому отправлению уже возвращён — компенсация не нужна");
+    await app.externalEvents.upsert(event);
+    return event;
+  }
+  return await app.recordReturn({
+    saleId: sale.id,
+    returnDate: event.occurredAt.slice(0, 10),
+    refundRub: 0,
+    comment: "Компенсация отменённого отправления маркетплейса",
+    externalEventId: event.id,
+    post: true,
+    lines
+  });
+}
+
+function markExternalEventCancellationDone(event: ExternalEvent, reason: string) {
+  event.status = "processed";
+  event.reason = reason;
+  event.lastError = undefined;
+  event.updatedAt = nowIso();
+}
+
+async function returnedQtyBySaleLine(app: AccountingApp, saleId: string) {
+  const postedReturnDocumentIds = new Set(
+    (await app.repos.salesReturns.all())
+      .filter((candidate) => candidate.saleId === saleId && candidate.status === "posted")
+      .map((candidate) => candidate.documentId)
+  );
+  const returned = new Map<string, number>();
+  for (const line of await app.repos.documentLines.all()) {
+    if (line.lineType !== "sales_return_line" || !postedReturnDocumentIds.has(line.documentId)) continue;
+    const saleLineId = String((line.payload as Record<string, unknown> | undefined)?.saleLineId ?? "");
+    if (!saleLineId) continue;
+    returned.set(saleLineId, round4((returned.get(saleLineId) ?? 0) + Number(line.qty ?? 0)));
+  }
+  return returned;
+}
+
 async function materializeFinanceEvent(
   app: AccountingApp,
   event: ExternalEvent,
@@ -4733,6 +4852,7 @@ function emptyAutoProcessingOutcome() {
   return {
     salesPosted: 0,
     returnsPosted: 0,
+    cancellationsProcessed: 0,
     financePosted: 0,
     payoutsMaterialized: 0,
     needsAttention: 0,
@@ -4806,6 +4926,28 @@ async function autoProcessChannelFacts(app: AccountingApp, channelId: string, sy
     } catch (error) {
       if (isBeforeAccountingStartError(error)) {
         markExternalEventOutOfScope(event, "Дата возврата раньше старта учёта — вне горизонта учёта");
+        outcome.skippedBeforeStart += 1;
+        continue;
+      }
+      if (error instanceof DomainError) {
+        markExternalEventNeedsAttention(event, error.message);
+        outcome.needsAttention += 1;
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  // Отмены идут после возвратов: возврат и отмена по одному posting не конфликтуют —
+  // компенсация считает остаток qty уже с учётом проведённых возвратов.
+  const cancellations = currentRunEvents.filter((event) => event.eventType === "cancellation").sort(compareExternalEventsByDate);
+  for (const event of cancellations) {
+    try {
+      await materializeCancellationEvent(app, event);
+      outcome.cancellationsProcessed += 1;
+    } catch (error) {
+      if (isBeforeAccountingStartError(error)) {
+        markExternalEventOutOfScope(event, "Дата отмены раньше старта учёта — вне горизонта учёта");
         outcome.skippedBeforeStart += 1;
         continue;
       }
@@ -4955,6 +5097,7 @@ async function finalizeSyncRun(app: AccountingApp, syncRun: SyncRun, baseline: A
     sale: createdEvents.filter((item) => item.eventType === "sale").length,
     sale_accrual: createdEvents.filter((item) => item.eventType === "sale_accrual").length,
     return: createdEvents.filter((item) => item.eventType === "return").length,
+    cancellation: createdEvents.filter((item) => item.eventType === "cancellation").length,
     fee: createdEvents.filter((item) => item.eventType === "fee").length,
     payout: createdEvents.filter((item) => item.eventType === "payout").length
   };
@@ -4964,7 +5107,8 @@ async function finalizeSyncRun(app: AccountingApp, syncRun: SyncRun, baseline: A
     const createdCount = streamCreatedCount(streamRun.streamCode, {
       products: createdProducts,
       stocks: createdStocks,
-      sale: createdEventsByType.sale,
+      // Отмены — часть потока продаж (плагин считает их в stats.sales).
+      sale: createdEventsByType.sale + createdEventsByType.cancellation,
       return: createdEventsByType.return,
       fee: createdEventsByType.fee + createdEventsByType.sale_accrual,
       payout: createdEventsByType.payout

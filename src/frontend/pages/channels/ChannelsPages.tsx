@@ -744,6 +744,7 @@ export function SyncInboxPage() {
       if (selectedEvent.eventType === "sale") return apiPost(`/api/integrations/events/${selectedEvent.id}/materialize-sale`);
       if (selectedEvent.eventType === "sale_accrual") return apiPost(`/api/integrations/events/${selectedEvent.id}/materialize-sale-accrual`);
       if (selectedEvent.eventType === "return") return apiPost(`/api/integrations/events/${selectedEvent.id}/materialize-return`);
+      if (selectedEvent.eventType === "cancellation") return apiPost(`/api/integrations/events/${selectedEvent.id}/materialize-cancellation`);
       if (selectedEvent.eventType === "fee") return apiPost(`/api/integrations/events/${selectedEvent.id}/materialize-fee`);
       throw new Error("Для этого типа события нет прямой материализации");
     },
@@ -804,6 +805,7 @@ export function SyncInboxPage() {
             <option value="">Все типы</option>
             <option value="sale">Продажа</option>
             <option value="return">Возврат</option>
+            <option value="cancellation">Отмена</option>
             <option value="fee">Финансы</option>
             <option value="payout">Выплата</option>
           </Select>
@@ -912,7 +914,7 @@ export function SyncInboxPage() {
                       Открыть сопоставление товара
                     </Button>
                   )}
-                  {["sale", "sale_accrual", "return", "fee"].includes(selected.event.eventType) && selected.event.status !== "processed" && (
+                  {["sale", "sale_accrual", "return", "cancellation", "fee"].includes(selected.event.eventType) && selected.event.status !== "processed" && (
                     <Button onClick={() => materialize.mutate(selected.event)} disabled={materialize.isPending}>
                       Создать документ
                     </Button>
@@ -1399,6 +1401,7 @@ function eventTypeLabel(eventType: string) {
   if (eventType === "sale") return "Продажа";
   if (eventType === "sale_accrual") return "Начисление продажи";
   if (eventType === "return") return "Возврат";
+  if (eventType === "cancellation") return "Отмена";
   if (eventType === "fee") return "Финансы";
   if (eventType === "payout") return "Выплата";
   if (eventType === "stock") return "Остаток";

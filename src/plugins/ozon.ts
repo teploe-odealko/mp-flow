@@ -88,7 +88,7 @@ type OzonExpandedFinanceEvent = {
 };
 
 type OzonExpandedPostingEvent = {
-  eventType: "sale" | "return";
+  eventType: "sale" | "return" | "cancellation";
   externalId: string;
   payload: Record<string, unknown>;
 };
@@ -258,13 +258,18 @@ async function syncRealOzon({ app, channelId, syncRunId, since, credentials, str
     }
   }
 
+  // Postings перечитываем с lookback: статус отправления (отмена, невыкуп) меняется после
+  // создания, а окно /vN/posting/*/list фильтрует по дате создания. Дедуп по (channelId,
+  // externalId) делает повторный инжест безопасным.
+  const postingsFrom = postingsWindowFrom(windowFrom, syncWindowTo, mode, since);
+
   await Promise.all([
     (async () => {
       if (!wantSales && !wantReturns) return;
       try {
         const [fbsPostings, fboPostings] = await Promise.all([
-          loadFbsPostings(credentials!, windowFrom, syncWindowTo, errors),
-          loadFboPostings(credentials!, windowFrom, syncWindowTo, errors)
+          loadFbsPostings(credentials!, postingsFrom, syncWindowTo, errors),
+          loadFboPostings(credentials!, postingsFrom, syncWindowTo, errors)
         ]);
         for (const posting of [...fbsPostings, ...fboPostings]) {
           // Guard по легаси-данным: до схемы «:return» возврат ингестился под ключом продажи.
@@ -274,7 +279,8 @@ async function syncRealOzon({ app, channelId, syncRunId, since, credentials, str
             : undefined;
           for (const postingEvent of expandOzonPostingEvents(posting, externalByOfferId, stats.events, legacyEvent)) {
             if (postingEvent.eventType === "return" && !wantReturns) continue;
-            if (postingEvent.eventType === "sale" && !wantSales) continue;
+            // Отмены — часть потока продаж: тот же гейт и счётчик, что у sale.
+            if (postingEvent.eventType !== "return" && !wantSales) continue;
             await app.ingestExternalEvent({
               channelId,
               syncRunId,
@@ -807,7 +813,15 @@ export function expandOzonPostingEvents(
 ): OzonExpandedPostingEvent[] {
   const postingKey = ozonPostingKey(posting, fallbackId);
   const payload = normalizePostingPayload(posting, externalByOfferId);
-  if (!isReturnPosting(posting)) {
+  const classification = classifyOzonPosting(posting);
+  if (classification === "cancellation") {
+    // Отменённый/невыкупленный posting не порождает продажу: эмитим только cancellation
+    // под собственным ключом «-cancel» (unique(channel_id, external_id) не позволяет
+    // переиспользовать ключ продажи). Материализация сама нейтрализует соседнее
+    // sale-событие прошлых синков или компенсирует уже созданную продажу.
+    return [{ eventType: "cancellation", externalId: `${postingKey}-cancel`, payload }];
+  }
+  if (classification === "sale") {
     return [{ eventType: "sale", externalId: postingKey, payload }];
   }
   const legacyReturnSettled = legacyEvent?.eventType === "return" &&
@@ -835,6 +849,26 @@ function isReturnPosting(posting: OzonPosting) {
   return marker.includes("return") || marker.includes("возврат");
 }
 
+function isCancelledPosting(posting: OzonPosting) {
+  if (String(posting.status ?? "").trim().toLowerCase() === "cancelled") return true;
+  const substatus = String(posting.substatus ?? "").toLowerCase();
+  if (substatus.includes("cancel") || substatus.includes("отмен")) return true;
+  // Заполненный блок cancellation (причина или тип отмены) — признак отменённого
+  // отправления даже без статуса "cancelled" в выгрузке.
+  return [posting.cancellation?.cancel_reason, posting.cancellation?.cancellation_type]
+    .some((value) => String(value ?? "").trim().length > 0);
+}
+
+/**
+ * Классификация posting для потока продаж: маркер возврата имеет приоритет над отменой
+ * (невыкуп с возвратным статусом идёт штатным return-путём), отмена — над продажей.
+ */
+export function classifyOzonPosting(posting: OzonPosting): "sale" | "return" | "cancellation" {
+  if (isReturnPosting(posting)) return "return";
+  if (isCancelledPosting(posting)) return "cancellation";
+  return "sale";
+}
+
 // Перекрытие окна при инкрементальном синке от курсора: финансовые операции Ozon
 // доначисляются с лагом в несколько дней, поэтому перечитываем хвост. Повторная выгрузка
 // идемпотентна (дедуп по externalId), цена — максимум один лишний месячный период.
@@ -847,6 +881,17 @@ export function parseSince(since?: string, lastSyncAt?: string) {
     : new Date("2026-01-01T00:00:00.000Z");
   const value = since ? new Date(`${since.slice(0, 10)}T00:00:00.000Z`) : fallback;
   return Number.isNaN(value.getTime()) ? new Date("2026-01-01T00:00:00.000Z") : value;
+}
+
+// Lookback окна postings при инкрементальном синке: статус отправления (отмена/невыкуп)
+// может смениться спустя недели после создания, а API отдаёт postings только по дате
+// создания. 30 дней покрывают типовой срок доставки и возврата FBS/FBO.
+const POSTING_STATUS_LOOKBACK_MS = 30 * 24 * 3600 * 1000;
+
+export function postingsWindowFrom(windowFrom: Date, startedAt: Date, mode?: string, since?: string) {
+  // Полный/backfill-синк и явный since уже задают нужную нижнюю границу — не сдвигаем.
+  if (since || mode === "full" || mode === "backfill") return windowFrom;
+  return new Date(Math.min(windowFrom.getTime(), startedAt.getTime() - POSTING_STATUS_LOOKBACK_MS));
 }
 
 function ozonDateToIso(value?: string) {

@@ -1936,7 +1936,8 @@ export class AccountingApp {
     event.externalProductId = undefined;
     event.productId = undefined;
 
-    if (event.eventType === "fee" || event.eventType === "sale_accrual" || event.eventType === "payout") {
+    // Для cancellation маппинг SKU не нужен: материализация ищет продажу по postingNumber.
+    if (event.eventType === "fee" || event.eventType === "sale_accrual" || event.eventType === "payout" || event.eventType === "cancellation") {
       event.status = "ready_for_processing";
       return event;
     }
@@ -3029,7 +3030,7 @@ export class AccountingApp {
         .filter((payment) => payoutPaymentIds.has(payment.id))
         .map((payment) => payment.documentId)
     );
-    const removableEventTypes = new Set<ExternalEvent["eventType"]>(["sale", "sale_accrual", "return", "fee"]);
+    const removableEventTypes = new Set<ExternalEvent["eventType"]>(["sale", "sale_accrual", "return", "cancellation", "fee"]);
     if (includePayouts) removableEventTypes.add("payout");
     const externalEvents = (await this.externalEvents.list({ channelId })).filter((event) => removableEventTypes.has(event.eventType));
     const externalEventIds = new Set(externalEvents.map((event) => event.id));
@@ -3137,6 +3138,18 @@ export class AccountingApp {
     await this.repos.salesReturns.replaceAll((await this.repos.salesReturns.all()).filter((salesReturn) => !salesReturnIds.has(salesReturn.id)));
     await this.repos.saleLines.replaceAll((await this.repos.saleLines.all()).filter((line) => !saleIds.has(line.saleId)));
     await this.repos.sales.replaceAll((await this.repos.sales.all()).filter((sale) => !saleIds.has(sale.id)));
+
+    // Откат отмены: удаление компенсирующего возврата (refund 0) по сторнированной
+    // непризнанной продаже возвращает её в "shipped" — иначе продажа застрянет в
+    // терминальном статусе, а сброшенное cancellation-событие не сможет примениться заново.
+    const remainingSales = await this.repos.sales.all();
+    for (const salesReturn of salesReturns) {
+      if (saleIds.has(salesReturn.saleId) || round2(salesReturn.refundRub) !== 0) continue;
+      const sale = remainingSales.find((candidate) => candidate.id === salesReturn.saleId);
+      if (!sale || sale.status !== "reversed" || sale.financialDocumentId) continue;
+      sale.status = "shipped";
+      await this.repos.sales.upsert(sale);
+    }
     this.compactZeroStockStates();
 
     const resetExternalEvents = Array.from(new Set(Array.from(input.resetExternalEventIds ?? []).filter(Boolean)));
@@ -3165,7 +3178,12 @@ export class AccountingApp {
       throw new DomainError("return_not_postable", "Сторнированный или отмененный возврат нельзя провести повторно");
     }
     const sale = this.mustFind(await this.repos.sales.all(), salesReturn.saleId, "sale_not_found");
-    if (sale.status !== "posted") {
+    // Непризнанная продажа маркетплейса (отгружена, начисления ещё нет): возврат допустим,
+    // но компенсирует только товарную часть — выручка не признавалась, сторнировать нечего,
+    // поэтому refund принудительно 0 и проводка только 41.x ← 45.03. Для признанных продаж
+    // поведение прежнее.
+    const saleUnrecognized = sale.status === "shipped" && !sale.financialDocumentId;
+    if (sale.status !== "posted" && !saleUnrecognized) {
       throw new DomainError("sale_not_posted", "Возврат можно оформить только по проведенной продаже");
     }
     await this.assertAccountingDateAllowed(salesReturn.returnDate);
@@ -3217,7 +3235,7 @@ export class AccountingApp {
       }
 
       const targetStateCode = String(payload.stockStateCode ?? salesReturn.stockStateCode ?? "sellable");
-      const lineRefundRub = round2(Number(payload.refundRub ?? documentLine.amountRub ?? 0));
+      const lineRefundRub = saleUnrecognized ? 0 : round2(Number(payload.refundRub ?? documentLine.amountRub ?? 0));
       refundRub = round2(refundRub + lineRefundRub);
       totalRevenuePart = round2(totalRevenuePart + round2((saleLine.revenueRub * qtyToReturn) / saleLine.qty));
 
@@ -3275,12 +3293,29 @@ export class AccountingApp {
     document.amountRub = salesReturn.refundRub;
     await this.repos.documents.upsert(document);
     if (salesReturn.status !== "needs_attention") {
-      await this.postDocument(document.id, [
-        { accountCode: "90.01", debit: salesReturn.refundRub, memo: "Сторно выручки по возврату" },
-        { accountCode: "76.ТП", credit: salesReturn.refundRub, memo: "Уменьшение задолженности точки продаж" },
-        { accountCode: accountForWarehouse(warehouse), debit: salesReturn.restoredCostRub, memo: "Возврат товара в остаток" },
-        { accountCode: "90.02", credit: salesReturn.restoredCostRub, memo: "Сторно себестоимости продаж" }
-      ]);
+      await this.postDocument(document.id, saleUnrecognized
+        ? [
+            { accountCode: accountForWarehouse(warehouse), debit: salesReturn.restoredCostRub, memo: "Возврат товара в остаток" },
+            { accountCode: MARKETPLACE_SHIPPED_ACCOUNT_CODE, credit: salesReturn.restoredCostRub, memo: "Сторно отгрузки, не дождавшейся начисления маркетплейса" }
+          ]
+        : [
+            { accountCode: "90.01", debit: salesReturn.refundRub, memo: "Сторно выручки по возврату" },
+            { accountCode: "76.ТП", credit: salesReturn.refundRub, memo: "Уменьшение задолженности точки продаж" },
+            { accountCode: accountForWarehouse(warehouse), debit: salesReturn.restoredCostRub, memo: "Возврат товара в остаток" },
+            { accountCode: "90.02", credit: salesReturn.restoredCostRub, memo: "Сторно себестоимости продаж" }
+          ]);
+    }
+    if (saleUnrecognized && salesReturn.status === "posted") {
+      // Вся отгруженная qty вернулась до признания выручки — продажа терминально
+      // сторнирована: postSale блокирует повторное проведение, а recognizeSaleFromFinance
+      // уведёт поздний sale_accrual в needs_attention вместо тихого признания выручки.
+      const remainingQty = await Promise.all(
+        saleLines.map(async (line) => round4(line.qty - await this.returnedQtyForSaleLine(line.id)))
+      );
+      if (remainingQty.every((qty) => qty <= 0.0001)) {
+        sale.status = "reversed";
+        await this.repos.sales.upsert(sale);
+      }
     }
     await this.ensureDocumentLink(sale.documentId, salesReturn.documentId, "return");
     this.markExternalEventProcessed(salesReturn.externalEventId, salesReturn.documentId);
