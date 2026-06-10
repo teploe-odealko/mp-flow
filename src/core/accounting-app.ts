@@ -6276,6 +6276,27 @@ export class AccountingApp {
     return (await this.repos.periods.all()).find((period) => period.startsOn <= date && period.endsOn >= date);
   }
 
+  private async ensurePeriodForDate(date: string): Promise<AccountingPeriod | undefined> {
+    const existing = await this.periodForDate(date);
+    if (existing) return existing;
+    const { organization, policy } = this.ensureBootstrapped();
+    const months = this.monthsBetweenInclusive(policy.accountingStartDate, date);
+    const existingStarts = new Set((await this.repos.periods.all()).map((period) => period.startsOn));
+    try {
+      for (const period of monthPeriods(organization.id, policy.accountingStartDate, months)) {
+        if (existingStarts.has(period.startsOn)) continue;
+        await this.repos.periods.add(period);
+      }
+    } catch (error) {
+      // Гонка параллельных запросов: проигравший падает на unique (organization_id, starts_on).
+      // Если период за это время появился — считаем создание успешным.
+      const racedPeriod = await this.periodForDate(date);
+      if (!racedPeriod) throw error;
+      return racedPeriod;
+    }
+    return await this.periodForDate(date);
+  }
+
   private monthsBetweenInclusive(from: string, to: string) {
     const fromDate = new Date(`${from}T00:00:00.000Z`);
     const toDate = new Date(`${to}T00:00:00.000Z`);
@@ -6315,7 +6336,14 @@ export class AccountingApp {
     if (date < policy.accountingStartDate) {
       throw new DomainError("before_accounting_start", "Дата раньше начала учета");
     }
-    const period = await this.periodForDate(date);
+    // Собираем из локальных компонент даты, не через toISOString(): UTC-сдвиг дал бы off-by-one день.
+    const now = new Date();
+    const pad = (value: number) => String(value).padStart(2, "0");
+    const maxFutureIso = `${now.getFullYear() + 1}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    if (date > maxFutureIso) {
+      throw new DomainError("accounting_date_too_far", "Дата документа дальше чем через год — проверьте год в дате");
+    }
+    const period = await this.ensurePeriodForDate(date);
     if (!period) {
       throw new DomainError("period_not_found", "Для даты нет учетного периода");
     }

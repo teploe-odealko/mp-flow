@@ -710,6 +710,41 @@ describePostgres("postgres runtime store", () => {
     }
   }, 30_000);
 
+  it("lazily creates accounting periods without violating unique (organization_id, starts_on)", async () => {
+    await resetRuntimeTables();
+
+    const store = new PostgresRuntimeStore(new Pool({ connectionString: connectionString! }), "postgres-period-horizon-secret");
+    const api = createApi(new AccountingApp(), { persistence: store });
+    try {
+      const pad = (value: number) => String(value).padStart(2, "0");
+      const localIso = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+      const now = new Date();
+      const startIso = localIso(new Date(now.getFullYear(), now.getMonth() - 25, 1));
+      const todayIso = localIso(now);
+      const currentMonthStart = localIso(new Date(now.getFullYear(), now.getMonth(), 1));
+
+      await request(api, "POST", "/api/setup", { displayName: "Postgres Horizon", accountingStartDate: startIso, confirmHistoricalStart: true });
+      await request(api, "POST", "/api/documents", { accountingDate: todayIso, title: "Первый документ нового месяца" });
+      await request(api, "POST", "/api/documents", { accountingDate: todayIso, title: "Второй документ нового месяца" });
+
+      const periods = await request<Array<{ startsOn: string }>>(api, "GET", "/api/periods");
+      expect(periods.filter((period) => period.startsOn === currentMonthStart)).toHaveLength(1);
+
+      const inspectPool = new Pool({ connectionString: connectionString! });
+      try {
+        const rows = await inspectPool.query<{ count: number }>(
+          "select count(*)::int as count from accounting_period where starts_on = $1",
+          [currentMonthStart]
+        );
+        expect(rows.rows[0]?.count).toBe(1);
+      } finally {
+        await inspectPool.end();
+      }
+    } finally {
+      await store.close();
+    }
+  }, 30_000);
+
   it("authenticates MCP agent tokens without opening app sessions", async () => {
     await resetRuntimeTables();
 
