@@ -199,10 +199,14 @@ export const ozonPlugin: MarketplacePlugin = {
   }
 };
 
-async function syncRealOzon({ app, channelId, syncRunId, since, credentials, streams, autoLinkProducts }: SyncContext): Promise<SyncResult> {
+async function syncRealOzon({ app, channelId, syncRunId, since, credentials, streams, mode, autoLinkProducts }: SyncContext): Promise<SyncResult> {
   const channel = await app.repos.salesChannels.getById(channelId);
-  const startedAt = parseSince(since, channel?.lastSyncAt);
-  const finishedAt = new Date();
+  // Полный/backfill-синк сознательно игнорирует курсор канала: это штатный способ
+  // перевыгрузить всю историю и залечить дыры от прежних сбойных запусков.
+  const windowFrom = parseSince(since, mode === "full" || mode === "backfill" ? undefined : channel?.lastSyncAt);
+  // Верхняя граница окна фиксируется ДО выгрузки и возвращается как coveredUntil —
+  // курсор канала продвигается ровно до неё, данные за время работы запуска не теряются.
+  const syncWindowTo = new Date();
   const stats = { products: 0, events: 0, stocks: 0, sales: 0, returns: 0, finance_events: 0, payouts: 0 };
   const errors: string[] = [];
   const externalByOfferId = new Map<string, ExternalProduct>();
@@ -236,7 +240,7 @@ async function syncRealOzon({ app, channelId, syncRunId, since, credentials, str
             await app.recordObservedStock({
               channelId,
               externalProductId: externalProduct.id,
-              observedAt: finishedAt.toISOString(),
+              observedAt: syncWindowTo.toISOString(),
               qtyObserved: Number.isFinite(qtyObserved) ? Math.max(0, qtyObserved) : 0
             });
             stats.stocks += 1;
@@ -253,8 +257,8 @@ async function syncRealOzon({ app, channelId, syncRunId, since, credentials, str
       if (!wantSales && !wantReturns) return;
       try {
         const [fbsPostings, fboPostings] = await Promise.all([
-          loadFbsPostings(credentials!, startedAt, finishedAt, errors),
-          loadFboPostings(credentials!, startedAt, finishedAt, errors)
+          loadFbsPostings(credentials!, windowFrom, syncWindowTo, errors),
+          loadFboPostings(credentials!, windowFrom, syncWindowTo, errors)
         ]);
         for (const posting of [...fbsPostings, ...fboPostings]) {
           const payload = normalizePostingPayload(posting, externalByOfferId);
@@ -266,7 +270,7 @@ async function syncRealOzon({ app, channelId, syncRunId, since, credentials, str
             syncRunId,
             eventType,
             externalId: `ozon-posting-${posting.posting_number ?? posting.order_id ?? stats.events}`,
-            occurredAt: ozonDateToIso(posting.in_process_at ?? posting.created_at) ?? finishedAt.toISOString(),
+            occurredAt: ozonDateToIso(posting.in_process_at ?? posting.created_at) ?? syncWindowTo.toISOString(),
             payload
           });
           stats.events += 1;
@@ -280,7 +284,7 @@ async function syncRealOzon({ app, channelId, syncRunId, since, credentials, str
     (async () => {
       if (!wantFinance) return;
       try {
-        for (const operation of await loadFinanceOperations(credentials!, startedAt, finishedAt, errors)) {
+        for (const operation of await loadFinanceOperations(credentials!, windowFrom, syncWindowTo, errors)) {
           for (const financeEvent of expandOzonFinanceEvents(operation)) {
             if (financeEvent.eventType !== "fee" && financeEvent.eventType !== "sale_accrual") continue;
             await app.ingestExternalEvent({
@@ -288,7 +292,7 @@ async function syncRealOzon({ app, channelId, syncRunId, since, credentials, str
               syncRunId,
               eventType: financeEvent.eventType,
               externalId: financeEvent.externalId,
-              occurredAt: ozonDateToIso(operation.operation_date) ?? finishedAt.toISOString(),
+              occurredAt: ozonDateToIso(operation.operation_date) ?? syncWindowTo.toISOString(),
               payload: financeEvent.payload
             });
             stats.events += 1;
@@ -306,7 +310,8 @@ async function syncRealOzon({ app, channelId, syncRunId, since, credentials, str
     channelId,
     status: errors.length > 0 ? "failed" : "completed",
     stats,
-    errors
+    errors,
+    coveredUntil: syncWindowTo.toISOString()
   };
 }
 
@@ -723,8 +728,16 @@ function isReturnPosting(posting: OzonPosting) {
   return marker.includes("return") || marker.includes("возврат");
 }
 
-function parseSince(since?: string, lastSyncAt?: string) {
-  const fallback = lastSyncAt ? new Date(lastSyncAt) : new Date("2026-01-01T00:00:00.000Z");
+// Перекрытие окна при инкрементальном синке от курсора: финансовые операции Ozon
+// доначисляются с лагом в несколько дней, поэтому перечитываем хвост. Повторная выгрузка
+// идемпотентна (дедуп по externalId), цена — максимум один лишний месячный период.
+const OZON_SYNC_OVERLAP_MS = 7 * 24 * 3600 * 1000;
+
+export function parseSince(since?: string, lastSyncAt?: string) {
+  // Перекрытие применяется только к fallback по курсору; явный since пользователя не трогаем.
+  const fallback = lastSyncAt
+    ? new Date(new Date(lastSyncAt).getTime() - OZON_SYNC_OVERLAP_MS)
+    : new Date("2026-01-01T00:00:00.000Z");
   const value = since ? new Date(`${since.slice(0, 10)}T00:00:00.000Z`) : fallback;
   return Number.isNaN(value.getTime()) ? new Date("2026-01-01T00:00:00.000Z") : value;
 }

@@ -621,3 +621,175 @@ describe("sync inbox workflows", () => {
     expect(second.status).toBe("ready_for_processing");
   });
 });
+
+describe("sync cursor", () => {
+  function withMockPlugin(sync: (context: any) => Promise<any>) {
+    const originalGet = pluginRegistry.get.bind(pluginRegistry);
+    const originalAll = pluginRegistry.all.bind(pluginRegistry);
+    const mockPlugin = {
+      code: "test",
+      displayName: "Test plugin",
+      capabilities: ["sales"] as const,
+      validateCredentials: () => ({ ok: true as const }),
+      sync
+    };
+    (pluginRegistry as any).get = (code: string) => code === "test" ? mockPlugin : originalGet(code);
+    (pluginRegistry as any).all = () => [mockPlugin as any, ...originalAll()];
+    return () => {
+      (pluginRegistry as any).get = originalGet;
+      (pluginRegistry as any).all = originalAll;
+    };
+  }
+
+  async function createTestChannel(app: AccountingApp, api: ReturnType<typeof createApi>) {
+    app.state.integrationPlugins.push({
+      id: "plugin_test",
+      code: "test",
+      displayName: "Test plugin",
+      status: "installed"
+    });
+    return post<any>(api, "/api/integrations/channels", {
+      name: "Cursor channel",
+      channelType: "marketplace",
+      pluginCode: "test",
+      enabledStreams: ["sales"]
+    });
+  }
+
+  it("does not advance lastSyncAt when the sync run fails", async () => {
+    resetIds();
+    const app = new AccountingApp();
+    const api = createApi(app);
+    await post(api, "/api/setup", { displayName: "Cursor QA", accountingStartDate: "2026-01-01" });
+    const restore = withMockPlugin(async ({ channelId }: any) => ({
+      pluginCode: "test",
+      channelId,
+      status: "failed" as const,
+      stats: {},
+      errors: ["boom"],
+      coveredUntil: "2026-06-09T00:00:00.000Z"
+    }));
+
+    try {
+      const channel = await createTestChannel(app, api);
+      const stored = await app.repos.salesChannels.getById(channel.id);
+      stored!.lastSyncAt = "2026-05-01T00:00:00.000Z";
+      await app.repos.salesChannels.upsert(stored!);
+
+      const run = await post<any>(api, `/api/integrations/channels/${channel.id}/sync-runs`, { mode: "incremental" });
+      const after = await app.repos.salesChannels.getById(channel.id);
+
+      expect(run.status).toBe("failed");
+      expect(after!.lastSyncAt).toBe("2026-05-01T00:00:00.000Z");
+      expect(after!.lastCheckedAt).toBe(run.finishedAt);
+      expect(after!.status).toBe("error");
+      expect(after!.lastError).toBe("boom");
+    } finally {
+      restore();
+    }
+  });
+
+  it("advances lastSyncAt to coveredUntil on success, not to the run finish time", async () => {
+    resetIds();
+    const app = new AccountingApp();
+    const api = createApi(app);
+    await post(api, "/api/setup", { displayName: "Cursor QA", accountingStartDate: "2026-01-01" });
+    const coveredUntil = "2026-06-08T18:30:00.000Z";
+    const restore = withMockPlugin(async ({ channelId }: any) => ({
+      pluginCode: "test",
+      channelId,
+      status: "completed" as const,
+      stats: {},
+      errors: [],
+      coveredUntil
+    }));
+
+    try {
+      const channel = await createTestChannel(app, api);
+      const run = await post<any>(api, `/api/integrations/channels/${channel.id}/sync-runs`, { mode: "incremental" });
+      const after = await app.repos.salesChannels.getById(channel.id);
+
+      expect(run.status).toBe("completed");
+      expect(after!.lastSyncAt).toBe(coveredUntil);
+      expect(after!.lastSyncAt).not.toBe(run.finishedAt);
+      expect(after!.lastCheckedAt).toBe(run.finishedAt);
+      expect(after!.status).toBe("active");
+      expect(after!.lastError).toBeUndefined();
+    } finally {
+      restore();
+    }
+  });
+
+  it("falls back to the run start time when the plugin returns no coveredUntil", async () => {
+    resetIds();
+    const app = new AccountingApp();
+    const api = createApi(app);
+    await app.setupDemo();
+    const state = await readStateViaApi(api);
+    const channel = state.salesChannels.find((candidate: any) => candidate.name.includes("Ozon"));
+
+    const run = await post<any>(api, `/api/integrations/channels/${channel.id}/sync-runs`, {
+      credentials: { clientId: "demo-client", apiKey: "demo-key" },
+      mode: "incremental",
+      streams: ["products", "stocks", "sales", "finance_events"]
+    });
+    const after = await app.repos.salesChannels.getById(channel.id);
+
+    expect(run.status).toBe("completed");
+    expect(after!.lastSyncAt).toBe(run.startedAt);
+    expect(new Date(after!.lastSyncAt!).getTime()).toBeLessThanOrEqual(new Date(run.finishedAt).getTime());
+    expect(after!.status).toBe("active");
+  });
+
+  it("re-syncs the window idempotently after a failed run without duplicating events", async () => {
+    resetIds();
+    const app = new AccountingApp();
+    const api = createApi(app);
+    await post(api, "/api/setup", { displayName: "Cursor QA", accountingStartDate: "2026-01-01" });
+    const coveredUntil = "2026-06-10T00:00:00.000Z";
+    let call = 0;
+    const restore = withMockPlugin(async ({ app, channelId, syncRunId }: any) => {
+      call += 1;
+      await app.ingestExternalEvent({
+        channelId,
+        syncRunId,
+        eventType: "sale",
+        externalId: "mock-retry-sale-1",
+        occurredAt: "2026-06-05T10:00:00.000Z",
+        payload: { postingNumber: "POST-RETRY-1", lines: [{ sku: "EXT-A", qty: 1, amountRub: 1000 }] }
+      });
+      return call === 1
+        ? { pluginCode: "test", channelId, status: "failed" as const, stats: {}, errors: ["network boom"], coveredUntil }
+        : { pluginCode: "test", channelId, status: "completed" as const, stats: {}, errors: [], coveredUntil };
+    });
+
+    try {
+      const channel = await createTestChannel(app, api);
+      const failedRun = await post<any>(api, `/api/integrations/channels/${channel.id}/sync-runs`, {
+        mode: "incremental",
+        autoProcess: false
+      });
+      const afterFailed = await readStateViaApi(api);
+      const channelAfterFailed = await app.repos.salesChannels.getById(channel.id);
+
+      expect(failedRun.status).toBe("failed");
+      expect(channelAfterFailed!.lastSyncAt).toBeUndefined();
+      expect(afterFailed.externalEvents.filter((event: any) => event.externalId === "mock-retry-sale-1")).toHaveLength(1);
+
+      const retryRun = await post<any>(api, `/api/integrations/channels/${channel.id}/sync-runs`, {
+        mode: "incremental",
+        autoProcess: false
+      });
+      const afterRetry = await readStateViaApi(api);
+      const channelAfterRetry = await app.repos.salesChannels.getById(channel.id);
+
+      expect(retryRun.status).toBe("completed");
+      expect(afterRetry.externalEvents.filter((event: any) => event.externalId === "mock-retry-sale-1")).toHaveLength(1);
+      expect(afterRetry.externalEvents.length).toBe(afterFailed.externalEvents.length);
+      expect(channelAfterRetry!.lastSyncAt).toBe(coveredUntil);
+      expect(channelAfterRetry!.status).toBe("active");
+    } finally {
+      restore();
+    }
+  });
+});

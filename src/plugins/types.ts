@@ -107,6 +107,13 @@ export interface SyncResult {
   status: "completed" | "failed";
   stats: Record<string, number>;
   errors: string[];
+  /**
+   * ISO-время верхней границы реально запрошенного окна выгрузки, зафиксированное ДО начала
+   * загрузки данных. При успешном запуске бекенд продвигает курсор канала (lastSyncAt) ровно
+   * до этой границы — так запуск через полночь UTC не оставляет дыр. Опционально: плагины без
+   * оконной выгрузки (демо-режим) могут его не возвращать, тогда курсор = startedAt запуска.
+   */
+  coveredUntil?: string;
 }
 
 export type FulfillmentCapability =

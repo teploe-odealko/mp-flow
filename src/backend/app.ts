@@ -2423,9 +2423,12 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
       syncRun.streamRuns = telemetry.streamRuns;
       syncRun.summary = telemetry.summary;
       syncRun.lastError = telemetry.lastError;
-      channel.lastSyncAt = syncRun.finishedAt;
       channel.lastCheckedAt = syncRun.finishedAt;
-      if (result.status === "completed") {
+      if (result.status === "completed" && (result.errors?.length ?? 0) === 0) {
+        // Курсор канала = верхняя граница реально выгруженного окна (зафиксирована плагином
+        // ДО выгрузки), fallback — момент старта запуска. При сбое курсор не двигается,
+        // иначе частично выгруженное окно навсегда выпадает из инкрементальных синков.
+        channel.lastSyncAt = result.coveredUntil ?? syncRun.startedAt;
         channel.lastError = undefined;
         channel.status = "active";
       } else {

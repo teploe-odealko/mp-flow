@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createApi } from "../../src/backend/app";
 import { AccountingApp } from "../../src/core/accounting-app";
 import { resetIds } from "../../src/core/utils";
-import { expandOzonFinanceEvents } from "../../src/plugins/ozon";
+import { expandOzonFinanceEvents, ozonPlugin, parseSince } from "../../src/plugins/ozon";
 import { readStateViaApi } from "../support/api-state";
 
 async function post<T>(api: ReturnType<typeof createApi>, path: string, body: unknown = {}): Promise<T> {
@@ -96,6 +96,115 @@ describe("marketplace plugins", () => {
     expect(after.externalEvents.some((event: any) => event.externalId === "ozon-sale-demo-1")).toBe(true);
     expect(after.observedStocks.length).toBeGreaterThan(0);
     expect(after.externalEvents.find((event: any) => event.externalId === "ozon-sale-demo-1").status).toBe("ready_for_processing");
+  });
+});
+
+describe("ozon sync window (parseSince)", () => {
+  it("applies a 7-day overlap when falling back to the channel cursor", () => {
+    const result = parseSince(undefined, "2026-05-20T10:00:00.000Z");
+    expect(result.toISOString()).toBe("2026-05-13T10:00:00.000Z");
+  });
+
+  it("uses explicit since as-is without overlap", () => {
+    const result = parseSince("2026-03-15", "2026-05-20T10:00:00.000Z");
+    expect(result.toISOString()).toBe("2026-03-15T00:00:00.000Z");
+  });
+
+  it("defaults to 2026-01-01 without a cursor and on invalid input", () => {
+    expect(parseSince(undefined, undefined).toISOString()).toBe("2026-01-01T00:00:00.000Z");
+    expect(parseSince("не дата", undefined).toISOString()).toBe("2026-01-01T00:00:00.000Z");
+    expect(parseSince(undefined, "не дата").toISOString()).toBe("2026-01-01T00:00:00.000Z");
+  });
+});
+
+describe("ozon real sync cursor semantics", () => {
+  async function setupOzonChannel(lastSyncAt: string) {
+    resetIds();
+    const app = new AccountingApp();
+    const api = createApi(app);
+    await app.setupDemo();
+    const state = await readStateViaApi(api);
+    const channel = state.salesChannels.find((candidate: any) => candidate.name.includes("Ozon"));
+    const stored = await app.repos.salesChannels.getById(channel.id);
+    stored!.lastSyncAt = lastSyncAt;
+    await app.repos.salesChannels.upsert(stored!);
+    return { app, channelId: channel.id as string };
+  }
+
+  function stubOzonFetch(options: { failFinance: boolean }) {
+    const financeRequests: any[] = [];
+    vi.stubGlobal("fetch", async (url: any, init: any) => {
+      const path = String(url);
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      if (path.includes("/v3/finance/transaction/list")) {
+        financeRequests.push(body);
+        if (options.failFinance) {
+          return new Response(JSON.stringify({ message: "boom" }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+      }
+      return new Response(JSON.stringify({ result: {} }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    });
+    return financeRequests;
+  }
+
+  const syncContextBase = {
+    credentials: { clientId: "real-client", apiKey: "real-key" },
+    streams: ["finance_events"],
+    pluginState: {} as any,
+    pluginSecrets: {} as any
+  };
+
+  it("reports failed status with coveredUntil when a finance month errors and reads from cursor minus overlap", async () => {
+    const { app, channelId } = await setupOzonChannel("2026-06-01T00:00:00.000Z");
+    const financeRequests = stubOzonFetch({ failFinance: true });
+
+    try {
+      const before = Date.now();
+      const result = await ozonPlugin.sync({
+        app,
+        channelId,
+        mode: "incremental",
+        ...syncContextBase
+      } as any);
+
+      expect(result.status).toBe("failed");
+      expect(result.errors.some((error) => error.startsWith("finance"))).toBe(true);
+      expect(result.coveredUntil).toBeTruthy();
+      expect(new Date(result.coveredUntil!).getTime()).toBeGreaterThanOrEqual(before);
+      expect(new Date(result.coveredUntil!).getTime()).toBeLessThanOrEqual(Date.now());
+      // Нижняя граница окна = lastSyncAt − 7 дней (с усечением до начала суток UTC в monthPeriods).
+      const froms = financeRequests.map((body) => String(body.filter?.date?.from)).sort();
+      expect(froms[0]).toBe("2026-05-25T00:00:00.000Z");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("full sync ignores the channel cursor and reloads the window from 2026-01-01", async () => {
+    const { app, channelId } = await setupOzonChannel("2026-06-01T00:00:00.000Z");
+    const financeRequests = stubOzonFetch({ failFinance: false });
+
+    try {
+      const result = await ozonPlugin.sync({
+        app,
+        channelId,
+        mode: "full",
+        ...syncContextBase
+      } as any);
+
+      expect(result.status).toBe("completed");
+      expect(result.coveredUntil).toBeTruthy();
+      const froms = financeRequests.map((body) => String(body.filter?.date?.from)).sort();
+      expect(froms[0]).toBe("2026-01-01T00:00:00.000Z");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
