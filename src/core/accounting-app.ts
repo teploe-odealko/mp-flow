@@ -2006,6 +2006,10 @@ export class AccountingApp {
   }): Promise<Sale> {
     const channel = this.mustFind(await this.repos.salesChannels.all(), input.channelId, "channel_not_found");
     const warehouseId = input.warehouseId ?? channel.salesPointWarehouseId;
+    for (const line of input.lines) {
+      // Цена не проверяется намеренно: в плагинных продажах легальны позиции с ценой 0 (подарки, акции).
+      assertPositive(line.qty, "Количество в продаже должно быть положительным");
+    }
     const revenueRub = round2(input.lines.reduce((sum, line) => sum + line.qty * line.priceRub, 0));
     const document = await this.createDocument({
       documentType: "sale",

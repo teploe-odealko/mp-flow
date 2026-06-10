@@ -138,6 +138,42 @@ describe("prod-ready contracts", () => {
     });
   });
 
+  it("rejects zero-quantity sales but keeps zero-price lines for plugin flows", async () => {
+    resetIds();
+    const app = new AccountingApp();
+    const api = createApi(app);
+    await post(api, "/api/setup", { displayName: "Prod QA", accountingStartDate: "2026-01-01" });
+    const product = await post<any>(api, "/api/products", { sku: "SALE-QTY", name: "Товар для продажи" });
+    const channel = await post<any>(api, "/api/integrations/channels", {
+      name: "Канал нулевых проверок",
+      channelType: "marketplace",
+      pluginCode: "ozon"
+    });
+
+    const response = await api.request("/api/sales", {
+      method: "POST",
+      body: JSON.stringify({
+        channelId: channel.id,
+        saleDate: "2026-01-15",
+        post: false,
+        lines: [{ productId: product.id, qty: 0, priceRub: 100 }]
+      }),
+      headers: { "Content-Type": "application/json" }
+    });
+    const payload = await response.json() as { ok: boolean; error?: { code: string } };
+    expect(payload.ok).toBe(false);
+    expect(payload.error?.code).toBe("validation_error");
+
+    const freeGiftSale = await post<any>(api, "/api/sales", {
+      channelId: channel.id,
+      saleDate: "2026-01-15",
+      post: false,
+      lines: [{ productId: product.id, qty: 1, priceRub: 0 }]
+    });
+    expect(freeGiftSale.status).toBe("draft");
+    expect(freeGiftSale.grossAmountRub).toBe(0);
+  });
+
   it("writes channel create and update through runtime write contexts", async () => {
     resetIds();
     const app = new AccountingApp();
