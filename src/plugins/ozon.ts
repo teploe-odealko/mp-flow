@@ -1,4 +1,4 @@
-import type { ExternalProduct, ID, Product } from "../core/models";
+import type { ExternalEvent, ExternalProduct, ID, Product } from "../core/models";
 import { round4 } from "../core/utils";
 import { buildSuggestedMarketplaceAllocations } from "./shared/marketplace-allocation";
 import type {
@@ -83,6 +83,12 @@ type OzonSellerWarehouse = {
 
 type OzonExpandedFinanceEvent = {
   eventType: "sale_accrual" | "fee" | "payout";
+  externalId: string;
+  payload: Record<string, unknown>;
+};
+
+type OzonExpandedPostingEvent = {
+  eventType: "sale" | "return";
   externalId: string;
   payload: Record<string, unknown>;
 };
@@ -261,21 +267,26 @@ async function syncRealOzon({ app, channelId, syncRunId, since, credentials, str
           loadFboPostings(credentials!, windowFrom, syncWindowTo, errors)
         ]);
         for (const posting of [...fbsPostings, ...fboPostings]) {
-          const payload = normalizePostingPayload(posting, externalByOfferId);
-          const eventType = isReturnPosting(posting) ? "return" : "sale";
-          if (eventType === "return" && !wantReturns) continue;
-          if (eventType === "sale" && !wantSales) continue;
-          await app.ingestExternalEvent({
-            channelId,
-            syncRunId,
-            eventType,
-            externalId: `ozon-posting-${posting.posting_number ?? posting.order_id ?? stats.events}`,
-            occurredAt: ozonDateToIso(posting.in_process_at ?? posting.created_at) ?? syncWindowTo.toISOString(),
-            payload
-          });
-          stats.events += 1;
-          if (eventType === "return") stats.returns += 1;
-          else stats.sales += 1;
+          // Guard по легаси-данным: до схемы «:return» возврат ингестился под ключом продажи.
+          // Прежде чем эмитить пару, смотрим, не учтён ли возврат по старой идентичности.
+          const legacyEvent = isReturnPosting(posting)
+            ? await app.findExternalEventByIdentity(channelId, ozonPostingKey(posting, stats.events))
+            : undefined;
+          for (const postingEvent of expandOzonPostingEvents(posting, externalByOfferId, stats.events, legacyEvent)) {
+            if (postingEvent.eventType === "return" && !wantReturns) continue;
+            if (postingEvent.eventType === "sale" && !wantSales) continue;
+            await app.ingestExternalEvent({
+              channelId,
+              syncRunId,
+              eventType: postingEvent.eventType,
+              externalId: postingEvent.externalId,
+              occurredAt: ozonDateToIso(posting.in_process_at ?? posting.created_at) ?? syncWindowTo.toISOString(),
+              payload: postingEvent.payload
+            });
+            stats.events += 1;
+            if (postingEvent.eventType === "return") stats.returns += 1;
+            else stats.sales += 1;
+          }
         }
       } catch (error) {
         errors.push(errorMessage(error));
@@ -602,7 +613,9 @@ export function expandOzonFinanceEvents(operation: OzonFinanceOperation): OzonEx
 function financeEventType(operation: OzonFinanceOperation): "fee" | "payout" | undefined {
   const operationType = String(operation.operation_type ?? "").trim();
   const type = `${operation.operation_type ?? ""} ${operation.operation_type_name ?? ""}`.toLowerCase();
-  const hasSettlementBreakdown = Number(operation.accruals_for_sale ?? 0) > 0 || Number(operation.sale_commission ?? 0) !== 0;
+  // accruals_for_sale !== 0 (а не > 0): отрицательный accruals возврата — это тоже разбивка
+  // расчёта по продаже. Реверс выручки несёт return-документ, а не фейковый fee на abs(amount).
+  const hasSettlementBreakdown = Number(operation.accruals_for_sale ?? 0) !== 0 || Number(operation.sale_commission ?? 0) !== 0;
   const explicitRoute = EXACT_FINANCE_OPERATION_ROUTES[operationType];
   if (explicitRoute === "expand_only") return undefined;
   if (explicitRoute) return explicitRoute;
@@ -629,7 +642,9 @@ function expandSaleSettlementComponents(
   const saleTreatment = isReturn ? "return_variable" : "sale_variable";
   const components: OzonExpandedFinanceEvent[] = [];
   const signedCommissionRub = Number(operation.sale_commission ?? 0);
-  if (saleAmountRub <= 0 && signedCommissionRub === 0) return components;
+  // saleAmountRub === 0 (а не <= 0): отрицательный accruals_for_sale возврата должен
+  // пускать операцию в разбор компонентов — иначе теряются возвраты комиссии и услуг.
+  if (saleAmountRub === 0 && signedCommissionRub === 0) return components;
 
   if (!isReturn && saleAmountRub > 0) {
     components.push({
@@ -658,12 +673,49 @@ function expandSaleSettlementComponents(
         componentSource: "sale_commission"
       }
     });
+  } else if (signedCommissionRub > 0) {
+    // При возврате товара Ozon возвращает комиссию (sale_commission > 0). Проводим как
+    // компенсацию (прочий доход, Дт 76.ТП / Кт 91.01) — итоговая прибыль корректна,
+    // хотя в P&L это доход, а не сторно комиссии (осознанный компромисс минимального фикса).
+    components.push({
+      eventType: "fee",
+      externalId: `${baseExternalId}-commission-refund`,
+      payload: {
+        ...basePayload,
+        amountRub: signedCommissionRub,
+        componentEventKind: "compensation",
+        componentCategory: "compensation",
+        componentTreatment: "other_income",
+        operationTypeName: isReturn ? "Возврат комиссии Ozon при возврате" : "Возврат комиссии Ozon",
+        componentSource: "sale_commission"
+      }
+    });
   }
 
   (operation.services ?? []).forEach((service, index) => {
     const signedPrice = Number(service.price ?? 0);
-    if (!Number.isFinite(signedPrice) || signedPrice >= 0) return;
+    if (!Number.isFinite(signedPrice) || signedPrice === 0) return;
     const serviceName = String(service.name ?? `service_${index + 1}`).trim() || `service_${index + 1}`;
+    if (signedPrice > 0) {
+      // Положительная услуга — частичный возврат стоимости услуг (например, логистики
+      // при возврате). Новый ключ -service-refund-* не пересекается с легаси -service-*.
+      components.push({
+        eventType: "fee",
+        externalId: `${baseExternalId}-service-refund-${slugifyComponentKey(serviceName)}-${index + 1}`,
+        payload: {
+          ...basePayload,
+          amountRub: signedPrice,
+          componentEventKind: "compensation",
+          componentCategory: "compensation",
+          componentTreatment: "other_income",
+          operationTypeName: `Компенсация Ozon · ${serviceName}`,
+          services: [{ name: serviceName, price: signedPrice }],
+          componentSource: "service",
+          componentServiceName: serviceName
+        }
+      });
+      return;
+    }
     components.push({
       eventType: "fee",
       externalId: `${baseExternalId}-service-${slugifyComponentKey(serviceName)}-${index + 1}`,
@@ -695,6 +747,20 @@ function expandSaleSettlementComponents(
         componentSource: "residual"
       }
     });
+  } else if (residualRub > 0.01) {
+    components.push({
+      eventType: "fee",
+      externalId: `${baseExternalId}-other-refund`,
+      payload: {
+        ...basePayload,
+        amountRub: residualRub,
+        componentEventKind: "compensation",
+        componentCategory: "compensation",
+        componentTreatment: "other_income",
+        operationTypeName: isReturn ? "Прочая компенсация Ozon по возврату" : "Прочая компенсация Ozon",
+        componentSource: "residual"
+      }
+    });
   }
 
   return components;
@@ -712,6 +778,47 @@ function slugifyComponentKey(value: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 48) || "component";
+}
+
+function ozonPostingKey(posting: OzonPosting, fallbackId: string | number) {
+  return `ozon-posting-${posting.posting_number ?? posting.order_id ?? fallbackId}`;
+}
+
+/**
+ * Разворачивает posting Ozon в события синка. Схема ключей: продажа всегда живёт под
+ * легаси-ключом `ozon-posting-N` (его нельзя менять — recordSale не идемпотентен по
+ * externalOrderId, смена ключа задвоила бы продажи на существующих БД), возврат — под
+ * `ozon-posting-N:return`. Возвратный posting даёт ПАРУ событий: продажа нужна как якорь
+ * для материализации возврата (и для бэкфилла, где posting сразу в возвратном статусе).
+ * occurredAt у возврата совпадает с датой заказа: /v3-v2 posting/list не отдаёт дату
+ * возврата — честная дата требует отдельного потока /v3/returns.
+ *
+ * legacyEvent — существующее событие по легаси-ключу (если есть): когда возврат уже
+ * учтён по старой идентичности (материализован, processed или ignored), пара не эмитится,
+ * иначе бэкфилл создал бы второй возвратный документ. Застрявший же в needs_attention
+ * легаси-возврат штатно перетипизируется в продажу повторным ингестом «sale» по тому же
+ * ключу, а возврат уезжает на новый ключ — старые «вечные» события самоизлечиваются.
+ */
+export function expandOzonPostingEvents(
+  posting: OzonPosting,
+  externalByOfferId: Map<string, ExternalProduct>,
+  fallbackId: string | number,
+  legacyEvent?: Pick<ExternalEvent, "eventType" | "status" | "materializedDocumentId">
+): OzonExpandedPostingEvent[] {
+  const postingKey = ozonPostingKey(posting, fallbackId);
+  const payload = normalizePostingPayload(posting, externalByOfferId);
+  if (!isReturnPosting(posting)) {
+    return [{ eventType: "sale", externalId: postingKey, payload }];
+  }
+  const legacyReturnSettled = legacyEvent?.eventType === "return" &&
+    (Boolean(legacyEvent.materializedDocumentId) || legacyEvent.status === "processed" || legacyEvent.status === "ignored");
+  if (legacyReturnSettled) {
+    return [{ eventType: "return", externalId: postingKey, payload }];
+  }
+  return [
+    { eventType: "sale", externalId: postingKey, payload },
+    { eventType: "return", externalId: `${postingKey}:return`, payload }
+  ];
 }
 
 function isReturnPosting(posting: OzonPosting) {

@@ -67,6 +67,21 @@ describe("channel finance classification", () => {
     expect(classified.treatment).toBe("sale_variable");
   });
 
+  it("honors explicit compensation component classification", async () => {
+    // Контракт, на который опирается Ozon-плагин: явная тройка component* из payload
+    // компенсации побеждает текстовые эвристики (haystack содержит «возврат»).
+    const classified = classifyChannelFinancePayload({
+      componentEventKind: "compensation",
+      componentCategory: "compensation",
+      componentTreatment: "other_income",
+      operationTypeName: "Возврат комиссии Ozon при возврате"
+    });
+
+    expect(classified.eventKind).toBe("compensation");
+    expect(classified.category).toBe("compensation");
+    expect(classified.treatment).toBe("other_income");
+  });
+
   it("defaults manually linked finance event to sale variable treatment", async () => {
     resetIds();
     const app = new AccountingApp();

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createApi } from "../../src/backend/app";
 import { AccountingApp } from "../../src/core/accounting-app";
 import { resetIds } from "../../src/core/utils";
-import { expandOzonFinanceEvents, ozonPlugin, parseSince } from "../../src/plugins/ozon";
+import { expandOzonFinanceEvents, expandOzonPostingEvents, ozonPlugin, parseSince } from "../../src/plugins/ozon";
 import { readStateViaApi } from "../support/api-state";
 
 async function post<T>(api: ReturnType<typeof createApi>, path: string, body: unknown = {}): Promise<T> {
@@ -46,6 +46,113 @@ describe("marketplace plugins", () => {
     expect(events[0].payload.componentTreatment).toBe("sale_variable");
     expect(events[1].payload.componentCategory).toBe("commission");
     expect(events[1].payload.componentTreatment).toBe("sale_variable");
+  });
+
+  it("expands return settlement into refund compensation and return fee", async () => {
+    const events = expandOzonFinanceEvents({
+      operation_id: 51000000001,
+      operation_type: "ClientReturnAgentOperation",
+      operation_type_name: "Получение возврата, отмены, невыкупа от покупателя",
+      operation_date: "2026-05-12 00:00:00",
+      accruals_for_sale: -990,
+      sale_commission: 247.5,
+      amount: -792.5,
+      posting: { posting_number: "49917343-0273-1" },
+      services: [{ name: "MarketplaceServiceItemDirectFlowLogistic", price: -50 }]
+    });
+
+    expect(events).toHaveLength(2);
+    expect(events.some((event) => event.eventType === "sale_accrual")).toBe(false);
+
+    const commissionRefund = events.find((event) => event.externalId === "ozon-finance-51000000001-commission-refund");
+    expect(commissionRefund?.eventType).toBe("fee");
+    expect(commissionRefund?.payload.amountRub).toBe(247.5);
+    expect(commissionRefund?.payload.componentEventKind).toBe("compensation");
+    expect(commissionRefund?.payload.componentCategory).toBe("compensation");
+    expect(commissionRefund?.payload.componentTreatment).toBe("other_income");
+    expect(commissionRefund?.payload.operationTypeName).toBe("Возврат комиссии Ozon при возврате");
+
+    const returnLogistics = events.find((event) => event.externalId === "ozon-finance-51000000001-service-marketplaceserviceitemdirectflowlogistic-1");
+    expect(returnLogistics?.eventType).toBe("fee");
+    expect(returnLogistics?.payload.amountRub).toBe(50);
+    expect(returnLogistics?.payload.componentTreatment).toBe("return_variable");
+  });
+
+  it("return operation with only positive components no longer vanishes", async () => {
+    const events = expandOzonFinanceEvents({
+      operation_id: 51000000002,
+      operation_type: "ClientReturnAgentOperation",
+      operation_type_name: "Получение возврата, отмены, невыкупа от покупателя",
+      operation_date: "2026-05-12 00:00:00",
+      accruals_for_sale: -990,
+      sale_commission: 247.5,
+      amount: -742.5,
+      posting: { posting_number: "49917343-0273-1" }
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0].externalId).toBe("ozon-finance-51000000002-commission-refund");
+    expect(events[0].payload.amountRub).toBe(247.5);
+    expect(events[0].payload.componentTreatment).toBe("other_income");
+  });
+
+  it("positive residual becomes other income compensation", async () => {
+    const events = expandOzonFinanceEvents({
+      operation_id: 51000000003,
+      operation_type: "OperationAgentDeliveredToCustomer",
+      operation_type_name: "Доставка покупателю",
+      operation_date: "2026-05-12 00:00:00",
+      accruals_for_sale: 1000,
+      sale_commission: -200,
+      amount: 850,
+      posting: { posting_number: "49917343-0273-1" }
+    });
+
+    expect(events).toHaveLength(3);
+    const residualRefund = events.find((event) => event.externalId === "ozon-finance-51000000003-other-refund");
+    expect(residualRefund?.eventType).toBe("fee");
+    expect(residualRefund?.payload.amountRub).toBe(50);
+    expect(residualRefund?.payload.componentEventKind).toBe("compensation");
+    expect(residualRefund?.payload.componentCategory).toBe("compensation");
+    expect(residualRefund?.payload.componentTreatment).toBe("other_income");
+  });
+
+  it("positive service price becomes compensation component", async () => {
+    const events = expandOzonFinanceEvents({
+      operation_id: 51000000004,
+      operation_type: "OperationAgentDeliveredToCustomer",
+      operation_type_name: "Доставка покупателю",
+      operation_date: "2026-05-12 00:00:00",
+      accruals_for_sale: 1000,
+      sale_commission: -200,
+      amount: 830,
+      posting: { posting_number: "49917343-0273-1" },
+      services: [{ name: "MarketplaceServiceItemReturnFlowLogistic", price: 30 }]
+    });
+
+    const serviceRefund = events.find((event) => event.externalId.includes("-service-refund-"));
+    expect(serviceRefund?.externalId).toBe("ozon-finance-51000000004-service-refund-marketplaceserviceitemreturnflowlogistic-1");
+    expect(serviceRefund?.eventType).toBe("fee");
+    expect(serviceRefund?.payload.amountRub).toBe(30);
+    expect(serviceRefund?.payload.componentEventKind).toBe("compensation");
+    expect(serviceRefund?.payload.componentTreatment).toBe("other_income");
+    expect(serviceRefund?.payload.operationTypeName).toBe("Компенсация Ozon · MarketplaceServiceItemReturnFlowLogistic");
+  });
+
+  it("return-only revenue reversal emits no phantom fee", async () => {
+    const events = expandOzonFinanceEvents({
+      operation_id: 51000000005,
+      operation_type: "ClientReturnAgentOperation",
+      operation_type_name: "Получение возврата, отмены, невыкупа от покупателя",
+      operation_date: "2026-05-12 00:00:00",
+      accruals_for_sale: -990,
+      sale_commission: 0,
+      amount: -990,
+      posting: { posting_number: "49917343-0273-1" },
+      services: []
+    });
+
+    expect(events).toEqual([]);
   });
 
   it("routes positive acquiring operation to fee instead of payout", async () => {
@@ -96,6 +203,70 @@ describe("marketplace plugins", () => {
     expect(after.externalEvents.some((event: any) => event.externalId === "ozon-sale-demo-1")).toBe(true);
     expect(after.observedStocks.length).toBeGreaterThan(0);
     expect(after.externalEvents.find((event: any) => event.externalId === "ozon-sale-demo-1").status).toBe("ready_for_processing");
+  });
+});
+
+describe("ozon posting events (expandOzonPostingEvents)", () => {
+  const salePosting = {
+    posting_number: "49917343-0273-1",
+    status: "delivered",
+    in_process_at: "2026-05-01 10:00:00",
+    products: [{ offer_id: "SKU-1", name: "Фильтр для кофе", quantity: 1, price: 990 }]
+  };
+  const returnPosting = { ...salePosting, return_status: "returned" };
+
+  it("expands a regular posting into a single sale event with the legacy key", () => {
+    const events = expandOzonPostingEvents(salePosting, new Map(), 0);
+
+    expect(events).toHaveLength(1);
+    expect(events[0].eventType).toBe("sale");
+    expect(events[0].externalId).toBe("ozon-posting-49917343-0273-1");
+    expect(events[0].payload.postingNumber).toBe("49917343-0273-1");
+  });
+
+  it("expands a returned posting into a sale plus a suffixed return for the same posting", () => {
+    const events = expandOzonPostingEvents(returnPosting, new Map(), 0);
+
+    expect(events).toHaveLength(2);
+    expect(events[0].eventType).toBe("sale");
+    expect(events[0].externalId).toBe("ozon-posting-49917343-0273-1");
+    expect(events[1].eventType).toBe("return");
+    expect(events[1].externalId).toBe("ozon-posting-49917343-0273-1:return");
+    expect(events[0].payload.postingNumber).toBe(events[1].payload.postingNumber);
+  });
+
+  it("keeps only the legacy return when the old-identity return is already settled", () => {
+    for (const legacyEvent of [
+      { eventType: "return" as const, status: "processed" as const },
+      { eventType: "return" as const, status: "ignored" as const },
+      { eventType: "return" as const, status: "needs_attention" as const, materializedDocumentId: "doc_1" }
+    ]) {
+      const events = expandOzonPostingEvents(returnPosting, new Map(), 0, legacyEvent);
+
+      expect(events).toHaveLength(1);
+      expect(events[0].eventType).toBe("return");
+      expect(events[0].externalId).toBe("ozon-posting-49917343-0273-1");
+    }
+  });
+
+  it("emits the pair when the legacy event is a sale or an unsettled stuck return", () => {
+    for (const legacyEvent of [
+      { eventType: "sale" as const, status: "processed" as const, materializedDocumentId: "doc_1" },
+      { eventType: "return" as const, status: "needs_attention" as const }
+    ]) {
+      const events = expandOzonPostingEvents(returnPosting, new Map(), 0, legacyEvent);
+
+      expect(events.map((event) => event.eventType)).toEqual(["sale", "return"]);
+      expect(events[1].externalId).toBe("ozon-posting-49917343-0273-1:return");
+    }
+  });
+
+  it("falls back to order id and then to the provided fallback for postings without a number", () => {
+    const byOrderId = expandOzonPostingEvents({ ...salePosting, posting_number: undefined, order_id: 555 }, new Map(), 7);
+    const byFallback = expandOzonPostingEvents({ ...salePosting, posting_number: undefined }, new Map(), 7);
+
+    expect(byOrderId[0].externalId).toBe("ozon-posting-555");
+    expect(byFallback[0].externalId).toBe("ozon-posting-7");
   });
 });
 

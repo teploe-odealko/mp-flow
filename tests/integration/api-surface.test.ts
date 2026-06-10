@@ -397,11 +397,14 @@ describe("MPFlow api surface", () => {
         lines: [{ sku: "HIST-SKU-1", qty: 50, amountRub: 200 }]
       }
     });
+    // Ключи повторяют реальную схему Ozon-плагина: продажа под `ozon-posting-N`,
+    // возврат — под `ozon-posting-N:return` (раньше тест маскировал коллизию ключей
+    // выдуманным externalId возврата).
     const returnEvent = await app.ingestExternalEvent({
       channelId: channel.id,
       syncRunId,
       eventType: "return",
-      externalId: "ozon-return-hist-1",
+      externalId: "ozon-posting-hist-1:return",
       occurredAt: "2026-02-20T12:00:00.000Z",
       payload: {
         postingNumber: "hist-1",

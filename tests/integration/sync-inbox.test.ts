@@ -206,6 +206,172 @@ describe("sync inbox workflows", () => {
     expect(after.externalEvents.find((event: any) => event.id === returnEvent.id).status).toBe("processed");
   });
 
+  // Общий сетап для сценариев пары «продажа + возврат с суффиксом :return» (схема ключей Ozon).
+  async function setupMappedChannelWithStock() {
+    resetIds();
+    const app = new AccountingApp();
+    const api = createApi(app);
+    await post(api, "/api/setup", { displayName: "Ozon return pair QA", accountingStartDate: "2026-01-01" });
+    const channel = await post<any>(api, "/api/integrations/channels", {
+      name: "Manual Marketplace",
+      channelType: "marketplace"
+    });
+    const product = await post<any>(api, "/api/products", { sku: "SKU-A", name: "Товар A" });
+    const externalProduct = await post<any>(api, `/api/channels/${channel.id}/external-products`, { externalSku: "EXT-A", externalName: "External A" });
+    await post(api, `/api/external-products/${externalProduct.id}/link`, { productId: product.id });
+    const state = await readStateViaApi(api);
+    const ownWarehouse = state.warehouses.find((warehouse: any) => warehouse.warehouseType === "own");
+    await post(api, "/api/inventory/opening-balances", {
+      date: "2026-01-01",
+      warehouseId: ownWarehouse.id,
+      lines: [{ productId: product.id, qty: 10, costRub: 5000 }]
+    });
+    await post(api, "/api/inventory/transfers", {
+      transferDate: "2026-01-02",
+      fromWarehouseId: ownWarehouse.id,
+      toWarehouseId: channel.salesPointWarehouseId,
+      lines: [{ productId: product.id, qty: 5 }]
+    });
+    return { app, api, channel };
+  }
+
+  it("ingests sale and suffixed return for the same posting idempotently", async () => {
+    const { api, channel } = await setupMappedChannelWithStock();
+    const ingestPair = async () => {
+      const saleEvent = await post<any>(api, `/api/channels/${channel.id}/external-events`, {
+        eventType: "sale",
+        externalId: "ozon-posting-77",
+        occurredAt: "2026-03-01T10:00:00.000Z",
+        payload: { postingNumber: "POST-77", lines: [{ sku: "EXT-A", qty: 1, amountRub: 990 }] }
+      });
+      const returnEvent = await post<any>(api, `/api/channels/${channel.id}/external-events`, {
+        eventType: "return",
+        externalId: "ozon-posting-77:return",
+        occurredAt: "2026-03-01T10:00:00.000Z",
+        payload: { postingNumber: "POST-77", lines: [{ sku: "EXT-A", qty: 1, amountRub: 990 }] }
+      });
+      return { saleEvent, returnEvent };
+    };
+
+    const first = await ingestPair();
+    expect(first.saleEvent.id).not.toBe(first.returnEvent.id);
+
+    const sale = await post<any>(api, `/api/integrations/events/${first.saleEvent.id}/materialize-sale`);
+    const accrualEvent = await post<any>(api, `/api/channels/${channel.id}/external-events`, {
+      eventType: "sale_accrual",
+      externalId: "ozon-finance-77-sale-accrual",
+      occurredAt: "2026-03-01T12:00:00.000Z",
+      payload: { postingNumber: "POST-77", saleAmountRub: 990 }
+    });
+    await post<any>(api, `/api/integrations/events/${accrualEvent.id}/materialize-sale-accrual`);
+    const salesReturn = await post<any>(api, `/api/integrations/events/${first.returnEvent.id}/materialize-return`);
+    const afterFirst = await readStateViaApi(api);
+
+    expect(salesReturn.saleId).toBe(sale.id);
+    expect(salesReturn.status).toBe("posted");
+    expect(afterFirst.externalEvents.find((event: any) => event.id === first.saleEvent.id).status).toBe("processed");
+    expect(afterFirst.externalEvents.find((event: any) => event.id === first.returnEvent.id).status).toBe("processed");
+
+    // Повторный синк того же окна: события дедупятся по ключам, документы не задваиваются.
+    const second = await ingestPair();
+    const afterSecond = await readStateViaApi(api);
+
+    expect(second.saleEvent.id).toBe(first.saleEvent.id);
+    expect(second.returnEvent.id).toBe(first.returnEvent.id);
+    expect(afterSecond.externalEvents.length).toBe(afterFirst.externalEvents.length);
+    expect(afterSecond.sales.length).toBe(afterFirst.sales.length);
+    expect(afterSecond.salesReturns.length).toBe(afterFirst.salesReturns.length);
+  });
+
+  it("legacy stuck return event heals after re-sync emits the sale", async () => {
+    const { api, channel } = await setupMappedChannelWithStock();
+
+    // Легаси-данные: возврат заингещён под ключом продажи (до схемы «:return») и застрял —
+    // исходной продажи по posting number нет.
+    const stuckReturn = await post<any>(api, `/api/channels/${channel.id}/external-events`, {
+      eventType: "return",
+      externalId: "ozon-posting-88",
+      occurredAt: "2026-03-05T10:00:00.000Z",
+      payload: { postingNumber: "POST-88", lines: [{ sku: "EXT-A", qty: 1, amountRub: 990 }] }
+    });
+    await expect(post(api, `/api/integrations/events/${stuckReturn.id}/materialize-return`)).rejects.toThrow(/sale_not_found/);
+
+    // Повторный синк окна эмитит пару: «sale» по легаси-ключу перетипизирует застрявший
+    // возврат в продажу, сам возврат уезжает на новый суффиксный ключ.
+    const healedSale = await post<any>(api, `/api/channels/${channel.id}/external-events`, {
+      eventType: "sale",
+      externalId: "ozon-posting-88",
+      occurredAt: "2026-03-05T10:00:00.000Z",
+      payload: { postingNumber: "POST-88", lines: [{ sku: "EXT-A", qty: 1, amountRub: 990 }] }
+    });
+    expect(healedSale.id).toBe(stuckReturn.id);
+    expect(healedSale.eventType).toBe("sale");
+
+    const suffixedReturn = await post<any>(api, `/api/channels/${channel.id}/external-events`, {
+      eventType: "return",
+      externalId: "ozon-posting-88:return",
+      occurredAt: "2026-03-05T10:00:00.000Z",
+      payload: { postingNumber: "POST-88", lines: [{ sku: "EXT-A", qty: 1, amountRub: 990 }] }
+    });
+
+    const sale = await post<any>(api, `/api/integrations/events/${healedSale.id}/materialize-sale`);
+    const accrualEvent = await post<any>(api, `/api/channels/${channel.id}/external-events`, {
+      eventType: "sale_accrual",
+      externalId: "ozon-finance-88-sale-accrual",
+      occurredAt: "2026-03-05T12:00:00.000Z",
+      payload: { postingNumber: "POST-88", saleAmountRub: 990 }
+    });
+    await post<any>(api, `/api/integrations/events/${accrualEvent.id}/materialize-sale-accrual`);
+    const salesReturn = await post<any>(api, `/api/integrations/events/${suffixedReturn.id}/materialize-return`);
+    const after = await readStateViaApi(api);
+
+    expect(salesReturn.saleId).toBe(sale.id);
+    expect(salesReturn.status).toBe("posted");
+    expect(after.externalEvents.find((event: any) => event.id === healedSale.id).status).toBe("processed");
+    expect(after.externalEvents.find((event: any) => event.id === suffixedReturn.id).status).toBe("processed");
+  });
+
+  it("posts commission refund as other income", async () => {
+    const { app, api, channel } = await setupMappedChannelWithStock();
+    const saleEvent = await post<any>(api, `/api/channels/${channel.id}/external-events`, {
+      eventType: "sale",
+      externalId: "ozon-posting-99",
+      occurredAt: "2026-03-06T09:00:00.000Z",
+      payload: { postingNumber: "POST-99", lines: [{ sku: "EXT-A", qty: 1, amountRub: 990 }] }
+    });
+    const sale = await post<any>(api, `/api/integrations/events/${saleEvent.id}/materialize-sale`);
+
+    const feeEvent = await post<any>(api, `/api/channels/${channel.id}/external-events`, {
+      eventType: "fee",
+      externalId: "ozon-finance-555-commission-refund",
+      occurredAt: "2026-03-06T10:00:00.000Z",
+      payload: {
+        postingNumber: "POST-99",
+        operationTypeName: "Возврат комиссии Ozon при возврате",
+        amountRub: 247.5,
+        componentEventKind: "compensation",
+        componentCategory: "compensation",
+        componentTreatment: "other_income",
+        componentSource: "sale_commission"
+      }
+    });
+    const financeEvent = await post<any>(api, `/api/integrations/events/${feeEvent.id}/materialize-fee`);
+    const posted = await post<any>(api, `/api/integrations/finance-events/${financeEvent.id}/post`);
+    const after = await readStateViaApi(api);
+
+    expect(posted.treatment).toBe("other_income");
+    expect(posted.status).toBe("posted");
+    expect(posted.linkedSaleId).toBe(sale.id);
+    expect(after.externalEvents.find((event: any) => event.id === feeEvent.id).status).toBe("processed");
+
+    // Проводка компенсации: Дт 76.ТП (дебиторка канала растет) / Кт 91.01 (прочий доход).
+    const entry = app.state.journalEntries.find((candidate) => candidate.documentId === posted.documentId);
+    expect(entry).toBeTruthy();
+    const lines = app.state.journalLines.filter((line) => line.journalEntryId === entry!.id);
+    expect(lines.find((line) => line.accountCode === "76.ТП")?.debit).toBe(247.5);
+    expect(lines.find((line) => line.accountCode === "91.01")?.credit).toBe(247.5);
+  });
+
   it("links sale-linked fee by parent posting number when Ozon fee omits the line suffix", async () => {
     resetIds();
     const app = new AccountingApp();
