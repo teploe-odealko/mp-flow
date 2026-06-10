@@ -80,7 +80,14 @@ function buildReportData(state: ReportsWorkspaceInput, from: string, to: string)
   const channelOperatingExpenses = round2(adsExpense + storageExpense + crossDockingExpense + inboundHandlingExpense + subscriptionExpense + otherChannelExpense);
   const operatingExpenseRub = round2(operatingExpenses.reduce((sum, expense) => sum + Number(expense.amountRub ?? 0), 0));
   const otherIncome = netCreditJournal(journalLines, "91.01");
-  const otherExpense = netDebitJournal(journalLines, "91.02");
+  // Проводки документов операционных расходов уже учтены в operatingExpenseRub —
+  // исключаем их из 91.02, чтобы расход не считался дважды.
+  const operatingExpenseDocumentIds = new Set(state.operatingExpenses.map((expense) => expense.documentId));
+  const journalEntryDocumentIds = new Map(journalEntries.map((entry) => [entry.id, entry.documentId]));
+  const otherExpense = netDebitJournal(
+    journalLines.filter((line) => !operatingExpenseDocumentIds.has(journalEntryDocumentIds.get(line.journalEntryId) as string)),
+    "91.02"
+  );
   const grossProfit = round2(revenue - costOfSales);
   const contributionProfit = round2(grossProfit - variableMarketplaceExpenses);
   const totalExpenses = round2(costOfSales + variableMarketplaceExpenses + channelOperatingExpenses + operatingExpenseRub + otherExpense);
