@@ -100,6 +100,9 @@ export class AuthService {
     const passwordHash = hashPassword(input.password);
     const userId = id("auth_user");
 
+    // Перезаписывать через signup можно только неподтверждённый аккаунт (сценарий «письмо не дошло»).
+    // Подтверждённый (email_verified = true) аккаунт никогда не изменяется: WHERE отключает DO UPDATE,
+    // и RETURNING возвращает пустой результат — атомарно, без TOCTOU между SELECT и INSERT.
     const userResult = await this.pool.query<{ id: string }>(
       `insert into auth_user (id, email, name, password_hash, role_code, email_verified, created_at, updated_at)
        values ($1, $2, $3, $4, $5, false, now(), now())
@@ -108,10 +111,17 @@ export class AuthService {
          password_hash = excluded.password_hash,
          role_code = excluded.role_code,
          updated_at = now()
+       where auth_user.email_verified = false
        returning id`,
       [userId, email, name, passwordHash, roleCode]
     );
-    const persistedUserId = userResult.rows[0]?.id ?? userId;
+    const persisted = userResult.rows[0];
+    if (!persisted) {
+      // Email уже принадлежит подтверждённому аккаунту — не раскрываем это (анти-enumeration):
+      // отвечаем той же формой, что и обычная регистрация, но письмо не шлём и токены не трогаем.
+      return { email, verificationRequired: true, emailDeliveryMode: emailDeliveryMode() };
+    }
+    const persistedUserId = persisted.id;
 
     if (ownerSetup) {
       await this.pool.query("update auth_user set email_verified = true, updated_at = now() where id = $1", [persistedUserId]);
