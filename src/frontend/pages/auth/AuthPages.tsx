@@ -1,22 +1,16 @@
 import { FormEvent, ReactNode, useMemo, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Loader2, LogIn, Mail, Send, ShieldCheck } from "lucide-react";
-import { ApiError, apiGet, apiPost } from "@/api";
+import { CheckCircle2, KeyRound, Loader2, LogIn, Mail, Send, ShieldCheck } from "lucide-react";
+import { apiGet } from "@/api";
+import {
+  AuthSessionState,
+  authClient,
+  authErrorMessage,
+  authSessionQueryKey,
+  useSessionQuery
+} from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
-
-interface AuthUser {
-  id: string;
-  email: string;
-  name: string;
-  roleCode: "owner" | "accountant" | "operator" | "viewer";
-}
-
-interface AuthSession {
-  user: AuthUser | null;
-}
-
-const authSessionQueryKey = ["auth", "session"] as const;
 
 interface AuthSetup {
   signUpOpen: boolean;
@@ -56,11 +50,13 @@ export function LoginPage() {
     setError("");
     setPending(true);
     try {
-      const session = await apiPost<AuthSession>("/api/auth/login", { email, password }, { notifyOnError: false });
-      queryClient.setQueryData<AuthSession>(authSessionQueryKey, session);
+      const result = await authClient.signIn.email({ email, password });
+      if (result.error) {
+        setError(authErrorMessage(result.error));
+        return;
+      }
+      queryClient.setQueryData<AuthSessionState>(authSessionQueryKey, { user: result.data?.user ?? null });
       navigate(next, { replace: true });
-    } catch (err) {
-      setError(errorMessage(err));
     } finally {
       setPending(false);
     }
@@ -77,8 +73,13 @@ export function LoginPage() {
           Войти
         </Button>
       </form>
+      <p className="mt-5 text-sm text-[var(--color-muted-foreground)]">
+        <Link className="font-medium text-[var(--color-primary)] hover:underline" to="/forgot-password">
+          Забыли пароль?
+        </Link>
+      </p>
       {setupQuery.data?.signUpOpen ? (
-        <p className="mt-5 text-sm text-[var(--color-muted-foreground)]">
+        <p className="mt-2 text-sm text-[var(--color-muted-foreground)]">
           Нет аккаунта?{" "}
           <Link className="font-medium text-[var(--color-primary)] hover:underline" to="/signup">
             Зарегистрироваться
@@ -99,25 +100,31 @@ export function SignupPage() {
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
+  const ownerSignup = setupQuery.data?.signUpMode === "owner";
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError("");
     setPending(true);
     try {
-      const response = await apiPost<{ email?: string; verificationRequired?: boolean; user?: AuthUser }>(
-        "/api/auth/signup",
-        { email, password },
-        { notifyOnError: false }
-      );
-      if (response.verificationRequired === false && response.user) {
-        // Владелец инстанса вошёл сразу — без подтверждения почты.
-        queryClient.setQueryData<AuthSession>(authSessionQueryKey, { user: response.user });
+      const signUp = await authClient.signUp.email({ email, password, name: email, callbackURL: "/" });
+      if (signUp.error) {
+        setError(authErrorMessage(signUp.error));
+        return;
+      }
+      if (ownerSignup) {
+        // Владелец инстанса создаётся уже подтверждённым, но sign-up не выдаёт сессию —
+        // сразу входим с теми же данными и попадаем внутрь приложения.
+        const signIn = await authClient.signIn.email({ email, password });
+        if (signIn.error) {
+          setError(authErrorMessage(signIn.error));
+          return;
+        }
+        queryClient.setQueryData<AuthSessionState>(authSessionQueryKey, { user: signIn.data?.user ?? null });
         navigate("/", { replace: true });
         return;
       }
-      setSentTo(response.email ?? email);
-    } catch (err) {
-      setError(errorMessage(err));
+      setSentTo(email);
     } finally {
       setPending(false);
     }
@@ -128,8 +135,6 @@ export function SignupPage() {
     return <Navigate to="/login" replace />;
   }
 
-  const ownerSignup = setupQuery.data?.signUpMode === "owner";
-
   return (
     <AuthFrame title={ownerSignup ? "Первый доступ" : "Регистрация"} lead={ownerSignup ? "Создайте владельца продового контура" : "Создайте аккаунт MPFlow"}>
       {sentTo ? (
@@ -138,7 +143,7 @@ export function SignupPage() {
             <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-[var(--color-success)]" />
             <div>
               <div className="font-medium">Письмо отправлено на {sentTo}</div>
-              <div className="mt-1 text-[var(--color-muted-foreground)]">Откройте ссылку из письма, затем войдите с этим паролем.</div>
+              <div className="mt-1 text-[var(--color-muted-foreground)]">Откройте ссылку из письма — после подтверждения вы войдёте автоматически.</div>
             </div>
           </div>
           <Button asChild variant="secondary" className="w-full">
@@ -168,15 +173,26 @@ export function SignupPage() {
 
 export function VerifyEmailPage() {
   const [params] = useSearchParams();
+  const queryClient = useQueryClient();
   const token = params.get("token") ?? "";
+  const errorCode = params.get("error") ?? "";
   const verifyQuery = useQuery({
     queryKey: ["auth", "verify", token],
-    enabled: token.length > 0,
+    enabled: token.length > 0 && !errorCode,
     retry: false,
-    queryFn: () => apiPost<{ email: string; verified: boolean }>("/api/auth/verify-email", { token }, { notifyOnError: false })
+    queryFn: async () => {
+      const result = await authClient.verifyEmail({ query: { token } });
+      if (result.error) throw new Error(authErrorMessage(result.error));
+      // Подтверждение сразу создаёт сессию (autoSignInAfterVerification).
+      await queryClient.invalidateQueries({ queryKey: authSessionQueryKey });
+      return result.data;
+    }
   });
 
   const content = useMemo(() => {
+    if (errorCode) {
+      return { tone: "danger", title: "Не удалось подтвердить email", message: authErrorMessage({ code: errorCode }) };
+    }
     if (!token) {
       return { tone: "danger", title: "Ссылка неполная", message: "В письме должна быть ссылка с токеном подтверждения." };
     }
@@ -186,8 +202,8 @@ export function VerifyEmailPage() {
     if (verifyQuery.isError) {
       return { tone: "danger", title: "Не удалось подтвердить email", message: errorMessage(verifyQuery.error) };
     }
-    return { tone: "success", title: "Email подтвержден", message: "Теперь можно войти в MPFlow." };
-  }, [token, verifyQuery.error, verifyQuery.isError, verifyQuery.isLoading]);
+    return { tone: "success", title: "Email подтверждён", message: "Вы вошли в систему — можно продолжать работу." };
+  }, [errorCode, token, verifyQuery.error, verifyQuery.isError, verifyQuery.isLoading]);
 
   return (
     <AuthFrame title={content.title} lead="Подтверждение email">
@@ -196,20 +212,158 @@ export function VerifyEmailPage() {
           {content.tone === "success" ? <ShieldCheck className="mt-0.5 size-4 shrink-0" /> : <Mail className="mt-0.5 size-4 shrink-0" />}
           <p>{content.message}</p>
         </div>
-        <Button asChild className="w-full">
-          <Link to="/login">Войти</Link>
-        </Button>
+        {content.tone === "success" ? (
+          <Button asChild className="w-full">
+            <Link to="/">Перейти в MPFlow</Link>
+          </Button>
+        ) : (
+          <Button asChild className="w-full">
+            <Link to="/login">Войти</Link>
+          </Button>
+        )}
       </div>
     </AuthFrame>
   );
 }
 
-function useSessionQuery() {
-  return useQuery({
-    queryKey: authSessionQueryKey,
-    retry: false,
-    queryFn: () => apiGet<AuthSession>("/api/auth/session", { notifyOnError: false })
-  });
+export function ForgotPasswordPage() {
+  const [email, setEmail] = useState("");
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    setPending(true);
+    try {
+      const result = await authClient.requestPasswordReset({ email, redirectTo: "/reset-password" });
+      if (result.error) {
+        setError(authErrorMessage(result.error));
+        return;
+      }
+      setSent(true);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <AuthFrame title="Восстановление пароля" lead="MPFlow">
+      {sent ? (
+        <div className="space-y-4">
+          <div className="flex gap-3 rounded-[var(--radius-md)] border border-[var(--color-success)] bg-[var(--color-success-soft)] p-4 text-sm">
+            <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-[var(--color-success)]" />
+            <div>
+              <div className="font-medium">Проверьте почту</div>
+              <div className="mt-1 text-[var(--color-muted-foreground)]">
+                Если {email} зарегистрирован, мы отправили на него ссылку для смены пароля.
+              </div>
+            </div>
+          </div>
+          <Button asChild variant="secondary" className="w-full">
+            <Link to="/login">Перейти ко входу</Link>
+          </Button>
+        </div>
+      ) : (
+        <>
+          <form className="space-y-4" onSubmit={submit}>
+            <p className="text-sm text-[var(--color-muted-foreground)]">
+              Укажите email аккаунта — отправим письмо со ссылкой для смены пароля.
+            </p>
+            <Field label="Email" type="email" value={email} autoComplete="email" onChange={setEmail} />
+            {error ? <p className="text-sm text-[var(--color-danger)]">{error}</p> : null}
+            <Button className="w-full" type="submit" disabled={pending}>
+              {pending ? <Loader2 className="animate-spin" /> : <Send />}
+              Отправить ссылку
+            </Button>
+          </form>
+          <p className="mt-5 text-sm text-[var(--color-muted-foreground)]">
+            Вспомнили пароль?{" "}
+            <Link className="font-medium text-[var(--color-primary)] hover:underline" to="/login">
+              Войти
+            </Link>
+          </p>
+        </>
+      )}
+    </AuthFrame>
+  );
+}
+
+export function ResetPasswordPage() {
+  const [params] = useSearchParams();
+  const token = params.get("token") ?? "";
+  const errorCode = params.get("error") ?? "";
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (password !== confirm) {
+      setError("Пароли не совпадают");
+      return;
+    }
+    setError("");
+    setPending(true);
+    try {
+      const result = await authClient.resetPassword({ newPassword: password, token });
+      if (result.error) {
+        setError(authErrorMessage(result.error));
+        return;
+      }
+      setDone(true);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  if (errorCode || !token) {
+    return (
+      <AuthFrame title="Смена пароля" lead="MPFlow">
+        <div className="space-y-4">
+          <div className={statusClass("danger")}>
+            <KeyRound className="mt-0.5 size-4 shrink-0" />
+            <p>Ссылка для смены пароля недействительна или устарела. Запросите новую.</p>
+          </div>
+          <Button asChild className="w-full">
+            <Link to="/forgot-password">Запросить новую ссылку</Link>
+          </Button>
+        </div>
+      </AuthFrame>
+    );
+  }
+
+  return (
+    <AuthFrame title="Смена пароля" lead="MPFlow">
+      {done ? (
+        <div className="space-y-4">
+          <div className="flex gap-3 rounded-[var(--radius-md)] border border-[var(--color-success)] bg-[var(--color-success-soft)] p-4 text-sm">
+            <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-[var(--color-success)]" />
+            <div>
+              <div className="font-medium">Пароль обновлён</div>
+              <div className="mt-1 text-[var(--color-muted-foreground)]">Войдите с новым паролем.</div>
+            </div>
+          </div>
+          <Button asChild className="w-full">
+            <Link to="/login">Войти</Link>
+          </Button>
+        </div>
+      ) : (
+        <form className="space-y-4" onSubmit={submit}>
+          <Field label="Новый пароль" type="password" value={password} autoComplete="new-password" onChange={setPassword} />
+          <Field label="Повторите пароль" type="password" value={confirm} autoComplete="new-password" onChange={setConfirm} />
+          {error ? <p className="text-sm text-[var(--color-danger)]">{error}</p> : null}
+          <Button className="w-full" type="submit" disabled={pending}>
+            {pending ? <Loader2 className="animate-spin" /> : <KeyRound />}
+            Сменить пароль
+          </Button>
+        </form>
+      )}
+    </AuthFrame>
+  );
 }
 
 function useSetupQuery() {
@@ -273,7 +427,6 @@ function sanitizeNext(value: string | null) {
 }
 
 function errorMessage(error: unknown) {
-  if (error instanceof ApiError) return error.message;
   if (error instanceof Error) return error.message;
   return "Неизвестная ошибка";
 }

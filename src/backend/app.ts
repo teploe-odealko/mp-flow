@@ -167,7 +167,14 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
   // Все остальные auth-эндпоинты обслуживает better-auth: /sign-up/email, /sign-in/email,
   // /sign-out, /get-session, /verify-email, /request-password-reset, /reset-password и др.
   api.on(["POST", "GET"], "/api/auth/*", (c) => {
-    if (!auth) throw new DomainError("auth_unavailable", "Авторизация не настроена");
+    if (!auth) {
+      // Dev-фоллбек без DATABASE_URL: better-auth-клиент фронта спрашивает /get-session —
+      // отвечаем его формой (devAuthUser либо null), остальные эндпоинты недоступны.
+      if (c.req.method === "GET" && c.req.path === "/api/auth/get-session") {
+        return c.json(devAuthUser ? { user: devAuthUser, session: null } : null);
+      }
+      throw new DomainError("auth_unavailable", "Авторизация не настроена");
+    }
     return auth.handler(c.req.raw);
   });
   api.use("/api/*", async (c, next) => {

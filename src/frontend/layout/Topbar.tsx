@@ -1,7 +1,8 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, ChevronDown, HelpCircle, Landmark, LogOut, Search } from "lucide-react";
-import { apiGet, apiPost } from "@/api";
+import { apiGet } from "@/api";
+import { authClient, authSessionQueryKey, useSessionQuery } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 
 export function Topbar() {
@@ -9,17 +10,13 @@ export function Topbar() {
   const queryClient = useQueryClient();
   const dashboardQuery = useQuery({ queryKey: ["dashboard"], queryFn: () => apiGet<any>("/api/dashboard") });
   const organization = dashboardQuery.data?.organization;
-  const sessionQuery = useQuery({
-    queryKey: ["auth", "session"],
-    retry: false,
-    queryFn: () => apiGet<{ user: { email: string; name: string } | null }>("/api/auth/session", { notifyOnError: false })
-  });
+  const sessionQuery = useSessionQuery();
   const user = sessionQuery.data?.user;
   const initials = user?.name?.slice(0, 2).toUpperCase() ?? user?.email?.slice(0, 2).toUpperCase() ?? "ИИ";
 
   async function logout() {
-    await apiPost("/api/auth/logout", {}, { notifyOnError: false });
-    await queryClient.invalidateQueries({ queryKey: ["auth", "session"] });
+    await authClient.signOut();
+    await queryClient.invalidateQueries({ queryKey: authSessionQueryKey });
     navigate("/login", { replace: true });
   }
 

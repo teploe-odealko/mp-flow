@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
-import { LoginPage, RequireAuth, SignupPage, VerifyEmailPage } from "@/pages/auth/AuthPages";
+import { ForgotPasswordPage, LoginPage, RequireAuth, ResetPasswordPage, SignupPage, VerifyEmailPage } from "@/pages/auth/AuthPages";
 import { AppShell } from "@/layout/AppShell";
 import { HomePage } from "@/pages/home/HomePage";
 import { SetupPage } from "@/pages/setup/SetupPage";
@@ -60,6 +60,8 @@ export function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/verify-email" element={<VerifyEmailPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       <Route element={<RequireAuth><AppShell /></RequireAuth>}>
         <Route path="/" element={<HomePage />} />
