@@ -965,6 +965,45 @@ describe("prod-ready contracts", () => {
     expect(touchedAt).toBeTruthy();
   });
 
+  it("serves auth endpoints before snapshot sessions", async () => {
+    resetIds();
+    const app = new AccountingApp();
+    const api = createApi(app, {
+      auth: null,
+      persistence: {
+        async openReadSession() {
+          throw new Error("Auth endpoints must not open read session");
+        },
+        async openWriteSession() {
+          throw new Error("Auth endpoints must not open write session");
+        }
+      }
+    });
+
+    // Кастомная витрина /api/auth/setup и catch-all better-auth зарегистрированы
+    // до snapshot-мидлвари: auth-запросы не открывают сессии персистентности.
+    const setupResponse = await api.request("/api/auth/setup");
+    const setupPayload = await setupResponse.json() as { ok: boolean; data: { signUpOpen: boolean } };
+    expect(setupResponse.status).toBe(200);
+    expect(setupPayload.ok).toBe(true);
+
+    // Dev-фоллбек без БД отвечает формой better-auth ({user, session}).
+    const sessionResponse = await api.request("/api/auth/get-session");
+    expect(sessionResponse.status).toBe(200);
+    const sessionPayload = await sessionResponse.json() as { user?: { email: string } } | null;
+    expect(sessionPayload?.user?.email).toBe("dev@mpflow.local");
+
+    // Остальные auth-эндпоинты без настроенной авторизации недоступны (DomainError, не 500).
+    const signInResponse = await api.request("/api/auth/sign-in/email", {
+      method: "POST",
+      body: JSON.stringify({ email: "user@example.test", password: "password123" }),
+      headers: { "Content-Type": "application/json" }
+    });
+    const signInPayload = await signInResponse.json() as { ok: boolean; error: { code: string } };
+    expect(signInResponse.status).toBe(400);
+    expect(signInPayload.error.code).toBe("auth_unavailable");
+  });
+
   it("exports and imports channel credentials outside the public state object", async () => {
     resetIds();
     const app = new AccountingApp();

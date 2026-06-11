@@ -55,7 +55,7 @@ describe("api error handling", () => {
   it("keeps DomainError responses intact", async () => {
     const api = createApi(new AccountingApp(), { auth: null });
 
-    const response = await jsonRequest(api, "/api/auth/signup", JSON.stringify({ email: "user@example.test", password: "secret-pass-1" }));
+    const response = await jsonRequest(api, "/api/auth/sign-in/email", JSON.stringify({ email: "user@example.test", password: "secret-pass-1" }));
     const payload = await response.json() as { ok: boolean; error: { code: string } };
 
     expect(response.status).toBe(400);

@@ -14,7 +14,7 @@ import { getCardStudioGenerationRequirements, getCardStudioPlaybook } from "./ca
 import { classifyChannelFinancePayload } from "../shared/channel-finance";
 import { buildReportsWorkspacePayload, type ReportsWorkspaceInput, type ReportsWorkspaceOptions } from "../shared/reports-workspace";
 import { buildProductCardWorkspacePayload } from "../shared/product-card-workspace";
-import { ensureAppUser, publicUser } from "./auth";
+import { ensureAppUser, publicUser } from "./auth/app-user";
 import { createBetterAuth, type BetterAuthInstance } from "./auth/better-auth";
 import { createSessionMiddleware } from "./auth/middleware";
 import { authSetupState } from "./auth/workspace";

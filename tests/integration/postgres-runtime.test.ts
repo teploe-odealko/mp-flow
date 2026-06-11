@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { Pool } from "pg";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createApi } from "../../src/backend/app";
 import { createBetterAuth } from "../../src/backend/auth/better-auth";
 import { runMigrations } from "../../src/backend/db/migrate";
@@ -91,6 +91,29 @@ async function getSessionViaApi(api: ReturnType<typeof createApi>, cookie: strin
 
 function sessionCookieFrom(response: Response) {
   return response.headers.getSetCookie().map((value) => value.split(";")[0]).join("; ");
+}
+
+/**
+ * Перехватывает ссылку подтверждения почты из лог-режима mailer (SMTP в тестах нет,
+ * URL печатается в console.warn). Токен verify-email — JWT, в БД он не хранится,
+ * поэтому достать его можно только из «письма».
+ */
+async function captureVerificationToken(action: () => Promise<void>) {
+  const lines: string[] = [];
+  const warnSpy = vi.spyOn(console, "warn").mockImplementation((...args: unknown[]) => {
+    lines.push(args.map(String).join(" "));
+  });
+  try {
+    await action();
+  } finally {
+    warnSpy.mockRestore();
+  }
+  const url = lines
+    .map((line) => /https?:\/\/\S+/.exec(line)?.[0])
+    .find((candidate) => candidate?.includes("/verify-email?"));
+  const token = url ? new URL(url).searchParams.get("token") : null;
+  if (!token) throw new Error("verification_link_not_logged");
+  return token;
 }
 
 describePostgres("postgres runtime store", () => {
@@ -852,12 +875,21 @@ describePostgres("postgres runtime store", () => {
       const ownerSession = await getSessionViaApi(api, sessionCookieFrom(ownerSignIn));
       const ownerWorkspaceId = ownerSession?.workspaceId;
 
-      // Публичный signup: tenant подтверждает почту (помечаем напрямую — письмо уходит в лог).
-      expect((await signUpViaApi(api, "tenant@example.com", "password123")).status).toBe(200);
-      await pool.query(`update "user" set "emailVerified" = true where email = $1`, ["tenant@example.com"]);
-      const tenantSignIn = await signInViaApi(api, "tenant@example.com", "password123");
-      expect(tenantSignIn.status).toBe(200);
-      const tenantSession = await getSessionViaApi(api, sessionCookieFrom(tenantSignIn));
+      // Публичный signup: tenant подтверждает почту по ссылке из письма (лог-режим).
+      const verifyToken = await captureVerificationToken(async () => {
+        expect((await signUpViaApi(api, "tenant@example.com", "password123")).status).toBe(200);
+      });
+
+      // До подтверждения вход закрыт (requireEmailVerification).
+      expect((await signInViaApi(api, "tenant@example.com", "password123")).status).toBe(403);
+
+      // GET /verify-email подтверждает почту, afterEmailVerification создаёт workspace,
+      // autoSignInAfterVerification сразу выдаёт сессию.
+      const verifyResponse = await api.request(`/api/auth/verify-email?token=${encodeURIComponent(verifyToken)}`);
+      expect(verifyResponse.status).toBe(200);
+      const tenantCookie = sessionCookieFrom(verifyResponse);
+      expect(tenantCookie).toContain("mpflow.session_token");
+      const tenantSession = await getSessionViaApi(api, tenantCookie);
       const tenantWorkspaceId = tenantSession?.workspaceId;
 
       expect(ownerWorkspaceId).toBeTruthy();
@@ -1033,6 +1065,110 @@ describePostgres("postgres runtime store", () => {
       expect(Object.keys(neutralPayload).sort()).toEqual(Object.keys(freshPayload).sort());
       expect(Object.keys(neutralPayload.user).sort()).toEqual(Object.keys(freshPayload.user).sort());
       expect(neutralPayload.user.emailVerified).toBe(freshPayload.user.emailVerified);
+    } finally {
+      await store.close();
+      restoreEnv("DATABASE_URL", previousEnv.DATABASE_URL);
+      restoreEnv("ACCOUNTING_AUTH_PUBLIC_SIGNUP", previousEnv.ACCOUNTING_AUTH_PUBLIC_SIGNUP);
+      restoreEnv("ACCOUNTING_SAAS_WORKSPACES_ENABLED", previousEnv.ACCOUNTING_SAAS_WORKSPACES_ENABLED);
+      restoreEnv("ACCOUNTING_AUTH_BOOTSTRAP_EMAILS", previousEnv.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS);
+    }
+  }, 30_000);
+
+  it("rate limits sign-in: 4-й запрос за 10 секунд получает 429", async () => {
+    await resetRuntimeTables();
+
+    const previousEnv = {
+      DATABASE_URL: process.env.DATABASE_URL,
+      ACCOUNTING_AUTH_PUBLIC_SIGNUP: process.env.ACCOUNTING_AUTH_PUBLIC_SIGNUP,
+      ACCOUNTING_SAAS_WORKSPACES_ENABLED: process.env.ACCOUNTING_SAAS_WORKSPACES_ENABLED,
+      ACCOUNTING_AUTH_BOOTSTRAP_EMAILS: process.env.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS
+    };
+    process.env.DATABASE_URL = connectionString;
+    process.env.ACCOUNTING_AUTH_PUBLIC_SIGNUP = "true";
+    process.env.ACCOUNTING_SAAS_WORKSPACES_ENABLED = "true";
+    process.env.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS = "";
+
+    const { pool, store, api } = await bootstrapAuthApi("pg-auth-rate-limit-secret");
+    try {
+      expect((await signUpViaApi(api, "owner@example.com", "password123")).status).toBe(200);
+
+      // Лимит better-auth на /sign-in/email: 3 запроса / 10 секунд, считаются и неудачные
+      // попытки. IP фиксируем заголовком, чтобы ключ лимита не зависел от окружения тестов.
+      const attempt = () => api.request("/api/auth/sign-in/email", {
+        method: "POST",
+        body: JSON.stringify({ email: "owner@example.com", password: "wrong-password-1" }),
+        headers: { "Content-Type": "application/json", "x-forwarded-for": "203.0.113.7" }
+      });
+      for (let i = 0; i < 3; i += 1) {
+        expect((await attempt()).status).toBe(401);
+      }
+      const limited = await attempt();
+      expect(limited.status).toBe(429);
+      expect(limited.headers.get("x-retry-after")).toBeTruthy();
+
+      // Счётчик живёт в Postgres (rateLimit.storage = "database"), а не в памяти процесса.
+      const rows = await pool.query<{ count: number }>(
+        `select count::int as count from "rateLimit" where key = '203.0.113.7|/sign-in/email'`
+      );
+      expect(rows.rows[0]?.count).toBeGreaterThanOrEqual(3);
+    } finally {
+      await store.close();
+      restoreEnv("DATABASE_URL", previousEnv.DATABASE_URL);
+      restoreEnv("ACCOUNTING_AUTH_PUBLIC_SIGNUP", previousEnv.ACCOUNTING_AUTH_PUBLIC_SIGNUP);
+      restoreEnv("ACCOUNTING_SAAS_WORKSPACES_ENABLED", previousEnv.ACCOUNTING_SAAS_WORKSPACES_ENABLED);
+      restoreEnv("ACCOUNTING_AUTH_BOOTSTRAP_EMAILS", previousEnv.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS);
+    }
+  }, 30_000);
+
+  it("сброс пароля: токен из таблицы verification меняет пароль и отзывает сессии", async () => {
+    await resetRuntimeTables();
+
+    const previousEnv = {
+      DATABASE_URL: process.env.DATABASE_URL,
+      ACCOUNTING_AUTH_PUBLIC_SIGNUP: process.env.ACCOUNTING_AUTH_PUBLIC_SIGNUP,
+      ACCOUNTING_SAAS_WORKSPACES_ENABLED: process.env.ACCOUNTING_SAAS_WORKSPACES_ENABLED,
+      ACCOUNTING_AUTH_BOOTSTRAP_EMAILS: process.env.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS
+    };
+    process.env.DATABASE_URL = connectionString;
+    process.env.ACCOUNTING_AUTH_PUBLIC_SIGNUP = "true";
+    process.env.ACCOUNTING_SAAS_WORKSPACES_ENABLED = "true";
+    process.env.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS = "";
+
+    const { pool, store, api } = await bootstrapAuthApi("pg-auth-reset-secret");
+    try {
+      expect((await signUpViaApi(api, "owner@example.com", "old-password-1")).status).toBe(200);
+      const signIn = await signInViaApi(api, "owner@example.com", "old-password-1");
+      expect(signIn.status).toBe(200);
+      const oldCookie = sessionCookieFrom(signIn);
+      expect((await getSessionViaApi(api, oldCookie))?.user?.email).toBe("owner@example.com");
+
+      const resetRequest = await api.request("/api/auth/request-password-reset", {
+        method: "POST",
+        body: JSON.stringify({ email: "owner@example.com", redirectTo: "/reset-password" }),
+        headers: { "Content-Type": "application/json" }
+      });
+      expect(resetRequest.status).toBe(200);
+
+      // Reset-токен (в отличие от verify-email) хранится в таблице "verification".
+      const tokens = await pool.query<{ identifier: string }>(
+        `select identifier from "verification" where identifier like 'reset-password:%'`
+      );
+      const token = tokens.rows[0]?.identifier.slice("reset-password:".length);
+      expect(token).toBeTruthy();
+
+      const reset = await api.request("/api/auth/reset-password", {
+        method: "POST",
+        body: JSON.stringify({ newPassword: "new-password-2", token }),
+        headers: { "Content-Type": "application/json" }
+      });
+      expect(reset.status).toBe(200);
+
+      // revokeSessionsOnPasswordReset: старая сессия отозвана.
+      expect((await getSessionViaApi(api, oldCookie))?.user ?? null).toBeNull();
+
+      // Старый пароль больше не работает, новый — работает.
+      expect((await signInViaApi(api, "owner@example.com", "old-password-1")).status).toBe(401);
+      expect((await signInViaApi(api, "owner@example.com", "new-password-2")).status).toBe(200);
     } finally {
       await store.close();
       restoreEnv("DATABASE_URL", previousEnv.DATABASE_URL);

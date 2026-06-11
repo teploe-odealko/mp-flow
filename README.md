@@ -5,7 +5,7 @@ MPFlow — open-source система управленческого учёта 
 ## Возможности
 
 - SaaS-логика: каждый пользователь работает только со своим личным кабинетом и данными.
-- Email/password авторизация с подтверждением почты.
+- Email/password авторизация (better-auth): подтверждение почты, восстановление пароля, rate limiting.
 - Подключение Ozon-канала, загрузка карточек, остатков, продаж и финансовых событий.
 - Документо-центричный учёт: закупки, приёмки, перемещения, продажи, возвраты, расходы и выплаты.
 - FIFO-себестоимость, партии, движения склада и сбалансированные бухгалтерские проводки.
@@ -99,6 +99,7 @@ ACCOUNTING_PERSISTENCE=postgres
 DATABASE_URL=postgresql://<user>:<password>@<host>:5432/mpflow?sslmode=require
 ACCOUNTING_ENCRYPTION_KEY=<long-random-secret>   # потеря ключа = нечитаемые креды каналов
 AUTH_REQUIRED=true
+BETTER_AUTH_SECRET=<long-random-secret>           # npx @better-auth/cli@latest secret
 PUBLIC_APP_URL=https://<domain>
 CORS_ORIGIN=https://<domain>
 ACCOUNTING_AUTH_BOOTSTRAP_EMAILS=<owner-email>
