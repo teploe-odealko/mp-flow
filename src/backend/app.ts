@@ -14,7 +14,10 @@ import { getCardStudioGenerationRequirements, getCardStudioPlaybook } from "./ca
 import { classifyChannelFinancePayload } from "../shared/channel-finance";
 import { buildReportsWorkspacePayload, type ReportsWorkspaceInput, type ReportsWorkspaceOptions } from "../shared/reports-workspace";
 import { buildProductCardWorkspacePayload } from "../shared/product-card-workspace";
-import { AuthService, createAuthMiddleware, ensureAppUser, publicUser } from "./auth";
+import { ensureAppUser, publicUser } from "./auth";
+import { createBetterAuth, type BetterAuthInstance } from "./auth/better-auth";
+import { createSessionMiddleware } from "./auth/middleware";
+import { authSetupState } from "./auth/workspace";
 import { initHttpMetrics, metricsMiddleware, renderMetrics } from "./metrics";
 import { captureException } from "./observability";
 import { getPool } from "./db/pool";
@@ -48,7 +51,7 @@ z.config(z.locales.ru());
 
 interface CreateApiOptions {
   persistence?: RuntimePersistence;
-  auth?: AuthService | null;
+  auth?: BetterAuthInstance | null;
 }
 
 type PublicAuthUser = ReturnType<typeof publicUser>;
@@ -67,24 +70,13 @@ type ApiVariables = {
   authAgent?: McpAgentPrincipal;
 };
 
-const authSignupSchema = z.object({
-  email: z.string().email(),
-  name: z.string().trim().min(1).optional(),
-  password: z.string().min(8)
-});
-
-const authLoginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(1)
-});
-
 export function createApi(app = new AccountingApp(), options: CreateApiOptions = {}) {
   initHttpMetrics();
   const api = new Hono<{ Variables: ApiVariables }>();
   const appStorage = new AsyncLocalStorage<AccountingApp>();
   const scopedApp = createRequestScopedApp(app, appStorage);
   const supportsSessions = Boolean(options.persistence?.openReadSession || options.persistence?.openWriteSession);
-  const auth = options.auth === undefined ? (process.env.DATABASE_URL ? new AuthService() : null) : options.auth;
+  const auth = options.auth === undefined ? (process.env.DATABASE_URL ? createBetterAuth(getPool()) : null) : options.auth;
   const devAuthUser = !auth && process.env.AUTH_REQUIRED !== "true" && process.env.NODE_ENV !== "production"
     ? publicUser({
         id: "dev_user_local",
@@ -166,38 +158,17 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     const database = await options.persistence?.checkReady?.();
     return c.json({ ok: Boolean(!options.persistence || database?.ok), data: { service: "mpflow", database: options.persistence ? (database?.ok ? "ok" : "error") : "memory" } }, database?.ok === false ? 503 : 200);
   });
+  // Кастомная «витрина» первичной настройки — регистрируется ДО catch-all better-auth,
+  // иначе его перехватит auth.handler и вернёт 404 (порядок маршрутов Hono важен).
   api.get("/api/auth/setup", async (c) => {
     if (!auth) return c.json({ ok: true, data: { signUpOpen: false, bootstrapEmailsConfigured: false, emailDeliveryMode: "missing" } });
-    return c.json({ ok: true, data: await auth.setup() });
+    return c.json({ ok: true, data: await authSetupState(getPool()) });
   });
-  api.post("/api/auth/signup", async (c) => {
+  // Все остальные auth-эндпоинты обслуживает better-auth: /sign-up/email, /sign-in/email,
+  // /sign-out, /get-session, /verify-email, /request-password-reset, /reset-password и др.
+  api.on(["POST", "GET"], "/api/auth/*", (c) => {
     if (!auth) throw new DomainError("auth_unavailable", "Авторизация не настроена");
-    const body = authSignupSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: await auth.signup(body, c) });
-  });
-  api.post("/api/auth/verify-email", async (c) => {
-    if (!auth) throw new DomainError("auth_unavailable", "Авторизация не настроена");
-    const body = z.object({ token: z.string().min(1) }).parse(await c.req.json());
-    return c.json({ ok: true, data: await auth.verifyEmail(body.token) });
-  });
-  api.post("/api/auth/resend", async (c) => {
-    if (!auth) throw new DomainError("auth_unavailable", "Авторизация не настроена");
-    const body = z.object({ email: z.string().email() }).parse(await c.req.json());
-    return c.json({ ok: true, data: await auth.resend(body.email) });
-  });
-  api.post("/api/auth/login", async (c) => {
-    if (!auth) throw new DomainError("auth_unavailable", "Авторизация не настроена");
-    const body = authLoginSchema.parse(await c.req.json());
-    return c.json({ ok: true, data: await auth.login(body, c) });
-  });
-  api.post("/api/auth/logout", async (c) => {
-    if (!auth) return c.json({ ok: true, data: { ok: true } });
-    return c.json({ ok: true, data: await auth.logout(c) });
-  });
-  api.get("/api/auth/session", async (c) => {
-    if (!auth) return c.json({ ok: true, data: { user: devAuthUser } });
-    const session = await auth.session(c);
-    return c.json({ ok: true, data: { user: session ? publicUser(session) : null } });
+    return auth.handler(c.req.raw);
   });
   api.use("/api/*", async (c, next) => {
     const rawKey = bearerToken(c.req.header("authorization"));
@@ -216,7 +187,7 @@ export function createApi(app = new AccountingApp(), options: CreateApiOptions =
     return next();
   });
   if (auth) {
-    api.use("/api/*", createAuthMiddleware(auth));
+    api.use("/api/*", createSessionMiddleware(auth));
   } else if (devAuthUser) {
     api.use("/api/*", async (c, next) => {
       if (!c.get("authUser")) c.set("authUser", devAuthUser);

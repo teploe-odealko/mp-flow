@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { Pool } from "pg";
 import { describe, expect, it } from "vitest";
 import { createApi } from "../../src/backend/app";
-import { AuthService } from "../../src/backend/auth";
+import { createBetterAuth } from "../../src/backend/auth/better-auth";
 import { runMigrations } from "../../src/backend/db/migrate";
 import { createProductAsset } from "../../src/backend/services/product-asset-service";
 import { AccountingApp } from "../../src/core/accounting-app";
@@ -47,6 +47,50 @@ function hashToken(token: string) {
 
 function decodeKeyPart(value: string) {
   return Buffer.from(value, "base64url").toString("utf8");
+}
+
+/**
+ * Auth-тесты идут через эндпоинты better-auth (/api/auth/sign-up/email и т.д.).
+ * Таблицы better-auth создаются миграциями (0010/0011), поэтому каждый тест
+ * бутстрапит схему как в проде: store.init() + runMigrations().
+ */
+async function bootstrapAuthApi(encryptionSecret: string) {
+  const pool = new Pool({ connectionString: connectionString! });
+  const store = new PostgresRuntimeStore(pool, encryptionSecret);
+  await store.init();
+  await runMigrations(pool);
+  const auth = createBetterAuth(pool);
+  const api = createApi(new AccountingApp(), { auth });
+  return { pool, store, api };
+}
+
+function signUpViaApi(api: ReturnType<typeof createApi>, email: string, password: string) {
+  return api.request("/api/auth/sign-up/email", {
+    method: "POST",
+    body: JSON.stringify({ email, password, name: email }),
+    headers: { "Content-Type": "application/json" }
+  });
+}
+
+function signInViaApi(api: ReturnType<typeof createApi>, email: string, password: string) {
+  return api.request("/api/auth/sign-in/email", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+    headers: { "Content-Type": "application/json" }
+  });
+}
+
+async function getSessionViaApi(api: ReturnType<typeof createApi>, cookie: string) {
+  const response = await api.request("/api/auth/get-session", { headers: { cookie } });
+  return await response.json() as {
+    user: { id: string; email: string; emailVerified: boolean } | null;
+    workspaceId?: string;
+    roleCode?: string;
+  } | null;
+}
+
+function sessionCookieFrom(response: Response) {
+  return response.headers.getSetCookie().map((value) => value.split(";")[0]).join("; ");
 }
 
 describePostgres("postgres runtime store", () => {
@@ -799,54 +843,41 @@ describePostgres("postgres runtime store", () => {
     process.env.ACCOUNTING_SAAS_WORKSPACES_ENABLED = "true";
     process.env.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS = "";
 
-    const auth = new AuthService();
-    const api = createApi(new AccountingApp(), { auth });
-    const markVerified = async (email: string) => {
-      const pool = new Pool({ connectionString: connectionString! });
-      try {
-        await pool.query("update auth_user set email_verified = true where email = $1", [email]);
-        await pool.query("delete from auth_email_verification where email = $1", [email]);
-      } finally {
-        await pool.end();
-      }
-    };
-
+    const { pool, store, api } = await bootstrapAuthApi("pg-auth-workspaces-secret");
     try {
-      await auth.signup({ email: "owner@example.com", password: "password123" });
-      await markVerified("owner@example.com");
-      const ownerLogin = await request<{ user: { workspaceId: string } }>(api, "POST", "/api/auth/login", {
-        email: "owner@example.com",
-        password: "password123"
-      });
+      // Owner-фаза: первый аккаунт автоверифицируется и сразу может войти.
+      expect((await signUpViaApi(api, "owner@example.com", "password123")).status).toBe(200);
+      const ownerSignIn = await signInViaApi(api, "owner@example.com", "password123");
+      expect(ownerSignIn.status).toBe(200);
+      const ownerSession = await getSessionViaApi(api, sessionCookieFrom(ownerSignIn));
+      const ownerWorkspaceId = ownerSession?.workspaceId;
 
-      await auth.signup({ email: "tenant@example.com", password: "password123" });
-      await markVerified("tenant@example.com");
-      const tenantLogin = await request<{ user: { workspaceId: string } }>(api, "POST", "/api/auth/login", {
-        email: "tenant@example.com",
-        password: "password123"
-      });
+      // Публичный signup: tenant подтверждает почту (помечаем напрямую — письмо уходит в лог).
+      expect((await signUpViaApi(api, "tenant@example.com", "password123")).status).toBe(200);
+      await pool.query(`update "user" set "emailVerified" = true where email = $1`, ["tenant@example.com"]);
+      const tenantSignIn = await signInViaApi(api, "tenant@example.com", "password123");
+      expect(tenantSignIn.status).toBe(200);
+      const tenantSession = await getSessionViaApi(api, sessionCookieFrom(tenantSignIn));
+      const tenantWorkspaceId = tenantSession?.workspaceId;
 
-      expect(ownerLogin.user.workspaceId).not.toBe("default");
-      expect(tenantLogin.user.workspaceId).not.toBe("default");
-      expect(tenantLogin.user.workspaceId).not.toBe(ownerLogin.user.workspaceId);
+      expect(ownerWorkspaceId).toBeTruthy();
+      expect(ownerWorkspaceId).not.toBe("default");
+      expect(tenantWorkspaceId).toBeTruthy();
+      expect(tenantWorkspaceId).not.toBe("default");
+      expect(tenantWorkspaceId).not.toBe(ownerWorkspaceId);
 
-      const inspectPool = new Pool({ connectionString: connectionString! });
-      try {
-        const rows = await inspectPool.query<{ email: string; workspace_id: string; role_code: string }>(
-          `select u.email, m.workspace_id, m.role_code
-           from auth_user u
-           join auth_workspace_member m on m.user_id = u.id
-           order by u.email`
-        );
-        expect(rows.rows).toEqual([
-          { email: "owner@example.com", workspace_id: ownerLogin.user.workspaceId, role_code: "owner" },
-          { email: "tenant@example.com", workspace_id: tenantLogin.user.workspaceId, role_code: "owner" }
-        ]);
-      } finally {
-        await inspectPool.end();
-      }
+      const rows = await pool.query<{ email: string; workspace_id: string; role_code: string }>(
+        `select u.email, m.workspace_id, m.role_code
+         from "user" u
+         join auth_workspace_member m on m.user_id = u.id
+         order by u.email`
+      );
+      expect(rows.rows).toEqual([
+        { email: "owner@example.com", workspace_id: ownerWorkspaceId, role_code: "owner" },
+        { email: "tenant@example.com", workspace_id: tenantWorkspaceId, role_code: "owner" }
+      ]);
     } finally {
-      await auth.close();
+      await store.close();
       restoreEnv("DATABASE_URL", previousEnv.DATABASE_URL);
       restoreEnv("ACCOUNTING_AUTH_PUBLIC_SIGNUP", previousEnv.ACCOUNTING_AUTH_PUBLIC_SIGNUP);
       restoreEnv("ACCOUNTING_SAAS_WORKSPACES_ENABLED", previousEnv.ACCOUNTING_SAAS_WORKSPACES_ENABLED);
@@ -854,7 +885,7 @@ describePostgres("postgres runtime store", () => {
     }
   }, 30_000);
 
-  it("owner signup auto-verifies and starts a session (n8n-style)", async () => {
+  it("owner signup auto-verifies and signs in without email confirmation (n8n-style)", async () => {
     await resetRuntimeTables();
 
     const previousEnv = {
@@ -868,43 +899,38 @@ describePostgres("postgres runtime store", () => {
     process.env.ACCOUNTING_SAAS_WORKSPACES_ENABLED = "true";
     process.env.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS = "";
 
-    const auth = new AuthService();
-    const api = createApi(new AccountingApp(), { auth });
+    const { pool, store, api } = await bootstrapAuthApi("pg-auth-owner-secret");
     try {
-      const signupResponse = await api.request("/api/auth/signup", {
-        method: "POST",
-        body: JSON.stringify({ email: "owner@example.com", password: "password123" }),
-        headers: { "Content-Type": "application/json" }
-      });
+      const signupResponse = await signUpViaApi(api, "owner@example.com", "password123");
+      expect(signupResponse.status).toBe(200);
       const signupPayload = await signupResponse.json() as {
-        ok: boolean;
-        data: { verificationRequired: boolean; user: { email: string; roleCode: string; workspaceId: string } };
+        token: string | null;
+        user: { email: string; emailVerified: boolean };
       };
-      expect(signupPayload.ok).toBe(true);
-      expect(signupPayload.data.verificationRequired).toBe(false);
-      expect(signupPayload.data.user.email).toBe("owner@example.com");
-      expect(signupPayload.data.user.roleCode).toBe("owner");
+      // requireEmailVerification: сессии на sign-up нет (token null) — фронт сразу делает sign-in.
+      expect(signupPayload.token).toBeNull();
+      expect(signupPayload.user.email).toBe("owner@example.com");
+      // Первый владелец инстанса автоверифицирован databaseHooks-хуком.
+      expect(signupPayload.user.emailVerified).toBe(true);
 
-      const cookie = signupResponse.headers.get("set-cookie")?.split(";")[0];
-      expect(cookie).toBeTruthy();
+      // Вход без подтверждения почты — сразу сессия.
+      const signInResponse = await signInViaApi(api, "owner@example.com", "password123");
+      expect(signInResponse.status).toBe(200);
+      const cookie = sessionCookieFrom(signInResponse);
+      expect(cookie).toContain("mpflow.session_token");
 
-      // Сессия активна сразу — без подтверждения почты и без отдельного логина.
-      const sessionResponse = await api.request("/api/auth/session", { headers: { cookie: cookie! } });
-      const sessionPayload = await sessionResponse.json() as { ok: boolean; data: { user: { email: string } | null } };
-      expect(sessionPayload.data.user?.email).toBe("owner@example.com");
+      const session = await getSessionViaApi(api, cookie);
+      expect(session?.user?.email).toBe("owner@example.com");
+      expect(session?.roleCode).toBe("owner");
+      expect(session?.workspaceId).toBeTruthy();
 
-      const inspectPool = new Pool({ connectionString: connectionString! });
-      try {
-        const rows = await inspectPool.query<{ email_verified: boolean }>(
-          "select email_verified from auth_user where email = $1",
-          ["owner@example.com"]
-        );
-        expect(rows.rows[0]?.email_verified).toBe(true);
-      } finally {
-        await inspectPool.end();
-      }
+      const rows = await pool.query<{ emailVerified: boolean }>(
+        `select "emailVerified" from "user" where email = $1`,
+        ["owner@example.com"]
+      );
+      expect(rows.rows[0]?.emailVerified).toBe(true);
     } finally {
-      await auth.close();
+      await store.close();
       restoreEnv("DATABASE_URL", previousEnv.DATABASE_URL);
       restoreEnv("ACCOUNTING_AUTH_PUBLIC_SIGNUP", previousEnv.ACCOUNTING_AUTH_PUBLIC_SIGNUP);
       restoreEnv("ACCOUNTING_SAAS_WORKSPACES_ENABLED", previousEnv.ACCOUNTING_SAAS_WORKSPACES_ENABLED);
@@ -926,182 +952,48 @@ describePostgres("postgres runtime store", () => {
     process.env.ACCOUNTING_SAAS_WORKSPACES_ENABLED = "true";
     process.env.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS = "";
 
-    const auth = new AuthService();
-    const api = createApi(new AccountingApp(), { auth });
+    const { pool, store, api } = await bootstrapAuthApi("pg-auth-takeover-secret");
     try {
       // Жертва — первый владелец инстанса (owner-фаза, auto-verified).
-      await auth.signup({ email: "victim@example.com", password: "victim-pass-1" });
+      expect((await signUpViaApi(api, "victim@example.com", "victim-pass-1")).status).toBe(200);
 
-      const inspectPool = new Pool({ connectionString: connectionString! });
-      try {
-        const before = await inspectPool.query<{ password_hash: string }>(
-          "select password_hash from auth_user where email = $1",
-          ["victim@example.com"]
-        );
-        const passwordHashBefore = before.rows[0]?.password_hash;
-        expect(passwordHashBefore).toBeTruthy();
+      const before = await pool.query<{ password: string }>(
+        `select a."password"
+         from "account" a
+         join "user" u on u.id = a."userId"
+         where u.email = $1 and a."providerId" = 'credential'`,
+        ["victim@example.com"]
+      );
+      const passwordHashBefore = before.rows[0]?.password;
+      expect(passwordHashBefore).toBeTruthy();
 
-        // Атака: повторный signup тем же email и другим паролем.
-        const attackResponse = await api.request("/api/auth/signup", {
-          method: "POST",
-          body: JSON.stringify({ email: "victim@example.com", password: "attacker-pass-1" }),
-          headers: { "Content-Type": "application/json" }
-        });
-        expect(attackResponse.status).toBe(200);
-        const attackPayload = await attackResponse.json() as { ok: boolean; data: { verificationRequired: boolean } };
-        expect(attackPayload.ok).toBe(true);
-        expect(attackPayload.data.verificationRequired).toBe(true);
+      // Атака: повторный sign-up тем же email и другим паролем.
+      // better-auth возвращает нейтральный синтетический ответ, не трогая пользователя.
+      const attackResponse = await signUpViaApi(api, "victim@example.com", "attacker-pass-1");
+      expect(attackResponse.status).toBe(200);
+      const attackPayload = await attackResponse.json() as { token: string | null };
+      expect(attackPayload.token).toBeNull();
 
-        const after = await inspectPool.query<{ password_hash: string; email_verified: boolean }>(
-          "select password_hash, email_verified from auth_user where email = $1",
-          ["victim@example.com"]
-        );
-        expect(after.rows[0]?.password_hash).toBe(passwordHashBefore);
-        expect(after.rows[0]?.email_verified).toBe(true);
-      } finally {
-        await inspectPool.end();
-      }
+      const after = await pool.query<{ password: string; emailVerified: boolean }>(
+        `select a."password", u."emailVerified"
+         from "account" a
+         join "user" u on u.id = a."userId"
+         where u.email = $1 and a."providerId" = 'credential'`,
+        ["victim@example.com"]
+      );
+      expect(after.rows[0]?.password).toBe(passwordHashBefore);
+      expect(after.rows[0]?.emailVerified).toBe(true);
+
+      const users = await pool.query<{ n: number }>(`select count(*)::int as n from "user"`);
+      expect(users.rows[0]?.n).toBe(1);
 
       // Старый пароль жертвы продолжает работать, пароль «атакующего» — нет.
-      const victimLogin = await request<{ user: { email: string } }>(api, "POST", "/api/auth/login", {
-        email: "victim@example.com",
-        password: "victim-pass-1"
-      });
-      expect(victimLogin.user.email).toBe("victim@example.com");
-      await expect(
-        request(api, "POST", "/api/auth/login", { email: "victim@example.com", password: "attacker-pass-1" })
-      ).rejects.toThrow("invalid_credentials");
+      const victimSignIn = await signInViaApi(api, "victim@example.com", "victim-pass-1");
+      expect(victimSignIn.status).toBe(200);
+      const attackerSignIn = await signInViaApi(api, "victim@example.com", "attacker-pass-1");
+      expect(attackerSignIn.status).toBe(401);
     } finally {
-      await auth.close();
-      restoreEnv("DATABASE_URL", previousEnv.DATABASE_URL);
-      restoreEnv("ACCOUNTING_AUTH_PUBLIC_SIGNUP", previousEnv.ACCOUNTING_AUTH_PUBLIC_SIGNUP);
-      restoreEnv("ACCOUNTING_SAAS_WORKSPACES_ENABLED", previousEnv.ACCOUNTING_SAAS_WORKSPACES_ENABLED);
-      restoreEnv("ACCOUNTING_AUTH_BOOTSTRAP_EMAILS", previousEnv.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS);
-    }
-  }, 30_000);
-
-  it("signup against verified account does not create or touch verification tokens", async () => {
-    await resetRuntimeTables();
-
-    const previousEnv = {
-      DATABASE_URL: process.env.DATABASE_URL,
-      ACCOUNTING_AUTH_PUBLIC_SIGNUP: process.env.ACCOUNTING_AUTH_PUBLIC_SIGNUP,
-      ACCOUNTING_SAAS_WORKSPACES_ENABLED: process.env.ACCOUNTING_SAAS_WORKSPACES_ENABLED,
-      ACCOUNTING_AUTH_BOOTSTRAP_EMAILS: process.env.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS
-    };
-    process.env.DATABASE_URL = connectionString;
-    process.env.ACCOUNTING_AUTH_PUBLIC_SIGNUP = "true";
-    process.env.ACCOUNTING_SAAS_WORKSPACES_ENABLED = "true";
-    process.env.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS = "";
-
-    const auth = new AuthService();
-    try {
-      await auth.signup({ email: "victim@example.com", password: "victim-pass-1" });
-
-      const inspectPool = new Pool({ connectionString: connectionString! });
-      try {
-        const { rows: victims } = await inspectPool.query<{ id: string }>(
-          "select id from auth_user where email = $1",
-          ["victim@example.com"]
-        );
-        const victimId = victims[0]?.id;
-        expect(victimId).toBeTruthy();
-
-        // Залежавшийся токен жертвы: нейтральная ветка не должна его трогать.
-        await inspectPool.query(
-          `insert into auth_email_verification (id, user_id, email, token_hash, expires_at)
-           values ('email_verification_lingering', $1, 'victim@example.com', 'lingering-token-hash', now() + interval '24 hours')`,
-          [victimId]
-        );
-
-        const neutral = await auth.signup({ email: "victim@example.com", password: "attacker-pass-1" });
-        expect(neutral.verificationRequired).toBe(true);
-
-        const { rows: tokens } = await inspectPool.query<{ token_hash: string }>(
-          "select token_hash from auth_email_verification where user_id = $1",
-          [victimId]
-        );
-        // Письмо не отправлялось: новых токенов нет, существующий не удалён.
-        expect(tokens).toEqual([{ token_hash: "lingering-token-hash" }]);
-
-        const { rows: users } = await inspectPool.query<{ n: number }>("select count(*)::int as n from auth_user");
-        expect(users[0]?.n).toBe(1);
-      } finally {
-        await inspectPool.end();
-      }
-    } finally {
-      await auth.close();
-      restoreEnv("DATABASE_URL", previousEnv.DATABASE_URL);
-      restoreEnv("ACCOUNTING_AUTH_PUBLIC_SIGNUP", previousEnv.ACCOUNTING_AUTH_PUBLIC_SIGNUP);
-      restoreEnv("ACCOUNTING_SAAS_WORKSPACES_ENABLED", previousEnv.ACCOUNTING_SAAS_WORKSPACES_ENABLED);
-      restoreEnv("ACCOUNTING_AUTH_BOOTSTRAP_EMAILS", previousEnv.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS);
-    }
-  }, 30_000);
-
-  it("re-signup of an unverified account refreshes password and invalidates old token", async () => {
-    await resetRuntimeTables();
-
-    const previousEnv = {
-      DATABASE_URL: process.env.DATABASE_URL,
-      ACCOUNTING_AUTH_PUBLIC_SIGNUP: process.env.ACCOUNTING_AUTH_PUBLIC_SIGNUP,
-      ACCOUNTING_SAAS_WORKSPACES_ENABLED: process.env.ACCOUNTING_SAAS_WORKSPACES_ENABLED,
-      ACCOUNTING_AUTH_BOOTSTRAP_EMAILS: process.env.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS
-    };
-    process.env.DATABASE_URL = connectionString;
-    process.env.ACCOUNTING_AUTH_PUBLIC_SIGNUP = "true";
-    process.env.ACCOUNTING_SAAS_WORKSPACES_ENABLED = "true";
-    process.env.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS = "";
-
-    const auth = new AuthService();
-    const api = createApi(new AccountingApp(), { auth });
-    const markVerified = async (email: string) => {
-      const pool = new Pool({ connectionString: connectionString! });
-      try {
-        await pool.query("update auth_user set email_verified = true where email = $1", [email]);
-        await pool.query("delete from auth_email_verification where email = $1", [email]);
-      } finally {
-        await pool.end();
-      }
-    };
-
-    try {
-      // Owner закрывает owner-фазу, дальше регистрация в режиме user (unverified).
-      await auth.signup({ email: "owner@example.com", password: "owner-pass-1" });
-      await auth.signup({ email: "user@example.com", password: "first-pass-123" });
-
-      const inspectPool = new Pool({ connectionString: connectionString! });
-      try {
-        const first = await inspectPool.query<{ token_hash: string }>(
-          "select token_hash from auth_email_verification where email = $1",
-          ["user@example.com"]
-        );
-        const firstTokenHash = first.rows[0]?.token_hash;
-        expect(firstTokenHash).toBeTruthy();
-
-        // Повторный signup («письмо не дошло»): пароль обновляется, токен меняется.
-        await auth.signup({ email: "user@example.com", password: "second-pass-123" });
-
-        const second = await inspectPool.query<{ token_hash: string }>(
-          "select token_hash from auth_email_verification where email = $1",
-          ["user@example.com"]
-        );
-        expect(second.rows).toHaveLength(1);
-        expect(second.rows[0]?.token_hash).not.toBe(firstTokenHash);
-      } finally {
-        await inspectPool.end();
-      }
-
-      await markVerified("user@example.com");
-      const login = await request<{ user: { email: string } }>(api, "POST", "/api/auth/login", {
-        email: "user@example.com",
-        password: "second-pass-123"
-      });
-      expect(login.user.email).toBe("user@example.com");
-      await expect(
-        request(api, "POST", "/api/auth/login", { email: "user@example.com", password: "first-pass-123" })
-      ).rejects.toThrow("invalid_credentials");
-    } finally {
-      await auth.close();
+      await store.close();
       restoreEnv("DATABASE_URL", previousEnv.DATABASE_URL);
       restoreEnv("ACCOUNTING_AUTH_PUBLIC_SIGNUP", previousEnv.ACCOUNTING_AUTH_PUBLIC_SIGNUP);
       restoreEnv("ACCOUNTING_SAAS_WORKSPACES_ENABLED", previousEnv.ACCOUNTING_SAAS_WORKSPACES_ENABLED);
@@ -1123,35 +1015,26 @@ describePostgres("postgres runtime store", () => {
     process.env.ACCOUNTING_SAAS_WORKSPACES_ENABLED = "true";
     process.env.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS = "";
 
-    const auth = new AuthService();
-    const api = createApi(new AccountingApp(), { auth });
-    const signupViaApi = async (email: string, password: string) => {
-      const response = await api.request("/api/auth/signup", {
-        method: "POST",
-        body: JSON.stringify({ email, password }),
-        headers: { "Content-Type": "application/json" }
-      });
-      const payload = await response.json() as { ok: boolean; data: Record<string, unknown> };
-      return { status: response.status, payload };
-    };
-
+    const { store, api } = await bootstrapAuthApi("pg-auth-neutral-secret");
     try {
       // Owner закрывает owner-фазу — дальше оба запроса идут в режиме user.
-      await auth.signup({ email: "owner@example.com", password: "owner-pass-1" });
+      expect((await signUpViaApi(api, "owner@example.com", "owner-pass-1")).status).toBe(200);
 
-      const fresh = await signupViaApi("fresh@example.com", "fresh-pass-123");
-      const neutral = await signupViaApi("owner@example.com", "attacker-pass-1");
+      const fresh = await signUpViaApi(api, "fresh@example.com", "fresh-pass-123");
+      const neutral = await signUpViaApi(api, "owner@example.com", "attacker-pass-1");
 
       expect(fresh.status).toBe(200);
       expect(neutral.status).toBe(200);
-      expect(fresh.payload.ok).toBe(true);
-      expect(neutral.payload.ok).toBe(true);
-      expect(Object.keys(neutral.payload.data).sort()).toEqual(Object.keys(fresh.payload.data).sort());
-      expect(fresh.payload.data.verificationRequired).toBe(true);
-      expect(neutral.payload.data.verificationRequired).toBe(true);
-      expect(neutral.payload.data.emailDeliveryMode).toBe(fresh.payload.data.emailDeliveryMode);
+      const freshPayload = await fresh.json() as { token: string | null; user: Record<string, unknown> };
+      const neutralPayload = await neutral.json() as { token: string | null; user: Record<string, unknown> };
+      // Оба ответа нейтральны: сессии нет, форма одинаковая (анти-enumeration).
+      expect(freshPayload.token).toBeNull();
+      expect(neutralPayload.token).toBeNull();
+      expect(Object.keys(neutralPayload).sort()).toEqual(Object.keys(freshPayload).sort());
+      expect(Object.keys(neutralPayload.user).sort()).toEqual(Object.keys(freshPayload.user).sort());
+      expect(neutralPayload.user.emailVerified).toBe(freshPayload.user.emailVerified);
     } finally {
-      await auth.close();
+      await store.close();
       restoreEnv("DATABASE_URL", previousEnv.DATABASE_URL);
       restoreEnv("ACCOUNTING_AUTH_PUBLIC_SIGNUP", previousEnv.ACCOUNTING_AUTH_PUBLIC_SIGNUP);
       restoreEnv("ACCOUNTING_SAAS_WORKSPACES_ENABLED", previousEnv.ACCOUNTING_SAAS_WORKSPACES_ENABLED);
@@ -1466,68 +1349,6 @@ describePostgres("postgres runtime store", () => {
     }
   }, 30_000);
 
-  it("moves legacy default auth members to personal workspaces", async () => {
-    await resetRuntimeTables();
-
-    const previousEnv = {
-      DATABASE_URL: process.env.DATABASE_URL,
-      ACCOUNTING_AUTH_PUBLIC_SIGNUP: process.env.ACCOUNTING_AUTH_PUBLIC_SIGNUP,
-      ACCOUNTING_SAAS_WORKSPACES_ENABLED: process.env.ACCOUNTING_SAAS_WORKSPACES_ENABLED,
-      ACCOUNTING_AUTH_BOOTSTRAP_EMAILS: process.env.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS
-    };
-    process.env.DATABASE_URL = connectionString;
-    process.env.ACCOUNTING_AUTH_PUBLIC_SIGNUP = "true";
-    process.env.ACCOUNTING_SAAS_WORKSPACES_ENABLED = "true";
-    process.env.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS = "";
-
-    const initializer = new AuthService();
-    try {
-      await initializer.setup();
-    } finally {
-      await initializer.close();
-    }
-
-    const inspectPool = new Pool({ connectionString: connectionString! });
-    try {
-      await inspectPool.query(
-        `insert into auth_user (id, email, name, password_hash, role_code, email_verified, created_at, updated_at)
-         values ($1, $2, $3, $4, 'owner', true, now(), now())`,
-        ["auth_user_legacy_default", "legacy-default@example.com", "Legacy Default", "test-hash"]
-      );
-      await inspectPool.query(
-        `insert into auth_workspace_member (workspace_id, user_id, role_code, created_at)
-         values ('default', 'auth_user_legacy_default', 'owner', now())`
-      );
-    } finally {
-      await inspectPool.end();
-    }
-
-    const migratingAuth = new AuthService();
-    try {
-      await migratingAuth.setup();
-    } finally {
-      await migratingAuth.close();
-    }
-
-    const verifyPool = new Pool({ connectionString: connectionString! });
-    try {
-      const rows = await verifyPool.query<{ workspace_id: string; name: string }>(
-        `select m.workspace_id, w.name
-         from auth_workspace_member m
-         join auth_workspace w on w.id = m.workspace_id
-         where m.user_id = 'auth_user_legacy_default'`
-      );
-      expect(rows.rows).toHaveLength(1);
-      expect(rows.rows[0]?.workspace_id).not.toBe("default");
-      expect(rows.rows[0]?.name).toBe("legacy-default@example.com");
-    } finally {
-      await verifyPool.end();
-      restoreEnv("DATABASE_URL", previousEnv.DATABASE_URL);
-      restoreEnv("ACCOUNTING_AUTH_PUBLIC_SIGNUP", previousEnv.ACCOUNTING_AUTH_PUBLIC_SIGNUP);
-      restoreEnv("ACCOUNTING_SAAS_WORKSPACES_ENABLED", previousEnv.ACCOUNTING_SAAS_WORKSPACES_ENABLED);
-      restoreEnv("ACCOUNTING_AUTH_BOOTSTRAP_EMAILS", previousEnv.ACCOUNTING_AUTH_BOOTSTRAP_EMAILS);
-    }
-  }, 30_000);
 });
 
 function restoreEnv(key: string, value: string | undefined) {

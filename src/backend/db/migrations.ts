@@ -271,5 +271,118 @@ export const migrations: Migration[] = [
         delete from integration_plugin where code = 'wildberries';
       end $$;
     `
+  },
+  {
+    // Таблицы better-auth ("user","session","account","verification","rateLimit") —
+    // SQL сгенерирован из getSchema() (better-auth/db) c CLI-маппингом типов для Postgres
+    // и обёрнут в идемпотентный вид. Имена и camelCase-колонки оставлены дефолтными
+    // (совместимость с CLI при апгрейдах); "user" — зарезервированное слово, всегда в кавычках.
+    // Сюда же переезжают кастомные workspace-таблицы из ленивого AuthService.initialize():
+    // ленивого DDL в рантайме больше нет. FK членств сразу указывает на "user"
+    // (на старых dev-базах таблица уже существует со старым FK — его перевяжет 0011).
+    id: "0010",
+    name: "better_auth_tables_and_workspaces",
+    sql: `
+      create table if not exists "user" (
+        "id" text not null primary key,
+        "name" text not null,
+        "email" text not null unique,
+        "emailVerified" boolean not null,
+        "image" text,
+        "createdAt" timestamptz not null default CURRENT_TIMESTAMP,
+        "updatedAt" timestamptz not null default CURRENT_TIMESTAMP
+      );
+
+      create table if not exists "session" (
+        "id" text not null primary key,
+        "expiresAt" timestamptz not null,
+        "token" text not null unique,
+        "createdAt" timestamptz not null default CURRENT_TIMESTAMP,
+        "updatedAt" timestamptz not null,
+        "ipAddress" text,
+        "userAgent" text,
+        "userId" text not null references "user"("id") on delete cascade
+      );
+
+      create table if not exists "account" (
+        "id" text not null primary key,
+        "accountId" text not null,
+        "providerId" text not null,
+        "userId" text not null references "user"("id") on delete cascade,
+        "accessToken" text,
+        "refreshToken" text,
+        "idToken" text,
+        "accessTokenExpiresAt" timestamptz,
+        "refreshTokenExpiresAt" timestamptz,
+        "scope" text,
+        "password" text,
+        "createdAt" timestamptz not null default CURRENT_TIMESTAMP,
+        "updatedAt" timestamptz not null
+      );
+
+      create table if not exists "verification" (
+        "id" text not null primary key,
+        "identifier" text not null,
+        "value" text not null,
+        "expiresAt" timestamptz not null,
+        "createdAt" timestamptz not null default CURRENT_TIMESTAMP,
+        "updatedAt" timestamptz not null default CURRENT_TIMESTAMP
+      );
+
+      create table if not exists "rateLimit" (
+        "id" text not null primary key,
+        "key" text not null unique,
+        "count" integer not null,
+        "lastRequest" bigint not null
+      );
+
+      create index if not exists "session_userId_idx" on "session"("userId");
+      create index if not exists "account_userId_idx" on "account"("userId");
+      create index if not exists "verification_identifier_idx" on "verification"("identifier");
+
+      create table if not exists auth_workspace (
+        id text primary key,
+        name text not null,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      );
+
+      create table if not exists auth_workspace_member (
+        workspace_id text not null references auth_workspace(id) on delete cascade,
+        user_id text not null,
+        role_code text not null check (role_code in ('owner','accountant','operator','viewer')),
+        created_at timestamptz not null default now(),
+        primary key (workspace_id, user_id),
+        constraint auth_workspace_member_user_id_fkey
+          foreign key (user_id) references "user"("id") on delete cascade
+      );
+
+      create unique index if not exists auth_workspace_member_one_workspace_per_user_idx
+        on auth_workspace_member(user_id);
+      create index if not exists auth_workspace_member_workspace_id_idx
+        on auth_workspace_member(workspace_id);
+
+      insert into auth_workspace (id, name, created_at, updated_at)
+      values ('default', 'MPFlow', now(), now())
+      on conflict (id) do nothing;
+    `
+  },
+  {
+    // Swap самописной авторизации на better-auth. Продовых пользователей нет, поэтому
+    // данные не переносятся: старые таблицы auth_* удаляются, членства чистятся,
+    // FK auth_workspace_member.user_id перевязывается на better-auth "user"(id)
+    // (id у better-auth другие; локальные dev-инстансы регистрируют владельца заново).
+    id: "0011",
+    name: "swap_legacy_auth_to_better_auth",
+    sql: `
+      drop table if exists auth_email_verification;
+      drop table if exists auth_session;
+      delete from auth_workspace_member;
+      alter table auth_workspace_member drop constraint if exists auth_workspace_member_user_id_fkey;
+      alter table auth_workspace_member
+        add constraint auth_workspace_member_user_id_fkey
+        foreign key (user_id) references "user"("id") on delete cascade;
+      drop table if exists auth_user;
+    `
   }
 ];

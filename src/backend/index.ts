@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { createAccountingRuntimeFromEnv } from "../infra/db/runtime-store";
 import { createApi } from "./app";
-import { AuthService } from "./auth";
+import { createBetterAuth } from "./auth/better-auth";
 import { closePool, getPool } from "./db/pool";
 import { runMigrations } from "./db/migrate";
 import { flushObservability, initObservability } from "./observability";
@@ -18,7 +18,8 @@ const hostname = process.env.HOST ?? "0.0.0.0";
 
 const runtime = await createAccountingRuntimeFromEnv();
 await runMigrations(getPool());
-const auth = new AuthService();
+// Таблицы better-auth созданы миграциями выше; в production без BETTER_AUTH_SECRET — fail-fast.
+const auth = createBetterAuth(getPool());
 const api = createApi(runtime.app, { persistence: runtime.persistence, auth });
 
 const server = serve({
@@ -29,7 +30,7 @@ const server = serve({
 
 const shutdown = async () => {
   await runtime.persistence?.close?.();
-  await auth?.close();
+  // better-auth работает поверх общего пула (getPool) — отдельного close у него нет.
   await closePool();
   await flushObservability();
   server.close();
