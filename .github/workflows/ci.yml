@@ -61,6 +61,7 @@ jobs:
           ACCOUNTING_PERSISTENCE: postgres
           DATABASE_URL: postgresql://mpflow:mpflow_ci@127.0.0.1:5432/mpflow
           ACCOUNTING_ENCRYPTION_KEY: ci-smoke-encryption-key
+          BETTER_AUTH_SECRET: ci-smoke-better-auth-secret
           HOST: 127.0.0.1
           PORT: 4110
         run: |
